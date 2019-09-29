@@ -1,0 +1,94 @@
+
+if object_id("cm_edittrader") != NULL
+    drop procedure
+        cm_edittrader
+go
+
+create procedure
+	cm_edittrader
+		@login varchar(30),
+		@trader varchar(30),
+		@new_name varchar(30)=NULL,
+		@sales_code varchar(50)
+as
+
+declare @trader_id int
+declare @tico_server varchar(100)
+declare @tico_database varchar(100)
+declare @sql_string varchar(200)
+declare @sales_code_id int
+
+
+select
+	@sales_code_id = sales_code_id
+from
+	sales_codes
+where
+	name = @sales_code
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"sales_codes",
+			@sales_code_id output
+
+	insert into
+		sales_codes
+	values(
+		@sales_code_id,
+		@sales_code)
+end
+
+if @new_name != @trader
+begin
+	select
+		@trader_id = trader_id
+	from
+		traders
+	where
+		symbol = @new_name
+	if @trader_id != NULL
+	begin
+		select
+			status = "Error",
+			message = "New trader name already exists",
+			new_name = @new_name
+		return
+	end
+end
+
+select
+	@trader_id = trader_id
+from
+	traders
+where
+	symbol = @trader
+
+update
+	traders
+set
+	symbol = @new_name,
+	sales_code_id = @sales_code_id
+where
+	trader_id = @trader_id
+
+
+
+select
+        @tico_server = tico_server,
+        @tico_database = tico_database
+from
+        funds
+
+
+select
+        @sql_string = "exec " + rtrim(@tico_database) + "..flush"
+
+exec sp_remotesql @tico_server, @sql_string
+
+
+exec
+	cm_traders
+		@login
+
+go

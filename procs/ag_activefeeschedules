@@ -1,0 +1,53 @@
+drop procedure
+        ag_activefeeschedules
+go
+
+create procedure
+	ag_activefeeschedules
+		@trade_date datetime=NULL
+as
+	declare @begin_date datetime
+	declare @end_date datetime
+
+	if @trade_date = NULL
+	begin
+    		select
+        		@trade_date = convert(date, getdate())
+	end
+
+	exec
+		r_daterangefordate
+			@trade_date,
+			@begin_date output,
+			@end_date output
+
+	select distinct
+		name = a.name
+	from
+		fee_schedules a,
+		trades b
+	where
+		(a.trade_type_id = b.trade_type_id or a.trade_type_id is null)
+	and
+		(a.internal_account_id = b.internal_account_id or a.internal_account_id is null)
+	and
+		(a.external_account_id = b.external_account_id or a.external_account_id is null)
+	and
+		(a.counterparty_id = b.counterparty_id or a.counterparty_id is null)
+	and
+		(a.contract_id = b.contract_id or a.contract_id is null)
+	and
+		(a.trader_id = b.trader_id or a.trader_id is null)
+	and
+		(a.strategy_id = b.strategy_id or a.strategy_id is null)
+	and
+		(a.sales_code_id = b.sales_code_id or a.sales_code_id is null)
+	and
+		(a.broker_id = b.broker_id or a.broker_id is null)
+	and
+		b.trade_date >= @begin_date
+	and
+		b.trade_date < @end_date
+	order by
+		a.name
+go

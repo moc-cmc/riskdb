@@ -1,0 +1,108 @@
+drop procedure r_updatewirebankline
+go
+
+create procedure 
+	r_updatewirebankline
+		@source varchar(50),
+		@symbol varchar(50),
+		@product varchar(10),
+		@bank_line_code varchar(10)
+
+as
+
+declare @external_account_id int
+declare	@product_id int
+declare @wire_intermediary_id int
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding product",
+		product = @product
+	return
+end
+
+select
+	@external_account_id = a.external_account_id
+from
+	external_account_symbols a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	a.symbol = @symbol
+and
+	b.name = @source
+	
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding external account for source and symbol",
+		source = @source,
+		symbol = @symbol
+	return
+end
+
+begin tran
+	update 
+		wire_intermediaries
+	set
+		bank_line_code = @bank_line_code
+	where
+		external_account_id = @external_account_id
+	and
+		product_id = @product_id
+	if @@rowcount > 1
+	begin
+		select
+			status = "Error",
+			message = "Problem updating bank_line_code for ext account and product",
+			external_account_id = @external_account_id,
+			product = @product
+		rollback tran
+		return
+	end
+	else
+	begin
+		exec
+			j_nextkey
+				"wire_intermediaries",
+				@wire_intermediary_id output
+		insert into
+			wire_intermediaries(
+				wire_intermediary_id,
+				external_account_id,
+				product_id,
+				intermediary,
+				int_swift_code,
+				ord_swift_code,
+				bank_line_code)
+		values(
+			@wire_intermediary_id,
+			@external_account_id,
+			@product_id,
+			NULL,
+			NULL,
+			NULL,
+			@bank_line_code
+		)
+	end
+commit tran
+
+select
+	status = "Success",
+	message = "Updated bank line code",
+	source = @source,
+	external_account_symbol = @symbol,
+	product = @product,
+	bank_line_code = @bank_line_code
+
+go

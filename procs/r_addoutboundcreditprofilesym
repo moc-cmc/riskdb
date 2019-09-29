@@ -1,0 +1,32 @@
+
+drop procedure
+	r_addoutboundcreditprofilesym
+go
+
+
+create procedure
+	r_addoutboundcreditprofilesym
+				@login varchar(25),
+				@name varchar(50),
+				@outbound_source varchar(100),
+				@symbol varchar(50)
+as
+
+exec
+	api_addcreditprofilesymbol
+				@login=@login,
+				@name=@name,
+				@symbol=@symbol,
+				@source=@outbound_source
+
+exec
+	r_mappingoverview2
+		@login=@login
+
+
+return
+
+
+go
+
+

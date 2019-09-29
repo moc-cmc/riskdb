@@ -1,0 +1,131 @@
+
+drop procedure
+	ag_extaccountdetails
+go
+
+create procedure
+	ag_extaccountdetails
+		@login varchar(50),
+		@account varchar(50)
+
+as
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "settle_date",
+        NULL,
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_details",
+	"Edit Ext Account Details",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_spread_pl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#FFFFFF;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+
+
+select
+	section = @account + " Details",
+	style = @style,
+	account = a.symbol,
+	account_type = b.name,
+	base_ccy = c.symbol,
+	agg_style = d.name,
+	settlement = e.name,
+	lp_trans = a.lp_transparency,
+	max_mtd_trades = a.max_mtd_statement_trades,
+	margin_mult = a.margin_multiplier,
+	wire_source = f.name,
+	pip_spread = g.name,
+	nop_type = h.name,
+	collateral = i.symbol,
+	edit_details = "EDIT"
+from
+	external_accounts a,
+	external_account_types b,
+	products c,
+	aggregation_styles d,
+	settlement_methods e,
+	sources f,
+	pip_spreads g,
+	nop_types h,
+	products i
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	a.evaluation_currency_id = c.product_id
+and
+	a.aggregation_style_id *= d.aggregation_style_id
+and
+	a.settlement_method_id *= e.settlement_method_id
+and
+	a.wire_source_id *= f.source_id
+and
+	a.pip_spread_id *= g.pip_spread_id
+and
+	a.nop_type_id *= h.nop_type_id
+and
+	a.collateral_product_id *= i.product_id
+and
+	a.symbol = @account
+	
+
+
+go

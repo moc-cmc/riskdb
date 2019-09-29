@@ -1,0 +1,103 @@
+drop procedure r_addrollspreadgroup
+go
+
+create procedure
+	r_addrollspreadgroup
+		@login varchar(50),
+		@name varchar(50),
+		@default_spread float=NULL
+as
+
+declare @roll_spread_group_id int
+
+exec
+	j_nextkey 
+		"roll_spread_groups",
+		@roll_spread_group_id output
+
+insert into
+	roll_spread_groups (
+		roll_spread_group_id,
+		name
+	)
+values(
+	@roll_spread_group_id,
+	@name
+)
+
+create table
+	#contract_roll_spreads(
+                roll_spread_group_id int,
+                contract_id int
+)
+insert into
+	#contract_roll_spreads(
+		roll_spread_group_id,
+		contract_id
+	)
+select
+	@roll_spread_group_id,
+	a.contract_id
+from
+	contracts a,
+	forwards b,
+	products c,
+	products d,
+	product_types e,
+	product_types f
+where
+	a.contract_id = b.contract_id
+and
+	b.currency_id = c.product_id
+and
+	b.product_id = d.product_id
+and
+	c.product_type_id = e.product_type_id
+and
+	d.product_type_id = f.product_type_id
+and
+	e.name = "Currency"
+and
+	f.name = "Currency"
+
+/* Remove inverted pairs */
+delete 
+	#contract_roll_spreads
+where
+	contract_id in(
+			select
+				a.contract_id
+			from
+				contract_price_styles a,
+				price_styles b
+			where
+				a.price_style_id = b.price_style_id
+			and
+				b.name = "Inverted"
+	)
+	
+if @default_spread = NULL
+begin
+	select 
+		@default_spread = 0.0
+end
+
+insert into
+	contract_roll_spreads(
+		roll_spread_group_id,
+		contract_id,
+		spread
+)
+select
+	roll_spread_group_id,
+	contract_id,
+	@default_spread
+from
+	#contract_roll_spreads
+
+exec
+	r_managerollspreadgroups
+		@login,
+		@name
+
+go

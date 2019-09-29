@@ -1,0 +1,86 @@
+
+if object_id("fxmc_login") != NULL
+    drop procedure
+        fxmc_login
+go
+
+create procedure
+	fxmc_login
+		@login varchar(50),
+		@password varchar(50)
+as
+
+declare @tico_account_id int
+declare @correct_pass varchar(50)
+declare @login_status varchar(30)
+
+select
+	@login_status = "Success"
+
+select
+	@tico_account_id = a.account_id,
+	@correct_pass = a.password
+from
+	tico_accounts a
+where
+	login = @login
+
+if @tico_account_id = NULL
+begin
+	select
+		@login_status = "Failed - Invalid Username"
+end
+else if @password != @correct_pass
+begin
+	select
+		@login_status = "Failed - Invalid Password"
+end
+
+exec
+	r_userloginattempt
+		@tico_account_id=@tico_account_id,
+		@login_provided=@login,
+		@password_provided=@password,
+		@login_status=@login_status,
+		@ip=NULL
+
+if @login_status like "Failed%"
+begin
+	select
+		@tico_account_id = NULL
+end
+
+select
+	a.account_id,
+	a.login,
+	a.password,
+	status = b.name,
+	a.surname,
+	a.given_names
+from
+	tico_accounts a,
+	statuses b
+where
+	a.status_id = b.status_id
+and
+	a.account_id = @tico_account_id
+
+select
+	a.run_id,
+	run_name = a.name
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.account_id = @tico_account_id
+
+exec
+	mc_loginpanels
+		@login = @login
+
+go

@@ -1,0 +1,13 @@
+create or replace procedure
+	bn_viewcommitstatuswrap
+		@login varchar(50)
+
+as
+
+
+exec
+	cbo_viewcommitstatus
+		@login
+
+
+go

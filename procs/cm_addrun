@@ -1,0 +1,120 @@
+
+if object_id("cm_addrun") != NULL
+    drop procedure
+        cm_addrun
+go
+
+create procedure
+	cm_addrun
+		@login varchar(30),
+		@run_name varchar(50),
+		@notional_amount float
+as
+
+
+declare @fund_id int
+declare @run_id int
+declare @internal_account_id int
+declare @portfolio_id int
+declare @date datetime
+
+select
+	@date = convert(datetime, convert(char(11), dateadd(day, 1, dateadd(day, datepart(day, getdate()) * -1, getdate())), 1))
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run_name
+if @run_id != NULL
+begin
+	select
+		status = "Duplicate name",
+		message = "Run name already exists",
+		run_name = @run_name
+	return
+end
+
+exec
+	j_nextkey
+		"runs",
+		@run_id output
+
+insert into
+	runs
+values(
+	@run_id,
+	@run_name)
+
+/*
+insert into
+	user_runs
+select
+	account_id,
+	run_id = @run_id
+from
+	tico_accounts
+*/
+
+exec
+	j_nextkey
+		"internal_accounts",
+		@internal_account_id output
+
+exec
+	j_nextkey
+		"portfolios",
+		@portfolio_id output
+
+insert into
+	internal_accounts
+values(
+	@internal_account_id,
+	@run_name,
+	@run_name,
+	0)
+
+insert into
+	internal_account_views
+values(
+	@internal_account_id)
+
+insert into
+	fund_internal_accounts
+values(
+	@fund_id,
+	@internal_account_id)
+
+insert into
+	portfolios
+values(
+	@portfolio_id,
+	@run_name)
+
+insert into
+	portfolio_accounts
+values(
+	@portfolio_id,
+	@internal_account_id)
+
+exec
+	s_addintaccounttrans
+		@login,
+		@run_name,
+		"Deposit",
+		@date,
+		@notional_amount,
+		"Initial Notional Amount"
+
+exec
+	cm_myruns
+		@login
+
+go

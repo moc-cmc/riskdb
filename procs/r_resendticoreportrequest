@@ -1,0 +1,57 @@
+create or replace procedure
+	r_resendticoreportrequest
+		@login varchar(50),
+		@tico_report_request_id int,
+		@tico_report varchar(100),
+		@run varchar(50)
+
+as
+
+declare @verify_tico_report_request_id varchar(10)
+declare @new_status_id int
+
+select
+	@verify_tico_report_request_id = "Y"
+from
+	tico_report_requests
+where
+	tico_report_request_id = @tico_report_request_id
+
+if @verify_tico_report_request_id != "Y"
+begin
+	select
+		status = "Error",
+		message = "Could not find tico_report_request_id",
+		tico_report_request_id = @tico_report_request_id
+	return
+end
+
+select
+	@new_status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @new_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Could not find status",
+		name = "New"
+	return
+end
+
+update
+	tico_report_requests
+set
+	status_id = @new_status_id
+where
+	tico_report_request_id = @tico_report_request_id
+
+exec
+	ag_ticoreportrequests
+		@login,
+		@tico_report,
+		@run
+
+go

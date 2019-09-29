@@ -1,0 +1,45 @@
+drop procedure
+	cbo_requestuncommitfordate
+go
+
+create procedure
+	cbo_requestuncommitfordate
+		@login varchar(50),
+		@uncommit_date datetime
+
+as
+
+declare @tico_account_id int
+declare @commit_status varchar(25)
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "login not found"
+        return
+end
+
+select
+	@commit_status = "Uncommit Requested" 
+
+exec
+	r_editcommitstatus
+			@login=@login,
+			@commit_date=@uncommit_date,
+			@commit_status=@commit_status,
+			@show_output="N"
+
+exec
+	cbo_viewcommitstatus	
+			@login
+
+go
+

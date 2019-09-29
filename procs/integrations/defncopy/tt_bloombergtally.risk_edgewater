@@ -1,0 +1,949 @@
+
+create procedure
+	tt_bloombergtally
+		@agent varchar(50),
+        	@source varchar(50),
+		@broker varchar(50),
+        	@cli_source varchar(50),
+		@target_comp varchar(50),
+		@sender_comp varchar(50),
+        	@default_login varchar(50),
+        	@trade_report_id varchar(50),
+        	@exec_id varchar(50),
+        	@trade_id varchar(50),
+        	@trade_request_id varchar(50),
+        	@trade_match_id varchar(50),
+        	@secondary_exec_id varchar(50),
+        	@previously_reported char(1),
+        	@exec_type varchar(15),
+        	@exec_firm varchar(50),
+        	@exec_trader varchar(50),
+		@contra_firm varchar(50),
+        	@order_orig_firm varchar(50),
+        	@order_orig_trader varchar(50),
+        	@giveup_clearing_firm varchar(50),
+        	@intermediary_firm varchar(50),
+        	@intermediary_trader varchar(50),
+        	@symbol varchar(50),
+        	@symbol_suffix varchar(15),
+        	@product varchar(15),
+        	@qty1 numeric(30,6),
+        	@price float,
+        	@calc_ccy_last_qty float,
+        	@currency varchar(5),
+        	@settle_currency varchar(5),
+        	@spot_ref float,
+		@avg_price float,
+        	@trade_date datetime,
+        	@transact_date datetime,
+        	@value_date datetime,
+        	@side varchar(5),
+        	@order_id varchar(50),
+        	@account varchar(50),
+       		@aggressor varchar(15),
+        	@order_qty2 numeric(30,6),
+        	@far_date datetime,
+        	@last_swap_points numeric(30, 10),
+        	@calc_ccy_last_qty2 numeric(30,6)
+as
+
+declare @client_deal_symbol varchar(50)
+declare @ctrpty_deal_symbol varchar(50)
+declare @far_client_deal_symbol varchar(50)
+declare @far_ctrpty_deal_symbol varchar(50)
+declare @ctrpty_trade_symbol varchar(50)
+declare @client_trade_symbol varchar(50)
+declare @far_ctrpty_trade_symbol varchar(50)
+declare @far_client_trade_symbol varchar(50)
+declare @orig_symbol varchar(10)
+
+declare @client_internal_account varchar(50)
+declare @ctrpty_internal_account varchar(50)
+declare @client_external_account varchar(50)
+declare @ctrpty_external_account varchar(50)
+declare @inverted varchar(1)
+
+declare @sign int
+declare @create char(1)
+declare @far_quantity numeric(30,4)
+declare @far_price float
+declare @client_deal_id int
+declare @client_trade_id int
+declare @ctrpty_deal_id int
+declare @ctrpty_trade_id int
+declare @client_far_trade_id int
+declare @ctrpty_far_trade_id int
+declare @ack char(1)
+
+declare @committed_status_id int
+declare @dont_tally_salescode_id int
+
+declare @trade_type varchar(25)
+declare @trade_type_id int
+declare @tally_type varchar(25)
+declare @deal_type varchar(25)
+declare @deal_id int
+declare @deal_exec_symbol varchar(100)
+declare @deal_type_id int
+declare @deal_status_id int
+declare @mkt_trade_id int
+declare @mkt_trade_identifier varchar(100)
+declare @mkt_trader_login varchar(50)
+declare @mkt_external_account varchar(25)
+declare @mkt_external_account_id int
+declare @mkt_external_account_type varchar(25)
+declare @mkt_cpty_ext_acct_id int
+declare @mkt_aggregation_style_id int
+declare @mkt_aggregation_style varchar(25)
+declare @mkt_counterparty varchar(25)
+declare @mkt_counterparty_id int
+declare @mkt_trader varchar(25)
+declare @mkt_trader_id int
+declare @mkt_qty1 numeric(30, 4)
+declare @mkt_price float
+declare @mkt_quoted_price float
+declare @mkt_external_account_type_id int
+
+declare @cli_trade_id int
+declare @cli_trade_identifier varchar(100)
+declare @cli_trader_login varchar(50)
+declare @cli_external_account varchar(25)
+declare @cli_external_account_id int
+declare @cli_external_account_type_id int
+declare @cli_external_account_type varchar(25)
+declare @cli_cpty_ext_acct_id int
+declare @cli_aggregation_style_id int
+declare @cli_aggregation_style varchar(25)
+declare @cli_counterparty varchar(25)
+declare @cli_counterparty_id int
+declare @cli_trader varchar(25)
+declare @cli_trader_id int
+declare @cli_qty1 numeric(30, 4)
+declare @cli_price float
+declare @cli_quoted_price float
+
+declare @contract_id int
+declare @inverted_price_style_id int
+declare @mkt_trader_login_id int
+declare @cli_trader_login_id int
+
+declare @mkt_lookup_cpty varchar(50)
+declare @mkt_lookup_trader varchar(50)
+declare @cli_lookup_cpty varchar(50)
+declare @cli_lookup_trader varchar(50)
+
+declare @cli_tallied int
+declare @mkt_tallied int
+
+
+
+declare @substring1 varchar(3)
+declare @substring2 varchar(3)
+
+declare @cli_cancelled_trade_id int
+declare @cli_cancelled_deal_id int
+declare @cli_cancelled_qty numeric(30,6)
+declare @cli_cancelled_price float
+declare @cli_cancelled_vd datetime
+
+declare @mkt_cancelled_trade_id int
+declare @mkt_cancelled_deal_id int
+declare @mkt_cancelled_qty numeric(30,6)
+declare @mkt_cancelled_price float
+declare @mkt_cancelled_vd datetime
+
+declare @cancelled_trade_id int
+declare @cancelled_deal_id int
+declare @cancelled_qty numeric(30,6)
+declare @cancelled_price float
+declare @cancelled_vd datetime
+
+declare @contra_broker_symbol varchar(50)
+declare @fund_agency_trader varchar(50)
+
+declare @source_id int
+declare @suppress_client_trade char(1)
+
+
+if @broker = NULL
+begin
+select
+    @broker = "Bloomberg"
+end
+
+if @default_login = NULL
+begin
+	select
+		@default_login = @agent
+end
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                message = "Source not found",
+                source = @source
+        return
+end
+
+select 
+	@trade_date = @transact_date
+
+
+select
+        @trade_type = "Spot",
+        @tally_type = "Spot"
+	
+if @side = "SELL"
+begin
+    select
+        @qty1 = -@qty1
+end
+
+/*
+ * LOOKUP @committed_status_id
+ */
+select
+	@committed_status_id = status_id
+from
+	statuses
+where
+	name = "Committed"
+if @committed_status_id = NULL
+begin
+	select
+		status = "Error",
+        	message = "No status named, 'Committed'"
+	return
+end
+
+/* Regardless of whether @quote_basis is "CCY2PERCCY1" or "CCY1PERCCY2", 
+ * phrases the order in the correct @ccy1/@ccy2, @qty1/@qty2. */
+if @currency != substring(@symbol, 1, 3)
+    select
+        @symbol = substring(@symbol, 4, 3) + substring(@symbol, 1, 3),
+	@inverted = "Y"
+
+select
+        @contract_id = contract_id
+from
+        contracts
+where
+        symbol = @symbol
+
+
+if @contract_id = NULL
+begin
+	select
+		message = "Contract not found",
+		contract = @symbol,
+		action = "Fetching contract from contracts db with r_addbatchfwdsubscription"
+
+	declare @ccy1_determined varchar(3)
+	declare @ccy2_determined varchar(3)
+
+	select 
+		@ccy1_determined =  substring(@symbol, 1, 3),
+		@ccy2_determined = substring(@symbol, 5, 7)
+	
+	
+	declare @evaluation_currency varchar(50)
+        declare @fund_id int
+
+        exec
+        	r_defaultfundforlogin
+                	@default_login,
+                	@fund_id output
+
+        select
+        	@evaluation_currency = a.symbol
+        from
+        	products a,
+        	funds b
+        where
+        	a.product_id = b.evaluation_currency_id 
+	and
+		b.fund_id=@fund_id
+  
+        exec r_addbatchfwdsubscription
+                        @default_login,
+                        @symbol,
+                        @ccy1_determined,
+                	@ccy2_determined,
+                        @evaluation_currency 
+
+        /* @waitfor_delay = "HH:MM:SS.00"*/
+	declare @waitfor_delay char(11)
+	select
+		@waitfor_delay = "00:00:03.00"
+        /* sleep for 1 second */
+
+	select 
+		action = "Sleeping @waitfor_delay and checking for contract again",
+		waitfor_delay = @waitfor_delay
+
+        waitfor delay @waitfor_delay
+
+        if not exists (select contract_id from contracts where symbol=@symbol)
+        begin
+                select
+                        status = "Error",
+                        message = "Contract not found",
+                        symbol=@symbol
+                return
+        end
+	select "Contract Successfully Created"
+end
+
+
+/* 
+* INSERT contract_price_styles if this contract is inverted and we don't have
+* any contract price styles set up yet.
+*/
+if @inverted = "Y"
+begin
+	select
+		@inverted_price_style_id = b.price_style_id
+	from
+		contract_price_styles b,
+		price_styles c
+	where
+		b.price_style_id = c.price_style_id
+	and
+		b.contract_id = @contract_id
+	and
+		c.name = "Inverted"
+
+	if @inverted_price_style_id = NULL
+	begin
+    		
+    		insert into
+       			contract_price_styles (
+           			contract_id,
+           			price_style_id,
+           			factor
+       			)
+    		select
+       			a.contract_id,
+       			b.price_style_id,
+       			1.0
+    		from
+       			contracts a,
+       			price_styles b
+   		where
+       			a.contract_id = @contract_id
+		and
+       			b.name = "Inverted"
+	end
+end
+
+
+
+select
+        @deal_exec_symbol = @order_id,
+        @deal_type = "B2B Forward",
+        @mkt_trade_identifier = rtrim(@order_id)+".m",
+        @mkt_lookup_cpty = @contra_firm,
+        @mkt_lookup_trader = @exec_firm,
+        @mkt_price = @price,
+        @mkt_qty1 = @qty1,
+        @mkt_quoted_price = @price,
+        @cli_trade_identifier = rtrim(@order_id)+".c",
+        @cli_lookup_cpty = @sender_comp,
+        @cli_lookup_trader = @exec_trader + '-' + @account,
+        @cli_price = @price,
+        @cli_qty1 = -@qty1 /* Reverse qty */,
+        @cli_quoted_price = @price 
+select
+        @cli_trade_id = trade_id
+from
+        trades
+where
+        identifier = @cli_trade_identifier
+if @cli_trade_id !=NULL
+begin
+        select
+                status = "Dupe",
+                message = "Client trade is already tallied",
+                trade_identifier = @cli_trade_identifier,
+                lookup_cpty = @cli_lookup_cpty,
+                lookup_trdr = @cli_lookup_trader,
+                price = @cli_price,
+                qty1 = @cli_qty1
+end
+
+select
+        @mkt_trade_id = trade_id
+from
+        trades
+where
+        identifier = @mkt_trade_identifier
+if @mkt_trade_id !=NULL
+begin
+        select
+                status = "Dupe",
+                message = "Market trade is already tallied",
+                trade_identifier = @mkt_trade_identifier,
+                lookup_cpty = @mkt_lookup_cpty,
+                lookup_trdr = @mkt_lookup_trader,
+                price = @mkt_price,
+                qty1 = @mkt_qty1
+end
+
+/*
+,-------------------,
+| CLIENT LOOKUPS    |
+'-------------------'
+*/
+
+if @cli_trade_id  = NULL
+begin
+
+	/*
+        * Check to see if we should supress client trade
+        */
+        select
+                @suppress_client_trade = "Y",
+		@deal_type = "Market Forward"
+        from
+                suppression_symbols
+        where
+                source_id = @source_id
+        and
+                symbol =  @cli_lookup_trader
+	
+end
+if @suppress_client_trade != "Y"
+begin
+
+        /*
+        * LOOKUP @trader_id, @trader, @trader_login, @external_account_id
+	*/
+   
+        select
+                @cli_trader_id = a.trader_id,
+                @cli_trader = a.symbol,
+                @cli_trader_login_id = a.tico_account_id,
+                @cli_external_account_id = a.external_account_id
+        from
+                traders a,
+                trader_symbols b
+        where
+                a.trader_id = b.trader_id
+        and
+		b.source_id = @source_id
+	and
+                b.symbol = @cli_lookup_trader
+        if @cli_trader_id = NULL
+        begin
+                select
+                        @cli_trader_id = a.trader_id,
+                        @cli_trader = a.symbol,
+			@cli_trader_login_id = a.tico_account_id,
+                        @cli_external_account_id = a.external_account_id
+                from
+                        traders a
+                where
+                        a.symbol = @cli_lookup_trader
+                if @cli_trader_id = NULL
+                begin
+                        select
+                        	status = "Error",
+                        	message = "Couldn't find trader and user for @cli_lookup_trader, '" + @cli_lookup_trader + "'",
+                        	cli_lookup_trader = @cli_lookup_trader
+                        return
+    		end
+	end
+
+	select
+		@cli_trader_login = login
+        from
+                tico_accounts
+        where
+                account_id = @cli_trader_login_id
+        if @cli_trader_login = NULL
+        begin
+                select
+                        status = "Error",
+                        message = "Problem determining login from trader",
+                        trader = @cli_trader,
+			cli_lookup_trader = @cli_lookup_trader
+                return
+        end
+
+
+
+	/*
+	* LOOKUP @cli_counterparty_id, @cli_counterparty_symbol, @cli_cpty_ext_acct_id from @cli_lookup_cpty
+	*/
+
+	select
+                @cli_counterparty_id = a.counterparty_id,
+                @cli_counterparty = a.name,
+                @cli_cpty_ext_acct_id = a.external_account_id
+        from
+                counterparties a,
+                counterparty_symbols b
+        where
+                a.counterparty_id = b.counterparty_id
+        and
+		b.source_id = @source_id
+	and
+                b.symbol = @cli_lookup_cpty
+        if @cli_counterparty = NULL
+        begin
+                select
+                        @cli_counterparty_id = a.counterparty_id,
+                        @cli_counterparty = a.name,
+                        @cli_cpty_ext_acct_id = a.external_account_id
+                from
+                        counterparties a
+                where
+                        a.name = @cli_lookup_cpty
+                if @cli_counterparty = NULL
+                begin
+                        select
+                                status = "Error",
+                                message = "Couldn't find counterparty for @cli_lookup_cpty, '" + @cli_lookup_cpty + "'",
+                                cli_lookup_cpty = @cli_lookup_cpty
+                        return
+                end
+        end
+
+
+	/*
+ 	* LOOKUP @cli_external_account, @cli_external_account_type based on @cli_external_account_id
+ 	*/
+	select
+    		@cli_external_account = a.symbol,
+    		@cli_external_account_type_id = a.external_account_type_id,
+    		@cli_aggregation_style_id = a.aggregation_style_id
+	from
+    		external_accounts a
+	where
+    		a.external_account_id = @cli_external_account_id
+	if @cli_external_account = NULL
+	begin
+		select
+			status = "Error",
+			message = "Couldn't find external_account from @cli_external_account_id",
+			cli_external_account_id = @cli_external_account_id
+		return
+	end
+	select
+		@cli_external_account_type = name
+	from
+		external_account_types
+	where
+		external_account_type_id = @cli_external_account_type_id
+	select
+		@cli_aggregation_style = name
+	from
+		aggregation_styles
+	where
+		aggregation_style_id = @cli_aggregation_style_id
+
+end
+
+/*
+ ,-------------------,
+ | MARKET LOOKUPS    |
+ '-------------------'
+*/
+	
+if @mkt_trade_id = NULL
+begin
+	/*
+ 	* LOOKUP @trader_id, @trader, @trader_login, @external_account_id 
+ 	*/ 
+	
+	select
+		@mkt_trader_id = a.trader_id,
+		@mkt_trader = a.symbol,
+		@mkt_trader_login_id = a.tico_account_id,
+		@mkt_external_account_id = a.external_account_id
+	from
+        	traders a,
+        	trader_symbols b
+	where    
+        	a.trader_id = b.trader_id
+	and
+        	b.source_id = @source_id
+	and 
+        	b.symbol = @mkt_lookup_trader
+	
+	if @mkt_trader_id = NULL
+	begin
+    		select
+            		@mkt_trader_id = a.trader_id,
+            		@mkt_trader = a.symbol,
+            		@mkt_trader_login_id = a.tico_account_id,
+            		@mkt_external_account_id = a.external_account_id
+    		from
+            		traders a
+    		where    
+            		a.symbol = @mkt_lookup_trader
+
+ 		if @mkt_trader_id = NULL or @mkt_trader_login = NULL
+    		begin
+			select
+            			status = "Error",
+            			message = "Couldn't find trader and user for @mkt_lookup_trader, '" + @mkt_lookup_trader + "'",
+            			mkt_lookup_trader = @mkt_lookup_trader
+        		return
+    		end		
+	end
+	
+	/*
+ 	* LOOKUP @mkt_counterparty_id, @mkt_counterparty_symbol, @mkt_cpty_ext_acct_id from @mkt_lookup_cpty
+ 	*/
+	
+	select
+		@mkt_counterparty_id = a.counterparty_id,
+		@mkt_counterparty = a.name,
+		@mkt_cpty_ext_acct_id = a.external_account_id
+	from
+        	counterparties a,
+        	counterparty_symbols b
+	where
+        	a.counterparty_id = b.counterparty_id
+	and
+        	b.source_id = @source_id
+	and
+        	b.symbol = @mkt_lookup_cpty
+	if @mkt_counterparty = NULL
+	begin
+        	select
+                	@mkt_counterparty_id = a.counterparty_id,
+			@mkt_counterparty = a.name,
+			@mkt_cpty_ext_acct_id = a.external_account_id
+        	from
+                	counterparties a
+        	where
+                	a.name = @mkt_lookup_cpty
+        	
+        	if @mkt_counterparty = NULL
+        	begin
+                	select
+                        	status = "Error",
+                        	message = "Couldn't find counterparty for @mkt_lookup_cpty, '" + @mkt_lookup_cpty + "'",
+				mkt_lookup_cpty = @mkt_lookup_cpty
+                	return
+        	end
+	end
+
+        select
+                @mkt_trader_login = login
+        from
+                tico_accounts
+        where
+                account_id = @mkt_trader_login_id
+        if  @mkt_trader_login = NULL
+        begin
+                select
+                        status = "Error",
+                        message = "Problem determining login from trader",
+                        trader = @mkt_trader,
+                        mkt_lookup_trader = @mkt_lookup_trader
+                return
+        end
+
+	
+	
+	/*
+ 	* LOOKUP/OVERWRITE @mkt_external_account, @mkt_external_account_type based on @mkt_cpty_ext_account_id
+ 	*/
+	select
+    		@mkt_external_account = a.symbol,
+    		@mkt_external_account_type_id = a.external_account_type_id,
+    		@mkt_aggregation_style_id = a.aggregation_style_id
+	from
+    		external_accounts a
+	where
+    		a.external_account_id = @mkt_cpty_ext_acct_id
+	if @mkt_external_account = NULL
+	begin
+		select
+			status = "Error",
+			message = "Couldn't find external_account from @mkt_external_account_id",
+			mkt_external_account_id = @mkt_external_account_id
+		return
+	end
+        select
+                @mkt_external_account_type = name
+        from
+                external_account_types
+        where
+                external_account_type_id = @mkt_external_account_type_id
+        select
+                @mkt_aggregation_style = name
+        from
+                aggregation_styles
+        where
+                aggregation_style_id = @mkt_aggregation_style_id
+
+end
+
+
+select 	
+	cli_lookup_trader = @cli_lookup_trader,
+	cli_lookup_cpty = @cli_lookup_cpty,
+	mkt_lookup_trader = @mkt_lookup_trader,
+	mkt_lookup_cpty = @mkt_lookup_cpty 
+	
+
+select
+	@deal_id = deal_id
+from
+	deal_exec_symbols
+where
+	symbol = @deal_exec_symbol
+
+if @deal_id = NULL
+begin
+	select
+		msg = "Creating new deal"
+	
+	select
+		@deal_status_id = status_id
+	from
+		statuses
+	where
+		name = "User Review"
+	if @deal_status_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "No status found named, 'User Review'"
+		return
+	end
+	select
+		@deal_type_id = deal_type_id
+	from
+		deal_types
+	where
+		name = @deal_type
+	if @deal_type_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "No deal type found for @deal_type",
+			deal_type = @deal_type
+		return	
+	end
+
+	exec
+		j_nextkey
+			"deals",
+			@deal_id output
+
+	insert into
+		deals(
+			deal_id,   
+			deal_type_id,
+			timestamp,  
+			status_id  
+		 	)      
+		values( 
+			@deal_id,
+			@deal_type_id,
+			getdate(),
+			@deal_status_id
+			)
+    
+    	insert into
+		deal_exec_symbols
+	values(
+		@deal_id,
+		@deal_exec_symbol
+    		)
+end
+else
+begin
+	select
+		msg = "Appending to existing deal"
+end
+
+		
+if @cli_trade_id = NULL and @suppress_client_trade != "Y"
+begin
+	exec
+		fxa_tallytrade
+			@login = @cli_trader_login,
+			@source = @source,
+			@trade_id = @cli_trade_id out,
+			@deal_id = @deal_id out,
+			@tally_type = @tally_type,
+			@deal_type = @deal_type,
+			@trade_type = @trade_type,
+			@external_account = @cli_external_account,
+			@counterparty = @cli_counterparty,
+			@quantity = @cli_qty1,
+			@symbol = @symbol,
+			@value_date = @value_date,
+			@price = @cli_price,
+			@trade_date = @trade_date,
+			@trader = @cli_trader,
+			@broker = @broker,
+			@identifier = @cli_trade_identifier,
+			@spot_reference = @cli_quoted_price
+
+	if @cli_trade_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Failed to tally trade"
+		return
+	end
+
+	insert into
+		trade_quoted_prices (	trade_id,
+					price)
+		values(
+			@cli_trade_id,
+			@cli_quoted_price
+			)
+
+	exec
+		r_inserttradenotification
+					@cli_trade_id
+	select
+		@cli_tallied = 1
+end
+
+if @mkt_trade_id = NULL
+begin
+	exec
+        	fxa_tallytrade
+                	@login = @mkt_trader_login,
+                	@source = @source,
+                	@trade_id = @mkt_trade_id out,
+                	@deal_id = @deal_id out,
+                	@tally_type = @tally_type,
+                	@deal_type = @deal_type,
+                	@trade_type = @trade_type,
+                	@external_account = @mkt_external_account,
+                	@counterparty = @mkt_counterparty,
+                	@quantity = @mkt_qty1,
+                	@symbol = @symbol,
+                	@value_date = @value_date,
+                	@price = @mkt_price,
+                	@trade_date = @trade_date,
+                	@trader = @mkt_trader,
+                	@broker = @broker,
+                	@identifier = @mkt_trade_identifier,
+                	@spot_reference = @mkt_quoted_price
+	
+	if @mkt_trade_id = NULL
+	begin
+        	select
+                	status = "Error",
+                	message = "Failed to tally trade"
+        	return
+	end
+	
+	insert into
+        	trade_quoted_prices (   trade_id,
+                                	price)
+        	values(
+                	@mkt_trade_id,
+                	@mkt_quoted_price
+                	)
+	
+	exec
+        	r_inserttradenotification
+                                	@mkt_trade_id
+	select
+		@mkt_tallied = 1
+end
+/*
+ * AUTOCOMMIT
+ *
+ * If there is a client trade in this deal and the account type is set for
+ * Autocommit, then push through this deal automatically.
+ */
+if @deal_id != NULL and @cli_trade_id != NULL and @cli_aggregation_style = "Autocommit"
+begin
+
+    	update
+        	deals
+    	set
+        	status_id = @committed_status_id
+    	where
+        	deal_id = @deal_id
+    	if @@rowcount != 1
+    	begin
+        	select
+            	status = "Error",
+            	message = "Failed to autocommit deal, " + convert(varchar(10), @committed_status_id) + ", for external account, '" + @cli_external_account + "', an aggregation style, '" + @cli_aggregation_style + "'"
+    	end
+end
+else
+begin
+    	select
+        	message = "No autocommitted",
+        	deal_id = @deal_id,
+        	trade_id = @cli_trade_id,
+        	aggregation_style = @cli_aggregation_style
+end
+
+if @cli_tallied != NULL
+	select
+        	status = "Tallied",
+        	message = "Trade successfully tallied",
+        	trade_id = @cli_trade_id,
+        	deal_id = @deal_id,
+        	account = @cli_external_account,
+		trader = @cli_trader,
+        	cpty = @cli_counterparty,
+        	symbol = @symbol,
+        	quantity = @cli_qty1,
+        	price = @cli_price,
+        	val_date = @value_date
+
+if @mkt_tallied != NULL
+	select
+        	status = "Tallied",
+        	message = "Trade successfully tallied",
+        	trade_id = @mkt_trade_id,
+        	deal_id = @deal_id,
+        	account = @mkt_external_account,
+		trader = @mkt_trader,
+        	cpty = @mkt_counterparty,
+        	symbol = @symbol,
+        	quantity = @mkt_qty1,
+        	price = @mkt_price,
+        	val_date = @value_date
+	
+
+
+
+
+/* Return the acknowledgement message 
+if @ack = "Y"
+    select
+        order_id = @order_id,
+        client_order_id = @client_order_id,
+        exec_ack_status = "ACCEPTED",
+        exec_id = @execution_id,
+        symbol = substring(@symbol, 1, 3) + "/" + substring(@symbol, 4, 3),
+        value_date = @value_date,
+        far_date = @far_date,
+        dealt_ccy = @dealt_ccy,
+        side = @side,
+        order_qty = @order_qty,
+        qty1 = @qty1,
+        rate = @price,
+        order_cum_qty = @order_cum_qty,
+        forward_pts = @forward_pts,
+        far_forward_pts = @far_forward_pts
+
+*/
+
+/* ### DEFNCOPY: END OF DEFINITION */

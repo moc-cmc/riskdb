@@ -1,0 +1,361 @@
+create or replace procedure
+	api_mktdblbarriernondig
+		@login varchar(50),
+		@deal_id int output,
+		@counterparty varchar(50),
+		@buys_sells varchar(50),
+		@dealt_currency varchar(20),
+		@counter_currency varchar(20),
+		@put_call varchar(10),
+		@rebate numeric(30,4),
+		@notional_currency varchar(20),
+		@spot_ref numeric(30,8),
+		@barrier_direction varchar(30)=NULL,
+		@lower_barrier numeric(30,8),
+		@upper_barrier numeric(30,8),
+		@payment_timing varchar(25),
+		@exercise_style varchar(50),
+		@expiration datetime,
+		@option_settledate datetime,
+		@timezone varchar(50),
+		@premium numeric(30,4),
+		@premium_ccy varchar(10),
+		@premium_settledate datetime,
+		@fixing_source varchar(50),
+		@trade_note varchar(100)
+
+	
+as
+
+declare @option_expiration_id int
+declare @expiration_symbol varchar(100)
+declare @exercise_style_id int
+
+declare @barrier_attribute varchar(50)
+declare @string_value varchar(100)
+declare @status varchar(100)
+declare @direction_name varchar(50)
+declare @contract_id int
+declare @symbol varchar(50)
+declare @instrument_id int
+declare @exotic_instrument_id int
+declare @trade_date datetime
+declare @trade_id int
+declare @timezone_symbol varchar(50)
+declare @window_start varchar(25)
+declare @window_end varchar(25)
+declare @event_text varchar(255)
+declare @external_account varchar(50)
+
+select
+	@trade_date = getdate()
+
+select
+        @external_account = a.symbol
+from
+        external_accounts a,
+        counterparties b
+where
+        a.external_account_id = b.external_account_id
+and
+        b.name = @counterparty
+if @external_account = NULL
+begin
+        select
+                status = "Error",
+                message = "Could not find external account for counterparty",
+                counterparty = @counterparty
+        return
+end
+
+select
+	@direction_name = upper(convert(varchar(1), @barrier_direction))
+
+select
+        @payment_timing = upper(convert(varchar(1), @payment_timing))
+
+select
+	@exercise_style_id = exercise_style_id
+from
+	exercise_styles
+where
+	name = @exercise_style
+if @exercise_style_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Exercise style not found",
+		exercise_style = @exercise_style
+	return
+end
+
+
+select
+	@exotic_instrument_id = exotic_instrument_id
+from
+	exotic_instruments
+where
+	name = "Double Barrier"
+if @exotic_instrument_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Exotic instrument Double Barrier not found"
+	return
+end
+
+exec
+	ag_exoticexpiration
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@expiration = @expiration,
+		@exercise_style = @exercise_style,
+		@timezone = @timezone,
+		@option_expiration_id = @option_expiration_id output,
+		@symbol = @expiration_symbol output
+
+select
+	@symbol = @expiration_symbol + " DB " + convert(varchar(1), @exercise_style)
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		@instrument_id = instrument_id
+	from
+		instruments
+	where
+		name = "Exotic"
+	if @instrument_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Exotic instrument not found"
+		return
+	end
+
+	
+	exec
+		j_nextkey
+			"contracts",
+			@contract_id output
+
+	begin tran
+		insert into
+			contracts(
+				contract_id,
+				symbol,
+				instrument_id)
+		values(
+			@contract_id,
+			@symbol,
+			@instrument_id)
+		if @@rowcount != 1
+		begin	
+			select
+				status = "Error",
+				message = "Unable to add contract",
+				symbol = @symbol
+			rollback tran
+			return
+		end
+
+		insert into
+			exotic_contracts(
+				contract_id,
+				option_expiration_id,
+				exotic_instrument_id,
+				exercise_style_id)
+		values(
+			@contract_id,
+			@option_expiration_id,
+			@exotic_instrument_id,
+			@exercise_style_id)
+		if @@rowcount = 0
+		begin
+			select
+				status = "Error",
+				message = "Unable to add exotic contract",
+				symbol = @symbol
+			rollback tran
+			return
+		end
+	commit tran
+end
+		
+/* Create the exotic trade attributes */
+
+
+if @buys_sells = "Sell"
+	select
+		@rebate = @rebate * -1.0
+else
+	select
+		@rebate = abs(@rebate)
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT",
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = "Option",
+		@deal_type = "Market Option",
+		@trade_type = "Option",
+		@quantity = @rebate,
+		@symbol = @symbol,
+		@value_date = @option_settledate,
+		@price = @spot_ref,
+		@trade_date = @trade_date,
+                @external_account = @external_account,
+                @counterparty = @counterparty,
+		@premium = @premium,
+		@premium_currency = @premium_ccy,
+		@prem_settle_date = @premium_settledate,
+		@spot_reference = @spot_ref,
+		@note = @trade_note
+
+select
+	@string_value = convert(varchar(30), @option_settledate)
+exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Option Settlement Date",
+		@value = @string_value,
+		@status = @status output
+
+select
+	@status = NULL,
+	@string_value = "DBAR"
+exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Exotic Type",
+		@value = @string_value,
+		@status = @status output
+
+
+select
+	@status = NULL,
+	@string_value = convert(varchar(50), @put_call)
+exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Put Call",
+		@value = @string_value,
+		@status = @status output
+
+select
+	@status = NULL,
+	@string_value = convert(varchar(50), convert(numeric(30,8), @upper_barrier)) exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Upper Barrier",
+		@value = @string_value,
+		@status = @status output
+
+select
+	@status = NULL,
+	@string_value = convert(varchar(50), convert(numeric(30,8), @lower_barrier)) exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Lower Barrier",
+		@value = @string_value,
+		@status = @status output
+
+select
+	@status = NULL,
+	@string_value = @exercise_style
+
+exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Exercise Style",
+		@value = @string_value,
+		@status = @status output
+
+select
+	@status = NULL,
+	@string_value = convert(varchar(25), @trade_date)
+
+exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Upper Window Start",
+		@value = @string_value,
+		@status = @status output
+
+exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Lower Window Start",
+		@value = @string_value,
+		@status = @status output
+
+select
+	@status = NULL,
+	@string_value = convert(varchar(25), @expiration)
+
+exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Upper Window End",
+		@value = @string_value,
+		@status = @status output
+
+exec
+	u_addattributetoexotic
+		@trade_id = @trade_id,
+		@attribute_name = "Lower Window End",
+		@value = @string_value,
+		@status = @status output
+
+select
+        @status = NULL,
+        @string_value = convert(varchar(30), @notional_currency)
+
+exec
+        u_addattributetoexotic
+                @trade_id = @trade_id,
+                @attribute_name = "Rebate Currency",
+                @value = @string_value,
+                @status = @status output
+
+select
+        @status = NULL,
+        @string_value = convert(varchar(30), @rebate)
+
+exec
+        u_addattributetoexotic
+                @trade_id = @trade_id,
+                @attribute_name = "Rebate Amount",
+                @value = @string_value,
+                @status = @status output
+
+select
+        @status = NULL exec
+        u_addattributetoexotic
+                @trade_id = @trade_id,
+                @attribute_name = "Timing",
+                @value = @payment_timing,
+                @status = @status output
+
+
+exec
+	r_inserttradenotification
+		@trade_id
+
+select
+        @event_text = rtrim(@symbol) +" @slack-exotic-booking booked by "+rtrim(@login)
+exec
+        sp_dogstatsdevent
+                @event_title = "Exotic Booking",
+                @event_text = @event_text,
+                @tags = "user_action:manual tally"
+
+go

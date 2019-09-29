@@ -1,0 +1,101 @@
+
+if object_id("mc_positionsasof") != NULL
+    drop procedure
+        mc_positionsasof
+go
+
+create procedure
+	mc_positionsasof
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#output(
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4),
+		close_price float NULL)
+
+insert into
+	#output(
+		contract_id,
+		value_date,
+		quantity)
+select
+	contract_id,
+	value_date,
+	sum(quantity)
+from
+	trades
+where
+	trade_date <= @begin_date
+and
+	value_date > @begin_date
+group by
+	contract_id,
+	value_date
+
+delete
+
+from
+	#output
+where
+	quantity = 0
+
+update
+	#output
+set
+	a.close_price = b.price
+from
+	#output a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	b.price_date = @begin_date
+
+
+update
+	#output
+set
+	a.close_price = b.tv
+from
+	#output a,
+	contract_tvs b
+where
+	a.contract_id = b.contract_id
+and
+	b.tv_date = @end_date
+
+
+select
+	a.contract_id,
+	b.symbol,
+	a.value_date,
+	a.quantity,
+	a.close_price
+from
+	#output a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+	
+
+
+go

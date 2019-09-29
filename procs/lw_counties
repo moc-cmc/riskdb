@@ -1,0 +1,145 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_counties
+go
+
+create procedure
+	lw_counties
+		@login varchar(50),
+		@name varchar(50)=NULL,
+		@state_code varchar(4)=NULL
+as
+
+declare @county varchar(50)
+declare @state varchar(50)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"inspect",
+	"Inspect County",
+	NULL)
+
+select * from #meta
+
+create table
+	#states(
+		state_id int)
+
+if @state_code = NULL
+begin
+	insert into
+		#states
+	select
+		state_id
+	from
+		states
+end
+else
+begin
+	select
+		@state = "%" + rtrim(lower(@state_code)) + "%"
+	insert into
+		#states
+	select
+		state_id
+	from
+		states
+	where
+		lower(code) like @state
+end
+
+select
+	@county = "%" + rtrim(lower(@name)) + "%"
+
+create table
+	#counties(
+		county_id int,
+		num_fees int NULL,
+		total_fees float NULL)
+
+insert into
+	#counties(
+		county_id)
+select
+	a.county_id
+from
+	counties a,
+	#states b
+where
+	a.state_id = b.state_id
+and
+	lower(a.name) like @county
+
+create table
+	#fees(
+		county_id int,
+		num_fees float NULL,
+		total_fees float NULL)
+
+insert into
+	#fees
+select
+	a.county_id,
+	count(b.county_fee_id),
+	sum(b.fee)
+from
+	#counties a,
+	county_fees b
+where
+	a.county_id = b.county_id
+group by
+	a.county_id
+	
+update
+	#counties
+set
+	num_fees = 0,
+	total_fees = 0.0
+
+update
+	#counties
+set
+	a.num_fees = b.num_fees,
+	a.total_fees = b.total_fees
+from
+	#counties a,
+	#fees b
+where
+	a.county_id = b.county_id
+
+		
+
+select
+	county = b.name,
+	state = c.name,
+	state_code = c.code,
+	a.num_fees,
+	a.total_fees,
+	inspect = "INSPECT"
+from
+	#counties a,
+	counties b,
+	states c
+where
+	a.county_id = b.county_id
+and
+	b.state_id = c.state_id
+order by
+	c.name,
+	b.name
+	
+
+
+go

@@ -1,0 +1,20 @@
+use
+	risk_sjmdemo
+go
+drop procedure
+	r_statuses
+go
+
+create procedure
+	r_statuses
+		@login varchar(50)
+as
+
+select
+	name
+from
+	statuses
+order by
+	name
+
+go

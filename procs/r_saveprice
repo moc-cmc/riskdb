@@ -1,0 +1,31 @@
+
+if object_id("r_saveprice") != NULL
+    drop procedure
+        r_saveprice
+go
+
+create procedure
+	r_saveprice
+		@contract_id int,
+		@price float
+
+as
+
+declare @price_id int
+
+exec
+	j_nextkey
+		"prices",
+		@price_id output
+
+insert into
+	prices
+values(
+	@price_id,
+	1,
+	@contract_id,
+	getdate(),
+	1,
+	@price)
+
+go

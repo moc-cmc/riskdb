@@ -1,0 +1,47 @@
+drop procedure tt_resolvedeal
+go
+
+create procedure
+	tt_resolvedeal
+		@deal_exec_symbol varchar(100),
+		@deal_id int=NULL output,
+		@deal_type varchar(25)=NULL output,
+		@deal_status varchar(25)=NULL output
+
+as
+
+declare @deal_status_id int
+declare @deal_type_id int
+
+select
+	@deal_id = deal_id
+from
+	deal_exec_symbols
+where
+	symbol = @deal_exec_symbol
+if @deal_id != NULL
+begin
+	select
+		@deal_type_id = deal_type_id,
+		@deal_status_id = status_id
+	from
+		deals 
+	where
+		deal_id = @deal_id
+
+	select
+		@deal_type = name
+	from
+		deal_types
+	where
+		deal_type_id = @deal_type_id
+
+	select
+		@deal_status = name
+	from
+		statuses
+	where
+		status_id = @deal_status_id
+end
+
+go

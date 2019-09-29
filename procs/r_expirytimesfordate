@@ -1,0 +1,120 @@
+use
+	risk_cc
+go
+
+drop procedure
+	r_expirytimesfordate
+go
+
+create procedure
+	r_expirytimesfordate
+		@login char(30),
+		@expiration datetime=NULL
+as
+
+declare @expirations int
+declare @only_exp_date datetime
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"expiration",
+	"Expirations For Time",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"future_dates",
+	"Expirations",
+	NULL) 
+
+select * from #meta
+
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+        future_dates = "Change expiration date"
+
+
+
+if @expiration = NULL
+	select
+		@expiration = getdate()
+
+
+create table
+	#expiry_times(
+		expiration datetime)
+
+insert into
+	#expiry_times
+select
+	distinct(expiration)
+from
+	option_expirations
+where
+	datepart(day, expiration) = datepart(day, @expiration)
+and
+	datepart(month, expiration) = datepart(month, @expiration)
+and
+	datepart(year, expiration) = datepart(year, @expiration)
+
+select
+	@expirations = count(*)
+from
+	#expiry_times
+
+if @expirations = 0
+begin
+	exec
+		r_expiringoptions
+			@login,
+			@expiration
+end
+
+if @expirations = 1
+begin
+	select
+		@only_exp_date = min(expiration)
+	from
+		#expiry_times
+
+	exec
+		r_expiringoptions
+			@login,
+			@only_exp_date
+end
+
+/* select
+	expiration = convert(char(22), expiration, 0)
+from
+	#expiry_times
+order by
+	convert(datetime, expiration) */
+
+go

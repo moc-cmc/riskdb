@@ -1,0 +1,87 @@
+
+drop procedure
+	r_rmaccessgroupforlogin
+go
+
+create procedure
+	r_rmaccessgroupforlogin
+			@login varchar(25),
+			@login_name varchar(25),
+			@group_name varchar(50)
+as
+
+declare @access_group_id int
+declare @tico_account_id int
+
+select
+	@access_group_id=access_group_id
+from
+	access_groups
+where
+	name=@group_name
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not locate access group",
+		access_group=@group_name
+
+	return
+end
+
+select
+	@tico_account_id=account_id
+from
+	tico_accounts
+where
+	login=@login_name
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not locate tico account for login",
+		login=@login_name
+
+	return
+end
+
+begin tran
+	delete from 
+		access_group_accounts
+	where
+		access_group_id=@access_group_id
+	and
+		tico_account_id=@tico_account_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			msg="Could not delete from access_group_accounts",
+			access_group_id=@access_group_id
+
+		rollback tran
+		return
+	end
+
+commit tran
+
+
+select
+	status="Success",
+	msg="Login removed from Access Group",
+	access_group=@group_name,
+	login=@login_name
+
+
+exec
+                r_accessgroups  
+                        @login=@login
+
+return
+
+go
+
+

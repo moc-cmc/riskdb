@@ -1,0 +1,108 @@
+
+if object_id("r_rundeltas") != NULL
+    drop procedure
+        r_rundeltas
+go
+
+create procedure
+		r_rundeltas
+			@login char(30),
+			@run_name char(200),
+			@as_of_date datetime=NULL
+
+
+as
+
+declare @run_id int
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem determining current user"
+	return
+end
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run_name
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding run",
+		run = @run_name
+	return
+end
+
+select
+	@run_id = run_id
+from
+	user_runs
+where
+	tico_account_id = @tico_account_id
+and
+	run_id = @run_id
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Run not found",
+		run = @run_name
+	return
+end
+exec
+	r_runassetclassdeltas
+		@login,
+		@run_name,
+		@as_of_date,
+		"Currency"
+
+exec
+	r_runassetclassdeltas
+		@login,
+		@run_name,
+		@as_of_date,
+		"Interest Rates"
+
+exec
+	r_runassetclassdeltas
+		@login,
+		@run_name,
+		@as_of_date,
+		"Equity Index"
+
+exec
+	r_runassetclassdeltas
+		@login,
+		@run_name,
+		@as_of_date,
+		"Commodity"
+
+/* exec
+	r_runassetclassdeltas
+		@login,
+		@run_name,
+		@as_of_date,
+		"STIR" */
+
+exec
+        r_stirexposure
+                @login,
+                @run_name,
+                @as_of_date,
+                NULL,
+                "STIR"
+
+
+go

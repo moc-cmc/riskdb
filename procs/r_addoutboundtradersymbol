@@ -1,0 +1,29 @@
+
+drop procedure
+	r_addoutboundtradersymbol
+go
+
+create procedure
+	r_addoutboundtradersymbol
+			@login varchar(25),
+			@name varchar(150),
+			@outbound_source varchar(100),
+			@symbol varchar(100)
+as
+
+exec 
+	api_addtradersymbol
+			@login=@login,
+			@name=@name,
+			@symbol=@symbol,
+			@source=@outbound_source
+
+
+exec
+	r_mappingoverview
+		@login=@login
+
+return
+
+go
+

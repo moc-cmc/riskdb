@@ -1,0 +1,304 @@
+drop procedure
+	ag_processfifotrade
+go
+
+create procedure
+	ag_processfifotrade
+		@login varchar(50),
+		@trade_date datetime,
+		@trade_id int,
+		@quantity numeric(30,4),
+		@remainder numeric(30,4) output,
+		@continue varchar(2) output
+
+as
+
+declare @tico_account_id int
+declare @value_date datetime
+declare @external_account_id int
+declare @contract_id int
+declare @price float
+declare @entry_date datetime
+declare @bo_trade_date datetime
+
+declare @id int
+declare @ids int
+
+declare @open_id int
+declare @open_trade_id int
+declare @open_amount numeric(30,4)
+declare @open_trade_price float
+declare @open_trade_date datetime
+
+declare @added_open_id int
+
+declare @round_turn_id int
+
+
+select
+	@contract_id = NULL,
+	@value_date = NULL,
+	@external_account_id = NULL,
+	@price = NULL,
+	@open_id = NULL,
+	@added_open_id = NULL
+
+select
+	@bo_trade_date = convert(datetime, convert(date, @trade_date))
+
+select
+	@contract_id = contract_id,
+	@external_account_id = external_account_id,
+	@price = price,
+	@value_date = value_date,
+	@entry_date = trade_date
+from
+	trades
+where
+	trade_id = @trade_id
+
+
+select
+	@open_id = min(id)
+from
+	open_trades
+where
+	contract_id = @contract_id
+and
+	external_account_id = @external_account_id
+and
+	value_date = @value_date
+
+
+if @open_id = NULL /* It's a new position */
+begin
+	exec
+		j_nextkey
+			"open_trades",
+			@open_id output
+
+	insert into
+		open_trades(
+			id,
+			trade_date,
+			trade_id,
+			external_account_id,
+			contract_id,
+			value_date,
+			open_amount,
+			price)
+	values(
+		@open_id,
+		@bo_trade_date,
+		@trade_id,
+		@external_account_id,
+		@contract_id,
+		@value_date,
+		@quantity,
+		@price)
+
+	select
+		@continue = "N",
+		@remainder = 0.0
+
+end
+else /* it's either increasing or closing an existing position */
+begin
+	select
+		@open_trade_id = trade_id,
+		@open_amount = open_amount,
+		@open_trade_price = price
+	from
+		open_trades
+	where
+		id = @open_id
+
+	select
+		@open_trade_date = trade_date
+	from
+		trades
+	where
+		trade_id = @open_trade_id
+
+	if sign(@quantity) = sign(@open_amount) /* it's increasing an existing position */
+	begin
+		exec
+			j_nextkey
+				"open_trades",
+				@added_open_id output
+		insert into
+			open_trades(
+				id,
+				trade_date,
+				trade_id,
+				external_account_id,
+				contract_id,
+				value_date,
+				open_amount,
+				price)
+		values(
+			@added_open_id,
+			@bo_trade_date,
+			@trade_id,
+			@external_account_id,
+			@contract_id,
+			@value_date,
+			@quantity,
+			@price)
+
+		select
+			@continue = "N",
+			@remainder = 0.0
+	end
+	else /* its' closing an existing position */
+	begin
+		if abs(@quantity) = abs(@open_amount)
+		begin
+			/* position is closed */
+			exec
+				j_nextkey
+					"round_turns",
+					@round_turn_id output
+
+			insert into
+				round_turns(
+					round_turn_id,
+					trade_date,
+					contract_id,
+					external_account_id,
+					entry_trade_id,
+					entry_date,
+					entry_quantity,
+					entry_price,
+					exit_trade_id,
+					exit_date,
+					exit_quantity,
+					exit_price)
+			values(
+				@round_turn_id,
+				@bo_trade_date,
+				@contract_id,
+				@external_account_id,
+				@open_trade_id,
+				@open_trade_date,
+				@open_amount,
+				@open_trade_price,
+				@trade_id,
+				@entry_date,
+				@quantity,
+				@price)
+
+			delete
+
+			from
+				open_trades
+			where
+				id = @open_id
+
+			select
+				@remainder = 0.0,
+				@continue = "N"
+		end
+
+		if abs(@quantity) < abs(@open_amount)
+		begin
+			/* position is partially closed */
+			exec
+				j_nextkey
+					"round_turns",
+					@round_turn_id output
+
+			insert into
+				round_turns(
+					round_turn_id,
+					trade_date,
+					contract_id,
+					external_account_id,
+					entry_trade_id,
+					entry_date,
+					entry_quantity,
+					entry_price,
+					exit_trade_id,
+					exit_date,
+					exit_quantity,
+					exit_price)
+			values(
+				@round_turn_id,
+				@bo_trade_date,
+				@contract_id,
+				@external_account_id,
+				@open_trade_id,
+				@open_trade_date,
+				@quantity * -1.0,
+				@open_trade_price,
+				@trade_id,
+				@entry_date,
+				@quantity,
+				@price)
+
+			update
+				open_trades
+			set
+				open_amount = open_amount + @quantity
+			where
+				id = @open_id
+			
+			select
+				@remainder = 0.0,
+				@continue = "N"
+		end
+
+		if abs(@quantity) > abs(@open_amount)
+		begin
+			/* position is flipped */
+			exec
+				j_nextkey
+					"round_turns",
+					@round_turn_id output
+			insert into
+				round_turns(
+					round_turn_id,
+					trade_date,
+					contract_id,
+					external_account_id,
+					entry_trade_id,
+					entry_date,
+					entry_quantity,
+					entry_price,
+					exit_trade_id,
+					exit_date,
+					exit_quantity,
+					exit_price)
+			values(
+				@round_turn_id,
+				@bo_trade_date,
+				@contract_id,
+				@external_account_id,
+				@open_trade_id,
+				@open_trade_date,
+				@open_amount,
+				@open_trade_price,
+				@trade_id,
+				@entry_date,
+				@open_amount * -1.0,
+				@price)
+			delete
+
+			from
+				open_trades
+			where
+				id = @open_id
+
+			select
+				@remainder = @quantity + @open_amount,
+				@continue = "Y"
+		end
+
+	end
+
+
+end
+
+
+go
+

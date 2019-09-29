@@ -1,0 +1,21 @@
+drop procedure tp_markettraders
+go
+
+create procedure
+	tp_markettraders
+
+as
+
+select 
+	name=a.symbol 
+from 
+	traders a, 
+	fund_agency_traders b 
+where 
+	a.trader_id = b.trader_id 
+order by 
+	a.symbol
+
+go
+
+

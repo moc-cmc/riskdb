@@ -1,0 +1,424 @@
+create or replace procedure
+	api_tallybrokerotcmatch
+		@login varchar(50),
+		@otc_match_id int=NULL output,
+		@trade_date datetime = NULL,
+		@buyer_trader varchar(50),
+		@seller_trader varchar(50),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@dealt_amount float,
+		@price float,
+		@value_date datetime=NULL
+as
+
+declare @seller_firm varchar(50)
+declare @buyer_firm varchar(50)
+
+declare @requestor_id int
+declare @request_date datetime
+declare @buyer_account_id int
+declare @buyer_trader_id int
+declare @buyer_legal_entity_id int
+declare @buyer_status_id int
+declare @buyer_trade_id int
+declare @seller_account_id int
+declare @seller_trader_id int
+declare @seller_legal_entity_id int
+declare @seller_status_id int
+declare @seller_trade_id int
+declare @contract_id int
+declare @product_id int
+declare @currency_id int
+declare @price_style varchar(50)
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+/* check fo_sub_accounts first, then bo_master */
+select
+	@seller_firm = a.name
+from
+	legal_entities a,
+	bo_master_accounts b,
+	fo_sub_accounts c,
+	external_accounts d,
+	traders e
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.bo_master_account_id = c.bo_master_account_id
+and
+	c.external_account_id = d.external_account_id
+and
+	d.external_account_id = e.external_account_id
+and
+	e.symbol = @seller_trader
+if @seller_firm = NULL
+begin
+	select
+		@seller_firm = a.name
+	from
+		legal_entities a,
+		bo_master_accounts b,
+		external_accounts c,
+		traders d
+	where
+		a.legal_entity_id = b.legal_entity_id
+	and
+		b.external_account_id = c.external_account_id
+	and
+		c.external_account_id = d.external_account_id
+	and
+		d.symbol = @seller_trader
+	if @seller_firm = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding legal entity for seller trader"
+		return
+	end
+end
+
+
+select
+        @buyer_firm = a.name
+from
+        legal_entities a,
+        bo_master_accounts b,
+        fo_sub_accounts c,
+        external_accounts d,
+        traders e
+where
+        a.legal_entity_id = b.legal_entity_id
+and
+	b.bo_master_account_id = c.bo_master_account_id
+and
+        c.external_account_id = d.external_account_id
+and
+        d.external_account_id = e.external_account_id
+and
+        e.symbol = @buyer_trader
+if @buyer_firm = NULL
+begin
+        select
+                @buyer_firm = a.name
+        from
+                legal_entities a,
+                bo_master_accounts b,
+                external_accounts c,
+                traders d
+        where
+                a.legal_entity_id = b.legal_entity_id
+        and
+                b.external_account_id = c.external_account_id
+        and
+                c.external_account_id = d.external_account_id   
+        and
+                d.symbol = @buyer_trader
+        if @buyer_firm = NULL
+        begin
+                select
+                        status = "Error",
+                        message = "Problem finding legal entity for buyeur trader"
+                return
+        end
+end
+
+
+	
+if @value_date = NULL
+begin
+	select
+		@value_date = convert(date, @trade_date)
+end
+
+select
+	@requestor_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @requestor_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @dealt_currency
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Dealt currency not found",
+		dealt_currency = @dealt_currency
+	return
+end
+
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @counter_currency
+if @currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Counter currency not found",
+		counter_currency = @counter_currency
+	return
+end
+
+
+select
+	@contract_id = contract_id
+from
+	forwards
+where
+	product_id = @product_id
+and
+	currency_id = @currency_id
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No contract found for currency and counter currency",
+		currency = @dealt_currency,
+		counter_currency = @counter_currency
+	return
+end
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	b.contract_id = @contract_id
+
+if @price_style = "Inverted"
+	select
+		@price = 1.0 / @price
+
+select
+	@request_date = getdate()
+
+select
+	@buyer_status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @buyer_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "New status not found"
+	return
+end
+
+select
+	@seller_status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @seller_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "New status not found"
+	return
+end
+
+
+exec
+	j_nextkey
+		"otc_matches",
+		@otc_match_id output
+
+select
+	@buyer_legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @buyer_firm
+if @buyer_legal_entity_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Buyer legal entity not found",
+		buyer_legal_entity = @buyer_firm
+	return
+end
+
+select
+	@buyer_trader_id = a.trader_id
+from
+	traders a,
+	legal_entity_tico_accounts b
+where
+	a.tico_account_id = b.tico_account_id
+and
+	b.legal_entity_id = @buyer_legal_entity_id
+and
+	a.symbol = @buyer_trader
+if @buyer_trader_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Buyer trader not found",
+		buyer_trader = @buyer_trader,
+		buyer_firm = @buyer_firm
+	return
+end
+
+select
+	@seller_legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @seller_firm
+if @seller_legal_entity_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Seller legal entity not found",
+		seller_legal_entity = @seller_firm
+	return
+end
+
+select
+	@seller_trader_id = a.trader_id
+from
+	traders a,
+	legal_entity_tico_accounts b
+where
+	a.tico_account_id = b.tico_account_id
+and
+	b.legal_entity_id = @seller_legal_entity_id
+and
+	a.symbol = @seller_trader
+if @seller_trader_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Seller trader not found",
+		seller_trader = @seller_trader,
+		seller_firm = @seller_firm
+	return
+end
+
+
+/* THIS WILL BE REMOVED WHEN WE FIGURE OUT WHAT THEY WANT WITH ACCOUNTS */
+select
+	@buyer_account_id = d.external_account_id
+from
+	legal_entities a,
+	bo_master_accounts b,
+	fo_sub_accounts c,
+	external_accounts d
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.bo_master_account_id = c.bo_master_account_id
+and
+	c.external_account_id = d.external_account_id
+and
+	a.legal_entity_id = @buyer_legal_entity_id
+
+select
+        @seller_account_id = d.external_account_id
+from
+        legal_entities a,
+        bo_master_accounts b,
+        fo_sub_accounts c,
+        external_accounts d
+where
+        a.legal_entity_id = b.legal_entity_id
+and
+        b.bo_master_account_id = c.bo_master_account_id
+and
+        c.external_account_id = d.external_account_id
+and
+        a.legal_entity_id = @seller_legal_entity_id
+
+	
+
+begin tran
+	insert into
+		otc_matches(
+			otc_match_id,
+			requestor_id,
+			request_date,
+			trade_date,
+			buyer_account_id,
+			buyer_trader_id,
+			buyer_legal_entity_id,
+			buyer_status_id,
+			buyer_trade_id,
+			seller_account_id,
+			seller_trader_id,
+			seller_legal_entity_id,
+			seller_status_id,
+			seller_trade_id,
+			contract_id,
+			quantity,
+			price,
+			value_date)
+	values(
+		@otc_match_id,
+		@requestor_id,
+		@request_date,
+		@trade_date,
+		@buyer_account_id,
+		@buyer_trader_id,
+		@buyer_legal_entity_id,
+		@buyer_status_id,
+		@buyer_trade_id,
+		@seller_account_id,
+		@seller_trader_id,
+		@seller_legal_entity_id,
+		@seller_status_id,
+		@seller_trade_id,
+		@contract_id,
+		@dealt_amount,
+		@price,
+		@value_date)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to enter OTC match",
+			buyer_firm = @buyer_firm,
+			buyer_trader = @buyer_trader,
+			seller_firm = @seller_firm,
+			seller_trader = @seller_trader,
+			dealt_currency = @dealt_currency,
+			counter_currency = @counter_currency,
+			dealt_amount = @dealt_amount,
+			price = @price 
+		rollback tran
+		return
+	end
+commit tran
+
+
+
+
+go
+

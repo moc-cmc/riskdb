@@ -1,0 +1,260 @@
+use
+	risk_walrus
+go
+
+drop procedure
+	sy_synchome
+go
+
+create procedure
+	sy_synchome
+		@login varchar(50)
+as
+
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"old_value_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pb_products",
+	"Prime Broker Products",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_queued_settlements",
+	"Tally Queued Settlements",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_clients",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+	#section_orderings(
+		section varchar(200),
+		ordering int)
+insert into
+	#section_orderings
+values(
+	"Primary Key",
+	100)
+insert into
+	#section_orderings
+values(
+	"Foreign Key",
+	200)
+insert into
+	#section_orderings
+values(
+	"Data",
+	300)
+insert into
+	#section_orderings
+values(
+	"Fully Flattened",
+	400)
+
+create table
+	#columns(
+		id int identity,
+		section varchar(100) NULL,
+		style varchar(250) NULL,
+		relation varchar(50) NULL,
+		name varchar(50) NULL,
+		is_id varchar(5) NULL,
+		guess_table varchar(50) NULL,
+		second_guess_table varchar(50) NULL,
+		confident_guess varchar(50) NULL,
+		target_table varchar(50) NULL)
+insert into
+	#columns(
+		section,
+		style,
+		relation,
+		name,
+		is_id)
+select
+	section = "Data",
+	style = @style,
+	a.name,
+	b.name,
+	is_id = "N"
+from
+	sysobjects a,
+	syscolumns b
+where
+	a.id = b.id
+and
+	a.type = "U"
+order by
+	a.name,
+	b.name
+
+update
+	#columns
+set
+	section = "Foreign Key",
+	is_id = "Y",
+	guess_table = left(name, char_length(name) -3) + "s"
+where
+	name like "%_id"
+
+update
+	#columns
+set
+	second_guess_table = left(name, char_length(name) - 4) + "ies"
+where
+	name like "%y_id"
+
+update
+	#columns
+set
+	section = "Primary Key"
+where
+	guess_table = relation
+	
+update
+	#columns
+set
+	section = "Primary Key"
+where
+	second_guess_table = relation
+	
+update
+	#columns
+set
+	confident_guess = guess_table
+where
+	guess_table = relation
+
+update
+	#columns
+set
+	confident_guess = second_guess_table
+where
+	second_guess_table = relation
+
+update
+	#columns
+set
+	a.target_table = b.confident_guess
+from
+	#columns a,
+	#columns b
+where
+	a.name = b.name
+and
+	b.section = "Primary Key"
+
+/*
+ * Find tables that have no foreign keys 
+ */
+create table
+	#nfk_tables(
+		name varchar(50))
+insert into
+	#nfk_tables(
+		name)
+select
+	distinct(relation)
+from
+	#columns
+where
+	section = "Data"
+
+delete
+	#nfk_tables
+from
+	#nfk_tables a,
+	#columns b
+where
+	a.name = b.relation
+and
+	b.section = "Foreign Key"
+
+update
+	#columns
+set
+	a.section = "Fully Flattened"
+from
+	#columns a,
+	#nfk_tables b
+where
+	b.name = a.relation 
+	
+select
+	a.section,
+	a.style,
+	a.confident_guess,
+	a.relation,
+	a.name,
+	a.is_id,
+	a.target_table
+from
+	#columns a,
+	#section_orderings b
+where
+	a.section = b.section
+order by
+	b.ordering,
+	a.id 
+
+
+
+go

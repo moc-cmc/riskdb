@@ -1,0 +1,64 @@
+drop procedure
+	r_rmctpyfromprofile
+go
+
+create procedure
+	r_rmctpyfromprofile
+		@login varchar(50),
+		@credit_profile varchar(50),
+		@counterparty varchar(50)
+
+as
+
+declare @counterparty_id int
+declare @credit_profile_id int
+
+
+select
+	@counterparty_id = counterparty_id
+from
+	counterparties
+where
+	name = @counterparty
+if @@rowcount !=1
+begin
+	select
+		msg = "Could not find ctpy",
+		ctpy = @counterparty
+	return
+end
+
+select
+	@credit_profile_id = credit_profile_id
+from
+	credit_profiles
+where
+	name = @credit_profile
+if @@rowcount !=1
+begin
+        select
+                msg = "Could not find credit profile",
+		credit_profile = @credit_profile
+        return
+end
+
+delete from
+	credit_profile_counterparties
+where
+	credit_profile_id = @credit_profile_id
+and
+	counterparty_id = @counterparty_id
+if @@rowcount = 1
+begin
+	select
+		msg = "Successfully removed " + @counterparty + " From profile " + @credit_profile
+end
+
+
+exec
+	r_viewcreditprofile
+		@login,
+		@credit_profile
+
+go
+

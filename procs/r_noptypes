@@ -1,0 +1,13 @@
+drop procedure r_noptypes
+go
+
+create procedure r_noptypes as
+
+select
+	name
+from
+	nop_types
+
+go
+
+

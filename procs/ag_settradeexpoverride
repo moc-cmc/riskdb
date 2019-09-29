@@ -1,0 +1,70 @@
+
+drop procedure
+	ag_settradeexpoverride
+go
+
+create procedure
+	ag_settradeexpoverride
+		@login varchar(50),
+		@trade_id int,
+		@symbol varchar(50),
+		@exercise varchar(10)=NULL
+as
+
+declare @expiration_name varchar(50)
+
+select
+	@expiration_name = convert(varchar(11), c.expiration) + " " + rtrim(d.timezone)
+from
+	trades a,
+	option_contracts b,
+	option_expirations c,
+	timezones d
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.timezone_id = d.timezone_id
+and
+	a.trade_id = @trade_id
+
+
+if @exercise = NULL
+begin
+	delete
+
+	from
+		exercise_overrides
+	where
+		trade_id = @trade_id
+end
+else
+begin
+	update
+		exercise_overrides
+	set
+		exercise = @exercise
+	where
+		trade_id = @trade_id
+	if @@rowcount = 0
+		insert into
+			exercise_overrides(
+				trade_id,
+				exercise)
+		values(
+			@trade_id,
+			@exercise)
+end
+
+exec
+	ag_optioncalendar
+		@login = @login,
+		@as_of_date = NULL,
+		@expiration_name = @expiration_name
+
+
+		
+			
+
+go

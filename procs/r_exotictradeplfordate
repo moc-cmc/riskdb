@@ -1,0 +1,110 @@
+
+if object_id("r_exotictradeplfordate") != NULL
+    drop procedure
+        r_exotictradeplfordate
+go
+
+create procedure
+	r_exotictradeplfordate
+		@trade_id int,
+		@quantity numeric(30,2),
+		@end_date datetime,
+		@trade_price float,
+		@current_price float output,
+		@p_l float output
+
+		
+as
+
+declare @contract_id int
+declare @multiplier float
+declare @delta float
+declare @gamma float
+declare @theta float
+declare @tau float
+declare @eval_method char(200)
+declare @expiration datetime
+
+
+select
+	@contract_id = contract_id
+from
+	trades
+where
+	trade_id = @trade_id
+
+select
+	@expiration = a.expiration
+from
+	option_expirations a,
+	exotic_contracts b
+where
+	a.option_expiration_id = b.option_expiration_id
+and
+	b.contract_id = @contract_id
+
+select
+	@expiration = convert(datetime, (convert(char(2), datepart(month, @expiration)) + 
+		"/" + convert(char(2), datepart(day, @expiration)) + 
+		"/" + convert(char(4), datepart(year, @expiration))))
+
+select
+	@expiration = dateadd(hour, 17, @expiration)
+
+if @end_date > dateadd(day, 1, @expiration)
+	select
+		@end_date = @expiration
+
+exec
+	r_contractevalmethod
+		@contract_id,
+		@eval_method output
+
+
+if @eval_method = "External Mark"
+begin
+	exec
+		r_priceasof
+			@contract_id,
+			@end_date,
+			@current_price output
+end
+
+if @eval_method = "Internal Theo"
+begin
+	exec
+		r_exotipostheoasof
+			@contract_id,
+			@end_date,
+			@current_price output,
+			@delta output,
+			@gamma output,
+			@theta output,
+			@tau output
+
+	/* exec
+		r_contracttheoasof
+			@contract_id,
+			@end_date,
+			@current_price output,
+			@delta output,
+			@gamma output,
+			@theta output,
+			@tau output  */
+end
+
+
+
+exec
+	x_contractmultiplier
+		@contract_id,
+		@multiplier output
+
+
+select
+	@p_l = (@current_price * @quantity * @multiplier) - (@trade_price * @quantity * @multiplier)
+
+
+return
+
+go

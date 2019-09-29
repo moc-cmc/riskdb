@@ -1,0 +1,32 @@
+
+if object_id("r_optionsforunderlying") != NULL
+    drop procedure
+        r_optionsforunderlying
+go
+
+create procedure
+	r_optionsforunderlying
+		@underlying_contract_id int,
+		@as_of_date datetime=NULL
+as
+
+if @as_of_date = NULL
+	select
+		@as_of_date = getdate()
+
+select
+	a.contract_id
+from
+	option_contracts a,
+	option_expirations b,
+	options c
+where
+	a.option_expiration_id = b.option_expiration_id
+and
+	b.option_id = c.option_id
+and
+	c.underlying_contract_id = @underlying_contract_id
+and
+	b.expiration >= @as_of_date
+
+go

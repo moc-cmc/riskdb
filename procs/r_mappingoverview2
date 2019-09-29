@@ -1,0 +1,722 @@
+drop procedure r_mappingoverview2
+go
+
+create procedure 
+	r_mappingoverview2
+		@login varchar(50),
+		@source varchar(50) = NULL
+
+as
+
+declare @source_id int
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @grey_style varchar(200)
+declare @selected_style varchar(200)
+declare @broker_id int
+declare @credit_profile_id int
+declare @tradetype_id int
+declare @contract_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+        "add_inbound_broker_symbol",
+	"Add Inbound Broker Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_outbound_broker_symbol",
+	"Add Outbound Broker Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_broker_mapping",
+	"Edit Broker Mapping Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"delete_broker_mapping",
+	"Delete Broker Mapping Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_inbound_credit_profile_symbol",
+	"Add Inbound Credit Profile Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_outbound_credit_profile_symbol",
+	"Add Outbound Credit Profile Symbol",
+	NULL
+)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"edit_credit_profile_mapping",
+	"Edit Credit Profile Mapping",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"delete_credit_profile_mapping",
+	"Delete Credit Profile Mapping",
+	NULL
+
+)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"add_inbound_tradetype_symbol",
+	"Add Inbound Tradetype Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_outbound_tradetype_symbol",
+	"Add Outbound Tradetype Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_tradetype_mapping",
+	"Edit Tradetype Mapping",
+	NULL
+)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"delete_tradetype_mapping",
+	"Delete Tradetype Mapping",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_inbound_contract_symbol",
+	"Add Inbound Contract Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_outbound_contract_symbol",
+	"Add Outbound Contract Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_contract_mapping",
+	"Edit Contract Mapping",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"delete_contract_mapping",
+	"Delete Contract Mapping",
+	NULL
+)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+        @grey_style = "color:#CCCCCC;background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+select
+	* 
+from 
+	#meta
+
+
+create table
+	#sources
+(
+	source_id int,
+	name varchar(50),
+	source_type_id int,
+	source_type varchar(50)
+)
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+
+if @source_id = NULL
+begin
+	insert into
+		#sources
+	select
+		a.source_id,
+		a.name,
+		a.source_type_id,
+		b.name
+	from
+		sources a,
+		source_types b
+	where
+		a.source_type_id = b.source_type_id
+end
+else
+begin
+	insert into
+		#sources
+	select
+		a.source_id,
+		a.name,
+		a.source_type_id,
+		b.name
+	from
+		sources a,
+		source_types b
+	where
+		a.source_type_id = b.source_type_id
+	and
+		a.source_id = @source_id
+end
+	
+
+create table
+	#brokers
+(
+	broker_id int,
+	name varchar(50) NULL, /* going to select symbol here. but using name since it makes later queries easier */
+ 	source_id int NULL,
+	source_name varchar(50) NULL,
+	source_type varchar(50) NULL,
+	mapping varchar(50) NULL,
+	edit_broker_mapping varchar(10) NULL,
+	delete_broker_mapping varchar(10) NULL,
+	add_inbound_broker_symbol varchar(10) NULL,
+	add_outbound_broker_symbol varchar(10) NULL,
+	style varchar(200) NULL
+)
+
+create table
+        #credit_profiles
+(
+        credit_profile_id int,
+        name varchar(50) NULL,
+        source_id int NULL,
+        source_name varchar(50) NULL,
+	source_type varchar(50) NULL,
+        mapping varchar(50) NULL,
+	edit_credit_profile_mapping varchar(10) NULL,
+	delete_credit_profile_mapping varchar(10) NULL,
+	add_inbound_credit_profile_symbol varchar(10) NULL,
+	add_outbound_credit_profile_symbol varchar(10) NULL,
+	style varchar(200) NULL
+)
+
+create table
+	#trade_types
+(
+	trade_type_id int NULL,
+	name varchar(50) NULL,
+        source_id int NULL,
+        source_name varchar(50) NULL,
+        source_type varchar(50) NULL,
+        mapping varchar(50) NULL,
+        edit_tradetype_mapping varchar(10) NULL,
+	delete_tradetype_mapping varchar(10) NULL,
+	add_inbound_tradetype_symbol varchar(10) NULL,
+	add_outbound_tradetype_symbol varchar(10) NULL,
+	style varchar(200) NULL
+)
+
+create table
+	#contracts
+(
+	contract_id int,
+        name varchar(50) NULL,
+        source_id int NULL,
+        source_name varchar(50) NULL,
+        source_type varchar(50) NULL,
+        mapping varchar(50) NULL,
+       	edit_contract_mapping varchar(10) NULL,
+	delete_contract_mapping varchar(10) NULL,
+	add_inbound_contract_symbol varchar(10) NULL,
+	add_outbound_contract_symbol varchar(10) NULL,
+	style varchar(200) NULL
+)
+
+declare broker_cursor cursor for
+	select
+		broker_id
+	from
+		brokers
+	order by
+		broker_id
+
+open broker_cursor
+fetch broker_cursor into @broker_id
+
+while @@sqlstatus = 0
+begin
+
+	insert
+		#brokers (
+			broker_id,
+			name,
+			source_name,
+			source_type,
+			mapping,
+			style )
+
+	select
+		a.broker_id,
+		a.symbol,
+		c.name,
+		c.source_type,
+		b.symbol,
+		@style
+	from
+		brokers a,
+		broker_symbols b,
+		#sources c
+	where
+		a.broker_id=@broker_id
+	and
+		a.broker_id=b.broker_id
+	and
+		b.source_id=c.source_id
+
+	if (@@rowcount = 0)
+	begin
+		insert into
+			#brokers (
+				broker_id,
+				name,
+				style )
+		select
+			broker_id,
+			symbol,
+			@grey_style
+		from
+			brokers
+		where
+			broker_id=@broker_id
+
+	end
+
+	fetch broker_cursor into @broker_id
+
+end
+
+close broker_cursor
+deallocate broker_cursor
+	
+declare credit_profile_cursor cursor for
+	select
+		credit_profile_id
+	from
+		credit_profiles
+	order by
+		credit_profile_id
+
+open credit_profile_cursor
+fetch credit_profile_cursor into @credit_profile_id
+
+while @@sqlstatus = 0
+begin
+	insert into
+		#credit_profiles (
+			credit_profile_id,
+			name,
+			source_name,
+			source_type,
+			mapping,
+			style)
+	select
+		a.credit_profile_id,
+		a.name,
+		c.name,
+		c.source_type,
+		b.symbol,
+		@style
+	from
+		credit_profiles a,
+		credit_profile_symbols b,
+		#sources c
+	where
+		a.credit_profile_id=@credit_profile_id
+	and
+		a.credit_profile_id=b.credit_profile_id
+	and
+		b.source_id=c.source_id
+
+	if (@@rowcount = 0)
+	begin
+		insert into
+			#credit_profiles (
+				credit_profile_id,
+				name,
+				style )
+		select
+			credit_profile_id,
+			name,
+			@grey_style
+		from
+			credit_profiles
+		where
+			credit_profile_id=@credit_profile_id
+	end
+
+	fetch credit_profile_cursor into @credit_profile_id
+end
+
+close credit_profile_cursor
+deallocate credit_profile_cursor
+
+
+declare tradetype_cursor cursor for
+	select
+		trade_type_id
+	from
+		trade_types
+	order by
+		trade_type_id
+
+open tradetype_cursor
+fetch tradetype_cursor into @tradetype_id
+
+while (@@sqlstatus = 0)
+begin
+	insert into
+		#trade_types (
+			trade_type_id,
+			name,
+			source_name,
+			source_type,
+			mapping,
+			style )
+	select
+		a.trade_type_id,
+		a.name,
+		c.name,
+		c.source_type,
+		b.symbol,
+		@style
+	from
+		trade_types a,
+		trade_type_symbols b,
+		#sources c
+	where
+		a.trade_type_id=@tradetype_id
+	and
+		a.trade_type_id=b.trade_type_id
+	and
+		b.source_id=c.source_id
+
+	if (@@rowcount = 0)
+	begin
+		insert into
+			#trade_types (
+				trade_type_id,
+				name,
+				style )
+		select
+			trade_type_id,
+			name,
+			@grey_style
+		from
+			trade_types
+		where
+			trade_type_id=@tradetype_id
+	end
+
+	fetch tradetype_cursor into @tradetype_id
+end
+
+close tradetype_cursor
+deallocate tradetype_cursor 
+
+declare contract_cursor cursor for
+	select
+		contract_id
+	from
+		contracts
+	order by 
+		contract_id
+
+open contract_cursor
+fetch contract_cursor into @contract_id
+
+while @@sqlstatus = 0
+begin
+	
+	insert into
+		#contracts (
+			contract_id,
+			name,
+			source_name,
+			source_type,
+			mapping,
+			style )
+	select
+		a.contract_id,
+		a.symbol,
+		c.name,
+		c.source_type,
+		b.symbol,
+		@style
+	from
+		contracts a,
+		contract_symbols b,
+		#sources c
+	where
+		a.contract_id=@contract_id
+	and
+		a.contract_id=b.contract_id
+	and
+		b.source_id=c.source_id
+
+	if (@@rowcount = 0)
+	begin
+		insert into
+			#contracts (
+				contract_id,
+				name,
+				style )
+		select
+			contract_id,
+			symbol,
+			@grey_style
+		from
+			contracts
+		where
+			contract_id=@contract_id
+	end
+
+	fetch contract_cursor into @contract_id
+end
+
+close contract_cursor
+deallocate contract_cursor
+
+declare @has_permission char(1)
+
+exec
+        r_checkaccessgrouppermission
+                @login,
+                "Static Data Admin",
+                @has_permission output,
+                @show_perm_denied = "N"
+
+if (@has_permission = "Y")
+begin
+
+	insert into
+		#brokers (
+			broker_id,
+			add_inbound_broker_symbol,
+			add_outbound_broker_symbol)
+		values(
+			0,
+			"Add",
+			"Add")
+
+	update
+		#brokers
+	set
+		edit_broker_mapping="Edit",
+		delete_broker_mapping="Delete"
+	where
+		mapping != NULL
+	
+	insert into
+		#credit_profiles (
+				credit_profile_id,
+				add_inbound_credit_profile_symbol,
+				add_outbound_credit_profile_symbol)
+		values(
+			0,
+			"Add",
+			"Add")
+
+	update
+		#credit_profiles
+	set
+		edit_credit_profile_mapping="Edit",
+		delete_credit_profile_mapping="Delete"
+	where
+		mapping != NULL
+
+	insert into
+		#trade_types (
+			trade_type_id,
+			add_inbound_tradetype_symbol,
+			add_outbound_tradetype_symbol)
+		values(
+			0,
+			"Add",
+			"Add")
+
+	update
+		#trade_types
+	set
+		edit_tradetype_mapping="Edit",
+		delete_tradetype_mapping="Delete"
+	where
+		mapping != NULL
+
+
+	insert into
+		#contracts (
+			contract_id,
+			add_inbound_contract_symbol,
+			add_outbound_contract_symbol)
+		values(
+			0,
+			"Add",
+			"Add")
+
+	update
+		#contracts
+	set
+		edit_contract_mapping="Edit",
+		delete_contract_mapping="Delete"
+	where
+		mapping != NULL
+
+end
+
+select
+	section = "Broker Mappings",
+	style,
+	name,
+	source_name,
+	source_type,
+	mapping,
+	edit_broker_mapping,
+	delete_broker_mapping,
+	add_inbound_broker_symbol,
+	add_outbound_broker_symbol
+from 
+	#brokers
+order by 
+	name
+
+select
+	section = "Credit Profile Mappings",
+	style,
+	name,
+	source_name,
+	source_type,
+	mapping,
+	edit_credit_profile_mapping,
+	delete_credit_profile_mapping,
+	add_inbound_credit_profile_symbol,
+	add_outbound_credit_profile_symbol
+from 
+	#credit_profiles
+order by
+	name
+
+select
+	section = "Trade Type Mappings",
+	style,
+	name,
+	source_name,
+	source_type,
+	mapping,
+	edit_tradetype_mapping,
+	delete_tradetype_mapping,
+	add_inbound_tradetype_symbol,
+	add_outbound_tradetype_symbol
+from 
+	#trade_types
+order by
+	name
+	
+select
+	section = "Contract Mappings",
+	style,
+	name,
+	source_name,
+	source_type,
+	mapping,
+	edit_contract_mapping,
+	delete_contract_mapping,
+	add_inbound_contract_symbol,
+	add_outbound_contract_symbol	
+from 
+	#contracts
+order by
+	name
+
+go

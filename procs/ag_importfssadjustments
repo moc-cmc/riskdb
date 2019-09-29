@@ -1,0 +1,127 @@
+drop procedure
+	ag_importfssadjustments
+go
+
+create procedure
+	ag_importfssadjustments
+		@login varchar(50),
+		@trade_date varchar(50)=NULL,
+		@account_no varchar(50)=NULL,
+		@currency varchar(50)=NULL,
+		@opening_balance varchar(50)=NULL,
+		@posting varchar(50)=NULL,
+		@closing_balance varchar(50)=NULL,
+		@rate varchar(50)=NULL,
+		@usd_balance varchar(50)=NULL
+as
+
+declare @source_id int
+declare @date datetime
+declare @external_account_id int
+declare @product_id int
+declare @opening_amount numeric(30,4)
+declare @posting_amount numeric(30,4)
+declare @closing_amount numeric(30,4)
+declare @rate_value numeric(30,10)
+declare @usd_amount numeric(30,4)
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "Spectrum In"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Spectrum In source not found"
+	return
+end
+
+select
+	@date = convert(datetime, convert(date, @trade_date)),
+	@opening_amount = convert(numeric(30,4), @opening_balance),
+	@posting_amount = convert(numeric(30,4), @posting),
+	@closing_amount = convert(numeric(30,4), @closing_balance),
+	@usd_amount = convert(numeric(30,4), @usd_balance),
+	@rate_value = convert(numeric(30,10), @rate)
+
+select
+	@external_account_id = external_account_id
+from
+	external_account_symbols
+where
+	source_id = @source_id
+and
+	symbol = @account_no
+if @external_account_id = NULL
+begin
+	select
+		@external_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = @account_no
+	if @external_account_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Account not found",
+			account = @account_no
+		return
+	end
+end
+
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+
+delete
+
+from
+	fss_cash_balances
+where
+	trade_date <= @date
+and
+	external_account_id = @external_account_id
+and
+	product_id = @product_id
+
+
+insert into
+	fss_cash_balances(
+		trade_date,
+		external_account_id,
+		product_id,
+		opening_balance,
+		posting,
+		closing_balance,
+		rate,
+		usd_balance)
+values(
+	@date,
+	@external_account_id,
+	@product_id,
+	@opening_amount,
+	@posting_amount,
+	@closing_amount,
+	@rate_value,
+	@usd_amount)
+
+go
+
+
+		

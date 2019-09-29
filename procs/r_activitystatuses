@@ -1,0 +1,18 @@
+drop procedure
+	r_activitystatuses
+go
+
+create procedure
+	r_activitystatuses
+		@login varchar(50)
+
+as
+
+select
+	name
+from
+	activity_statuses
+order by
+	name
+
+go

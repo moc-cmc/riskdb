@@ -1,0 +1,232 @@
+
+drop procedure
+	r_editcommitstatus
+go
+
+create procedure
+	r_editcommitstatus
+		@login varchar(50),
+		@commit_date datetime,
+		@commit_status varchar(50),
+		@show_output char(1)=NULL
+as
+
+declare @commit_status_id int
+declare @max_commit_date datetime
+declare @is_biz_day char(1)
+
+select
+	@commit_status_id=commit_status_id
+from
+	commit_statuses
+where
+	name=@commit_status
+
+if @commit_status_id = NULL
+begin
+       select
+               status="Error",
+               msg="Could not find commit status",     
+               commit_status=@commit_status
+       return
+end
+
+declare @dayofweek int
+
+select
+	@dayofweek = datepart(weekday, @commit_date)
+
+
+select
+	@is_biz_day = is_business_day
+from
+	business_days
+where
+	day_id = @dayofweek
+
+if @is_biz_day != "Y"
+begin
+	select
+		status="Error",
+		msg="Cannot request action on non-business day",
+		commit_status=@commit_status
+	return
+end
+
+if(@commit_status = "Commit Requested")
+begin
+
+	declare @commit_date_status varchar(50) 
+
+	select
+		@commit_date_status = b.name
+	from
+		daily_commits a,
+		commit_statuses b
+	where
+		a.commit_status_id=b.commit_status_id and
+		convert(date,a.commit_date)=convert(date,@commit_date)
+
+	if(@@rowcount = 1)
+	begin
+		
+		if(@commit_date_status != "Uncommit Complete" and @commit_date_status != "Commit Failed")
+		begin
+			select
+				status="Error",
+				msg="Can only do Commit Request when status for requested date Uncommit Complete or Commit Failed",
+				commit_status=@commit_status
+			return
+		end
+	end
+
+	select
+		@max_commit_date = max(commit_date)
+	from
+		daily_commits a,
+		commit_statuses b
+	where
+		a.commit_status_id=b.commit_status_id and
+		b.name in ("Commit Requested", "Commit Pending", "Commit Complete")
+
+	if(@@rowcount = 1)
+	begin
+		if(convert(date, @commit_date) <= convert(date, @max_commit_date))
+		begin
+			/* can only edit the next business day after max date record in daily_commits for Commit Requested Status */	
+			select
+				status="Error",
+				msg="Commit date is less than  max commit date",
+				commit_status=@commit_status
+	
+			return
+		end
+
+
+		declare @nextbusday datetime
+
+		exec r_nextbusinessday @max_commit_date, @nextbusday output
+
+		if(convert(date, @commit_date) != convert(date, @nextbusday)) and @max_commit_date != NULL 
+		begin
+			select
+				status="Error",
+				msg="Commit date is not next business from last commit",
+				commit_date=@commit_date			
+			return
+		end
+	
+	end
+end
+
+if(@commit_status = "Uncommit Requested")
+begin
+
+        select
+		@commit_date_status = b.name
+	from
+		daily_commits a,
+		commit_statuses b
+	where
+		a.commit_status_id=b.commit_status_id and
+		convert(date,a.commit_date)=convert(date,@commit_date)
+
+	if(@@rowcount = 1)
+	begin
+
+		if(@commit_date_status != "Commit Complete" and @commit_date_status != "Uncommit Failed")
+		begin
+			select
+				status="Error",
+				msg="Can only do Uncommit Request when status for requested date Commit Complete or Uncommit Failed",
+				commit_status=@commit_status
+			return
+		end
+	end
+
+        select
+                @max_commit_date = max(commit_date)
+        from
+                daily_commits a,
+                commit_statuses b
+        where
+                a.commit_status_id=b.commit_status_id and
+                b.name in ("Commit Complete", "Uncommit Failed")
+
+        if(@@rowcount = 1)
+        begin
+                if(convert(date, @commit_date) > convert(date, @max_commit_date))
+                begin
+                        /* can only edit the business day in daily_commits for most recent Commit Complete Status */
+
+                        select
+                                status="Error",
+                                msg="Uncommit date is greater than  max commit date",
+                                commit_status=@commit_status
+
+                        return
+                end
+
+                if(convert(date, @commit_date) != convert(date, @max_commit_date))
+                begin
+                        select
+                                status="Error",
+                                msg="Uncommit date is not same as  last commit",
+                                commit_date=@commit_date
+                        return
+                end
+
+        end
+
+end
+		
+update
+	daily_commits
+set
+	commit_status_id=@commit_status_id
+where
+	convert(date, commit_date) = convert(date, @commit_date)
+if (@@rowcount = 1)
+begin
+        if @show_output != "N"
+	begin
+		select
+			status="Success",
+			msg="daily_commits updated with status",
+			commit_status=@commit_status
+	end
+
+	return
+end
+
+if (@@rowcount < 1)
+begin
+
+	declare @daily_commit_id int
+
+	exec j_nextkey "daily_commits", @daily_commit_id output
+
+	insert into 
+		daily_commits 
+			(daily_commit_id, 
+	 		commit_date, 
+	 		commit_status_id)
+		values
+			(@daily_commit_id, 
+	 	 	convert(date,@commit_date), 
+	 	 	@commit_status_id)
+
+        if @show_output != "N"
+	begin
+		select
+			status="Success",
+			msg="daily_commits record inserted for date and status",
+			commit_date=@commit_date,
+			commit_status=@commit_status
+	end
+
+	return
+end
+
+go
+		

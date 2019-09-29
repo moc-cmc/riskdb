@@ -1,0 +1,345 @@
+drop procedure r_manageopstasks
+go
+
+create procedure
+	r_manageopstasks
+		@login varchar(50),
+		@as_of_date datetime=NULL
+
+as
+
+declare @tico_account_id int
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Link",
+	"add_new_task",
+	"Add New Ops Task",
+	NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "add_new_task_group",
+        "Add New Ops Task Group",
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "move_down",
+        "Move Ops Task Down",
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "move_up",
+        "Move Ops Task Up",
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "set_status",
+        "Set Ops Task Status",
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "edit_task",
+        "Edit Ops Task",
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "copy_task",
+        "Add New Ops Task",
+        NULL)
+/*
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"ordering",
+	NULL,
+	NULL
+)*/
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "taskID",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "status",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "as_of_date",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "create_date",
+        NULL,
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "task_name",
+        NULL,
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "task_group",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "ops_task_type",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "assigned_to_login",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "assigned_to",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "task_date",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "name",
+        NULL,
+        NULL
+)
+
+select * from #meta 
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+if @as_of_date = NULL
+begin
+	select
+		@as_of_date = convert(date, getdate())
+end
+
+
+select 
+	section = "Operations",
+	add_new_task = "Add New Task",
+	add_new_task_group = "Add New Task Group",
+	as_of_date = @as_of_date	
+
+create table
+        #task_output
+(
+        id int identity,
+        section varchar(100) NULL,
+        style varchar(100) NULL,
+        task_id int NULL,
+        task varchar(150) NULL,
+        task_group varchar(50) NULL,
+        assigned_to_id int NULL,
+        assigned_to varchar(50) NULL,
+        assigned_to_login varchar(50) NULL,
+	create_date datetime NULL,
+        task_status_id int,
+        task_status varchar(25) NULL,
+        ordering int NULL,
+	move_up varchar(10) NULL,
+	move_down varchar(10) NULL,
+	set_status varchar(10) NULL,
+	edit_task varchar(10) NULL
+)
+
+
+insert into
+        #task_output(
+                section,
+                style,
+                task_id,
+                task,
+                task_group,
+                assigned_to_id,
+		create_date,
+                task_status_id,
+                task_status,
+                ordering,
+		move_up,
+		move_down,
+		set_status,
+		edit_task)
+select
+        section = rtrim(c.name)+" Tasks",
+        style = @style,
+        task_id = b.ops_task_id,
+        task = b.name,
+        task_group = c.name,
+        assigned_to_id = b.assigned_to,
+	create_date = b.create_date,
+        task_status_id = d.status_id,
+        task_status = d.name,
+	ordering = b.ordering,
+	move_up = "UP",
+	move_down = "DOWN",
+	set_status = "SET STATUS",
+	edit_task = "EDIT"
+from
+        ops_tasks b,
+        ops_task_types c,
+        statuses d
+where
+        b.ops_task_type_id = c.ops_task_type_id
+and
+        b.status_id = d.status_id
+and
+        b.create_date <= convert(date, @as_of_date)
+order by
+	c.name DESC,
+	b.ordering
+	
+update
+        #task_output
+set
+        assigned_to = rtrim(given_names)+' '+rtrim(surname),
+	assigned_to_login = a.login
+from
+        tico_accounts a,
+        #task_output b
+where
+        a.account_id = b.assigned_to_id
+
+select
+	section,
+	task_id=task_id,
+	task,
+	task_name=task,
+	name=task,
+	assigned = assigned_to,
+	move_up,
+	move_down,
+	assigned_to=assigned_to_login,
+	assigned_to_login,
+	task_group,
+	ops_task_type=task_group,
+	task_status,
+	status=task_status,
+        /* Added support to set the status under edit task */
+	/*set_status,*/
+	edit_task,
+	copy_task="COPY",
+	as_of_date = @as_of_date,
+	task_date = create_date,
+	task_since = create_date,
+	ordering,
+	style
+from
+	#task_output
+order by
+	section,
+	task_group,
+	ordering
+
+
+
+go
+

@@ -1,0 +1,22 @@
+drop procedure r_addnewopstaskgroup
+go
+
+create procedure
+	r_addnewopstaskgroup
+		@login varchar(50),
+		@name varchar(50),
+		@as_of_date datetime = NULL
+
+as
+
+exec
+	api_addnewopstasktype
+		@login=@login,
+		@name=@name
+
+exec
+	r_manageopstasks
+		@login=@login,
+		@as_of_date=@as_of_date
+
+go

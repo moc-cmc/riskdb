@@ -1,0 +1,19 @@
+
+if object_id("mc_putcall") != NULL
+    drop procedure
+        mc_putcall
+go
+
+create procedure mc_putcall as
+
+create table #putcall(
+	symbol	char(1))
+
+insert into #putcall values("P")
+
+
+insert into #putcall values("C")
+
+select symbol=symbol from #putcall
+
+go

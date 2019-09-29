@@ -1,0 +1,89 @@
+
+drop procedure
+	api_delextacctsymbol
+go
+
+create procedure
+	api_delextacctsymbol
+			@login varchar(25),
+			@name varchar(150),
+			@source_name varchar(100),
+			@mapping varchar(100)
+as
+
+declare @external_account_id int
+declare @source_id int
+
+select
+	@external_account_id=external_account_id
+from
+	external_accounts
+where
+	name=@name
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Could not find external account",
+		external_account_symbol=@name
+
+	return
+end
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name=@source_name
+
+if (@@rowcount !=1)
+begin
+	select
+		status="Error",
+		msg="Could not find source",
+		source=@source_name
+
+	return
+end
+
+begin tran
+	delete from
+		external_account_symbols
+	where
+		external_account_id=@external_account_id
+	and
+		source_id=@source_id
+	and
+		symbol=@mapping
+
+	if (@@rowcount != 1)
+	begin
+		rollback tran
+		
+		select
+			status="Error",
+			msg="Could not delete account mapping",
+			name=@name
+
+		return
+
+	end
+commit tran
+
+select
+	status="Success",
+	msg="Account Mapping Deleted",
+	name=@name
+
+exec
+        r_mappingoverview
+                @login=@login
+
+return
+
+go
+
+
+

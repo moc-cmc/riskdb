@@ -1,0 +1,94 @@
+create or replace procedure
+	api_addlegalentityuser
+		@login varchar(50),
+		@legal_entity varchar(100),
+		@user_name varchar(50)
+as
+
+
+declare @login_id int
+declare @legal_entity_id int
+declare @tico_account_id int
+declare @total int
+
+
+select
+	@login_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @login_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+
+select
+	@legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @legal_entity
+if @legal_entity_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Legal entity not found",
+		legal_entity = @legal_entity
+	return
+end
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @user_name
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "User name not found",
+		user_name = @user_name
+	return
+end
+
+select
+	@total = count(*)
+from
+	legal_entity_tico_accounts
+where
+	legal_entity_id = @legal_entity_id
+and
+	tico_account_id = @tico_account_id
+if @total > 0
+begin
+	select
+		status = "Error",
+		message = "User name is already added to legal entity",
+		legal_entity = @legal_entity,
+		user_name = @user_name
+	return
+end
+
+insert into
+	legal_entity_tico_accounts(
+		legal_entity_id,
+		tico_account_id)
+values(
+	@legal_entity_id,
+	@tico_account_id)
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Problem associating legal entity with tico_account"
+	return
+end
+
+
+go

@@ -1,0 +1,60 @@
+drop procedure 
+	tt_canceltrade
+go
+
+create procedure
+	tt_canceltrade
+		@trade_id int
+
+as
+
+declare @revals int
+declare @status_id int
+
+select
+	@revals = count(trade_id)
+from
+	committed_daily_revals 
+where
+	trade_id = @trade_id
+
+if @revals > 0
+begin
+	select
+		status = "Error",
+		message = "This trade has been committed to the back office already. It cannot be canceled"
+	return
+end
+
+exec
+ 	r_inserttradeedit @trade_id
+
+begin tran
+
+	update
+		trades
+	set
+		quantity = 0
+	where
+		trade_id = @trade_id
+
+	update
+		account_transactions
+	set
+		a.amount = 0
+	from
+		account_transactions a,
+		account_transaction_trades b
+	where
+		a.account_transaction_id = b.account_transaction_id
+	and
+		b.trade_id = @trade_id
+commit tran
+
+exec
+	r_updatetradenotification @trade_id, "Cancelled" 
+
+select
+	"Trade ID " + convert(varchar(50), @trade_id) + " has been canceled."
+
+go

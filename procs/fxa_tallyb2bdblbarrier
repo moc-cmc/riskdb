@@ -1,0 +1,74 @@
+
+drop procedure
+	fxa_tallyb2bdblbarrier	
+go
+
+create procedure
+	fxa_tallyb2bdblbarrier	
+		@login varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells varchar(25),
+		@counterparty varchar(50),
+		@quantity numeric(30,2),
+		@biproduct varchar(50),
+		@timezone varchar(25),
+		@expiration datetime,
+		@option_settlement datetime,
+		@strike numeric(30,6),
+		@call_put varchar(10),
+		@implied_volatility float,
+		@spot_reference float,
+		@client_price float,
+		@client_price_format varchar(10),
+		@client_total_premium float,
+		@client_premium_currency varchar(25),
+		@client_premium_settle datetime,
+		@market_price float,
+		@market_price_format varchar(10),
+		@market_total_premium float,
+		@market_premium_currency varchar(25),
+		@market_premium_settle datetime,
+		@barrier_type varchar(12),
+		@lower_barrier float,
+		@upper_barrier float
+
+as
+
+declare @deal_id int
+
+exec 
+	api_tallyb2bdblbarrier	
+		@login,
+		@client_user,
+		@client_buys_sells,
+		@counterparty,
+		@quantity,
+		@biproduct,
+		@timezone,
+		@expiration,
+		@option_settlement,
+		@strike,
+		@call_put,
+		@implied_volatility,
+		@spot_reference,
+		@client_price,
+		@client_price_format,
+		@client_total_premium,
+		@client_premium_currency,
+		@client_premium_settle,
+		@market_price,
+		@market_price_format,
+		@market_total_premium,
+		@market_premium_currency,
+		@market_premium_settle,
+		@barrier_type,
+		@lower_barrier,
+		@upper_barrier,
+		@deal_id output
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+go

@@ -1,0 +1,218 @@
+
+if object_id("mc_tallyfutwrapper") != NULL
+    drop procedure
+        mc_tallyfutwrapper
+go
+
+create procedure
+	mc_tallyfutwrapper
+		@login varchar(25),
+		@buy_sell varchar(5),
+		@symbol varchar(50),
+		@counterparty varchar(25),
+		@quantity numeric(30,2),
+		@price float
+as
+
+declare @fund_id int
+declare @trade_id int
+declare @trade_date datetime
+declare @deal_id int
+declare @external_account varchar(50)
+declare @sales_code varchar(50)
+declare @trade_type varchar(25)
+declare @external_account_id int
+declare @percentage float
+declare @trade_quantity numeric(30,4)
+declare @id int
+declare @ids int
+declare @tally_type varchar(50)
+declare @value_date datetime
+
+select
+	@tally_type = "Future"
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+if @buy_sell = "Sell"
+begin
+	select
+		@quantity = abs(@quantity) * -1.0
+end
+if @buy_sell = "Buy"
+begin
+	select
+		@quantity = abs(@quantity)
+end
+
+select
+	@value_date = a.expiration
+from
+	future_contracts a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	b.symbol = @symbol
+
+create table
+	#allocs(
+		id int identity,
+		external_account_id int,
+		percentage float,
+		quantity int NULL)
+
+insert into
+	#allocs(
+		external_account_id,
+		percentage,
+		quantity)
+select
+	external_account_id,
+	percentage,
+	convert(int, @quantity * percentage)
+from
+	external_spot_allocations
+where	
+	fund_id = @fund_id
+
+
+select
+	@trade_quantity = sum(quantity)
+from
+	#allocs
+
+select
+	@trade_quantity = @quantity - @trade_quantity
+
+select
+	@external_account_id = remainder_ext_account_id
+from
+	external_spot_allocations
+where
+	fund_id = @fund_id
+
+
+select
+	@percentage = sum(percentage)
+from
+	#allocs
+
+select
+	@percentage = 1.0 - @percentage
+
+insert into
+	#allocs(
+		external_account_id,
+		percentage,
+		quantity)
+values(
+	@external_account_id,
+	@percentage,
+	@trade_quantity)
+
+
+
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @counterparty
+	return
+end
+
+
+select
+	@sales_code = "None"
+
+select
+	@trade_date = getdate()
+
+select
+	@trade_type = @tally_type
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#allocs
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#allocs
+	where
+		id > @id
+
+	select
+		@external_account_id = external_account_id,
+		@percentage = percentage,
+		@trade_quantity = quantity
+	from
+		#allocs
+	where
+		id = @id
+
+
+	select
+		@external_account = symbol
+	from
+		external_accounts
+	where
+		external_account_id = @external_account_id
+
+	select
+		@trade_id = NULL
+
+	exec
+		fxa_tallytrade
+			@login = @login,
+			@source = "MPT Manual Tally",
+			@trade_id = @trade_id output,
+			@deal_id = @deal_id output,
+			@tally_type = @tally_type,
+			@deal_type = "Market Future",
+			@trade_type = @trade_type,	
+			@external_account = @external_account,
+			@counterparty = @counterparty,
+			@quantity = @trade_quantity,
+			@symbol = @symbol,
+			@value_date = @value_date,
+			@price = @price,
+			@trade_dte = @trade_date,
+			@sales_code = @sales_code
+	
+	select
+		@ids = count(*)
+	from
+		#allocs
+	where
+		id > @id
+end
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+
+go

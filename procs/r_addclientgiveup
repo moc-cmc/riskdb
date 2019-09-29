@@ -1,0 +1,49 @@
+drop procedure
+	r_addclientgiveup
+go
+
+create procedure
+	r_addclientgiveup
+		@login varchar(50),
+		@external_account varchar(50),
+		@source varchar(50),
+		@symbol varchar(50)
+
+as
+
+
+declare @source_id int
+declare @external_account_id int
+
+
+select
+	@source_id = source_id
+from	
+	sources
+where
+	name = @source
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @external_account
+
+
+insert into 
+	client_give_ups
+values(
+	@external_account_id,
+	@source_id,
+	@symbol
+)
+
+
+exec 
+	r_accountoverview
+		@login,
+		@external_account
+
+go
+

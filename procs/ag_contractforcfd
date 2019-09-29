@@ -1,0 +1,473 @@
+drop procedure
+	ag_contractforcfd
+go
+
+create procedure
+	ag_contractforcfd
+		@login varchar(50),
+		@symbol varchar(50),
+		@currency varchar(50),
+		@risk_symbol varchar(50)=NULL output
+as
+
+declare @tico_account_id int
+declare @contract_id int
+declare @product_id int
+declare @currency_id int
+declare @product_type_id int
+declare @currency_rate_id int
+declare @product_rate_id int
+declare @rate_date datetime
+declare @instrument_id int
+declare @quantity numeric(30,4)
+declare @exchange_id int
+declare @status_id int
+declare @cfd_status_id int
+
+
+declare @id int
+declare @ids int
+declare @conversion_ccy_id int
+declare @conversion_contract_id int
+declare @conversion_contract_symbol varchar(25)
+declare @conversion_ccy_symbol varchar(25)
+declare @conversion_cfd_exists char(1)
+
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+select
+	@quantity = 1.0
+
+select
+	@exchange_id = exchange_id
+from
+	exchanges
+where
+	name = "OTC"
+if @exchange_id = NULL
+begin
+	exec
+		j_nextkey
+			"exchanges",
+			@exchange_id output
+	insert into
+		exchanges
+	values(
+		@exchange_id,
+		"OTC")
+end
+
+select
+	@instrument_id = instrument_id
+from
+	instruments
+where
+	name = "Forward"
+if @instrument_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Forward instrument not found"
+	return
+end
+
+
+
+select
+	@symbol = "." + rtrim(@symbol)
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @symbol
+if @product_id = NULL
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = "Unassigned CFD Contract Size"
+	if @status_id = NULL
+	begin
+		exec
+			j_nextkey
+				"statuses",
+				@status_id output
+
+		insert into
+			statuses
+		values(
+			@status_id,
+			"Unassigned CFD Contract Size")
+	end
+			
+	select
+		@tico_account_id = account_id
+	from
+		tico_accounts
+	where
+		login = @login
+	if @tico_account_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Login not found"
+		return
+	end
+
+
+	select
+		@currency_rate_id = product_rate_id,
+		@rate_date = rate_date
+	from
+		product_rates
+	where
+		product_id = @currency_id
+	and
+		rate_date = (select
+					max(rate_date)
+				from
+					product_rates
+				where
+					product_id = @currency_id)
+	
+	exec
+		j_nextkey
+			"products",
+			@product_id output
+	exec
+		j_nextkey
+			"product_rates",
+			@product_rate_id output
+
+	exec
+		j_nextkey
+			"cfd_statuses",
+			@cfd_status_id output
+
+	select
+		@product_type_id = product_type_id
+	from
+		product_types
+	where
+		name = "Unassigned CFD"
+	if @product_type_id = NULL
+	begin
+		exec
+			j_nextkey
+				"product_types",
+				@product_type_id output
+		insert into
+			product_types
+		values(
+			@product_type_id,
+			"Unassigned CFD")
+	end
+
+	exec
+		j_nextkey
+			"contracts",
+			@contract_id output
+
+	select
+		@risk_symbol = rtrim(@symbol) + rtrim(@currency)
+
+	begin tran
+		insert into
+			products
+		values(
+			@product_id,
+			@product_type_id,
+			@symbol,
+			@symbol + " CFD",
+			2)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to add product",
+				product = @symbol
+			rollback tran
+			return
+		end
+
+		insert into
+			contracts
+		values(
+			@contract_id,
+			@risk_symbol,
+			@instrument_id)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to add contract",
+				contract = @risk_symbol
+			rollback tran
+			return
+		end
+
+		insert into
+			forwards
+		values(
+			@contract_id,
+			@currency_id,
+			@product_id,
+			@quantity,
+			@exchange_id)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to add forward",
+				contract = @risk_symbol
+			rollback tran
+			return
+		end
+
+		insert into
+			product_rates
+		values(
+			@product_rate_id,
+			@product_id,
+			@rate_date)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to add new rate curve",
+				product = @symbol
+			rollback tran
+			return
+		end
+
+		insert into
+			product_rate_points
+		select
+			product_rate_id = @product_rate_id,
+			days,
+			rate
+		from
+			product_rate_points
+		where
+			product_rate_id = @currency_rate_id
+		if @@rowcount = 0
+		begin
+			insert into
+				product_rate_points
+			values(
+				@product_rate_id,
+				1.0,
+				0.0)
+		end
+
+		insert into
+			cfd_statuses
+		values(
+			@cfd_status_id,
+			@contract_id,
+			@tico_account_id,
+			@status_id,
+			getdate())
+			
+	commit tran
+end
+
+/* With CFDs, we need to create the other contracts needed for pricing */
+create table
+	#eval_ccys(
+		id int identity,
+		product_id int,
+		symbol varchar(10) NULL
+)
+insert into
+	#eval_ccys(
+		product_id)
+select
+	distinct(evaluation_currency_id)
+from
+	funds
+
+insert into 
+	#eval_ccys(
+		product_id)
+select
+	distinct(evaluation_currency_id)
+from
+	external_accounts
+where
+	evaluation_currency_id not in(select product_id from #eval_ccys)
+
+update
+	#eval_ccys
+set
+	symbol = a.symbol
+from
+	products a,
+	#eval_ccys b
+where
+	a.product_id = b.product_id
+
+delete from
+	#eval_ccys
+where
+	product_id = @currency_id
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#eval_ccys
+where
+	id > @id
+
+while @ids > 0
+begin
+	select  
+		@id = min(id)
+	from
+		#eval_ccys
+	where
+		id > @id
+
+	select
+		@conversion_ccy_id = NULL,
+		@conversion_ccy_symbol = NULL,
+		@conversion_contract_id = NULL,
+		@conversion_contract_symbol = NULL
+
+	select
+		@conversion_ccy_id = product_id,
+		@conversion_ccy_symbol = symbol
+	from
+		#eval_ccys
+	where
+		id = @id
+
+	select
+		@conversion_contract_id = contract_id
+	from
+		forwards 
+	where
+		product_id = @product_id
+	and
+		currency_id = @conversion_ccy_id
+	if @conversion_contract_id = NULL
+	begin
+		select
+			@conversion_contract_symbol =  rtrim(@symbol) + rtrim(@conversion_ccy_symbol)
+		exec 
+			j_nextkey
+				"contracts",
+				@conversion_contract_id output
+
+		insert into
+			forwards(
+				contract_id,
+				currency_id,
+				product_id,
+				quantity,
+				exchange_id)
+		values(
+			@conversion_contract_id,
+			@conversion_ccy_id,
+			@product_id,
+			@quantity,
+			@exchange_id)
+		if @@rowcount != 1
+		begin
+			select
+				error="Error",
+				msg="Problem inserting forward for new pricing cfd contract",
+				symbol=@conversion_contract_symbol
+		end
+		insert into
+			contracts(
+				contract_id,
+				symbol,
+				instrument_id)
+		values(
+			@conversion_contract_id,
+			@conversion_contract_symbol,
+			@instrument_id)
+		if @@rowcount != 1
+		begin
+			select
+				error="Error",
+				msg="Problem inserting contract for new pricing cfd contract",
+				symbol = @conversion_contract_symbol
+		end
+
+		/* We are not inserting these contracts into cfd_statuses since they arent real cfd contracts. only for pricing */
+		
+	end				
+
+	select
+		@conversion_cfd_exists = "Y"
+	from
+		conversion_cfds
+	where
+		contract_id = @conversion_contract_id
+	if @conversion_cfd_exists != "Y"
+	begin
+		insert into
+			conversion_cfds(
+				contract_id)
+		values(
+			@conversion_contract_id
+		)
+	end
+				
+
+	select
+		@ids = count(*)
+	from
+		#eval_ccys
+	where
+		id > @id
+end
+
+
+		
+
+select
+	@contract_id = contract_id
+from
+	forwards
+where
+	product_id = @product_id
+and
+	currency_id = @currency_id
+
+select
+	@risk_symbol = symbol
+from
+	contracts
+where
+	contract_id = @contract_id
+
+
+
+
+
+	
+		
+go

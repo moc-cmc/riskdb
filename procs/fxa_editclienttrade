@@ -1,0 +1,125 @@
+drop procedure
+	fxa_editclienttrade
+go
+
+create procedure
+	fxa_editclienttrade
+		@login varchar(50),
+		@deal_id int,
+		@tally_type varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@quantity numeric(30,4),
+		@price float,
+		@value_date datetime,
+		@fixing_date datetime = NULL
+
+as
+
+
+declare @external_account varchar(50)
+declare @symbol varchar(50)
+declare @trade_id int
+declare @trade_date datetime
+declare @trade_type varchar(25)
+
+if @client_buys_sells = "Client Buys"
+begin
+	select
+		@quantity = abs(@quantity) * -1.0
+end
+if @client_buys_sells = "Client Sells"
+begin
+	select
+		@quantity = abs(@quantity)
+end
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
+
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	traders b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @client_user
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Could not found account for client user",
+		client_user = @client_user
+	return
+end
+
+select
+	@trade_type = @tally_type
+
+select
+	@trade_date = getdate()
+
+select
+	@trade_id = trade_id
+from
+	trades
+where
+	deal_id = @deal_id
+
+exec
+	r_inserttradeedit @trade_id
+
+exec
+	fxa_edittrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id= @trade_id,
+		@deal_id = @deal_id,
+		@tally_type = @tally_type,
+		@deal_type = "Client Forward",
+		@trade_type = @trade_type,	
+		@internal_account = NULL,
+		@external_account = @external_account,
+		@counterparty = NULL,
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@fixing_date = @fixing_date,
+		@price = @price,
+		@trade_date = @trade_date,
+		@trader = @client_user,
+		@strategy = NULL,
+		@status = NULL,
+		@broker = NULL,
+		@identifer = NULL,
+		@sales_code = NULL,
+		@premium = NULL,
+		@premium_currency = NULL,
+		@prem_settle_date = NULL,
+		@pct_price = NULL,
+		@spot_reference = NULL
+
+if (@quantity = 0)
+begin
+	exec
+		r_updatetradenotification @trade_id, "Cancelled"
+end
+else
+begin
+	exec
+		r_updatetradenotification @trade_id, "Edit"
+end
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+go
+

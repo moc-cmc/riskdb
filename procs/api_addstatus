@@ -1,0 +1,44 @@
+create or replace procedure	
+	api_addstatus
+		@name varchar(50),
+		@status_id int=NULL output
+
+as
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = @name
+if @status_id != NULL
+begin
+	return
+end
+
+
+if @status_id = NULL
+begin
+exec
+	j_nextkey
+		"statuses",
+		@status_id output
+end
+else
+begin
+	select
+		status = "Error",
+		message = "Can not provide status_id to be added"
+	return
+end
+
+insert into
+	statuses(
+		status_id,
+		name)
+values(
+	@status_id,
+	@name
+)
+
+go

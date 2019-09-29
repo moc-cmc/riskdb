@@ -1,0 +1,29 @@
+
+drop procedure
+	wrap_addbrokersymbol
+go
+
+create procedure
+	wrap_addbrokersymbol 
+			@login varchar(25),
+			@name varchar(25),
+			@symbol varchar(100),
+			@source varchar(100)
+as
+
+exec 
+	api_addbrokersymbol
+			@login=@login,
+			@name=@name,
+			@symbol=@symbol,
+			@source=@source
+
+exec
+	r_mappingoverview2
+		@login=@login
+
+return
+
+go
+
+

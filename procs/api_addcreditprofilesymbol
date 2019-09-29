@@ -1,0 +1,110 @@
+
+drop procedure
+	api_addcreditprofilesymbol
+go
+
+create procedure
+	api_addcreditprofilesymbol
+				@login varchar(25),
+				@name varchar(50),
+				@symbol varchar(50),
+				@source varchar(100)
+as
+
+declare @credit_profile_id int
+declare @source_id int
+declare @source_type_id int
+declare @source_type varchar(50)
+
+select
+	@credit_profile_id = credit_profile_id
+from
+	credit_profiles
+where
+	name=@name
+
+if(@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Credit Profile Name does not exist",
+		credit_profile_name=@name
+
+	return
+end
+
+select
+	@source_id=source_id,
+	@source_type_id=source_type_id
+from
+	sources
+where
+	name=@source
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Source does not exist",
+		source=@source
+
+	return
+end
+
+select
+        @source_type=name
+from
+        source_types
+where
+        source_type_id=@source_type_id
+
+if (@source_type="Outbound")
+begin
+        if exists (select 
+                        credit_profile_id
+                   from
+			credit_profile_symbols
+                   where
+                        source_id=@source_id
+                   and
+                        credit_profile_id=@credit_profile_id)
+        begin
+                select
+                        status="Error",
+                        msg="Credit Profile already has an Outbound Source",
+                        name=@name
+
+                return
+        end
+end
+
+insert into
+	credit_profile_symbols (
+			credit_profile_id,
+			source_id,
+			symbol )
+values (
+	@credit_profile_id,
+	@source_id,
+	@symbol
+)
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Problems adding Credit Profile Symbol",
+		credit_profile_symbol=@symbol
+	
+	return
+end
+
+select
+	status="OK",
+	msg="Successfully added Credit Profile Symbol",
+	credit_profile_symbol=@symbol
+
+return
+
+go
+

@@ -1,0 +1,40 @@
+
+if object_id("r_addbatchfwdsubscription") != NULL
+    drop procedure
+        r_addbatchfwdsubscription
+go
+
+create procedure
+	r_addbatchfwdsubscription
+		@login varchar(50),
+		@symbol varchar(50),
+		@dealt_currency varchar(30),
+		@counter_currency varchar(30),
+		@evaluation_currency varchar(30)
+as
+
+
+declare @db_name varchar(30)
+declare @servername varchar(30)
+declare @sql_string varchar(255)
+
+select
+	@db_name = db_name(),
+	@servername = @@servername
+
+select
+        @sql_string = "exec contracts.dbo.ct_addfwdsubscription '" +
+                rtrim(@login)+"', '"+
+                rtrim(@db_name)+"', '"+
+                rtrim(@servername)+"', '"+
+                rtrim(@symbol)+"', '"+
+                rtrim(@dealt_currency)+"', '"+
+                rtrim(@counter_currency)+"', '"+
+                rtrim(@evaluation_currency)+ "'"
+
+exec
+        sp_remotesql
+                "CONTRACTS",
+                @sql_string
+
+go

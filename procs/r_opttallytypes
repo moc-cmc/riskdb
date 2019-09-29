@@ -1,0 +1,22 @@
+
+if object_id("r_opttallytypes") != NULL
+    drop procedure
+        r_opttallytypes
+go
+
+create procedure r_opttallytypes as
+
+create table #tallytypes
+(name varchar(15))
+
+insert into #tallytypes values("Pips")
+insert into #tallytypes values("Pct")
+
+select
+	name
+from
+	#tallytypes
+order by
+	name desc
+
+go

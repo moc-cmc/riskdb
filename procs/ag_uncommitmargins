@@ -1,0 +1,70 @@
+use
+	risk_finotec
+go
+
+drop procedure
+	ag_uncommitmargins
+go
+
+create procedure
+	ag_uncommitmargins
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @fund_id int
+declare @revals int
+declare @id int
+declare @ids int
+declare @account_snapshot_id int
+declare @external_account_id int
+declare @transaction_type_id int
+declare @margin float
+declare @currency_id int
+declare @contract_id int
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Margin"
+if @transaction_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"transaction_types",
+			@transaction_type_id output
+
+	insert into
+		transaction_types
+	values(
+		@transaction_type_id,
+		"Margin",
+		1,
+		"margin")
+end
+
+
+delete
+	account_snapshots
+from
+	account_snapshots a,
+	fund_external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.fund_id = @fund_id
+and
+	a.transaction_type_id = @transaction_type_id
+and
+	convert(date, a.snapshot_date) = convert(date, @trade_date)
+
+
+go
+

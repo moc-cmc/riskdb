@@ -1,0 +1,31 @@
+drop procedure tp_clientusers
+go
+
+create procedure
+	tp_clientusers
+		@prime_broker varchar(50)
+
+as
+
+select 
+	name=a.symbol 
+from 
+	traders a, 
+	external_accounts b, 
+	external_account_prime_brokers c, 
+	prime_brokers d,
+	sources e 
+where 
+	a.external_account_id = b.external_account_id 
+and 
+	b.external_account_id = c.external_account_id 
+and 
+	c.prime_broker_id = d.prime_broker_id 
+and 
+	d.source_id = e.source_id 
+and 
+	e.name = @prime_broker
+order by 
+	a.symbol
+
+go

@@ -1,0 +1,188 @@
+
+if object_id("r_importfuture") != NULL
+    drop procedure
+        r_importfuture
+go
+
+create procedure
+	r_importfuture
+		@login varchar(30),
+		@source varchar(50),
+		@forward_symbol varchar(50),
+		@future_symbol varchar(50),
+		@root_symbol varchar(20),
+		@exchange varchar(50),
+		@quantity int,
+		@tick_size float,
+		@future_type varchar(50)
+as
+
+declare @status_id int
+declare @source_id int
+declare @instrument_id int
+declare @exchange_id int
+declare @forward_id int
+declare @future_id int
+declare @future_type_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = "Active"
+	if @status_id = NULL
+	begin
+		exec
+			j_nextkey
+				"statuses",
+				@status_id output
+		insert into
+			statuses
+		values(
+			@status_id,
+			"Active")
+	end
+
+	exec
+		j_nextkey
+			"sources",
+			@source_id output
+
+	insert into
+		sources
+	values(
+		@source_id,
+		@source,
+		@status_id)
+end
+
+select
+	@future_type_id = future_type_id
+from
+	future_types
+where
+	name = @future_type
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"future_types",
+			@future_type_id output
+	insert into
+		future_types
+	values(
+		@future_type_id,
+		@future_type)
+end
+
+select
+	@forward_id = contract_id
+from
+	contract_symbols
+where
+	symbol = @forward_symbol
+and
+	source_id = @source_id
+if @forward_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Underlying Forward Does Not Exist",
+		forward_symbol = @forward_symbol,
+		source = @source
+	return
+end
+
+select
+	@instrument_id = instrument_id
+from
+	instruments
+where
+	name = "Future"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"instruments",
+			@instrument_id output
+
+	insert into
+		instruments
+	values(
+		@instrument_id,
+		"Forward")
+end
+
+select
+	@exchange_id = exchange_id
+from
+	exchanges
+where
+	name = @exchange
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"exchanges",
+			@exchange_id output
+	insert into
+		exchanges
+	values(
+		@exchange_id,
+		@exchange)
+end
+
+select
+	@future_id = future_id
+from
+	future_symbols
+where
+	symbol = @future_symbol
+and
+	source_id = @source_id
+if @future_id != NULL
+begin
+	select
+		status = "Dupe",
+		message = "Future already exists in local database",
+		future_symbol = @future_symbol,
+		source = @source
+	return
+end
+
+exec
+	j_nextkey
+		"futures",
+		@future_id output
+
+insert into
+	futures
+values(
+	@future_id,
+	@forward_id,
+	@future_symbol,
+	@root_symbol,
+	@exchange_id,
+	@quantity,
+	@tick_size,
+	@future_type_id)
+
+	
+insert into
+	future_symbols
+values(
+	@future_id,
+	@source_id,
+	@future_symbol)
+
+
+go

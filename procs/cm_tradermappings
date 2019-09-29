@@ -1,0 +1,82 @@
+
+if object_id("cm_tradermappings") != NULL
+    drop procedure
+        cm_tradermappings
+go
+
+create procedure
+	cm_tradermappings
+		@login varchar(50),
+		@trader varchar(50)
+as
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"del_mapping",
+	"Delete Trader Mapping",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"add_mapping",
+	"Add Trader Mapping",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_mapping",
+	"Edit Trader Mapping",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+select
+	add_mapping = "Add Mapping",
+	trader = @trader
+
+select
+        trader = a.symbol,
+        external_account = d.symbol,
+        source = b.name,
+        mapping = c.symbol,
+        edit_mapping = "EDIT",
+        del_mapping = "DELETE"
+from
+        traders a,
+        sources b,
+        trader_symbols c,
+        external_accounts d
+where
+        a.trader_id = c.trader_id
+and
+        b.source_id = c.source_id
+and
+        a.external_account_id = d.external_account_id
+and
+        a.symbol = @trader
+order by
+        b.name,
+        d.symbol,
+        a.symbol
+
+
+go

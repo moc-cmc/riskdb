@@ -1,0 +1,245 @@
+use
+	risk_ram
+go
+
+drop procedure
+	r_importcmeopt
+go
+
+create procedure
+	r_importcmeopt
+		@login varchar(50),
+		@strike varchar(50),
+		@put_call varchar(50),
+		@open_price varchar(50),
+		@high varchar(50),
+		@low varchar(50),
+		@last varchar(50),
+		@change varchar(50),
+		@settle varchar(50),
+		@est_volume varchar(50),
+		@prior_open_int varchar(50),
+		@row_count int,
+		@row_index int,
+		@row_date datetime,
+		@session_id varchar(200)
+
+as
+
+declare @option_expiration_id int
+declare @trade_date datetime
+declare @contract_id int
+declare @contracts int
+declare @sheet_settle varchar(50)
+declare @price float
+declare @price_id int
+
+
+select
+	@option_expiration_id = option_expiration_id,
+	@trade_date = trade_date
+from
+	session_working_opt_exp
+where
+	session_id = @session_id
+
+if @option_expiration_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No option expiration set for session"
+	return
+end
+
+if @trade_date = NULL
+begin
+	select
+		status = "Error",
+		message = "No trade date set for session"
+	return
+end
+
+
+insert into
+	cme_opt_import(
+		session_id,
+		option_expiration_id,
+		trade_date,
+		login,
+		strike,
+		put_call,
+		open_price,
+		high,
+		low,
+		last,
+		change,
+		settle,
+		est_volume,
+		prior_open_int)
+values(
+	@session_id,
+	@option_expiration_id,
+	@trade_date,
+	@login,
+	@strike,
+	@put_call,
+	@open_price,
+	@high,
+	@low,
+	@last,
+	@change,
+	@settle,
+	@est_volume,
+	@prior_open_int)
+
+
+if @row_count = @row_index + 1
+begin
+	update
+		cme_opt_import
+	set
+		a.contract_id = b.contract_id
+	from
+		cme_opt_import a,
+		option_contracts b
+	where
+		convert(numeric(30,5), a.strike) = convert(numeric(30,5), b.strike)
+	and
+		upper(convert(char(1), a.put_call)) = upper(convert(char(1), b.put_call))
+	and
+		a.option_expiration_id = b.option_expiration_id
+
+	delete
+
+	from
+		cme_opt_import
+	where
+		contract_id = NULL
+
+	select
+		@contract_id = 0
+	select
+		@contracts = count(*)
+	from
+		cme_opt_import
+	where
+		contract_id > @contract_id
+	and
+		session_id = @session_id
+
+	while @contracts > 0
+	begin
+		select
+			@contract_id = min(contract_id)
+		from
+			cme_opt_import
+		where
+			contract_id > @contract_id
+		and
+			session_id = @session_id
+
+		select
+			@sheet_settle = settle,
+			@trade_date = trade_date
+		from
+			cme_opt_import
+		where
+			contract_id = @contract_id
+		and
+			session_id = @session_id
+
+		if @sheet_settle != "CAB"
+			select
+				@price = convert(float, @sheet_settle)
+		else
+			select
+				@price = .05
+
+		select
+			@trade_date = convert(datetime, convert(date, @trade_date))
+
+		select
+			@trade_date = dateadd(hour, 17, @trade_date)
+
+		/* update
+			prices
+		set
+			price = @price
+		where
+			contract_id = @contract_id
+		and
+			price_date = @price_date
+		if @@rowcount != 1
+		begin
+			exec
+				j_nextkey
+					"prices",
+					@price_id output
+
+			insert into
+				prices
+			values(
+				@price_id,
+				5,
+				@contract_id,
+				@trade_date,
+				2,
+				@price)
+		end */
+
+		select
+			price_id = @price_id,
+			contract_id = @contract_id,
+			trade_date = @trade_date,
+			price = @price
+
+
+		select
+			@contracts = count(*)
+		from
+			cme_opt_import
+		where
+			contract_id > @contract_id
+		and
+			session_id = @session_id
+	end
+
+
+	/* select
+		b.symbol,
+		a.trade_date,
+		a.settle
+	from
+		cme_opt_import a,
+		contracts b
+	where
+		a.contract_id = b.contract_id
+	and
+		session_id = @session_id */
+
+	delete
+
+	from
+		cme_opt_import
+	where
+		session_id = @session_id
+
+	exec
+		r_importcmesettleslink
+			@login
+
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+go

@@ -1,0 +1,321 @@
+
+drop procedure
+	r_createexpbatchtrades
+go
+
+create procedure
+	r_createexpbatchtrades
+		@login char(30),
+		@begin_date datetime=NULL
+as
+
+declare @begin_day_string char(15)
+declare @end_day_string char(15)
+declare @contract_id int
+declare @underlying_contract_id int
+declare @strike float
+declare @put_call char(2)
+declare @parity_value float
+declare @underlying_price float
+declare @underlying_quantity numeric(30,0)
+declare @batch_id int
+declare @trade_id int
+declare @trades int
+declare @queued_trade_id int
+declare @queued_exp_trade_id int
+declare @instrument char(50)
+declare @user_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @quantity numeric(30,0)
+declare @price float
+declare @trade_date datetime
+declare @trader_id int
+declare @strategy_id int
+declare @status_id int
+declare @broker_id int
+declare @reference_trade_id int
+declare @reference_deal_id int
+declare @expiration datetime
+declare @queued_value_date datetime
+declare @end_date datetime
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+
+insert into
+	#links
+values(
+	"Format Number",
+	"quantity",
+	NULL,
+	NULL,
+	"#,##0")
+
+
+select * from #links
+
+if @begin_date = NULL
+	select
+		@begin_date = getdate()
+
+exec r_daterangefordate 
+					@begin_date, 
+					@begin_date output, 
+					@end_date output
+
+exec
+	j_nextkey
+		"batches",
+		@batch_id output
+
+create table
+	#expiring_trades(
+		trade_id int)
+
+insert into
+	#expiring_trades
+select
+	a.trade_id
+from
+	trades a,
+	option_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.expiration between @begin_date and @end_date
+and
+	a.quantity != 0
+
+
+insert into
+	#expiring_trades
+select
+	a.trade_id
+from
+	trades a,
+	exotic_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+/* and
+	b.ko_ki_date = NULL */
+and
+	c.expiration = @begin_date 
+and
+	a.quantity != 0
+
+
+select
+	@trade_id = 0
+select
+	@trades = count(*)
+from
+	#expiring_trades
+where
+	trade_id > @trade_id
+
+while @trades > 0
+begin
+	select
+		@trade_id = min(trade_id)
+	from
+		#expiring_trades
+	where
+		trade_id > @trade_id
+
+
+	select
+		@queued_trade_id = NULL
+	exec
+		j_nextkey
+			"queued_trades",
+			@queued_trade_id output
+
+	select
+		@reference_trade_id = trade_id,
+		@reference_deal_id = deal_id,
+		@user_id = user_id,
+		@internal_account_id = internal_account_id,
+		@external_account_id = external_account_id,
+		@quantity = quantity,
+		@contract_id = contract_id,
+		@price = price,
+		@trade_date = trade_date,
+		@trader_id = trader_id,
+		@strategy_id = strategy_id,
+		@status_id = status_id,
+		@broker_id = broker_id
+	from
+		trades
+	where
+		trade_id = @trade_id
+
+
+	insert into
+		queued_trades
+	values(
+		@queued_trade_id,
+		@batch_id,
+		@reference_trade_id,
+		@reference_deal_id,
+		@user_id,
+		@internal_account_id,
+		@external_account_id,
+		@quantity * -1,
+		@contract_id,
+		0.0000,
+		@trade_date,
+		@trader_id,
+		@strategy_id,
+		@status_id,
+		@broker_id,
+		NULL)
+
+
+	select
+		@contract_id = contract_id
+	from
+		trades
+	where
+		trade_id = @trade_id
+
+	select
+		@instrument = a.name
+	from
+		instruments a,
+		contracts b
+	where
+		a.instrument_id = b.instrument_id
+	and
+		b.contract_id = @contract_id
+
+	if @instrument = "Option"
+	begin
+		select
+			@underlying_contract_id = a.underlying_contract_id,
+			@strike = c.strike,
+			@put_call = c.put_call,
+			@expiration = b.expiration
+		from
+			options a,
+			option_expirations b,
+			option_contracts c
+		where
+			a.option_id = b.option_id
+		and
+			b.option_expiration_id = c.option_expiration_id
+		and
+			c.contract_id = @contract_id
+
+		update
+			queued_trades
+		set
+			trade_date = @expiration
+		where
+			queued_trade_id = @queued_trade_id
+	
+
+		select
+			@underlying_price = price
+		from
+			 current_prices
+		where
+			contract_id = @underlying_contract_id
+
+		/* This is where you can hack in a forced exp underlying
+			price until a more permanent solution is built.
+
+		 if @underlying_contract_id = 64
+			select
+				@underlying_price = 90.70 */
+
+		if @put_call = "C"
+			select
+				@parity_value = @underlying_price - @strike,
+				@underlying_quantity = @quantity
+		if @put_call = "P"
+			select
+				@parity_value = @strike - @underlying_price,
+				@underlying_quantity = @quantity * -1
+
+		if @parity_value > 0
+		begin
+			select
+				@queued_value_date = NULL
+
+			exec
+				j_nextkey
+					"queued_trades",
+					@queued_exp_trade_id output
+
+			insert into
+				queued_trades
+			values(
+				@queued_exp_trade_id,
+				@batch_id,
+				@reference_trade_id,
+				@reference_deal_id,
+				@user_id,
+				@internal_account_id,
+				@external_account_id,
+				@underlying_quantity,
+				@underlying_contract_id,
+				@strike,
+				@expiration,
+				/* getdate(), */
+				@trader_id,
+				@strategy_id,
+				@status_id,
+				@broker_id,
+				@underlying_price)
+
+			select
+				@queued_value_date = settledate
+			from
+				option_settledates
+			where
+				contract_id = @contract_id
+
+			if @queued_value_date = NULL
+			begin
+				select
+					status = "Error",
+					message = "Could not determine settle date for exercise trade"
+				return
+			end
+
+			insert into
+				queued_trade_value_dates
+			values(
+				@queued_exp_trade_id,
+				@queued_value_date)
+		end
+		
+	end 
+
+
+	select
+		@trades = count(*)
+	from
+		#expiring_trades
+	where
+		trade_id > @trade_id
+
+end
+
+exec
+	r_tradesforbatch
+		@batch_id
+
+go

@@ -1,0 +1,14 @@
+drop procedure
+	cl_agencycshladder
+go
+
+create procedure
+	cl_agencycshladder
+		@login varchar(25)
+as
+
+exec
+	cl_cshladder
+		@login
+
+go

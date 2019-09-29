@@ -1,0 +1,37 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_initfilelink
+go
+
+create procedure
+	lw_initfilelink
+		@login varchar(50)
+as
+
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "init_file",
+        "Initialize Batch File",
+        NULL)
+
+select * from #meta
+
+
+select
+	init_file = "Initialize Batch File"
+
+
+go

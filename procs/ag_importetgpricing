@@ -1,0 +1,195 @@
+use
+	risk_walrus
+go
+
+drop procedure
+	ag_importetgpricing
+go
+
+create procedure
+	ag_importetgpricing
+		@login varchar(50),
+		@service varchar(200)=NULL,
+		@component varchar(200)=NULL,
+		@component_desc varchar(200)=NULL,
+		@setup_fee varchar(50)=NULL,
+		@subscription_fee varchar(50)=NULL,
+		@usage_fee varchar(50)=NULL
+as
+
+declare @service_id int
+declare @component_id int
+declare @is_service varchar(10)
+declare @is_component varchar(10)
+declare @service_description varchar(200)
+declare @component_description varchar(200)
+declare @service_component_id int
+declare @service_price_id int
+
+declare @setup float
+declare @subscription float
+declare @usage float
+
+if @service = "" or @service = NULL
+	return
+
+if @component = NULL or @component = "" or @component = " "
+	select
+		@is_service = "Yes",
+		@service_description = @component_desc,
+		@component_description = NULL
+else
+	select
+		@is_component = "Yes",
+		@component_description = @component_desc,
+		@service_description = NULL
+
+
+if @setup_fee not like "%included%" and @setup_fee != "" and @setup_fee not like"%TB%"  and @setup_fee not like "%USD%"
+begin
+	select
+		@setup = convert(float, @setup_fee)
+end
+		
+if @subscription_fee not like "%included%" and @subscription_fee != "" and @subscription_fee not like"%TB%"  and @subscription_fee not like "%USD%"
+begin
+	select
+		@subscription = convert(float, @subscription_fee)
+end
+		
+if @usage_fee not like "%included%" and @usage_fee != "" and @usage_fee not like"%TB%"  and @usage_fee not like "%USD%" and @usage_fee not like "%n%"
+begin
+	select
+		@usage = convert(float, @usage_fee)
+end
+		
+select
+	@service_id = service_id
+from
+	services
+where
+	name = @service
+if @service_id = NULL
+begin
+	select
+		service = @service
+	exec
+		j_nextkey
+			"services",
+			@service_id output
+
+	insert into
+		services(
+			service_id,
+			service_type_id,
+			name,
+			description)
+	values(
+		@service_id,
+		1,
+		@service,
+		@service_description)
+end
+	
+if @component != NULL and @component != "" and @component != " "
+begin
+	select
+		component = @component
+	select
+		@component_id = component_id
+	from
+		components
+	where
+		name = @component
+	
+	if @component_id = NULL
+	begin
+		exec
+			j_nextkey
+				"components",
+				@component_id output
+	
+		insert into
+			components(
+				component_id,
+				name,
+				description)
+		values(
+			@component_id,
+			@component,
+			@component_description)
+
+	end
+	
+end
+
+
+if @service_id != NULL and @component_id != NULL
+begin
+	select
+		@service_component_id = service_component_id
+	from
+		service_components
+	where
+		service_id = @service_id
+	and
+		component_id = @component_id
+	if @service_component_id = NULL
+	begin
+		exec
+			j_nextkey
+				"service_components",
+				@service_component_id output
+		insert into
+			service_components(
+				service_component_id,
+				service_id,
+				component_id)
+		values(
+			@service_component_id,
+			@service_id,
+			@component_id)
+	end
+end
+
+if @service_id != NULL
+begin
+	update
+		service_prices
+	set
+		setup = @setup,
+		subscription = @subscription,
+		usage = @usage
+	where
+		service_id = @service_id
+	if @@rowcount = 0
+	begin
+		exec
+			j_nextkey
+				"service_prices",
+				@service_price_id output
+
+		insert into
+			service_prices(
+				service_price_id,
+				date,
+				days,
+				service_id,
+				setup,
+				subscription,
+				usage)
+		values(
+			@service_price_id,
+			getdate(),
+			60,
+			@service_id,
+			@setup,
+			@subscription,
+			@usage)
+	end
+end
+
+
+
+	
+go

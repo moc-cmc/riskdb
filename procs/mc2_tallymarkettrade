@@ -1,0 +1,49 @@
+
+if object_id("mc2_tallymarkettrade") != NULL
+    drop procedure
+        mc2_tallymarkettrade
+go
+
+create procedure
+	mc2_tallymarkettrade
+		@login varchar(25),
+		@tally_type varchar(25),
+		@buy_sell varchar(5),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@counterparty_account varchar(100),
+		@quantity numeric(30,2),
+		@price float,
+		@value_date datetime = NULL
+as
+
+declare @trade_id int
+declare @deal_id int
+
+
+exec
+	api_tallymarkettrade
+		@login,
+		@tally_type,
+		@buy_sell,
+		@dealt_currency,
+		@counter_currency,
+		@counterparty_account,
+		@quantity,
+		@price,
+		@value_date,
+		@deal_id output,
+		@trade_id output,
+		NULL
+
+exec 
+	r_inserttradenotification @trade_id
+
+exec
+	mc_inspectdealtrades
+		@login,
+		@deal_id
+
+
+
+go

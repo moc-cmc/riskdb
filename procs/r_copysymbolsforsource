@@ -1,0 +1,113 @@
+drop procedure
+	r_copysymbolsforsource
+go
+
+create procedure
+    r_copysymbolsforsource
+        @existing_source varchar(50),
+        @new_source varchar(50)
+as
+
+declare @existing_source_id int
+declare @new_source_id int 
+
+select
+    @new_source_id = source_id
+from
+    sources
+where
+    name = @new_source
+if @@rowcount != 1
+begin
+    select
+        id = -1,
+        error = "New Source not found",
+        source = @new_source
+    return
+end
+select
+    @existing_source_id = source_id
+from
+    sources
+where
+    name = @existing_source
+if @@rowcount != 1
+begin
+    select
+        id = -1,
+        error = "existing source not found",
+        source = @existing_source_id
+    return
+end
+
+
+/* broker_symbols 
+Insert into broker_symbols select broker_id, @new_source_id, symbol from broker_symbols where source_id = @existing_source_id
+/* contract_symbols */
+Insert into contract_symbols select contract_id, @new_source_id, symbol from contract_symbols where source_id = @existing_source_id
+/* counterparty_symbols */
+Insert into counterparty_symbols select counterparty_id, @new_source_id, symbol from counterparty_symbols where source_id = @existing_source_id
+/* credit_profile_symbols */
+Insert into credit_profile_symbols select credit_profile_id, @new_source_id, symbol from credit_profile_symbols where source_id = @existing_source_id
+/* external_account_symbols */
+Insert into external_account_symbols select external_account_id, @new_source_id, symbol from external_account_symbols where source_id = @existing_source_id
+/* future_symbols */
+Insert into future_symbols select future_id, @new_source_id, symbol from future_symbols where source_id = @existing_source_id
+/* option_expiration_symbols */
+insert into option_expiration_symbols select option_expiration_id, @new_source_id, symbol from option_expiration_symbols where source_id = @existing_source_id
+/* prime_broker_symbols */
+Insert into prime_broker_symbols select prime_broker_id, @new_source_id, symbol from prime_broker_symbols where source_id = @existing_source_id
+/* trader_symbols */
+insert into trader_symbols select trader_id, @new_source_id, symbol from trader_symbols where source_id = @existing_source_id
+/* trade_type_symbols */
+insert into trade_type_symbols select trade_type_id, @new_source_id, symbol from trade_type_symbols where source_id = @existing_source_id
+/* suppression_symbols */
+insert into suppression_symbols select @new_source_id, symbol from suppression_symbols where source_id = @existing_source_id
+/* product_symbols */
+insert into product_symbols select product_id, @new_source_id, symbol from product_symbols where source_id = @existing_source_id
+/* product_rate_symbols */
+insert into product_rate_symbols select product_rate_id,@new_source_id, symbol from product_rate_symbols where source_id = @existing_source_id
+*/
+
+/* broker_symbols */
+select "broker_symbols"
+select broker_id, @new_source_id, symbol from broker_symbols where source_id = @existing_source_id
+/* contract_symbols */
+select "contract_symbols"
+select contract_id, @new_source_id, symbol from contract_symbols where source_id = @existing_source_id
+/* counterparty_symbols */
+select "counterparty_symbols"
+select counterparty_id, @new_source_id, symbol from counterparty_symbols where source_id = @existing_source_id
+/* credit_profile_symbols */
+select "credit_profile_symbols"
+select credit_profile_id, @new_source_id, symbol from credit_profile_symbols where source_id = @existing_source_id
+/* external_account_symbols */
+select "external_account_symbols"
+select external_account_id, @new_source_id, symbol from external_account_symbols where source_id = @existing_source_id
+/* future_symbols */
+select "future_sumbols"
+select future_id, @new_source_id, symbol from future_symbols where source_id = @existing_source_id
+/* option_expiration_symbols */
+select "option_expiration_symbols"
+select option_expiration_id, @new_source_id, symbol from option_expiration_symbols where source_id = @existing_source_id
+/* prime_broker_symbols */
+select "prime_broker_symbols"
+select prime_broker_id, @new_source_id, symbol from prime_broker_symbols where source_id = @existing_source_id
+/* trader_symbols */
+select "trader_symbols"
+select trader_id, @new_source_id, symbol from trader_symbols where source_id = @existing_source_id
+/* trade_type_symbols */
+select "trade_type_symbols"
+select trade_type_id, @new_source_id, symbol from trade_type_symbols where source_id = @existing_source_id
+/* suppression_symbols */
+select "suppression_symbols"
+select @new_source_id, symbol from suppression_symbols where source_id = @existing_source_id
+/* product_symbols */
+select "product_symbols"
+select product_id,@new_source_id, symbol from product_symbols where source_id = @existing_source_id
+/* product_rate_symbols */
+select "product_rate_symbols"
+select product_rate_id,@new_source_id, symbol from product_rate_symbols where source_id = @existing_source_id
+
+
+go

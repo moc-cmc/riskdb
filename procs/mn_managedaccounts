@@ -1,0 +1,200 @@
+drop procedure
+	mn_managedaccounts
+go
+
+create procedure
+	mn_managedaccounts
+		@login varchar(50)
+as
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_managed_account",
+	"Create New Managed Account",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_master_account",
+	"Create New Master Account",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"manage_allocation",
+	"Master Allocation Versions",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_accounts",
+	"Add Sub-Account",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"action",
+	"Change Allocation Status",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"trades",
+	"Manager Trades",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_template",
+	"New Master Allocation",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	"#,##0.00")
+
+select * from #meta
+
+select
+	new_template = "Create New Master Template",
+	new_master_account = "Create New Master Account",
+	new_managed_account = "Create New Managed Account"
+
+
+create table
+	#master_allocations(
+		master_allocation_id int,
+		master_allocation varchar(50),
+		external_account_id int,
+		account varchar(50),
+		instrument_id int,
+		instrument varchar(50),
+		versions int NULL,
+		active_version int NULL,
+		manage_allocation varchar(50) NULL)
+
+insert into
+	#master_allocations(
+		master_allocation_id,
+		master_allocation,
+		external_account_id,
+		account,
+		instrument_id,
+		instrument,
+		manage_allocation)
+select
+	a.master_allocation_id,
+	a.name,
+	a.external_account_id,
+	b.symbol,
+	a.instrument_id,
+	c.name,
+	manage_allocation = "Manage"
+from
+	master_allocations a,
+	external_accounts b,
+	instruments c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.instrument_id = c.instrument_id
+
+create table
+	#versions(
+		master_allocation_id int,
+		versions int)
+insert into
+	#versions(
+		master_allocation_id,
+		versions)
+select
+	master_allocation_id,
+	count(version)
+from
+	ma_versions
+group by
+	master_allocation_id
+
+update
+	#master_allocations
+set
+	a.versions = b.versions
+from
+	#master_allocations a,
+	#versions b
+where
+	a.master_allocation_id = b.master_allocation_id
+
+update
+	#master_allocations
+set
+	a.active_version = b.version
+from
+	#master_allocations a,
+	ma_versions b,
+	statuses c
+where
+	a.master_allocation_id = b.master_allocation_id
+and
+	b.status_id = c.status_id
+and
+	c.name = "Active"
+
+select
+	master_allocation,
+	account,
+	instrument,
+	versions,
+	active_version,
+	manage_allocation
+from
+	#master_allocations
+order by
+	master_allocation
+
+	
+
+
+go

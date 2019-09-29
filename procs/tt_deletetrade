@@ -1,0 +1,191 @@
+
+if object_id("tt_deletetrade") != NULL
+    drop procedure
+        tt_deletetrade
+go
+
+create procedure
+    tt_deletetrade
+        @trade_id int
+as
+
+declare @deal_id int
+declare @account_transaction_id int
+
+/*
+ * CHECK trades: Return if the trade doesn't exist
+ */
+if not exists( select * from trades where trade_id = @trade_id )
+begin
+    select
+        status = "Error",
+        message = "No trade found for trade_id, '" + convert(varchar(10), @trade_id) + "'",
+        trade_id = @trade_id
+    return
+end
+
+if exists( select * from trade_notifications where trade_id = @trade_id )
+begin
+    select
+        status = "Error",
+        message = "Cannot delete trade with trade_notifications",
+        trade_id = @trade_id
+    return
+end
+
+if exists( select * from trade_daily_revals where trade_id = @trade_id )
+begin
+    select
+        status = "Error",
+        message = "Cannot delete trade with trade_daily_revals",
+        trade_id = @trade_id
+    return
+end
+
+select
+    @deal_id = deal_id
+from
+    trades
+where
+    trade_id = @trade_id
+    
+delete from
+    trade_prices
+where
+    trade_id = @trade_id
+
+delete from
+    trade_spot_references
+where
+    trade_id = @trade_id
+
+delete from
+    trade_matches
+where
+    trade_id = @trade_id
+
+delete from
+    trade_exec_symbols
+where
+    trade_id = @trade_id
+
+delete from
+    trade_aliases
+where
+    trade_id = @trade_id
+
+delete from
+    trade_edits
+where
+    trade_id = @trade_id
+
+delete from
+    trade_quoted_prices
+where
+    trade_id = @trade_id
+
+select
+	@swap_symbol_id = a.swap_symbol_id
+from
+	swap_symbols a,
+	swap_symbol_trades b
+where
+	a.swap_symbol_id = b.swap_symbol_id
+and
+	b.trade_id = @trade_id
+
+select
+	@swap_symbol_count = count(*)
+from
+	swap_symbol_trades
+where
+	swap_symbol_id = @swap_symbol_id
+
+delete from
+	swap_symbol_trades
+where
+	trade_id = @trade_id
+
+/* delete the swap_symbol if this is the only trade associated */
+if @swap_symbol_count = 1
+begin
+	delete from
+		swap_symbols
+	where
+		swap_symbol_id = @swap_symbol_id
+end
+
+select
+	@account_transaction_id = account_transaction_id
+from
+	account_transaction_trades
+where
+	trade_id = @trade_id
+if @account_transaction_id != NULL
+begin
+	delete from
+		account_transaction_trades
+	where
+		account_transaction_id = @account_transaction_id
+	delete from
+		account_transactions
+	where
+		account_transaction_id = @account_transaction_id
+end
+
+delete from
+	exotic_trade_attributes
+where
+	trade_id = @trade_id
+
+delete from
+    trades
+where
+    trade_id = @trade_id
+    
+select
+    action = "Deleted trade",
+    trade_id = @trade_id
+    
+if not exists(
+        select
+            *
+        from
+            trades
+        where
+            deal_id = @deal_id
+    )
+begin
+
+    delete from
+        deal_aliases
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deal_exec_symbols
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deal_notes
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deal_notifications
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deals
+    where
+        deal_id = @deal_id
+    
+    select
+        action = "Deleted deal",
+        deal_id = @deal_id
+        
+end
+    
+go

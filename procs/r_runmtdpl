@@ -1,0 +1,39 @@
+
+if object_id("r_runmtdpl") != NULL
+    drop procedure
+        r_runmtdpl
+go
+
+create procedure
+        r_runmtdpl
+                @login char(30),
+                @run_name char(200)
+
+as
+
+declare @year int
+declare @month int
+declare @day_one_string char(20)
+declare @day_one datetime
+declare @today char(20)
+
+
+select
+	@year = datepart(year, getdate())
+select
+	@month = datepart(month, getdate())
+
+select
+	@day_one_string = convert(char(2), @month) + "/1/" + convert(char(4), @year)
+
+select
+	@today = convert(char(11), getdate(), 1)
+
+exec
+	np_runintradaypl
+		@login,
+		@run_name,
+		@day_one_string,
+		@today
+
+go

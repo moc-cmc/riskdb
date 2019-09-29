@@ -1,0 +1,1893 @@
+use
+	risk_admis
+go
+
+drop procedure
+	bag_confirmsettlements
+go
+
+create procedure
+	bag_confirmsettlements
+		@login varchar(50),
+		@value_date datetime=NULL,
+		@account varchar(50)=NULL,
+		@product varchar(50)=NULL,
+		@pair varchar(50)=NULL,
+		@trade_date datetime=NULL
+as
+
+
+declare @fund_id int
+declare @fund varchar(100)
+declare @roll_trader_id int
+declare @prime_broker_id int
+declare @selected_prime_broker_id int
+declare @fund_prime_broker_id int
+declare @fund_prime_broker varchar(50)
+declare @prime_broker varchar(50)
+declare @clearing varchar(50)
+declare @fund_external_account_id int
+
+declare @total_style varchar(250)
+declare @grey_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @id int
+declare @ids int
+declare @pb_id int
+
+declare @product_id int
+declare @contract_id int
+declare @quantity numeric(30,2)
+
+declare @balance float
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"account",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"prime_broker",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"amount",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"clearing",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"value_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"product",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"wires_queue",
+	"Wire Amount Queue",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"remove_signoff",
+	"Cancel Wire Signoff",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_other",
+	"Add PB Wire Other Amount",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_tot",
+	"Add PB Wire Total Amount",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_same",
+	"Add PB Wire Same Day Amount",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_non",
+	"Add PB Wire Non Same Day Amount",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"manage_settlements",
+	"Manage Settlements",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"back_to_all",
+	"Confirm Settlements",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pair",
+	"Confirm Settlements",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"prod",
+	"Confirm Settlements",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_confirmed",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"non_same_day",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"same_day_settlement",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"signed_off_amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"unconfirmed",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_confirmed",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"counter_amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dealt_amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"product_amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"pair_position",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"unsettled_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@grey_style = "background:#FFFFFF;color:#666666;border: 1px solid white"
+
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund= name
+from
+	funds
+where
+	fund_id = @fund_id
+
+if @value_date = NULL
+begin
+	select
+		@value_date = convert(datetime, convert(date, getdate()))
+
+	exec
+		r_nextbusinessday
+			@value_date,
+			@value_date output
+end
+	
+select
+	@fund = name
+from
+	funds
+where
+	fund_id = @fund_id
+
+
+
+select
+	@fund_prime_broker_id = a.prime_broker_id,
+	@fund_external_account_id = a.bo_external_account_id
+from
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.name = @fund
+
+create table
+	#fund_external_accounts(
+		fund_id int,
+		external_account_id int,
+		settlement_method varchar(50) NULL)
+insert into
+	#fund_external_accounts(
+		fund_id,
+		external_account_id,
+		settlement_method)
+select
+	a.fund_id,
+	a.external_account_id,
+	d.name
+from
+	fund_external_accounts a,
+	external_accounts b,
+	external_account_types c,
+	settlement_methods d
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+and
+	b.settlement_method_id = d.settlement_method_id
+and
+	d.name in("Delivery", "Roll")
+and
+	a.fund_id = @fund_id
+and
+	b.external_account_id != @fund_external_account_id
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @pair
+
+select
+	@clearing = a.name,
+	@prime_broker_id = b.prime_broker_id,
+	@selected_prime_broker_id = b.prime_broker_id
+from
+	sources a,
+	prime_brokers b,
+	external_account_prime_brokers c,
+	external_accounts d
+where
+	a.source_id = b.source_id
+and
+	b.prime_broker_id = c.prime_broker_id
+and
+	c.external_account_id = d.external_account_id
+and
+	d.symbol = @account
+
+select
+	@fund_prime_broker = a.name
+from
+	sources a,
+	prime_brokers b
+where
+	a.source_id = b.source_id
+and
+	b.prime_broker_id = @fund_prime_broker_id
+
+select	
+	@roll_trader_id = roll_trader_id
+from
+	fund_roll_traders
+where
+	fund_id = @fund_id
+
+
+
+
+create table
+	#prime_brokers(
+		id int identity,
+		style varchar(250) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(100),
+		external_account_id int NULL,
+		external_account varchar(50) NULL)
+
+
+create table
+	#trades(
+		trade_id int NULL,
+		trade_date datetime NULL,
+		broker_id int NULL,
+		broker varchar(50) NULL,
+		external_account_id int NULL,
+		external_account varchar(50) NULL,
+		external_account_type_id int NULL,
+		external_account_type varchar(50) NULL,
+		contract_id int NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		product_qty float NULL,
+		currency_qty float NULL,
+		value_date datetime NULL,
+		price float NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(50) NULL)
+
+insert into
+	#trades(
+		trade_id,
+		trade_date,
+		broker_id,
+		external_account_id,
+		contract_id,
+		product_id,
+		product_qty,
+		currency_id,
+		currency_qty,
+		value_date,
+		price)
+select
+	a.trade_id,
+	a.trade_date,
+	a.broker_id,
+	a.external_account_id,
+	a.contract_id,
+	c.product_id,
+	a.quantity,
+	c.currency_id,
+	a.quantity * a.price * -1.0,
+	a.value_date,
+	a.price
+from
+	trades a,
+	#fund_external_accounts b,
+	forwards c
+where
+	a.contract_id = c.contract_id
+and
+	a.external_account_id = b.external_account_id
+and
+	b.fund_id = @fund_id
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+
+update
+	#trades
+set
+	a.product = b.symbol,
+	a.currency = c.symbol
+from
+	#trades a,
+	products b,
+	products c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = c.product_id
+
+update
+	#trades
+set
+	a.external_account = b.symbol,
+	a.external_account_type_id = b.external_account_type_id
+from
+	#trades a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+
+update
+	#trades
+set
+	a.external_account_type = b.name
+from
+	#trades a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+
+update
+	#trades
+set
+	a.prime_broker_id = b.prime_broker_id
+from
+	#trades a,
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#trades
+set
+	a.broker = b.symbol
+from
+	#trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+/* delete
+
+from
+	#trades
+where
+	prime_broker_id = @fund_prime_broker_id */
+
+update
+	#trades
+set
+	a.prime_broker = c.name
+from
+	#trades a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+
+
+insert into
+	#prime_brokers(
+		prime_broker)
+select
+	distinct(prime_broker)
+from
+	#trades
+where
+	prime_broker_id != @fund_prime_broker_id
+order by
+	prime_broker
+
+insert into
+	#prime_brokers(
+		prime_broker)
+select
+	a.name
+from
+	sources a,
+	prime_brokers b
+where
+	a.source_id = b.source_id
+and
+	b.prime_broker_id = @fund_prime_broker_id
+
+
+update
+	#prime_brokers
+set
+	a.prime_broker_id = b.prime_broker_id,
+	a.external_account_id = b.bo_external_account_id
+from
+	#prime_brokers a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker = c.name
+and
+	c.source_id = b.source_id
+
+update
+	#prime_brokers
+set
+	a.external_account = b.symbol
+from
+	#prime_brokers a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#prime_brokers
+set
+	style = @style
+
+create table
+	#account_positions(
+		external_account_id int,
+		product_id int,
+		quantity float)
+insert into
+	#account_positions(
+		external_account_id,
+		product_id,
+		quantity)
+select
+	a.external_account_id,
+	a.product_id,
+	sum(a.product_qty)
+from
+	#trades a,
+	external_accounts b,
+	settlement_methods c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.settlement_method_id = c.settlement_method_id
+and
+	c.name in("Delivery", "Roll")
+and
+	a.prime_broker_id = @fund_prime_broker_id
+group by
+	a.external_account_id,
+	a.product_id
+
+insert into
+	#account_positions(
+		external_account_id,
+		product_id,
+		quantity)
+select
+	a.external_account_id,
+	a.currency_id,
+	sum(a.currency_qty)
+from
+	#trades a,
+	external_accounts b,
+	settlement_methods c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.settlement_method_id = c.settlement_method_id
+and
+	c.name in("Delivery", "Roll")
+and
+	a.prime_broker_id = @fund_prime_broker_id
+group by
+	a.external_account_id,
+	a.currency_id
+
+create table
+	#account_balances(
+		external_account_id int,
+		account varchar(50) NULL,
+		product_id int,
+		product varchar(50) NULL,
+		quantity numeric(30,2))
+insert into
+	#account_balances(
+		external_account_id,
+		product_id,
+		quantity)
+select
+	external_account_id,
+	product_id,
+	sum(quantity)
+from
+	#account_positions
+group by
+	external_account_id,
+	product_id
+
+/* MARKR delete
+
+from
+	#account_balances
+where
+	quantity = 0.0 */
+
+update
+	#account_balances
+set
+	a.account = b.symbol
+from
+	#account_balances a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#account_balances
+set
+	a.product = b.symbol
+from
+	#account_balances a,
+	products b
+where
+	a.product_id = b.product_id
+
+create table
+	#acct_same_day(
+		external_account_id int,
+		product_id int,
+		balance numeric(30,4))
+insert into
+	#acct_same_day(
+		external_account_id,
+		product_id,
+		balance)
+select
+	external_account_id,
+	product_id,
+	sum(product_qty)
+from
+	#trades
+where
+	prime_broker_id = @fund_prime_broker_id
+and
+	convert(datetime, convert(date, trade_date)) = convert(datetime, convert(date, value_date))
+group by
+	external_account_id,
+	product_id
+insert into
+	#acct_same_day(
+		external_account_id,
+		product_id,
+		balance)
+select
+	external_account_id,
+	currency_id,
+	sum(currency_qty)
+from
+	#trades
+where
+	prime_broker_id = @fund_prime_broker_id
+and
+	convert(datetime, convert(date, trade_date)) = convert(datetime, convert(date, value_date))
+group by
+	external_account_id,
+	currency_id
+
+
+create table
+	#acct_same_nets(
+		external_account_id int,
+		product_id int,
+		balance numeric(30,4))
+insert into
+	#acct_same_nets(
+		external_account_id,
+		product_id,
+		balance)
+select
+	external_account_id,
+	product_id,
+	sum(balance)
+from
+	#acct_same_day
+group by
+	external_account_id,
+	product_id
+		
+
+
+
+
+create table
+	#pb_positions(
+		prime_broker_id int,
+		product_id int,
+		quantity float)
+insert into
+	#pb_positions(
+		prime_broker_id,
+		product_id,
+		quantity)
+select
+	prime_broker_id,
+	product_id,
+	sum(product_qty)
+from
+	#trades
+where
+	prime_broker_id != @fund_prime_broker_id
+group by
+	prime_broker_id,
+	product_id
+
+insert into
+	#pb_positions(
+		prime_broker_id,
+		product_id,
+		quantity)
+select
+	prime_broker_id,
+	currency_id,
+	sum(currency_qty)
+from
+	#trades
+where
+	prime_broker_id != @fund_prime_broker_id
+group by
+	prime_broker_id,
+	currency_id
+
+	
+create table
+	#pb_balances(
+		prime_broker_id int,
+		prime_broker varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		side varchar(50) NULL,
+		product_id int,
+		product varchar(50) NULL,
+		quantity numeric(30,2) NULL,
+		net_balance float NULL)
+insert into
+	#pb_balances(
+		prime_broker_id,
+		product_id,
+		quantity)
+select
+	prime_broker_id,
+	product_id,
+	sum(quantity)
+from
+	#pb_positions
+group by
+	prime_broker_id,
+	product_id
+
+update
+	#pb_balances
+set
+	a.external_account_id = b.external_account_id,
+	a.account = b.external_account
+from
+	#pb_balances a,
+	#prime_brokers b
+where
+	a.prime_broker_id = b.prime_broker_id
+
+update
+	#pb_balances
+set
+	a.product = b.symbol
+from
+	#pb_balances a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#pb_balances 
+set
+	a.prime_broker = c.name
+from
+	#pb_balances a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+
+create table
+	#signoffs(
+		external_account_id int,
+		product_id int,
+		amount numeric(30,4))
+insert into
+	#signoffs(
+		external_account_id,
+		product_id,
+		amount)
+select
+	external_account_id,
+	product_id,
+	sum(amount)
+from
+	pb_wire_signoffs
+where
+	convert(date, value_date) = convert(date, @value_date)
+group by
+	external_account_id,
+	product_id
+
+create table
+	#same_day_settlements(
+		prime_broker_id int,
+		product_id int,
+		balance numeric(30,4) NULL)
+insert into
+	#same_day_settlements(
+		prime_broker_id,
+		product_id,
+		balance)
+select
+	prime_broker_id,
+	product_id,
+	sum(product_qty)
+from
+	#trades
+where
+	convert(datetime, convert(date, trade_date)) = convert(datetime, convert(date, value_date))
+group by
+	prime_broker_id,
+	product_id
+
+
+insert into
+	#same_day_settlements(
+		prime_broker_id,
+		product_id,
+		balance)
+select
+	prime_broker_id,
+	currency_id,
+	sum(currency_qty)
+from
+	#trades
+where
+	convert(datetime, convert(date, trade_date)) = convert(datetime, convert(date, value_date))
+group by
+	prime_broker_id,
+	currency_id
+
+
+create table
+	#same_day_nets(
+		prime_broker_id int,
+		product_id int,
+		balance numeric(30,4))
+insert into
+	#same_day_nets(
+		prime_broker_id,
+		product_id,
+		balance)
+select
+	prime_broker_id,
+	product_id,
+	sum(balance)
+from
+	#same_day_settlements
+group by
+	product_id,
+	balance
+
+	
+
+create table
+	#pb_output(
+		id int identity,
+		style varchar(250) NULL,
+		value_date varchar(20) NULL,
+		netting varchar(50) NULL,
+		wire_net_account_id int NULL,
+		wire_net_account varchar(50) NULL,
+		clearing varchar(50) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(100) NULL,
+		external_account_id int NULL,
+		account varchar(100) NULL,
+		val_date varchar(20) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		balance numeric(30,4) NULL,
+		non_same_day numeric(30,4) NULL,
+		signoff_amount numeric(30,4) NULL,
+		remainder numeric(30,4) NULL,
+		same_day_settlement numeric(30,4) NULL,
+		add_signoff varchar(50) NULL,
+		confirm_non varchar(50) NULL,
+		confirm_same varchar(50) NULL,
+		confirm_tot varchar(50) NULL,
+		confirm_other varchar(50) NULL)
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#prime_brokers
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#prime_brokers
+	where
+		id > @id
+
+	select
+		@pb_id = prime_broker_id,
+		@prime_broker = prime_broker
+	from
+		#prime_brokers
+	where
+		id = @id
+
+	insert into
+		#pb_output(
+			style,
+			prime_broker_id,
+			value_date,
+			clearing,
+			prime_broker,
+			val_date)
+	select
+		pb_style = @pb_style,
+		prime_broker_id,
+		value_date = convert(varchar(11), @value_date, 1),
+		clearing = @prime_broker,
+		prime_broker,
+		val_date = convert(varchar(11), @value_date, 1)
+	from
+		#prime_brokers
+	where
+		id = @id
+
+
+	insert into
+		#pb_output(
+			style,
+			prime_broker_id,
+			value_date,
+			clearing,
+			external_account_id,
+			account,
+			product_id,
+			product,
+			balance,
+			signoff_amount,
+			remainder,
+			same_day_settlement,
+			add_signoff,
+			confirm_non,
+			confirm_same,
+			confirm_tot,
+			confirm_other)
+	select
+		style = @style,
+		prime_broker_id,
+		value_date = convert(varchar(11), @value_date, 1),
+		clearing = @prime_broker,
+		external_account_id,
+		account,
+		product_id,
+		product,
+		quantity,
+		signoff_amount = 0.0,
+		remainder = 0.0,
+		same_day_settlement = 0.0,
+		add_signoff = "Confirm Amount",
+		confirm_non = "Confirm",
+		confirm_same = "Confirm",
+		confirm_tot = "Confirm",
+		confirm_other = "Other"
+	from
+		#pb_balances
+	where
+		prime_broker_id = @pb_id
+	order by
+		product
+			
+	select
+		@ids = count(*)
+	from
+		#prime_brokers
+	where
+		id > @id
+end
+
+update
+	#pb_output
+set
+	a.same_day_settlement = b.balance
+from
+	#pb_output a,
+	#same_day_nets b
+where
+	a.product_id = b.product_id
+and
+	a.prime_broker_id = b.prime_broker_id 
+
+insert into
+	#pb_output(
+		style,
+		prime_broker_id,
+		value_date,
+		clearing,
+		external_account_id,
+		account,
+		product_id,
+		product,
+		balance,
+		signoff_amount,
+		same_day_settlement,
+		remainder,
+		confirm_non,
+		confirm_same,
+		confirm_tot,
+		confirm_other)
+select
+	style = @style,
+	prime_broker_id = @fund_prime_broker_id,
+	value_date = convert(varchar(11), @value_date, 1),
+	clearing = @fund_prime_broker,
+	external_account_id,
+	account,
+	product_id,
+	product,
+	quantity,
+	signoff_amount = 0.0,
+	same_day_settlement = 0.0,
+	remainder = 0.0,
+	confirm_non = "Confirm",
+	confirm_same = "Confirm",
+	confirm_tot = "Confirm",
+	confirm_other = "Other"
+from
+	#account_balances
+order by
+	account,
+	product 
+
+update
+	#pb_output
+set
+	a.same_day_settlement = b.balance
+from
+	#pb_output a,
+	#acct_same_nets b
+where
+	a.external_account_id = b.external_account_id 
+
+update
+	#pb_output
+set
+	style = @client_style
+where
+	prime_broker_id = @fund_prime_broker_id
+and
+	account = NULL
+
+update
+	#pb_output
+set
+	a.signoff_amount = b.amount
+from
+	#pb_output a,
+	#signoffs b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id 
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+		
+update
+	#pb_output
+set
+	wire_net_account_id = external_account_id,
+	netting = "None"
+
+update
+	#pb_output
+set
+	a.wire_net_account_id = b.wire_net_account_id,
+	netting = "Netted",
+	signoff_amount = 0.0,
+	add_signoff = NULL,
+	style = @grey_style,
+	confirm_non = NULL,
+	confirm_same = NULL,
+	confirm_tot = NULL,
+	confirm_other = NULL
+from
+	#pb_output a,
+	wire_net_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#pb_output
+set
+	a.wire_net_account = b.symbol
+from
+	#pb_output a,
+	external_accounts b
+where
+	a.wire_net_account_id = b.external_account_id
+
+create table
+	#netted_wires(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		wire_net_account varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		balance numeric(30,4) NULL,
+		signoff_amount numeric(30,4) NULL,
+		non_same_day numeric(30,4) NULL,
+		same_day_settlement numeric(30,4) NULL,
+		remainder numeric(30,4) NULL,
+		add_signoff varchar(50) NULL,
+		confirm_non varchar(50) NULL,
+		confirm_same varchar(50) NULL,
+		confirm_tot varchar(50) NULL,
+		confirm_other varchar(50) NULL)
+
+insert into
+	#netted_wires(
+		wire_net_account,
+		product,
+		balance,
+		same_day_settlement,
+		non_same_day)
+select
+	wire_net_account,
+	prod = product,
+	sum(balance),
+	sum(same_day_settlement),
+	sum(non_same_day)
+from
+	#pb_output
+where
+	netting = "Netted"
+group by
+	wire_net_account,
+	product
+order by
+	wire_net_account,
+	product
+
+update
+	#netted_wires
+set
+	signoff_amount = 0.0,
+	add_signoff = "Confirm Net Amount",
+	confirm_non = "Confirm",
+	confirm_tot = "Confirm",
+	confirm_same = "Confirm",
+	confirm_other = "Other"
+
+update
+	#netted_wires
+set
+	a.product_id = b.product_id
+from
+	#netted_wires a,
+	products b
+where
+	a.product = b.symbol
+
+update
+	#netted_wires
+set
+	a.external_account_id = b.external_account_id
+from
+	#netted_wires a,
+	external_accounts b
+where
+	a.wire_net_account = b.symbol
+
+update
+	#netted_wires
+set
+	style = @style
+
+update
+	#netted_wires
+set
+	a.signoff_amount = b.amount
+from
+	#netted_wires a,
+	#signoffs b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+	#netted_wires
+set
+	remainder = balance - signoff_amount
+
+update
+	#netted_wires
+set
+	add_signoff = NULL
+where
+	abs(remainder) < .01
+
+
+
+create table
+	#pair_pos(
+		contract_id int,
+		symbol varchar(50) NULL,
+		trade_date datetime,
+		position numeric(30,4),
+		product_amount numeric(30,4))
+insert into
+	#pair_pos(
+		contract_id,
+		trade_date,
+		position,
+		product_amount)
+select
+	contract_id,
+	convert(date, trade_date),
+	sum(product_qty),
+	sum(product_qty)
+from
+	#trades
+where
+	product_id = @product_id
+and
+	prime_broker_id = @selected_prime_broker_id
+group by
+	contract_id,
+	convert(date, trade_date)
+	
+insert into
+	#pair_pos(
+		contract_id,
+		trade_date,
+		position,
+		product_amount)
+select
+	contract_id,
+	convert(date, trade_date),
+	sum(product_qty),
+	sum(currency_qty)
+from
+	#trades
+where
+	currency_id = @product_id
+and
+	prime_broker_id = @selected_prime_broker_id
+group by
+	contract_id,
+	convert(date, trade_date)
+	
+update
+	#pair_pos
+set
+	a.symbol = b.symbol
+from
+	#pair_pos a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+create table
+	#pair_output(
+		id int identity,
+		style varchar(250) NULL,
+		symbol varchar(50) NULL,
+		trade_date datetime NULL,
+		pair_position numeric(30,4) NULL,
+		product_amount numeric(30,4) NULL)
+insert into
+	#pair_output(
+		symbol,
+		trade_date,
+		pair_position,
+		product_amount)
+select
+	symbol,
+	trade_date,
+	sum(position),
+	sum(product_amount)
+from
+	#pair_pos
+group by
+	symbol,
+	trade_date
+order by
+	symbol,
+	trade_date
+update
+	#pair_output
+set
+	style = @style
+		
+select
+	@balance = sum(product_amount)
+from
+	#pair_pos
+if @balance != NULL
+	insert into
+		#pair_output(
+			style,
+			product_amount)
+	values(
+		@total_style,
+		@balance)
+		
+
+create table
+	#trade_output(
+		id int identity,
+		style varchar(250) NULL,
+		trade_id int NULL,
+		trade_date datetime NULL,
+		account varchar(50) NULL,
+		platform varchar(50) NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		price numeric(30,6) NULL,
+		dealt_currency varchar(50) NULL,
+		dealt_amount numeric(30,4) NULL,
+		counter_currency varchar(50) NULL,
+		counter_amount numeric(30,4) NULL,
+		product_amount numeric(30,4) NULL)
+insert into
+	#trade_output(
+		style,
+		trade_id,
+		trade_date,
+		account,
+		platform,
+		product_id,
+		currency_id,
+		price,
+		dealt_currency,
+		dealt_amount,
+		counter_currency,
+		counter_amount)
+select
+	style = @style,
+	a.trade_id,
+	a.trade_date,
+	a.external_account,
+	a.broker,
+	a.product_id,
+	a.currency_id,
+	a.price,
+	b.symbol,
+	a.product_qty,
+	c.symbol,
+	a.currency_qty
+from
+	#trades a,
+	products b,
+	products c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = c.product_id
+and
+	a.contract_id = @contract_id	
+and
+	a.prime_broker_id = @selected_prime_broker_id
+and
+	convert(date, a.trade_date) = convert(date, @trade_date) 
+		
+update
+	#trade_output
+set
+	product_amount = dealt_amount
+where
+	product_id = @product_id
+
+update
+	#trade_output
+set
+	product_amount = counter_amount
+where
+	currency_id = @product_id
+
+select
+	@balance = NULL
+select
+	@balance = sum(product_amount)
+from
+	#trade_output
+if @balance != NULL
+begin
+	insert into
+		#trade_output(
+			style,
+			product_amount)
+	values(
+		@total_style,
+		@balance)
+end 
+
+update
+	#pb_output
+set
+	remainder = balance - signoff_amount
+
+update
+	#pb_output
+set
+	add_signoff = NULL
+where
+	abs(remainder) < .01
+
+
+
+create table
+	#pb_signoffs(
+		id int identity,
+		style varchar(250) NULL,
+		pb_wire_signoff_id int NULL,
+		entered_by varchar(50) NULL,
+		timestamp datetime NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		product varchar(50) NULL,
+		confirmation_type varchar(50) NULL,
+		value_date datetime NULL,
+		signed_off_amount numeric(30,2))
+/* insert into
+	#pb_signoffs(
+		pb_wire_signoff_id,
+		style,
+		entered_by,
+		timestamp,
+		prime_broker,
+		account,
+		product,
+		confirmation_type,
+		value_date,
+		signed_off_amount)
+select
+	a.pb_wire_signoff_id,
+	style = @style,
+	b.login,
+	a.timestamp,
+	c.prime_broker,
+	c.external_account,
+	d.symbol,
+	e.name,	
+	a.value_date,
+	a.amount
+from
+	pb_wire_signoffs a,
+	tico_accounts b,
+	external_accounts c,
+	products d,
+	confirmation_types e
+where
+	a.tico_account_id = b.account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.product_id = d.product_id
+and
+	a.confirmation_type_id = e.confirmation_type_id
+and
+	d.symbol = @product
+and
+	c.symbol = @account
+and
+	convert(date, a.value_date) = convert(date, @value_date) */
+
+create table
+	#selected_pbs(
+		prime_broker_id int)
+
+if @selected_prime_broker_id != NULL
+begin
+	insert into
+		#selected_pbs(
+			prime_broker_id)
+	values(
+		@selected_prime_broker_id)
+end
+else
+begin
+	insert into
+		#selected_pbs(
+			prime_broker_id)
+	select
+		prime_broker_id
+	from
+		prime_brokers
+end
+
+	
+update
+	#pb_output
+set
+	non_same_day = balance - same_day_settlement
+
+update
+	#netted_wires
+set
+	non_same_day = balance - same_day_settlement
+
+create table
+	#confirmation_types(
+		external_account_id int,
+		product_id int,
+		confirmation_type_id int,
+		amount numeric(30,4))
+insert into
+	#confirmation_types(
+		external_account_id,
+		product_id,
+		confirmation_type_id,
+		amount)
+select
+	a.external_account_id,
+	a.product_id,
+	b.confirmation_type_id,
+	sum(b.amount)
+from
+	pb_wire_signoffs a,
+	wire_allocations b
+where
+	a.pb_wire_signoff_id = b.pb_wire_signoff_id
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+group by
+	a.external_account_id,
+	a.product_id,
+	b.confirmation_type_id 
+
+update
+	#pb_output
+set
+	a.non_same_day = a.non_same_day - b.amount
+from
+	#pb_output a,
+	#confirmation_types b,
+	confirmation_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+and
+	b.confirmation_type_id = c.confirmation_type_id
+and
+	c.name = "Non Same Day"
+
+update
+	#pb_output
+set
+	a.same_day_settlement = a.same_day_settlement - b.amount
+from
+	#pb_output a,
+	#confirmation_types b,
+	confirmation_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+and
+	b.confirmation_type_id = c.confirmation_type_id
+and
+	c.name = "Same Day"
+
+/* MARKR */
+update
+	#pb_output
+set
+	confirm_non = NULL
+where
+	abs(non_same_day) < .01
+
+update
+	#pb_output
+set
+	confirm_same = NULL
+where
+	abs(same_day_settlement) < .01
+
+update
+	#pb_output
+set
+	confirm_tot = NULL,
+	confirm_non = NULL,
+	confirm_same = NULL
+where
+	abs(remainder) < .01
+
+
+
+/* Select the output */
+
+select
+	style = @style,
+	manage_settlements = "Back To Manage Settlements",
+	back_to_all = "Show All Clearing Accounts",
+	wires_queue = "Queued Wire Amounts",
+	value_date = @value_date
+
+select
+	a.style,
+	a.value_date,
+	a.clearing,
+	clearing_entity = a.prime_broker,
+	a.account,
+	acct = a.account,
+	a.val_date,
+	prod = a.product,
+	a.product,
+	a.non_same_day,
+	a.confirm_non,
+	a.same_day_settlement,
+	a.confirm_same,
+	total = a.balance,
+	a.confirm_tot,
+	prime_broker = a.clearing,
+	total_confirmed = a.signoff_amount,
+	unconfirmed = a.remainder,
+	a.confirm_other
+from
+	#pb_output  a,
+	#selected_pbs b
+where
+	a.prime_broker_id = b.prime_broker_id
+order by
+	a.id
+
+select
+	section = "Netted Wire Amounts",
+	style,
+	acct = wire_net_account,
+	account = wire_net_account,
+	value_date = @value_date,
+	val_date = @value_date,
+	amount = remainder,
+	prod = product,
+	product,
+	non_same_day,
+	confirm_non,
+	same_day_settlement,
+	confirm_same,
+	total = balance,
+	total_confirmed = signoff_amount,
+	unconfirmed = remainder,
+	confirm_other
+from
+	#netted_wires
+order by
+	id
+
+select
+	section = "Confirmed Balance",
+	style = @style,
+	identifier = a.pb_wire_signoff_id,
+	entered_by = b.login,
+	account = c.symbol,
+	product = d.symbol,
+	wire_account = c.symbol,
+	wire_product = d.symbol,
+	confirmation_type = e.name,
+	a.value_date,
+	a.amount,
+	wire_amount = a.amount,
+	a.note,
+	remove_signoff = "Cancel"
+from
+	pb_wire_signoffs a,
+	tico_accounts b,
+	external_accounts c,
+	products d,
+	confirmation_types e
+where
+	a.tico_account_id = b.account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.product_id = d.product_id
+and
+	a.confirmation_type_id = e.confirmation_type_id
+and
+	d.symbol = @product
+and
+	c.symbol = @account
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+
+select
+	section = rtrim(@product) + " Pair Positions For " + convert(varchar(20), @value_date),
+	style,
+	value_date = @value_date,
+	account = @account,
+	product = @product,
+	pair = symbol,
+	trade_date,
+	pair_position,
+	product_amount
+from
+	#pair_output
+order by
+	id
+
+select
+	section = rtrim(@pair) + " Trades for " + convert(varchar(11), @trade_date),
+	style,
+	trade_id,
+	trade_date,
+	platform,
+	dealt_currency,
+	dealt_amount,
+	counter_currency,
+	counter_amount,
+	product_amount,
+	price
+from
+	#trade_output
+order by
+	id
+
+go

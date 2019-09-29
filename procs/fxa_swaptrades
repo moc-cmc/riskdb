@@ -1,0 +1,368 @@
+
+if object_id("fxa_swaptrades") != NULL
+    drop procedure
+        fxa_swaptrades
+go
+
+create procedure
+	fxa_swaptrades	
+		@source varchar(50)
+as
+
+return
+
+declare @source_id int
+declare @trade_ref int
+declare @value_date varchar(15) 
+declare @far_value_date varchar(15) 
+declare @dealt_rate float
+declare @far_dealt_rate float
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Source not found",
+		source = @source
+end
+
+create table
+	#deals(
+		product_group varchar(10),
+		action varchar(10),
+		message_type varchar(10),
+		process varchar(10) NULL,
+		trade_ref int,
+		entity varchar(10),
+		portfolio varchar(50),
+		reporting_system varchar(5),
+		reporter_ticket_number int,
+		trader_name varchar(50),
+		counterparty varchar(50) NULL,
+		prime_broker varchar(50) NULL,
+		trade_date varchar(15),
+		product_type varchar(10),
+        direction varchar(8),
+		contract_id int,
+		traded_currency varchar(10),
+		counter_currency varchar(10),
+		traded_amount numeric(30,4),
+		far_traded_amount numeric(30,4) NULL,
+		dealt_rate float,
+		value_date varchar(15) NULL,
+		far_dealt_rate float NULL,
+		far_value_date varchar(15) NULL,
+		trade_notification_id int,
+		external_account_id int,
+		deal_id int)
+		
+insert into
+	#deals
+select 
+	product_group = "SWAP",
+	action = "REPORT",
+	mesage_type = "REGULAR",
+	process = NULL,
+	trade_ref = a.trade_id,
+	entity = "CLIENT",
+	portfolio = m.name,
+	reporting_system = "ETG",
+	reporter_ticket_number = a.deal_id,
+	trader_name = b.symbol,
+	counterparty = c.name,
+	prime_broker = "BAML",
+	trade_date = convert(varchar(15), a.trade_date,110),
+	product_type = "SWAP",
+    direction = "",
+	contract_id = d.contract_id,
+	traded_currency = g.symbol,
+	counter_currency = f.symbol,
+	traded_amount = a.quantity,
+	far_traded_amount = 0,
+	dealt_rate = a.price,
+	value_date = convert(varchar(15),a.value_date,110),
+	far_deal_rate = 0,
+	far_value_date = NULL,
+	j.trade_notification_id,
+	a.external_account_id,
+	a.deal_id
+from
+	trades a,
+	traders b,
+	counterparties c,
+	contracts d,
+	forwards e,
+	products f,
+	products g,
+	trade_notifications j,
+	statuses k,
+	trade_types l,
+	strategies m
+where
+	a.trader_id=b.trader_id
+and
+	a.contract_id=d.contract_id
+and
+	a.counterparty_id=c.counterparty_id 
+and
+	d.contract_id=e.contract_id
+and
+	e.currency_id=f.product_id
+and
+	e.product_id=g.product_id
+and
+	a.trade_id=j.trade_id
+and
+	j.status_id=k.status_id
+and
+	k.name in ("Active", "Edit", "Cancelled")
+and
+	a.trade_type_id=l.trade_type_id
+and
+	l.name="Swap Near"
+and
+	a.strategy_id=m.strategy_id
+
+insert into
+    #deals
+select
+    product_group = "SWAP",
+    action = "REPORT",
+    mesage_type = "REGULAR",
+    process = NULL,
+    trade_ref = a.trade_id,
+    entity = "CLIENT",
+    portfolio = m.name,
+    reporting_system = "ETG",
+    reporter_ticket_number = a.deal_id,
+    trader_name = b.symbol,
+    counterparty = NULL,
+    prime_broker = "BAML",
+    trade_date = convert(varchar(15), a.trade_date,110),
+    product_type = "SWAP",
+    direction = "",
+    contract_id = d.contract_id,
+    traded_currency = g.symbol,
+    counter_currency = f.symbol,
+    traded_amount = 0,
+    far_traded_amount = a.quantity,
+    dealt_rate = 0,
+    value_date = NULL,
+    far_deal_rate = a.price,
+    far_value_date = convert(varchar(15),a.value_date,110),
+    j.trade_notification_id,
+	a.external_account_id,
+	a.deal_id
+from
+    trades a,
+    traders b,
+    contracts d,
+    forwards e,
+    products f,
+    products g,
+    trade_notifications j,
+    statuses k,
+    trade_types l,
+    strategies m
+where
+    a.trader_id=b.trader_id
+and
+    a.contract_id=d.contract_id
+and
+    d.contract_id=e.contract_id
+and
+    e.currency_id=f.product_id
+and
+    e.product_id=g.product_id
+and
+    a.trade_id=j.trade_id
+and
+    j.status_id=k.status_id
+and
+    k.name in ("Active", "Edit", "Cancelled")
+and
+    a.trade_type_id=l.trade_type_id
+and
+    l.name="Swap Far"
+and
+    a.strategy_id=m.strategy_id
+
+update
+	#deals
+set
+	process=status_symbol
+from
+	#deals a,
+	trade_notifications b,
+	status_symbols c 
+where
+	a.trade_notification_id=b.trade_notification_id 
+and
+	b.status_id=c.status_id
+
+declare valdates cursor for 
+	select
+		deal_id	
+	from
+		#deals
+	order by
+		deal_id	
+
+open valdates
+fetch valdates into @trade_ref
+
+while @@sqlstatus = 0
+begin
+	
+	select
+		@value_date=value_date,
+		@dealt_rate=dealt_rate
+	from
+		#deals
+	where
+		deal_id=@trade_ref and
+		value_date != NULL
+
+	update
+		#deals
+	set
+		value_date=@value_date,
+		dealt_rate=@dealt_rate
+	where
+		value_date=NULL and
+		deal_id=@trade_ref
+
+	select
+		@far_value_date=far_value_date,
+		@far_dealt_rate=far_dealt_rate
+	from
+		#deals
+	where
+		deal_id=@trade_ref and
+		far_value_date != NULL
+
+	update
+		#deals
+	set
+		far_value_date=@far_value_date,
+		far_dealt_rate=@far_dealt_rate
+	where
+		far_value_date=NULL and
+		deal_id=@trade_ref
+
+
+	fetch valdates into @trade_ref
+end
+close valdates
+deallocate valdates
+
+/* Adjust display prices */
+update
+    #deals
+set
+    dealt_rate = case
+        when d.name = "Inverted" and c.factor != NULL then
+            (1 / a.dealt_rate) * c.factor * d.factor
+        when d.name = "Inverted" then
+            (1 / a.dealt_rate) * d.factor
+        when c.factor != NULL then
+            a.dealt_rate * c.factor * d.factor
+        else
+            a.dealt_rate * d.factor
+    end,
+    far_dealt_rate = case
+        when d.name = "Inverted" and c.factor != NULL then
+            (1 / a.far_dealt_rate) * c.factor * d.factor
+        when d.name = "Inverted" then
+            (1 / a.far_dealt_rate) * d.factor
+        else
+            a.far_dealt_rate * d.factor
+    end
+from
+    #deals a,
+    contracts b,
+    contract_price_styles c,
+    price_styles d
+where
+    a.contract_id = b.contract_id
+and
+    b.contract_id = c.contract_id
+and
+    c.price_style_id = d.price_style_id
+
+update
+    #deals
+set
+    trader_name = ""
+from
+    #deals a,
+    trades b,
+    external_accounts c,
+    external_account_types d
+where
+    a.trade_ref = b.trade_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    d.name = "Counterparty"
+
+select
+	product_group,
+    action,
+    message_type,
+    process,
+    trade_ref=deal_id,
+	entity,
+    portfolio,
+	reporting_system,
+    reporter_ticket_number,
+    trader_name,
+    counterparty,
+    prime_broker, 
+	trade_date,
+    product_type,
+    traded_currency,
+    counter_currency,
+    traded_amount=sum(traded_amount),
+	far_traded_amount=sum(far_traded_amount),
+	dealt_rate,
+    far_dealt_rate,
+	value_date,
+    far_value_date,
+	deal_id 
+from
+	#deals
+where
+	counterparty != NULL
+group by
+	product_group,
+	action,
+	message_type,
+	process,
+	entity,
+	portfolio,
+	reporting_system,
+	reporter_ticket_number, 
+	trader_name,
+	counterparty,
+	prime_broker, 
+	trade_date,
+	product_type,
+	traded_currency,
+	counter_currency,
+	dealt_rate,
+	far_dealt_rate,
+	value_date,
+	far_value_date,
+	deal_id	
+ order by 
+	deal_id	 
+go

@@ -1,0 +1,152 @@
+drop procedure tt_cancelrebooklegcancel
+go
+
+
+create procedure 
+	tt_cancelrebooklegcancel
+		@identifier varchar(100),
+		@deal_id int,
+                @rebook_trade_id int,
+		@notify_cancel char(1)=NULL
+
+as
+
+declare @trade_id int
+declare @trade_deal_id int
+declare @rebook_cancel_status_id int
+
+select
+	@rebook_cancel_status_id = status_id
+from
+	statuses
+where
+	name = "Rebook Cancel"
+
+select
+	@trade_id = trade_id,
+	@trade_deal_id = deal_id
+from
+	trades
+where
+	identifier = @identifier
+if @@rowcount != 1
+begin
+	select
+		error = "Error",
+		msg = "Problem querying only one row for identifier",
+		identifier = @identifier
+	return
+end
+
+
+begin tran
+	exec
+		r_inserttradeedit
+				@trade_id
+       
+        /* -- */
+	update
+		trades
+	set
+		quantity = 0,
+		status_id = @rebook_cancel_status_id
+	where
+		trade_id = @trade_id
+	if @@rowcount != 1
+	begin
+		select
+			error = "Error",
+			msg = "Problem updating only one row for trade_id",
+			trade_id = @trade_id
+		rollback tran
+		return
+	end
+
+        /* No Longer using trade_origin deals
+
+        if @trade_origin_deals_exists = "Y"        
+        begin
+		insert into 
+			trade_origin_deals
+		select
+			trade_id,
+			deal_id
+		from
+			trades
+		where
+			deal_id = @trade_deal_id
+        	if @@rowcount = 0
+        	begin
+            	select
+                    	error = "Error",
+                    	msg = "Problem inserting into trade_orgin_deals for deal",
+                    	deal_id = @trade_deal_id
+
+            	/*  -- chriso: not important enough to rollback the tran
+                rollback tran 
+            	return
+                */
+        	end
+	end
+        */
+
+        /* -- */
+        update 
+	        trades
+        set
+                deal_id = @deal_id
+        where
+		deal_id = @trade_deal_id
+        if @@rowcount = 0
+        begin
+            select
+                    error = "Error",
+                    msg = "Problem updating deal_id on trades",
+                    trade_id = @trade_id,
+		    deal_id = @trade_deal_id
+            rollback tran
+            return
+        end
+
+	/* -- */
+	
+	insert into
+		cancel_rebook_trades
+	values(
+		@trade_id,
+		@rebook_trade_id
+		)
+	if @@rowcount != 1
+	begin
+    	    select
+        	    error = "Error",
+        	    msg = "Problem inserting cancel_id and rebook_id in cancel_rebook_trades",
+        	    trade_id = @trade_id,
+		    rebook_trade_id = @rebook_trade_id
+            /*  -- chriso: audit trail, not important enough to rollback the tran  
+            rollback tran
+    	    return
+            */
+	end
+commit tran
+
+	
+select
+    status = "Success",
+    msg = "Updated deal_id and cancelled trades",
+    trade_id = @trade_id,
+    old_deal = @trade_deal_id,
+    new_deal = @deal_id,
+    rebook_trade_id = @rebook_trade_id
+	
+
+if lower(@notify_cancel) = 'y'
+begin
+	exec
+		r_updatetradenotification
+				@trade_id,
+				"Cancelled"
+end
+
+
+go	

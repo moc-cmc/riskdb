@@ -1,0 +1,45 @@
+drop procedure
+	r_edittradeattributes
+go
+
+create procedure
+	r_edittradeattributes
+		@login varchar(50),
+		@trade_id int,
+		@mid_mark float=NULL,
+		@note varchar(255)=NULL
+
+as
+
+declare @deal_id int
+
+
+update
+	trade_attributes
+set
+	mid_mark = @mid_mark,
+	note = @note
+where
+	trade_id = @trade_id
+if @@rowcount != 0
+begin
+	select
+		msg = "Trade attributes have been updated for " + convert(varchar(50), @trade_id),
+		mid_mark = @mid_mark,
+		note = @note
+end
+
+select
+	@deal_id = deal_id
+from
+	trades
+where
+	trade_id = @trade_id
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+go
+	 

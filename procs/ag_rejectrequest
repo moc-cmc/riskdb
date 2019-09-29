@@ -1,0 +1,163 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	ag_rejectrequest
+go
+
+create procedure
+	ag_rejectrequest
+		@login varchar(50),
+		@ledger_request_id int,
+		@status varchar(50)
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @status_id int
+declare @rejected_status_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@admin_level = admin_level
+from
+	approval_users
+where
+	tico_account_id = @tico_account_id
+
+if @admin_level != 0
+begin
+	select
+		status = "Restricted Access",
+		message = "Senior Admin level status required for login to access this page"
+		return
+end
+
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = @status
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Status not found",
+		name = @status
+	return
+end
+
+select
+	@rejected_status_id = status_id
+from
+	statuses
+where
+	name = "Rejected"
+if @rejected_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Rejected Status not found"
+	return
+end
+
+
+begin tran
+	insert into
+		ledger_request_edits(
+			ledger_request_id,
+			requestor_id,
+			status_id,
+			outside_account_id,
+			bo_master_account_id,
+			custodial_account_id,
+			ledger_request_type_id,
+			product_id,
+			amount,
+			transaction_date,
+			request_date,
+			edited_by,
+			timestamp)
+	select
+		ledger_request_id,
+		requestor_id,
+		status_id,
+		outside_account_id,
+		bo_master_account_id,
+		custodial_account_id,
+		ledger_request_type_id,
+		product_id,
+		amount,
+		transaction_date,
+		request_date,
+		edited_by = @tico_account_id,
+		timestamp = getdate()
+	from
+		ledger_requests
+	where
+		ledger_request_id = @ledger_request_id
+	and
+		status_id = @status_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to update ledger transaction request",
+			ledger_request_id = @ledger_request_id,
+			status_name = @status,
+			rejected_status = "Rejected"
+		rollback tran
+		return
+	end
+
+	update
+		ledger_requests
+	set
+		status_id = @rejected_status_id
+	where
+		ledger_request_id = @ledger_request_id
+	and
+		status_id = @status_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to update ledger transaction status",
+			ledger_request_id = @ledger_request_id,
+			status_name = @status,
+			rejected_status = "Rejected"
+		rollback tran
+		return
+	end
+commit tran
+
+exec
+	r_processledgerrequest
+		@login = @login,
+		@ledger_request_id = @ledger_request_id
+
+
+		
+exec
+	ag_approvalhome
+		@login = @login			
+
+
+
+go

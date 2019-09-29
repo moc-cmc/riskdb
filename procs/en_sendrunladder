@@ -1,0 +1,416 @@
+use
+	risk_bgc
+go
+ 
+drop procedure
+	en_sendrunladder
+go
+
+create procedure
+	en_sendrunladder
+		@login varchar(50),
+		@group_name varchar(50),
+		@en_batch_id int,
+		@trade_date datetime=NULL,
+		@run_name varchar(50)=NULL,
+		@requesting_server varchar(50),
+		@requesting_database varchar(50)
+as
+
+
+
+declare @en_batch varchar(50)
+declare @product varchar(50)
+declare @account varchar(50)
+declare @account_type varchar(50)
+declare @balance varchar(50) 
+declare @value_date varchar(11)
+declare @sql varchar(500)
+declare @runs int
+declare @run_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @id int
+declare @ids int
+
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+	exec
+		r_prevbusinessday
+			@trade_date,
+			@trade_date output
+end
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		trade_date datetime,
+		amount numeric(30,4),
+		price float,
+		counter_amount numeric(30,4),
+		contract_id int,
+		product_id int,
+		currency_id int,
+		value_date datetime,
+		external_account_id int)
+
+create table
+	#traders(
+		trader_id int)
+create table
+	#strategies(
+		strategy_id int)
+create table
+	#external_accounts(
+		external_account_id int)
+create table
+	#internal_accounts(
+		internal_account_id int)
+create table
+	#brokers(
+		broker_id int)
+create table
+	#counterparties(
+		counterparty_id int)
+
+			
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+		
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+			
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+			
+		
+insert into 
+	#trades(
+		trade_id,
+		deal_id,
+		trade_date,
+		amount,
+		price,
+		counter_amount,
+		contract_id,
+		product_id,
+		currency_id,
+		value_date,
+		external_account_id)
+select
+	a.trade_id,
+	a.deal_id,
+	a.trade_date,
+	a.quantity,
+	a.price,
+	a.quantity * a.price * -1.0,
+	a.contract_id,
+	h.product_id,
+	h.currency_id,	
+	a.value_date,
+	a.external_account_id
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g,
+	forwards h
+where
+	a.contract_id = h.contract_id
+and
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id= f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	a.value_date >= @begin_date
+and
+	/* a.trade_date >= @begin_date
+and */
+	a.trade_date < @end_date
+
+
+create table
+	#product_balances(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#product_balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	external_account_id,
+	product_id,
+	value_date,
+	sum(amount)
+from
+	#trades
+group by
+	external_account_id,
+	product_id,
+	value_date
+
+insert into
+	#product_balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	external_account_id,
+	currency_id,
+	value_date,
+	sum(counter_amount)
+from
+	#trades
+group by
+	external_account_id,
+	currency_id,
+	value_date
+
+create table
+	#balances(
+		id int identity,
+		external_account_id int,
+		account varchar(50) NULL,
+		account_type varchar(50) NULL,
+		product_id int,
+		product varchar(50) NULL,
+		value_date datetime,
+		balance float)
+insert into
+	#balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	external_account_id,
+	product_id,
+	value_date,
+	sum(balance)
+from
+	#product_balances
+group by
+	external_account_id,
+	product_id,
+	value_date
+
+delete
+
+from
+	#balances
+where
+	balance = 0.0
+
+update
+	#balances
+set
+	a.product = b.symbol
+from
+	#balances a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#balances
+set
+	a.account = b.symbol,
+	a.account_type = c.name
+from
+	#balances a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+
+select
+	@en_batch = convert(varchar(50), @en_batch_id)
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#balances
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#balances
+	where
+		id > @id
+
+	select
+		@account = NULL,
+		@account_type = NULL,
+		@product = NULL,
+		@balance = NULL,
+		@sql = NULL,
+		@value_date = NULL
+
+	select
+		@account = account,
+		@account_type = account_type,
+		@product = product,
+		@balance = convert(varchar(50), convert(numeric(30,4), balance)),
+		@value_date = convert(varchar(11), value_date)
+	from
+		#balances
+	where
+		id = @id
+
+	select
+		@sql = "exec " + rtrim(@requesting_database) + 
+			"..en_receiveladderbal '" + 
+			rtrim(@login) + "', '" +
+			rtrim(@group_name) + "', " + 
+			rtrim(@en_batch) + ", '" + 
+			rtrim(@account) + "', '" +
+			rtrim(@account_type) + "', '" +
+			rtrim(@product) + "', '" +
+			@value_date + "', " + 
+			rtrim(@balance)
+
+
+	exec
+		sp_remotesql
+			@requesting_server,
+			@sql
+
+	select
+		@ids = count(*)
+	from
+		#balances
+	where
+		id > @id
+end
+
+							   
+go

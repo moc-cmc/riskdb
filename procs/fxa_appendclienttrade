@@ -1,0 +1,158 @@
+drop procedure
+	fxa_appendclienttrade
+go
+
+create procedure
+	fxa_appendclienttrade
+		@login varchar(50),
+		@deal_id int,
+		@tally_type varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@quantity numeric(30,4),
+		@price float,
+		@value_date datetime,
+		@fixing_date datetime = NULL
+
+as
+
+
+declare @external_account varchar(50)
+declare @symbol varchar(50)
+declare @trade_id int
+declare @trade_date datetime
+declare @trade_type varchar(25)
+declare @deal_type_id int
+declare @deal_type varchar(25)
+
+if @client_buys_sells = "Client Buys"
+begin
+	select
+		@quantity = abs(@quantity) * -1.0
+end
+if @client_buys_sells = "Client Sells"
+begin
+	select
+		@quantity = abs(@quantity)
+end
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
+
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	traders b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @client_user
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Could not found account for client user",
+		client_user = @client_user
+	return
+end
+
+select
+	@trade_type = @tally_type
+
+select
+	@trade_date = getdate()
+
+select
+	@deal_type = a.name
+from
+	deal_types a,
+	deals b
+where
+	a.deal_type_id = b.deal_type_id
+and
+	b.deal_id = @deal_id
+
+if @deal_type in(
+	"B2B Forward",
+	"B2B Option",
+	"B2B Swap",
+	"Client Forward",
+	"Client Option",
+	"Client Swap",
+	"Market Forward",
+	"Market Option",
+	"Market Swap")
+begin
+	select
+		@deal_type = rtrim(@deal_type) + "+"
+end
+
+select
+	@deal_type_id = deal_type_id
+from
+	deal_types
+where
+	name = @deal_type
+if @deal_type_id = NULL
+begin
+	insert into
+		deal_types(
+			name)
+	values(
+		@deal_type)
+	select
+		@deal_type_id = @@identity
+end
+
+update
+	deals
+set
+	deal_type_id = @deal_type_id
+where
+	deal_id = @deal_id
+
+exec
+	fxa_tallytrade
+		@login,
+		"MPT Manual Tally",
+		@trade_id output,
+		@deal_id output,
+		@tally_type,
+		"Client Forward",
+		@trade_type,	
+		NULL,
+		@external_account,
+		NULL,
+		@quantity,
+		@symbol,
+		@value_date,
+		@price,
+		@trade_date,
+		@client_user,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		@fixing_date
+
+exec 
+	r_inserttradenotification @trade_id
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+go
+
+

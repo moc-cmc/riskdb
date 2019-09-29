@@ -1,0 +1,111 @@
+
+if object_id("cm_subscriptomajorccys") != NULL
+    drop procedure
+        cm_subscriptomajorccys
+go
+
+create procedure
+	cm_subscriptomajorccys
+		@login varchar(50),
+		@show_ccys char(1)=NULL
+
+as
+
+declare @evaluation_currency varchar(50)
+declare @fund_id int
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency = a.symbol
+from
+	products a,
+	funds b
+where
+	a.product_id = b.evaluation_currency_id
+
+if @evaluation_currency = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to determine evaluation currency"
+	return
+end
+
+exec
+	r_addbatchfwdsubscription
+		@login,
+		"EURUSD",
+		"EUR",
+		"USD",
+		@evaluation_currency
+
+exec
+	r_addbatchfwdsubscription
+		@login,
+		"EURJPY",
+		"EUR",
+		"JPY",
+		@evaluation_currency
+
+exec
+	r_addbatchfwdsubscription
+		@login,
+		"EURCHF",
+		"EUR",
+		"CHF",
+		@evaluation_currency
+
+exec
+	r_addbatchfwdsubscription
+		@login,
+		"EURGBP",
+		"EUR",
+		"GBP",
+		@evaluation_currency
+
+exec
+	r_addbatchfwdsubscription
+		@login,
+		"GBPCHF",
+		"GBP",
+		"CHF",
+		@evaluation_currency
+
+exec
+	r_addbatchfwdsubscription
+		@login,
+		"GBPJPY",
+		"GBP",
+		"JPY",
+		@evaluation_currency
+
+
+exec
+	r_addbatchfwdsubscription
+		@login,
+		"AUDJPY",
+		"AUD",
+		"JPY",
+		@evaluation_currency
+
+		
+exec
+	r_addbatchfwdsubscription
+		@login,
+		"EURCAD",
+		"EUR",
+		"CAD",
+		@evaluation_currency
+
+if @show_ccys != "N"
+begin
+	exec
+		ctm_fxforwards
+			@login
+end
+
+go

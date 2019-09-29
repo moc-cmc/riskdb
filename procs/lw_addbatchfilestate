@@ -1,0 +1,99 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_addbatchfilestate
+go
+
+create procedure
+	lw_addbatchfilestate
+		@login varchar(50),
+		@batch_file_identifier varchar(50),
+		@state varchar(50),
+		@amount float
+
+as
+
+declare @batch_file_id int
+declare @identifier varchar(50)
+declare @jurisdiction_id int
+declare @accounts int
+declare @jurisdiction varchar(50)
+
+select
+	@batch_file_id = batch_file_id
+from
+	batch_files
+where
+	identifier = @batch_file_identifier
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Batch file not found",
+		batch_file_identifier = @batch_file_identifier
+	return
+end
+
+select
+	@jurisdiction = name
+from
+	states
+where
+	code = @state
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "State not found",
+		state = @state
+	return
+end
+		
+
+select
+	@jurisdiction_id = jurisdiction_id
+from
+	jurisdictions
+where
+	name = @jurisdiction
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Jurisdiction not found",
+		jurisdiction = @jurisdiction
+	return
+end
+
+select
+	@accounts = count(*)
+from
+	batch_file_accounts
+where
+	batch_file_id = @batch_file_id
+if @accounts = NULL
+	select
+		@accounts = 0
+
+select
+	@accounts = @accounts + 1
+
+select
+	@identifier = @batch_file_identifier + "-" + rtrim(convert(varchar(25), @accounts))
+
+insert into
+	batch_file_accounts
+values(
+	@batch_file_id,
+	@identifier,
+	@jurisdiction_id,
+	@amount)
+
+select
+	state = @state,
+	amount = @amount
+
+go
+

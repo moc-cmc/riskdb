@@ -1,0 +1,70 @@
+
+if object_id("cbo_revalmissingcommitdeltas") != NULL
+    drop procedure
+        cbo_revalmissingcommitdeltas
+go
+
+create procedure
+    cbo_revalmissingcommitdeltas
+        @login varchar(50)
+as
+
+declare @min_trade_date datetime
+declare @max_trade_date datetime
+declare @trade_date datetime
+declare @count int
+
+select
+    @min_trade_date = min(reval_date),
+    @max_trade_date = max(reval_date)
+from
+    committed_daily_revals
+where
+    forward_id = NULL
+
+if @min_trade_date = NULL
+begin
+    select
+        message = "There are no missing deltas"
+    return
+end
+
+select
+    message = "Calculating deltas in range",
+    begin_date = @min_trade_date,
+    end_date = @max_trade_date
+    
+select
+    @trade_date = convert(date, @min_trade_date),
+    @count = 0
+    
+
+while @trade_date <= @max_trade_date and @count < 260*3
+begin
+    
+    select
+        message = "Calculating deltas for trade date: " + convert(varchar(10), @trade_date, 101)
+
+    exec
+        cbo_revalcommitteddeltas
+            @login,
+            @trade_date
+    
+    exec
+        r_nextbusinessday
+            @trade_date,
+            @trade_date out
+    
+    select
+        @count = @count + 1
+    
+end
+
+select
+    message = "Calculating deltas in range",
+    begin_date = @min_trade_date,
+    end_date = @max_trade_date,
+    'count' = @count
+    
+go
+

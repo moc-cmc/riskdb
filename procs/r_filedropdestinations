@@ -1,0 +1,15 @@
+create or replace procedure
+	r_filedropdestinations
+		@login varchar(50)
+
+as
+
+select
+	name
+from
+	filedrop_destinations
+order by 
+	name
+
+
+go

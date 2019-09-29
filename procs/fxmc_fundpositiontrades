@@ -1,0 +1,146 @@
+
+
+if object_id("fxmc_fundpositiontrades") != NULL
+    drop procedure
+        fxmc_fundpositiontrades
+go
+
+create procedure
+	fxmc_fundpositiontrades
+		@login varchar(50),
+		@fund_name varchar(50)=NULL,
+		@trade_date datetime=NULL
+as
+
+
+declare @begin_date datetime
+declare @end_date datetime
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#output(
+		prime_broker_id int NULL,
+		deal_id int NULL,
+		deal_type_id int NULL,
+		deal_status_id int NULL,
+		trade_id int NULL,
+		report_trade_id int NULL,
+		trade_type_id int NULL,
+		trade_date datetime NULL,
+        user_id int NULL,
+		internal_account_id int NULL,
+		external_account_id int NULL,
+		external_account_type_id int NULL,
+		counterparty_id int NULL,
+		contract_id int NULL,
+		value_date datetime NULL,
+		fixing_date datetime NULL,
+		quantity numeric(30,4) NULL,
+		price float NULL,
+		trader_id int NULL,
+		strategy_id int NULL,
+		status_id int NULL,
+		recon_status_id int NULL,
+		broker_id int NULL,
+		identifier varchar(50) NULL)
+
+/*
+ * INSERT #output: Internal only trades from #int_trades -> trades
+ */
+insert into
+	#output(
+		deal_id,
+		trade_id,
+		trade_date,
+        user_id,
+        trade_type_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		contract_id,
+		value_date,
+		fixing_date,
+		quantity,
+		price,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		identifier)
+select
+	a.deal_id,
+	a.trade_id,
+	a.trade_date,
+    a.user_id,
+    a.trade_type_id,
+	a.internal_account_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.contract_id,
+	a.value_date,
+	a.fixing_date,
+	a.quantity,
+	a.price,
+	a.trader_id,
+	a.strategy_id,
+	a.status_id,
+	a.broker_id,
+	a.identifier
+from
+	trades a
+where
+    a.value_date >= @begin_date
+and
+    a.quantity != 0
+
+update
+	#output
+set
+	a.deal_type_id = b.deal_type_id,
+    a.deal_status_id = b.status_id
+from
+	#output a,
+	deals b
+where
+	a.deal_id = b.deal_id
+		
+update
+	#output
+set
+	a.external_account_type_id = b.external_account_type_id
+from
+	#output a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#output
+set
+	a.prime_broker_id = b.prime_broker_id
+from
+	#output a,
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+
+select
+    *
+from
+    #output
+order by
+    trade_id
+
+go
+	
+

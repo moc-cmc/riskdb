@@ -1,0 +1,167 @@
+
+drop procedure
+	r_fixconnectionlog
+go
+
+create procedure
+	r_fixconnectionlog
+		@login varchar(25),
+		@trade_id int,
+		@connection varchar(250),
+		@integration varchar(250),
+		@source varchar(100)
+
+as
+
+declare @trade_capture_id int
+declare @connection_id    int
+declare @integration_id   int
+declare @source_id        int
+declare @source_type_id   int
+declare @status_id        int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name=@source
+
+if @@rowcount = 0
+begin
+	
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name="Active"
+
+	if @@rowcount = 0
+	begin
+		select
+			stat="Error",
+			msg="Could not find status",
+			status="Status"
+	
+		return
+	end
+
+	select
+		@source_type_id=source_type_id
+	from
+		source_types
+	where
+		name="Inbound"
+
+	if @@rowcount = 0
+	begin
+		exec 
+			j_nextkey "source_types",@source_type_id output
+
+		insert into
+			source_types (
+				source_type_id,
+				name)
+			values (
+				@source_type_id,
+				"Inbound")
+	end
+		
+	exec
+		j_nextkey "sources", @source_id output
+
+	insert into
+		sources (
+			source_id,
+			name,
+			status_id,
+			source_type_id)
+	values (
+		@source_id,
+		@source,
+		@status_id,
+		@source_type_id)
+
+end
+
+select
+	@integration_id = integration_id
+from
+	integrations
+where
+	name=@integration
+
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey "integrations", @integration_id output	
+
+	insert into
+		integrations (
+			integration_id,
+			name )
+	values (
+		@integration_id,
+		@integration)
+	
+end
+	
+select
+	@connection_id = connection_id
+from
+	connections 
+where
+	name=@connection
+
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey "connections", @connection_id output
+
+	insert into
+		connections
+		(connection_id,
+		 name,
+		 source_id,
+		 integration_id)
+	values
+		(@connection_id,
+		@connection,
+		@source_id,
+		@integration_id)
+	
+end
+	
+exec
+	j_nextkey "trade_captures", @trade_capture_id output
+
+insert into
+	trade_captures (
+		trade_capture_id,
+		trade_id,
+		connection_id,
+		capture_date)
+values (
+	@trade_capture_id,
+	@trade_id,
+	@connection_id,
+	getdate())
+
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg="Could not insert trade capture",
+		trade_capture_id=@trade_capture_id
+
+	return
+end
+
+return
+
+go
+
+
+
+

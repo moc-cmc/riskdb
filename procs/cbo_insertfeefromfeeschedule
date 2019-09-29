@@ -1,0 +1,526 @@
+if object_id("cbo_insertfeefromfeeschedule") != NULL
+	drop procedure
+		cbo_insertfeefromfeeschedule
+go
+
+create procedure
+	cbo_insertfeefromfeeschedule
+		@login varchar(50),
+		@trade_id int,
+		@fee_date datetime
+as
+declare @bd datetime
+declare @ed datetime
+
+select @bd = getdate()
+
+declare @debug char(1)
+select @debug = "N"
+
+
+declare @deal_id int
+declare @user_id int
+declare @trade_type_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @counterparty_id int
+declare @contract_id int
+declare @trader_id int
+declare @strategy_id int
+declare @status_id int
+declare @broker_id int
+declare @sales_code_id int
+declare @trade_date  datetime
+declare @identifier varchar(100)
+declare @value_date datetime
+declare @created_at datetime
+
+declare @evaluation_notional float
+
+declare @product_transaction_id int
+declare @trade_quantity float
+declare @fee_schedule_id int
+declare @fee_quantity float
+declare @fee_product_id int
+declare @fee_price float
+declare @fee_schedule_type_id int
+declare @fee_schedule_type varchar(50)
+declare @min_ticket_size float
+declare @direction float
+declare @transaction_type_id int
+declare @tico_account_id int
+
+declare @fee_already_booked char(1)
+declare @fee_type_id int
+
+select @fee_already_booked = "N"
+
+declare @book_to_ext_account_id int
+
+declare @fund_eval_ccy_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts 
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Problem finding account for login",
+		login = @login
+	return
+end
+
+select
+	@fund_eval_ccy_id = evaluation_currency_id
+from
+	funds
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Fees/Commissions/Brokerage"
+if @transaction_type_id = NULL
+begin
+	select
+		error="Error",
+		msg="Problem finding transaction type 'Fees/Commissions/Brokerage'"
+	return
+end
+
+select
+	@deal_id=deal_id,
+	@user_id=user_id,
+	@trade_type_id=trade_type_id,
+	@internal_account_id=internal_account_id,
+	@external_account_id=external_account_id,
+	@counterparty_id=counterparty_id,
+	@contract_id=contract_id,
+	@trade_quantity=quantity,
+	@trade_date=trade_date,
+	@value_date=value_date,
+	@trader_id=trader_id,
+	@strategy_id=strategy_id,
+	@status_id=status_id,
+	@broker_id=broker_id,
+	@sales_code_id=sales_code_id,
+	@identifier=identifier
+from
+	trades
+where
+	trade_id = @trade_id
+and
+	quantity != 0
+if @@rowcount = 0
+begin
+	return
+end
+
+
+	
+create table
+	#fee_schedules
+(
+	fee_schedule_id int,
+	name varchar(50),
+	description varchar(200), 
+	fee_schedule_type_id int,
+	trade_type_id int NULL,
+	internal_account_id int NULL,
+	external_account_id int NULL,
+	counterparty_id int NULL,
+	contract_id int NULL,
+	trader_id int NULL,
+	strategy_id int NULL,
+	status_id int NULL,
+	broker_id int NULL,
+	sales_code_id int NULL,
+	fee_product_id int,
+        fee_price float,
+	min_ticket_size float,
+	direction int,
+	created_at datetime,
+	created_by int,
+	archived_at datetime NULL,
+	archived_by int NULL,
+	fee_type_id int,
+	book_to_ext_account_id int NULL
+)
+
+insert into
+	#fee_schedules
+select
+	fee_schedule_id,
+	name,
+	description,
+	fee_schedule_type_id,
+	trade_type_id,
+	internal_account_id,
+	external_account_id,
+	counterparty_id,
+	contract_id,
+	trader_id,
+	strategy_id,
+	status_id,
+	broker_id,
+	sales_code_id,
+	fee_product_id,
+	fee_price,
+	min_ticket_size,
+	direction,
+	created_at,
+	created_by,
+	NULL,
+	NULL,
+	fee_type_id,
+	book_to_ext_account_id
+from
+	fee_schedules
+
+
+delete
+from
+	#fee_schedules
+where
+	internal_account_id != NULL
+and
+	internal_account_id != @internal_account_id
+
+delete
+from
+	#fee_schedules
+where
+	external_account_id != NULL
+and
+	external_account_id != @external_account_id
+
+delete
+from
+	#fee_schedules
+where
+	counterparty_id != NULL
+and
+	counterparty_id != @counterparty_id
+
+delete
+from
+	#fee_schedules
+where
+	contract_id != NULL
+and
+	contract_id != @contract_id
+
+delete
+from
+	#fee_schedules
+where
+	trader_id != NULL
+and
+	trader_id != @trader_id
+
+delete
+from
+	#fee_schedules
+where
+	strategy_id != NULL
+and
+	strategy_id != @strategy_id
+
+delete
+from
+	#fee_schedules
+where
+	status_id != NULL
+and
+	status_id != @status_id
+
+delete
+from
+	#fee_schedules
+where
+	broker_id != NULL
+and
+	broker_id != @broker_id
+
+delete
+from
+	#fee_schedules
+where
+	sales_code_id != NULL
+and
+	sales_code_id != @sales_code_id
+
+delete
+from
+        #fee_schedules
+where
+        trade_type_id != NULL
+and
+        trade_type_id != @trade_type_id
+
+
+/* Calculate Fee */
+
+select
+        @evaluation_notional = volume
+from
+	trade_volumes
+where
+	trade_id = @trade_id
+and
+	convert(date, volume_date) = convert(date, @fee_date)
+and
+	product_id = @fund_eval_ccy_id
+
+
+if @debug = "Y"
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select "debug"="#fee_schedules", #fee_schedules.fee_schedule_id, #fee_schedules.name, #fee_schedules.description, #fee_schedules.fee_schedule_type_id, #fee_schedules.trade_type_id, #fee_schedules.internal_account_id, #fee_schedules.external_account_id, #fee_schedules.counterparty_id, #fee_schedules.contract_id, #fee_schedules.trader_id, #fee_schedules.strategy_id, #fee_schedules.status_id, #fee_schedules.broker_id, #fee_schedules.sales_code_id, #fee_schedules.fee_product_id, #fee_schedules.fee_price, #fee_schedules.min_ticket_size, #fee_schedules.direction, #fee_schedules.created_at, #fee_schedules.created_by, #fee_schedules.archived_at, #fee_schedules.archived_by from #fee_schedules
+
+if @debug = "Y"
+	select evaluation_notional = @evaluation_notional
+
+declare @id int
+declare @ids int
+
+select
+        @id = 0
+select
+        @ids = count(*)
+from
+        #fee_schedules
+where
+        fee_schedule_id > @id
+
+while @ids > 0
+begin
+        select
+                @id = min(fee_schedule_id)
+        from
+                #fee_schedules
+        where
+                fee_schedule_id > @id
+
+        select
+                @fee_schedule_id = NULL,
+                @fee_schedule_type_id = NULL,
+                @fee_product_id = NULL,
+                @fee_price = NULL,
+                @min_ticket_size = NULL,
+                @direction = NULL,
+                @created_at = NULL,
+		@fee_type_id = NULL,
+		@book_to_ext_account_id = NULL
+
+	select
+		@fee_schedule_id = fee_schedule_id,
+		@fee_schedule_type_id = fee_schedule_type_id,
+		@fee_product_id = fee_product_id,
+		@fee_price = fee_price,
+		@min_ticket_size = min_ticket_size,
+		@direction = direction,
+		@created_at = created_at,
+		@fee_type_id = fee_type_id,
+		@book_to_ext_account_id = book_to_ext_account_id
+	from
+		#fee_schedules
+	where
+		fee_schedule_id = @id
+	
+	if @created_at > @trade_date
+	begin
+		select
+        		@fee_schedule_type_id = fee_schedule_type_id,
+        		@fee_product_id = fee_product_id,
+        		@fee_price = fee_price, 
+        		@min_ticket_size = min_ticket_size,
+        		@direction = direction,
+        		@created_at = created_at
+		from
+			archive_fee_schedules 
+		where
+	        	fee_schedule_id = @fee_schedule_id
+		and
+			@trade_date > created_at
+		and
+			@trade_date <= archived_at
+		if @@rowcount = 0
+		begin
+			if @debug = "Y"
+				select "debug"="No archived schedule found for trade_date", trade_date = @trade_date
+	
+			return
+		end
+
+		if @fee_type_id = NULL
+		begin
+			select
+				@fee_type_id = @transaction_type_id
+		end
+	end
+	
+			
+	
+	
+	select
+		@fee_already_booked = "Y"
+	from
+		fs_product_transactions
+	where
+		fee_schedule_id = @fee_schedule_id
+	and
+		trade_id = @trade_id
+	
+	if @fee_already_booked = "Y"
+	begin
+		return
+	end
+	
+	select
+		@fee_schedule_type = name
+	from
+		fee_schedule_types
+	where
+		fee_schedule_type_id = @fee_schedule_type_id
+	if @fee_schedule_type = NULL
+	begin
+        	select
+                	error="Error",
+                	msg="Problem finding fee schedule type from id",
+			fee_schedule_type_id = @fee_schedule_type_id
+        	return
+	end
+	
+	
+	if @fee_schedule_type = "Volume"
+	begin
+	
+		if @evaluation_notional < @min_ticket_size
+			select
+				@evaluation_notional = @min_ticket_size
+	
+		select
+			@fee_quantity = (@evaluation_notional / 1000000) * @fee_price * @direction
+		
+	end
+	else if @fee_schedule_type = "Ticket Count"
+	begin
+		select
+			@fee_quantity = NULL
+		select
+			@fee_quantity = @fee_price * @direction
+		select
+			@fee_price = 1.00
+	end
+
+	if @fee_quantity = NULL
+	begin
+		select
+			@fee_quantity = 0
+	end
+
+	
+	exec
+        	j_nextkey
+                	"product_transactions",
+                	@product_transaction_id output
+
+	if @debug = "Y"
+		select "debug"="inserting product_transaction", product_transaction_id=@product_transaction_id, fee_quantity=@fee_quantity
+
+	begin tran
+		insert into
+			product_transactions (
+               			product_transaction_id,
+               			deal_id,
+               			user_id,
+               			transaction_type_id,
+               			internal_account_id,
+               			external_account_id,
+               			counterparty_id,
+               			quantity,
+				price,
+               			product_id,
+               			value_date,
+               			transaction_date,
+               			trader_id,
+               			strategy_id,
+               			status_id,
+               			broker_id,
+               			identifier,
+				book_to_ext_account_id
+			)
+		values(
+               		@product_transaction_id,
+               		@deal_id,
+               		@user_id,
+               		@fee_type_id,
+               		@internal_account_id,
+               		@external_account_id,
+               		@counterparty_id,
+               		@fee_quantity,
+			1.00, /* rate in product_transactions is 1.00, breaks applied later */
+               		@fee_product_id,
+               		@value_date,
+               		@trade_date,
+               		@trader_id,
+               		@strategy_id,
+               		@status_id,
+               		@broker_id,
+               		@identifier,
+			@book_to_ext_account_id
+		)
+               	if @@rowcount != 1
+               	begin
+                       	select 
+                               	"error"="Error",
+                               	"msg"="Problem inserting product transaction"
+                       	rollback
+                       	return
+               	end
+	
+		insert into
+			fs_product_transactions(
+       				fee_schedule_id,
+       				product_transaction_id,
+       				trade_id,
+       				created_by,
+       				created_at
+			)
+		values(
+               		@fee_schedule_id,
+               		@product_transaction_id,
+               		@trade_id,
+               		@tico_account_id,
+               		getdate()
+		)
+		if @@rowcount != 1
+		begin
+			select
+				"error"="Error",
+				"msg"="Problem inserting fs product transaction"
+			rollback
+			return
+		end
+	commit tran
+
+	select
+        	@ids = count(*)
+	from
+        	#fee_schedules
+	where
+        	fee_schedule_id > @id
+
+end
+	
+select @ed = getdate()
+if @debug = "Y"
+	select "msg"="runtime", "ss"=datediff(ss, @bd, @ed), "ms"=datediff(ms, @bd, @ed)
+
+go

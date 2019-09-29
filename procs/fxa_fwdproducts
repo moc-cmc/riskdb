@@ -1,0 +1,24 @@
+
+if object_id("fxa_fwdproducts") != NULL
+    drop procedure
+        fxa_fwdproducts
+go
+
+create procedure
+	fxa_fwdproducts
+		@login varchar(50)
+as
+
+select
+	a.symbol
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+and
+	b.name = "Currency"
+order by
+	a.symbol
+
+go

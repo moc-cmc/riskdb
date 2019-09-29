@@ -1,0 +1,20 @@
+create or replace procedure
+	spc_lockingscheme
+
+as
+
+select 
+        name = convert(varchar(30),name), 
+        locking_scheme = case (sysstat2 & 57344)
+                when 8192 then "all pages"
+                when 16384 then "datapages"
+                when 32768 then "datarows"
+        end
+from 
+        sysobjects
+where 
+        type in ("U", "S")
+order by 
+        name
+
+go

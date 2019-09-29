@@ -1,0 +1,112 @@
+use
+	risk_atglobal
+go
+
+drop procedure
+	mn_archivemaversion
+go
+
+create procedure
+	mn_archivemaversion
+		@login varchar(50),
+		@master_allocation varchar(50),
+		@version int
+as
+
+declare @master_allocation_id int
+declare @ma_version_id int
+declare @status varchar(50)
+declare @active_ma_versions int
+declare @archived_status_id int
+
+select
+	@master_allocation_id = master_allocation_id
+from
+	master_allocations
+where
+	name = @master_allocation
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Master allocation not found",
+		master_allocation = @master_allocation
+	return
+end
+
+select
+	@ma_version_id = ma_version_id
+from
+	ma_versions
+where
+	master_allocation_id = @master_allocation_id
+and
+	version = @version
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Version not found",
+		master_allocation = @master_allocation,
+		version = @version
+	return
+end
+
+select
+	@status = a.name
+from
+	statuses a,
+	ma_versions b
+where
+	a.status_id = b.status_id
+and
+	b.ma_version_id = @ma_version_id
+
+
+if @status != "Active"
+begin
+	select
+		status = "Error",
+		message = "Only active versions can be archived"
+	return
+end
+
+
+select
+	@archived_status_id = status_id
+from
+	statuses
+where
+	name = "Archived"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@archived_status_id output
+
+	insert into
+		statuses
+	values(
+		@archived_status_id,
+		"Archived")
+end
+
+update
+	ma_versions
+set
+	status_id = @archived_status_id,
+	retirement_date = getdate()
+where
+	ma_version_id = @ma_version_id
+
+
+exec
+	mn_inspectsubaccounts
+		@login,
+		@master_allocation,
+		@version
+
+
+go
+

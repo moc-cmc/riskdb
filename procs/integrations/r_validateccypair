@@ -1,0 +1,209 @@
+drop procedure
+	r_validateccypair
+go
+
+create procedure
+	r_validateccypair
+		@login varchar(50),
+		@symbol varchar(50) = NULL,
+		@ccy1 varchar(50)=NULL,
+		@ccy2 varchar(50)=NULL,
+		@contract_id int output,
+		@contract varchar(50) output,
+		@inverted varchar(50) output
+		
+as
+
+declare @substring1 varchar(50)
+declare @substring2 varchar(50)
+declare @evaluation_currency varchar(50)
+declare @fund_id int
+declare @inverted_price_style_id int
+declare @check_inverted varchar(50)
+
+/* Ensure we have neccesary variables */
+if @symbol = NULL and  @ccy1 = NULL and @ccy2 = NULL
+begin
+	select
+		error = "Symbol, CCY1 and CCY2 all NULL"
+	return
+end
+
+if @symbol = NULL and  @ccy1 != NULL and @ccy2 = NULL
+begin
+	select
+		error = "CCY1 was provided without Symbol or CCY2"
+	return
+end
+
+if @symbol = NULL and  @ccy1 = NULL and @ccy2 != NULL
+begin
+	select
+                error = "CCY2 was provided without Symbol or CCY1"
+        return
+end
+
+/* Even if we have all three variables (@symbol, @ccy1 and @ccy2) determine from ccy1 + ccy2  */
+if @symbol != NULL and  @ccy1 != NULL and @ccy2 != NULL
+begin
+        select
+                @contract = @ccy1 + @ccy2
+
+end
+
+/* Determine @contract based on  @ccy1 and @ccy2  */
+if @symbol = NULL and  @ccy1 != NULL and @ccy2 != NULL
+begin
+	select
+		@contract = @ccy1 + @ccy2
+
+end
+
+/* If @ccy1 and @ccy2 are not provided we need to set the @contract equal to @symbol */
+if @symbol != NULL and @ccy1 = NULL and @ccy2 = NULL
+begin
+        select
+                @ccy1 = substring(@symbol, 1, 3),
+                @ccy2 = substring(@symbol, 4, 6),
+                @contract = @symbol
+
+end
+
+/* Evalate @contract on  @ccy1  */
+if @symbol != NULL and  @ccy1 != NULL and @ccy2 = NULL
+begin
+        select
+                @substring1 = substring(@symbol, 1, 3),
+                @substring2 = substring(@symbol, 4, 6)
+        
+        if @substring1 != @ccy1
+        begin
+                select
+                        @contract = @substring2 + @substring1,
+			@ccy2 = @substring1,
+                        @check_inverted = "Y"
+        end
+	else
+	begin
+		select
+			@contract = @symbol,
+			@ccy2 = @substring2
+	end
+        
+end
+
+/* Evalate @contract on @ccy2  */
+if @symbol != NULL and @ccy1 = NULL and @ccy2 != NULL
+begin
+        select
+                @substring1 = substring(@symbol, 1, 3),
+                @substring2 = substring(@symbol, 4, 6)
+
+        if @substring2 != @ccy2
+        begin
+                select
+                        @contract = @substring2 + @substring1,
+			@ccy1 = @substring2,
+                        @check_inverted = "Y"
+        end
+	else
+	begin
+		select
+			@contract = @symbol,
+			@ccy1 = @substring1
+	end
+end
+
+
+/* Determine contract_id based on @contract */
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @contract
+
+/*If @contract_id is NULL, create contract */
+if @contract_id = NULL
+begin
+	select
+		message = "Contract not found",
+		contract = @contract,
+		action = "Fetching contract from contracts db with r_addbatchfwdsubscription"
+
+
+        exec
+        	r_defaultfundforlogin
+                	@login = @login,
+                	@fund_id = @fund_id output
+
+        select
+        	@evaluation_currency = a.symbol
+        from
+        	products a,
+        	funds b
+        where
+        	a.product_id = b.evaluation_currency_id 
+	and
+		b.fund_id=@fund_id
+  
+        exec r_addbatchfwdsubscription
+                        @login = @login,
+                        @symbol = @contract,
+                        @dealt_currency = @ccy1,
+                	@counter_currency = @ccy2,
+                        @evaluation_currency = @evaluation_currency 
+
+        /* @waitfor_delay = "HH:MM:SS.00"*/
+	declare @waitfor_delay char(11)
+	select
+		@waitfor_delay = "00:00:03.00"
+        /* sleep for 1 second */
+
+	select 
+		action = "Sleeping @waitfor_delay and checking for contract again",
+		waitfor_delay = @waitfor_delay
+
+        waitfor delay @waitfor_delay
+
+        if not exists (select contract_id from contracts where symbol=@symbol)
+        begin
+                select
+                        status = "Error",
+                        message = "Contract not found",
+                        symbol=@symbol
+                return
+        end
+	else
+	begin
+		select
+			@contract_id = contract_id
+		from
+			contracts
+		where
+			symbol = @contract
+
+		select 
+			"Contract Successfully Created"
+	end
+end
+
+/* If we have flagged the contract as potentially inverted, check to see if inverted */
+
+select
+        @inverted = 'Y'
+from
+        contracts a,
+        contract_price_styles b,
+        price_styles c
+where
+        a.contract_id = b.contract_id
+and
+        b.price_style_id = c.price_style_id
+and
+        a.contract_id = @contract_id
+and
+        c.name = "Inverted"
+
+
+go

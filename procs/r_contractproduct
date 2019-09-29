@@ -1,0 +1,110 @@
+
+if object_id("r_contractproduct") != NULL
+    drop procedure
+        r_contractproduct
+go
+ 
+create procedure
+	r_contractproduct
+		@contract_id int,
+		@product_id int output
+as
+
+declare @underlying_contract_id int
+
+select
+	@product_id = product_id
+from
+	forwards
+where
+	contract_id = @contract_id
+
+if @product_id = NULL
+	select
+		@product_id = a.product_id
+	from
+		forwards a,
+		futures b,
+		future_contracts c
+	where
+		a.contract_id = b.forward_id
+	and
+		b.future_id = c.future_id
+	and
+		c.contract_id = @contract_id
+
+if @product_id = NULL
+begin
+	select
+		@underlying_contract_id = a.underlying_contract_id
+	from
+		options a,
+		option_expirations b,
+		option_contracts c
+	where
+		a.option_id = b.option_id
+	and
+		b.option_expiration_id = c.option_expiration_id
+	and
+		c.contract_id = @contract_id
+
+	select
+		@product_id = product_id
+	from
+		forwards
+	where
+		contract_id = @underlying_contract_id
+
+	if @product_id = NULL
+		select
+			@product_id = a.product_id
+		from
+			forwards a,
+			futures b,
+			future_contracts c
+		where
+			a.contract_id = b.forward_id
+		and
+			b.future_id = c.future_id
+		and
+			c.contract_id = @underlying_contract_id
+end
+if @product_id = NULL
+begin
+	select
+		@underlying_contract_id = a.underlying_contract_id
+	from
+		options a,
+		option_expirations b,
+		exotic_contracts c
+	where
+		a.option_id = b.option_id
+	and
+		b.option_expiration_id = c.option_expiration_id
+	and
+		c.contract_id = @contract_id
+
+	select
+		@product_id = product_id
+	from
+		forwards
+	where
+		contract_id = @underlying_contract_id
+
+	if @product_id = NULL
+		select
+			@product_id = a.product_id
+		from
+			forwards a,
+			futures b,
+			future_contracts c
+		where
+			a.contract_id = b.forward_id
+		and
+			b.future_id = c.future_id
+		and
+			c.contract_id = @underlying_contract_id
+end
+
+
+go

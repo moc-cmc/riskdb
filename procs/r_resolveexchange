@@ -1,0 +1,304 @@
+
+if object_id("r_resolveexchange") != NULL
+    drop procedure
+        r_resolveexchange
+go
+
+create procedure
+	r_resolveexchange
+        @login varchar(50),
+        @source varchar(50),
+        
+        @exchange_id int = NULL out,
+        @name varchar(100) = NULL out,
+        @source_symbol varchar(50) = NULL out,
+        
+        @create char(1) = NULL out,
+        @report char(1) = NULL
+as
+
+/* messages */
+declare @to varchar(50)
+declare @issue varchar(250)
+declare @subject varchar(250)
+declare @content varchar(250)
+declare @check_sql varchar(250)
+
+declare @should_create char(1)
+declare @source_id int
+
+declare @exec_sql varchar(1024)
+
+select
+    @should_create = @create,
+    @create = "N"
+ 
+if @login = NULL or @source = NULL
+begin
+    if @report != "N"
+        select
+            status = "Error",
+            message = "Login and source required",
+            login = @login,
+            source = @source
+    raiserror 99001, "@login and @source required"
+    return
+end
+
+/* Resolve the @source_id from @source */
+exec
+    r_resolvesource
+        @login = @login,
+        @source_id = @source_id out,
+        @name = @source,
+        @report = @report
+if @source_id = NULL
+    return
+    
+if @exchange_id = NULL
+begin
+
+    if object_id("exchange_symbols") != NULL
+    begin
+        select @exec_sql = '
+        if @exchange_id = NULL and @source_symbol != NULL
+            select
+                @exchange_id = a.exchange_id
+            from
+                exchanges a
+            join
+                exchange_symbols b
+                    on a.exchange_id = b.exchange_id
+                    and b.source_id = @source_id
+            where
+                symbol = @source_symbol
+        '
+        exec (@exec_sql)
+    end
+    
+    if @exchange_id = NULL and @name != NULL
+        select
+            @exchange_id = exchange_id
+        from
+            exchanges
+        where
+            name = @name
+
+end
+
+if @exchange_id = NULL
+begin
+
+    /* ---------------------------- MARK: Create ---------------------------- */
+
+    if @should_create != "N" and /* has permission */ exists (
+        select
+            *
+        from
+            source_permissions
+        where
+            source_id = @source_id
+        and
+            autocreates_exchanges = "Y"
+    )
+    begin
+    
+        if @name = NULL
+        begin
+            
+            select
+                @issue = "unsupported:r_resolveexchange():missing:@name",
+                @to = "support",
+                @subject = "Couldn't autocreate exchange without a symbol",
+                @content = "Exchange does not exist. r_resolveexchange attempted to create the exchange but no @name was provided."
+            exec
+                r_postmessage
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High"
+                    
+            if @report != "N"
+                select
+                    status = "Error",
+                    message = "Cannot create exchange without specifying symbol",
+                    exchange = @name
+                    
+            return
+        end
+    
+        /*+-------------------------------------------------------------------* 
+         |                          INSERT exchanges                          | 
+         *--------------------------------------------------------------------*/
+
+        exec
+            j_nextkey
+                "exchanges",
+                @exchange_id out
+        
+        insert into
+            exchanges (
+                exchange_id,
+                name
+            )
+            values (
+                @exchange_id,
+                @name
+            )
+        
+        if @@rowcount != 1
+        begin
+        
+            select
+                @issue = "insert:exchanges(name=" + @name + ")",
+                @to = "support",
+                @subject = "Failed to create exchange",
+                @content = "The exchange, """ + @name + """, does not exist and r_resolveexchange attempted to autocreate it but no row was inserted with (exchange_id: " + convert(varchar(10), @exchange_id) + ", name: '" + @name + "').",
+                @check_sql = "if exists(select * from exchanges where name = """ + @name + """) exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+            exec
+                r_manageissue
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High",
+                    @check_sql = @check_sql
+                    
+            if @report != "N"
+                select
+                    status = "Error",
+                    message = "Couldn't add exchange",
+                    exchange = @name
+            
+            return
+        end
+        
+        /*+-------------------------------------------------------------------* 
+         |                      INSERT exchange_symbols                       | 
+         *--------------------------------------------------------------------*/
+
+        if @source_symbol != NULL and object_id("exchange_symbols") != NULL
+        begin
+            select @exec_sql = '
+            insert into
+                exchange_symbols (
+                    exchange_id,
+                    source_id,
+                    symbol
+                )
+                values (
+                    @exchange_id,
+                    @source_id,
+                    @source_symbol
+                )
+            '
+            exec (@exec_sql)
+
+            if @@rowcount != 1
+            begin
+            
+                select
+                    @issue = "insert:exchange_symbols(symbol=" + @source_symbol + ")",
+                    @to = "support",
+                    @subject = "Failed to create exchange symbol, """ + @source_symbol + """, for exchange, """ + @name +  """, for source, """ + @source + """",
+                    @content = "The exchange_symbol, """ + @source_symbol + """, does not exist and r_resolveexchange attempted to autocreate it but no row was inserted with (exchange_id: " + convert(varchar(10), @exchange_id) + ", source_id: " + convert(varchar(10), @source_id) + ", symbol: '" + @name + "').",
+                    @check_sql = "if exists(select * from exchange_symbols where exchange_id = " + convert(varchar(10), @exchange_id) + " and source_id = " + convert(varchar(10), @source_id) + " and symbol = '" + @source_symbol + "') exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+                exec
+                    r_manageissue
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High",
+                        @check_sql = @check_sql
+                        
+                if @report != "N"
+                    select
+                        status = "Error",
+                        message = "Couldn't add exchange symbol",
+                        exchange = @name,
+                        symbol = @source_symbol
+                
+            end
+            
+        end
+        
+        select
+            @create = "Y"
+    
+        select
+            @to = "support",
+            @subject = "Exchange, """ + @name + """, created",
+            @content = "The exchange, """ + @name + """, was created by " + @login + " on behalf of " + @source + "."
+        exec
+            r_postmessage
+                @to = @to,
+                @channel = "General",
+                @subject = @subject,
+                @content = @content,
+                @priority = "Low"
+                
+    end
+    else
+    begin
+
+        select
+            @issue = "notfound:exchanges(name=" + @name + ")",
+            @to = "support",
+            @subject = "Exchange, """ + @name + """, not found",
+            @content = "The exchange, """ + @name + """, could not be found.",
+            @check_sql = "if exists(select * from exchanges where name = """ + @name + """) exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+        exec
+            r_manageissue
+                @name = @issue,
+                @to = @to,
+                @channel = "System",
+                @subject = @subject,
+                @content = @content,
+                @priority = "High",
+                @check_sql = @check_sql
+                
+        if @report != "N"
+            select
+                status = "Error",
+                message = "Exchange not found",
+                exchange = @name
+        
+        return
+    end
+    
+end
+
+if object_id("exchange_symbols") != NULL
+begin
+    select @exec_sql = '
+    select
+        @name = a.name,
+        @source_symbol = b.symbol
+    from
+        exchanges a
+    left outer join
+        exchange_symbols b
+            on a.exchange_id = b.exchange_id
+            and b.source_id = @source_id
+    where
+        a.exchange_id = @exchange_id
+    '
+    exec (@exec_sql)
+end
+else
+begin
+    select
+        @name = a.name,
+        @source_symbol = NULL
+    from
+        exchanges a
+    where
+        a.exchange_id = @exchange_id
+end
+
+go

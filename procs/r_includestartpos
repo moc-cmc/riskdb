@@ -1,0 +1,30 @@
+drop procedure
+	r_includestartpos
+go
+
+create procedure
+	r_includestartpos
+
+as
+
+
+create table
+	#include_start_pos(
+		name varchar(5)
+	)
+
+insert into 
+	#include_start_pos
+values(
+	"Yes")
+insert into 
+        #include_start_pos
+values(
+        "No")
+
+
+select name from #include_start_pos order by name DESC
+
+go
+
+

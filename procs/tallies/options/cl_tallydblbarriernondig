@@ -1,0 +1,64 @@
+create or replace procedure
+	cl_tallydblbarriernondig
+		@login varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@dealt_currency varchar(20),
+		@counter_currency varchar(20),
+		@put_call varchar(10),
+		@rebate numeric(30,4),
+		@notional_currency varchar(20),
+		@spot_ref numeric(30,8),
+		@lower_barrier numeric(30,8),
+		@upper_barrier numeric(30,8),
+		@payment_timing varchar(25),
+		@exercise_style varchar(50),
+		@expiration datetime,
+		@option_settledate datetime,
+		@timezone varchar(50),
+		@premium numeric(30,4),
+		@premium_ccy varchar(10),
+		@premium_settledate datetime,
+		@fixing_source varchar(50),
+		@trade_note varchar(100)
+
+	
+as
+
+declare @deal_id int
+
+exec
+	api_clientdblbarriernondig
+		@login = @login,
+		@deal_id = @deal_id output,
+		@client_user = @client_user,
+		@client_buys_sells = @client_buys_sells,
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@put_call = @put_call,
+		@rebate = @rebate,
+		@notional_currency = @notional_currency,
+		@spot_ref = @spot_ref,
+		@lower_barrier = @lower_barrier,
+		@upper_barrier = @upper_barrier,
+		@payment_timing = @payment_timing,
+		@exercise_style = @exercise_style,
+		@expiration = @expiration,
+		@option_settledate = @option_settledate,
+		@timezone = @timezone,
+		@premium = @premium,
+		@premium_ccy = @premium_ccy,
+		@premium_settledate = @premium_settledate,
+		@fixing_source = @fixing_source,
+		@trade_note = @trade_note
+
+
+
+
+exec
+	r_inspectdealtrades
+		@login = @login,
+		@deal_id = @deal_id 
+
+
+go

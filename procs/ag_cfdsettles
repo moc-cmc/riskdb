@@ -1,0 +1,530 @@
+
+drop procedure
+	ag_cfdsettles
+go
+
+create procedure
+	ag_cfdsettles
+		@login varchar(50),
+		@trade_date datetime=NULL
+
+as
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @unassigned_style varchar(250)
+declare @prelim_style varchar(250)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "trade_date",
+        NULL,
+        NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_price",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"process_cfds",
+	"Process CFD Trades",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_rates",
+	"Set CFD Rates",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_price",
+	"Edit CFD Settle",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_quantity",
+	"Edit CFD Contract Size",
+	NULL) 
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "detail_report",
+        "CFD Detail Report",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "convert_settlements",
+        "Close Settle Balances CFD",
+        NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"year_to_date",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "price",
+        "Number",
+        "#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"month_to_date",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"daily",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"value",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@unassigned_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@prelim_style = "background:#DCE0DA;border: 1px solid white;font-weight:bold"
+
+/* CHECK TO SEE IF THIS IS ENABLED */
+declare @enabled_product_features varchar(50)
+select
+        @enabled_product_features = name
+from
+        enabled_product_features
+where
+        name in("CFDs")
+if @@rowcount != 1
+begin
+        select
+		section = "Feature Not Supported",
+                message = "<b>CFDs</b>" + " must be enabled to view this report. Please contact your account manager for more information regarding feature set."
+        return
+end
+
+
+if @trade_date = NULL
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+create table
+	#cfds(
+		id int identity,
+		style varchar(250) NULL,
+		contract_id int,
+		symbol varchar(50) NULL,
+		product_id int,
+		product_symbol varchar(50) NULL,
+		product_name varchar(100) NULL,
+		currency_id int,
+		currency_symbol varchar(50) NULL,
+		quantity numeric(30,2) NULL,
+		status_id int NULL,
+		status varchar(50) NULL,
+		tico_account_id int NULL,
+		updated_by varchar(50) NULL,
+		settle_required char(1) NULL,
+		timestamp datetime NULL)
+
+insert into
+	#cfds(
+		contract_id,
+		product_id,
+		product_symbol,
+		product_name,
+		currency_id,
+		currency_symbol,
+		quantity)
+select
+	b.contract_id,
+	a.product_id,
+	a.symbol,
+	a.name,
+	b.currency_id,
+	c.symbol,
+	b.quantity
+from
+	products a,
+	forwards b,
+	products c
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = c.product_id
+and
+	a.name like "%CFD"
+order by
+	a.symbol
+
+update
+	#cfds
+set
+	style = @style
+
+create table
+	#traded_cfds(
+		contract_id int
+)
+
+insert into
+	#traded_cfds
+select
+	distinct(a.contract_id)
+from
+	trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+and	
+	a.value_date = convert(date, @trade_date)
+and
+	b.name in("CFD", "CFD Roll")
+
+update
+	#cfds
+set
+	settle_required = "Y"
+from
+	#cfds a,
+	#traded_cfds b
+where
+	a.contract_id = b.contract_id
+
+create table
+	#cfd_statuses(
+		contract_id int,
+		timestamp datetime,
+		status_id int NULL,
+		cfd_status_id int NULL,
+		tico_account_id int NULL
+		)
+insert into
+	#cfd_statuses(
+		contract_id,
+		timestamp)
+select
+	contract_id,
+	max(timestamp)
+from
+	cfd_statuses
+group by
+	contract_id
+
+update
+	#cfd_statuses
+set
+	a.status_id = b.status_id,
+	a.cfd_status_id = b.cfd_status_id,
+	a.tico_account_id = b.tico_account_id
+from
+	#cfd_statuses a,
+	cfd_statuses b
+where
+	a.contract_id = b.contract_id
+and
+	a.timestamp = b.timestamp
+
+update
+	#cfds
+set
+	a.status_id = b.status_id,
+	a.updated_by = c.login,
+	a.timestamp = b.timestamp
+from
+	#cfds a,
+	#cfd_statuses b,
+	tico_accounts c
+where
+	a.contract_id = b.contract_id
+and
+	b.tico_account_id = c.account_id
+
+update
+	#cfds
+set
+	a.status = b.name
+from
+	#cfds a,
+	statuses b
+where
+	a.status_id = b.status_id
+
+update
+	#cfds
+set
+	style = @unassigned_style
+where
+	lower(status) like "%unassigned%"
+
+select
+	section = "CFDS",
+	style ,
+	symbol = product_symbol,
+	name = product_name,
+	currency = currency_symbol,
+	quantity,
+	status,
+	updated_by,
+	timestamp,
+	set_quantity = "ASSIGN",
+	trade_date = @trade_date
+from
+	#cfds
+where
+	style = @unassigned_style
+order by
+	id
+
+create table
+	#settles(
+		contract_id int,
+		style varchar(250) NULL,
+		symbol varchar(50) NULL,
+		last_price float NULL,
+		price float NULL,
+		settle_price float NULL,
+		status_id int NULL,
+		status varchar(250) NULL,
+		rate float NULL,
+		days float NULL,
+		exchange_rate float NULL,
+		conversion_cfd char(1) NULL,
+		settle_required char(1) NULL	)
+
+insert into
+	#settles(
+		contract_id,
+		style,
+		symbol,
+		conversion_cfd,
+		settle_required)
+select
+	a.contract_id,
+	style = @style,
+	b.symbol,
+	"N",
+	a.settle_required
+from
+	#cfds a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#settles
+set
+	conversion_cfd = "Y"
+from
+	#settles a,
+	conversion_cfds b
+where
+	a.contract_id = b.contract_id
+
+update
+	#settles
+set
+	a.price = b.price
+from
+	#settles a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, b.price_date) = convert(date, @trade_date)
+
+
+update
+	#settles
+set
+	a.last_price = b.price
+from
+	#settles a,
+	current_prices b
+where
+	a.contract_id = b.contract_id
+
+update
+	#settles
+set
+	settle_price = price
+update
+	#settles
+set
+	settle_price = last_price
+where
+	settle_price = NULL
+
+
+update
+	#settles
+set
+	a.status_id = b.status_id,
+	a.rate = b.rate,
+	a.days = b.days,
+	a.exchange_rate = b.exchange_rate
+from
+	#settles a,
+	cfd_eod_rates b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, b.rate_date) = convert(date, @trade_date)
+
+update
+	#settles
+set
+	status = "Missing Rates"
+
+update
+	#settles 
+set
+	a.status = b.name
+from
+	#settles a,
+	statuses b
+where
+	a.status_id = b.status_id
+
+
+update
+	#settles
+set
+	style = @prelim_style
+where
+	status = "Prelim"
+
+update 
+	#settles
+set
+	style = @error_style
+where
+	settle_required = "Y"
+and
+	price = NULL
+
+select
+	section = "CFD Operations",
+	import_settles = "Import Settles",
+	import_rates = "Import Rates",
+	detail_report = "Detail Report",
+	convert_settlements = "Convert Settlements",
+	trade_date = @trade_date,
+	settle_date = @trade_date
+	
+select
+	section = case when conversion_cfd = "N" then "Settle Data" else "Conversion Values" end,
+	style,
+	symbol,
+	last_price,
+	price,
+	settle_price,
+	settle_date = @trade_date,
+	set_price = case when conversion_cfd = "N" then "SET PRICE" else "" end,
+	status,
+	rate,
+	days,
+	exchange_rate,
+	set_rates = case when conversion_cfd = "N" then "SET RATES" else "" end
+from
+	#settles
+where
+	conversion_cfd = "N"
+order by
+	section DESC,
+	symbol
+
+
+	
+/*	
+exec
+        ag_cfdtransactions
+                @login = @login,
+                @trade_date = @trade_date
+*/
+/*
+select
+	process_cfds = "Process CFDS",
+	trade_date = @trade_date
+
+*/
+
+
+go

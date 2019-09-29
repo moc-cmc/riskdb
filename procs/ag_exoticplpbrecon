@@ -1,0 +1,792 @@
+
+drop procedure
+	ag_exoticplpbrecon
+go
+
+create procedure
+	ag_exoticplpbrecon
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"as_of_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"include_starting_positions",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"run_name",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"balance",
+	"Run Ladder Views",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"include_positions",
+	"Run Ladder Views",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"settle_price",
+	"Number",
+	 "#,##0.00000")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"rate",
+	"Number",
+	 "#,##0.00000")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"premium_equiv",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"deal_pl_equiv",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"deal_pl",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"counter_amt",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dealt_amt",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"premium",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+if @trade_date = NULL
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not configured for login",
+		login = @login
+	return
+end
+
+
+/**********************************************************************/
+create table
+	#conversion_rates(
+		product_id int,
+		rate float NULL)
+insert into
+	#conversion_rates(
+		product_id)
+select
+	product_id
+from
+	products
+
+update
+	#conversion_rates
+set
+	rate = 1.0
+where
+	product_id = @evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = a.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.rate = NULL
+
+/**********************************************************************/
+
+create table
+	#trades(
+		style varchar(250) NULL,
+		trade_id int,
+		deal_id int,
+		external_account_id int,
+		account varchar(50) NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		broker_id int NULL,
+		broker varchar(50) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(100) NULL,
+		trade_type_id int NULL,
+		trade_type varchar(50) NULL,
+		trade_date datetime NULL,
+		value_date datetime NULL,
+		quantity float NULL,
+		contract_id int NULL,
+		symbol varchar(100) NULL,
+		underlying_contract_id int NULL,
+		underlying varchar(50) NULL,
+		expiration datetime NULL,
+		timezone varchar(50) NULL,
+		strike float NULL,
+		put_call varchar(10) NULL,
+		exercise_style varchar(50) NULL,
+		premium float NULL,
+		premium_ccy_id int NULL,
+		premium_ccy varchar(50) NULL,
+                premium_date datetime NULL,
+		premium_equiv float NULL,
+		deal_pl_equiv float NULL,
+		barrier_direction varchar(50) NULL,
+		barrier_location varchar(50) NULL,
+		barrier_type varchar(50) NULL,
+		barrier float NULL,
+		barrier_start datetime NULL,
+		barrier_end datetime NULL,
+		payment_timing varchar(50) NULL,
+		upper_barrier varchar(50) NULL,
+		lower_barrier varchar(50) NULL)
+
+/**********************************/
+insert into
+	#trades(
+		style,
+		trade_id,
+		deal_id,
+		external_account_id,
+		counterparty_id,
+		broker_id,
+		trade_type_id,
+		trade_date,
+		value_date,
+		quantity,
+		contract_id)
+select
+	style = @style,
+	a.trade_id,
+	a.deal_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.broker_id,
+	a.trade_type_id,
+	a.trade_date,
+	a.value_date,
+	a.quantity,
+	a.contract_id
+from
+	trades a,
+	fund_external_accounts b,
+	exotic_contracts c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = c.contract_id
+and
+	b.fund_id = @fund_id
+and
+	a.trade_date < @end_date
+and
+	a.trade_date >= @begin_date
+and
+	a.value_date >= @begin_date
+
+/**********************************/
+
+
+update
+	#trades
+set
+	a.prime_broker_id = b.prime_broker_id
+from
+	#trades a,
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#trades
+set
+	a.prime_broker = c.name
+from
+	#trades a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+
+update
+	#trades
+set
+	a.symbol = b.symbol
+from
+	#trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.account = b.symbol
+from
+	#trades a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#trades
+set
+	a.counterparty = b.name
+from
+	#trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+update
+	#trades
+set
+	a.broker = b.symbol
+from
+	#trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+	
+update
+	#trades
+set
+	a.trade_type = b.name
+from
+	#trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+
+/*********/
+update
+        #trades
+set
+        a.underlying_contract_id = d.underlying_contract_id,
+        a.strike = b.strike,
+        a.put_call = b.put_call,
+        a.expiration = c.expiration,
+        a.timezone = e.timezone
+from
+        #trades a,
+        exotic_contracts b,
+        option_expirations c,
+        options d,
+        timezones e
+where
+        a.contract_id = b.contract_id
+and
+        b.option_expiration_id = c.option_expiration_id
+and
+        c.option_id = d.option_id
+and
+        c.timezone_id = e.timezone_id
+
+/*********/
+
+update
+	#trades
+set
+	a.underlying = b.symbol
+from
+	#trades a,
+	contracts b
+where
+	a.underlying_contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.premium = c.amount,
+	a.premium_ccy_id = c.currency_id,
+	a.premium_date = c.transaction_date
+from
+	#trades a,
+	account_transaction_trades b,
+	account_transactions c
+where
+	a.trade_id = b.trade_id
+and
+	b.account_transaction_id = c.account_transaction_id
+
+update
+	#trades
+set
+	a.premium_ccy = b.symbol
+from
+	#trades a,
+	products b
+where
+	a.premium_ccy_id = b.product_id
+
+update
+	#trades
+set
+	a.premium_equiv = a.premium * b.rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.premium_ccy_id = b.product_id
+
+create table
+	#deals(
+		deal_id int,
+		premium_equiv float NULL)
+insert into
+	#deals(
+		deal_id,
+		premium_equiv)
+select
+	deal_id,
+	sum(premium_equiv)
+from
+	#trades
+group by
+	deal_id
+
+update
+	#trades
+set
+	a.deal_pl_equiv = b.premium_equiv
+from
+	#trades a,
+	#deals b
+where
+	a.deal_id = b.deal_id
+
+update
+	#trades
+set
+	a.barrier_direction = b.value
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Barrier Direction"
+
+update
+	#trades
+set
+	a.barrier = convert(float, b.value)
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Lower Barrier"
+
+update
+	#trades
+set
+	a.barrier = convert(float, b.value)
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Upper Barrier"
+
+
+update
+	#trades
+set
+	a.barrier_start = convert(datetime, b.value)
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Upper Window Start"
+
+update
+	#trades
+set
+	a.barrier_start = convert(datetime, b.value)
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Lower Window Start"
+
+
+update
+	#trades
+set
+	a.barrier_end = convert(datetime, b.value)
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Upper Window End"
+
+update
+	#trades
+set
+	a.barrier_end = convert(datetime, b.value)
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Lower Window End"
+
+update
+	#trades
+set
+	a.put_call = b.value
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Put Call"
+
+update
+	#trades
+set
+	a.barrier_location = b.value
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id 
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Barrier Location"
+
+update
+	#trades
+set
+	barrier_type = "Up and"
+where
+	barrier_location = "U"
+
+update
+	#trades
+set
+	barrier_type = "Down and"
+where
+	barrier_location = "D"
+
+
+update
+	#trades
+set
+	barrier_type = rtrim(barrier_type) + " Out"
+where
+	barrier_direction = "O"
+
+update
+	#trades
+set
+	barrier_type = rtrim(barrier_type) + " In"
+where
+	barrier_direction = "I"
+
+update
+	#trades
+set
+	a.exercise_style = b.value
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Exercise Style"
+
+
+update
+	#trades
+set
+	a.payment_timing = b.value
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Timing"
+
+update
+	#trades
+set
+	a.upper_barrier = b.value
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Upper Barrier"
+
+update
+	#trades
+set
+	a.lower_barrier = b.value
+from
+	#trades a,
+	exotic_trade_attributes b,
+	attribute_types c
+where
+	a.trade_id = b.trade_id
+and
+	b.attribute_type_id = c.attribute_type_id
+and
+	c.name = "Lower Barrier"
+
+
+select
+	a.style,
+	a.trade_id,
+	a.deal_id,
+	a.account,
+	a.counterparty,
+	a.broker,
+	trade_type = "Exotic",
+	a.trade_date,
+	a.quantity,
+	a.underlying,
+	a.expiration,
+	a.timezone,
+	a.strike,
+	a.put_call,
+	a.exercise_style,
+	a.barrier_type,
+	a.payment_timing,
+	a.barrier,
+	a.upper_barrier,
+	a.lower_barrier,
+	a.barrier_start,
+	a.barrier_end,
+	a.premium,
+	a.premium_ccy,
+        a.premium_date,
+	a.premium_equiv,
+	a.deal_pl_equiv,
+	b.note
+from
+	#trades a,
+	trade_attributes b
+where
+	a.trade_id *= b.trade_id
+order by
+	a.deal_id
+
+
+
+go

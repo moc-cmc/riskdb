@@ -1,0 +1,27 @@
+
+if object_id("cn_setrrcode") != NULL
+    drop procedure
+        cn_setrrcode
+go
+
+create procedure
+	cn_setrrcode
+		@login varchar(30),
+		@trader varchar(30),
+		@rrcode varchar(15)=NULL
+as
+
+
+update
+	traders
+set
+	rrcode = @rrcode
+where
+	symbol = @trader
+
+exec
+	cn_rrcodes
+		@login
+
+
+go

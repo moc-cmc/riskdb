@@ -1,0 +1,186 @@
+
+if object_id("fxa_importpbtradeblotter") != NULL
+    drop procedure
+        fxa_importpbtradeblotter
+go
+
+create procedure 
+	fxa_importpbtradeblotter 
+			@login varchar(50)
+
+as
+
+
+declare @tico_account_id int
+declare @fund_id int
+declare @prime_broker_id int
+declare @trade_report_type_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "ERROR",
+		msg = "Problem determining login",
+		login = @login
+	return
+end
+
+create table
+    #meta (
+        meta_type char(50),
+        name char(50) NULL,
+        action char(100) NULL,
+        value char(200) NULL,
+        format char(20) NULL
+	    )
+
+
+create table 
+	#user_funds
+(
+	fund_id int
+)
+
+insert into #user_funds
+select
+	fund_id
+from
+	fund_tico_accounts
+where 
+	tico_account_id = @tico_account_id
+if @@rowcount = 0
+begin
+        select
+                status = "ERROR",
+                msg = "Problem determining fund for user"
+        return
+end
+
+create table
+	#user_external_accounts
+(
+	external_account_id int
+)
+
+insert into #user_external_accounts
+select
+	a.external_account_id
+from
+	fund_external_accounts a,
+	#user_funds b 
+where
+	a.fund_id = b.fund_id
+if @@rowcount = 0
+begin
+        select
+                status = "ERROR",
+                msg = "Problem determining external accounts defined for user's funds"
+        return
+end
+
+create table 
+        #user_prime_brokers
+(
+        prime_broker_id int,
+	source_id int
+)
+
+insert into #user_prime_brokers
+select
+	a.prime_broker_id,
+	b.source_id
+from
+	funds a,
+	prime_brokers b
+where
+	a.prime_broker_id = b.prime_broker_id
+if @@rowcount = 0
+begin
+        select
+                status = "ERROR",
+                msg = "Problem determining prime broker for fund"
+        return
+end
+
+insert into #user_prime_brokers
+select
+        a.prime_broker_id,
+	d.source_id
+from
+        external_account_prime_brokers a,
+	#user_external_accounts b,
+	#user_prime_brokers c,
+	prime_brokers d
+where 
+	a.external_account_id = b.external_account_id
+and
+	a.prime_broker_id = d.prime_broker_id
+and
+	a.prime_broker_id != c.prime_broker_id
+
+
+select
+	@trade_report_type_id = report_type_id
+from
+	report_types
+where
+	name = "Trade"
+if @@rowcount != 1
+begin
+        select
+                status = "ERROR",
+                msg = "Problem determining 'Trade' report type"
+        return
+end
+
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"import_trade_report",
+	NULL,
+	NULL,
+	NULL
+      )
+
+insert into 
+	#meta
+values(
+	"Column Hidden",
+	"external_report",
+	NULL,
+	NULL,
+	NULL
+      )
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value, #meta.format from #meta
+select
+	import_trade_report = a.name,
+	external_report = a.name
+from
+	external_reports a,
+	#user_prime_brokers b
+where
+	a.source_id = b.source_id
+and
+	a.report_type_id = @trade_report_type_id
+if @@rowcount = 0
+begin
+        select
+                status = "ERROR",
+                msg = "Problem determining import reports"
+        return
+end
+
+
+
+go

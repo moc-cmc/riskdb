@@ -1,0 +1,77 @@
+
+if object_id("r_exoticcontractdelta") != NULL
+    drop procedure
+        r_exoticcontractdelta
+go
+ 
+create procedure
+	r_exoticcontractdelta
+		@run_id int,
+		@contract_id int,
+		@position float,
+		@as_of_date datetime,
+		@perspective_contract_id int output,
+		@delta float output
+as
+
+declare @underlying_contract_id int
+declare @underlying_multiplier float
+declare @unit_delta float
+declare @multiplier float
+
+select
+	@underlying_contract_id = a.underlying_contract_id
+from
+	options a,
+	option_expirations b,
+	exotic_contracts c
+where
+	a.option_id = b.option_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.contract_id = @contract_id
+if @@rowcount != 1
+begin
+
+	select
+		id = -1,
+		error = "Problem finding underlying contract for option",
+		symbol = symbol
+	from
+		contracts
+	where
+		contract_id = @contract_id
+	return
+end
+
+exec
+	r_perspectivecontract
+		@run_id,
+		@underlying_contract_id,
+		@perspective_contract_id output
+
+exec
+	x_contractmultiplier
+		@underlying_contract_id,
+		@underlying_multiplier output
+
+exec
+	x_contractmultiplier
+		@contract_id,
+		@multiplier output
+
+select
+	@multiplier = @multiplier / @underlying_multiplier
+
+exec
+	r_exoticdeltaasof
+		@contract_id,
+		@as_of_date,
+		@unit_delta output
+
+
+select
+	@delta = @position * @multiplier * @unit_delta
+
+go

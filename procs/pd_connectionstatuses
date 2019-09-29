@@ -1,0 +1,13 @@
+create or replace procedure
+	pd_connectionstatuses
+
+as
+
+select
+	name = name
+from
+	connection_statuses
+order by
+	name
+
+go

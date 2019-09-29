@@ -1,0 +1,163 @@
+drop procedure
+	ma_addmasterallocation
+go
+
+create procedure
+	ma_addmasterallocation
+		@login varchar(50),
+		@name varchar(50),
+		@account varchar(50),
+		@instrument varchar(50)
+as
+
+declare @external_account_id int
+declare @external_account_type_id int
+declare @internal_account_id int
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @aggregation_style_id int
+declare @run_id int
+declare @master_allocation_id int
+declare @allocation_mode_id int
+declare @status_id int
+declare @tico_account_id int
+declare @committed_status_id int
+declare @active_status_id int
+declare @notification_source_id int
+declare @version int
+declare @instrument_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_account",
+	"New Master Account",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	"#,##0.00")
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@instrument_id = instrument_id
+from
+	instruments
+where
+	name = @instrument
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Instrument not found",
+		instrument = @instrument
+	return
+end
+
+select
+	@external_account_type_id = external_account_type_id
+from
+	external_account_types
+where
+	name = "Master"
+if @@rowcount = 0
+begin
+	insert into
+		external_account_types
+	values(
+		"Master")
+	select
+		@external_account_type_id = @@identity
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+and
+	external_account_type_id = @external_account_type_id
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+select
+	@committed_status_id = status_id
+from
+	statuses
+where
+	name = "Committed"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Committed status not found"
+	return
+end
+
+exec
+	j_nextkey
+		"master_allocations",
+		@master_allocation_id output
+
+insert into
+	master_allocations
+values(
+	@master_allocation_id,
+	@name,
+	@external_account_id,
+	@instrument_id)
+
+
+
+
+exec
+	mn_managedaccounts
+		@login
+
+go

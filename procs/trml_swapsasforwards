@@ -1,0 +1,527 @@
+
+if object_id("trml_swapsasforwards") != NULL
+    drop procedure
+        trml_swapsasforwards
+go
+
+create procedure
+	trml_swapsasforwards
+		@source varchar(50)
+as
+
+declare @source_id int
+declare @client_account_type_id int
+declare @cpty_account_type_id int
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Source not found",
+		source = @source
+	return
+end
+
+select 
+	@cpty_account_type_id = external_account_type_id
+from
+	external_account_types
+where
+	name = "Counterparty"
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "Problem finding external account type",
+                type = "Counterparty"
+        return
+end
+
+select 
+        @client_account_type_id = external_account_type_id 
+from
+        external_account_types
+where
+        name = "Client"
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "Problem finding external account type",
+                type = "Client"
+        return
+end
+
+
+create table
+	#trades(
+		product_group varchar(10),
+		action varchar(10),
+		message_type varchar(10),
+		process varchar(10) NULL,
+		trade_ref int,
+		entity varchar(10),
+		portfolio varchar(50),
+		reporting_system varchar(5),
+		reporter_ticket_number int,
+		trader_name varchar(50),
+		counterparty varchar(50) NULL,
+                reporting_party varchar(50) NULL,
+		prime_broker varchar(50),
+		trade_date datetime,
+		product_type varchar(10),
+       		contract_id int,
+		traded_currency varchar(10),
+		counter_currency varchar(10),
+		traded_amount numeric(30,4),
+		counter_amount numeric(30,4),
+		dealt_rate float,
+		value_date varchar(15),
+		trade_notification_id int,
+		external_account_id int,
+                client_give_up varchar(25) NULL)
+
+
+
+
+/* Comments N/A	 */
+/*-----------------------------------------------------------------------,
+| Counterparty determination for Client & Market trades                  |
+|                                                                        |
+| Summary:                                                               |
+| The counterparty reported in the traiana record is defined differently |
+| for a Client and Market Trade. The counterparty for a client trade is  |
+| the external account for the trade. The counterparty for a  market     |
+| trade is the counterparty for the trade                                |
+|                                                                        |
+| Initially Set:                                                         |
+| Client Trade Cpty = external_accounts.symbol                           |
+| Market Trade Cpty = external_accounts.symbol                           |
+|                                                                        |
+| Update:                                                                |
+| Market Trade Cpty = counterparties.name                                |
+|                                                                        |
+| If Applicable:                                                         |
+| Update counterparties.name to reporting_partys.symbol              |
+| Update external_accounts.symbol to external_account_symbols.symbol     |
+'-----------------------------------------------------------------------*/
+
+
+/*-----------------------------------------------------------------------------------------------------,
+| Prime Broker determination for all trades                                                            |
+|                                                                                                      |
+| Summary:                                                                                             |
+| A trade's prime broker is initially set to the default prime broker for the fund. However, if        |
+| the trade's external account is defined in external_account_prime_brokers and that prime             |
+| broker is defined in the symbols table for the source, then that PB symbol overrides the fund default| 
+|                                                                                                      |
+| Initially Set:                                                                                       |
+| prime_broker_symbols.symbol                                                                          |
+|    where prime_broker_symbols.prime_broker_id = funds.prime_broker_id                                |
+|                                                                                                      |
+| A trade's fund_id is determined from the trade's external_account via                                |
+| fund_external_accounts                                                                               |
+|                                                                                                      |
+|                                                                                                      |
+| If Applicable:                                                                                       |
+| Update prime_broker to prime_broker_symbols.symbol                                                   |
+|     where external_accounts.external_account_id = external_account_prime_brokers.external_account_id |
+|           and                                                                                        |
+|           external_account_prime_brokers.prime_broker_id = prime_broker_symbols.prime_broker_id      |
+'-----------------------------------------------------------------------------------------------------*/
+
+/*
+| Insert into #trades setting the counterparty to the external_account 
+*/
+insert into
+	#trades
+select 
+	product_group = "FX",
+	action = "REPORT",
+	mesage_type = "REGULAR",
+	process = NULL,
+	trade_ref = a.trade_id,
+	entity = "CLIENT",
+	portfolio = m.name,
+	reporting_system = "ETG",
+	reporter_ticket_number = a.trade_id,
+	trader_name = b.symbol,
+	counterparty = NULL,
+        reporting_party = h.symbol,
+	prime_broker = p.symbol,
+	trade_date = case
+		when a.trade_date > convert(char(8), getdate(), 112) +' 17:00' then
+			dateadd(day, 1, convert(char(15), a.trade_date, 110))
+		else
+			convert(char(12), a.trade_date, 110)
+	end,
+	product_type = "SPOT",
+        contract_id = d.contract_id,
+	traded_currency = g.symbol,
+	counter_currency = f.symbol,
+	traded_amount = a.quantity,
+        counter_amount = a.quantity * a.price,
+	dealt_rate = a.price,
+	value_date = convert(varchar(15),a.value_date,110),
+	j.trade_notification_id,
+	a.external_account_id,
+	client_give_up = NULL
+from
+	trades a,
+	traders b,
+	/* brokers c, */
+	contracts d,
+	forwards e,
+	products f,
+	products g,
+	external_accounts h,
+	trade_notifications j,
+	statuses k,
+	trade_types l,
+	strategies m,
+        funds n,
+	fund_external_accounts o,
+	prime_broker_symbols p
+where
+	a.trader_id=b.trader_id
+and
+	a.contract_id=d.contract_id
+and
+	a.external_account_id=h.external_account_id	
+and
+	d.contract_id=e.contract_id
+and
+	e.currency_id=f.product_id
+and
+	e.product_id=g.product_id
+and
+	a.trade_id=j.trade_id
+and
+	j.status_id=k.status_id
+and
+	a.strategy_id = m.strategy_id
+and
+	h.external_account_id = o.external_account_id
+and
+	o.fund_id = n.fund_id
+and
+	n.prime_broker_id = p.prime_broker_id
+and
+	a.fixing_date = NULL
+and
+	j.source_id = @source_id
+and
+	k.name in ("Active", "Edit", "Cancelled")
+and
+	a.trade_type_id=l.trade_type_id
+and
+	l.name in("Swap Near", "Swap Far")
+	
+/*
+|  Adjust display prices to standard rate for all pairs
+*/
+update
+    #trades
+set
+    dealt_rate = case 
+        when d.name = "Inverted" and c.factor != NULL then
+            (1 / a.dealt_rate) * c.factor * d.factor
+        when d.name = "Inverted" then
+            (1 / a.dealt_rate) * d.factor
+        when c.factor != NULL then
+            a.dealt_rate * c.factor * d.factor
+        else
+            a.dealt_rate * d.factor
+    end
+from
+    #trades a,
+    contracts b,
+    contract_price_styles c,
+    price_styles d
+where
+    a.contract_id = b.contract_id
+and
+    b.contract_id = c.contract_id
+and
+    c.price_style_id = d.price_style_id
+
+
+/*
+|  Set NEW, MODIFY, DELETE, etc... for trades
+*/
+update
+	#trades
+set
+	process=status_symbol
+from
+	#trades a,
+	trade_notifications b,
+	status_symbols c 
+where
+	a.trade_notification_id=b.trade_notification_id 
+and
+	b.status_id=c.status_id
+
+/*
+|  Update traiana counterparty to counterparties.name for Market Trades
+|  Update traiana trader to "" for Market Trades
+*/
+update
+	#trades
+set
+	trader_name = ""
+from
+	#trades a,
+	trades b,
+	external_accounts c,
+	external_account_types d,
+        counterparties e
+where
+	a.trade_ref = b.trade_id
+and
+    b.counterparty_id = e.counterparty_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    d.name = "Counterparty"
+
+
+
+
+update
+        #trades
+set
+        reporting_party = c.symbol
+from
+        #trades a,
+        trades b,
+        external_account_symbols c
+where
+        a.trade_ref = b.trade_id
+and
+        b.external_account_id = c.external_account_id
+and
+        c.source_id = @source_id
+
+
+/*
+|  Update traiana counterparty to reporting_partys.symbol for Market Trades
+|  for counterparties that have a reporting_partys.symbol for source
+*/
+update
+        #trades
+set
+        counterparty = c.name
+from
+        #trades a,
+        trades b,
+        counterparties c
+where
+        a.trade_ref = b.trade_id
+and
+	b.counterparty_id = c.counterparty_id
+
+update 
+	#trades
+set
+	counterparty = c.symbol
+from
+	#trades a,
+	trades b,
+	counterparty_symbols c
+where
+	a.trade_ref = b.trade_id
+and
+	b.counterparty_id = c.counterparty_id
+and
+	c.source_id = @source_id
+
+
+/*
+|  Update traiana trader to trader_symbols.symbol for Client Trades
+|  for traders that have a trader_symbols.symbol for source
+*/
+update
+        #trades
+set
+        trader_name = e.symbol
+from
+        #trades a,
+        trades b,
+        external_accounts c,
+        external_account_types d,
+        trader_symbols e
+where
+        a.trade_ref = b.trade_id
+and
+    b.trader_id = e.trader_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    e.source_id = @source_id
+and
+    d.name = "Client"
+
+
+/*
+|  Update traiana client_give_up to client_give_ups.symbol for Client Trades
+|  for external_accounts
+*/
+update
+        #trades
+set
+        client_give_up = e.symbol
+from
+        #trades a,
+        trades b,
+        external_accounts c,
+        external_account_types d,
+        client_give_ups e
+where
+        a.trade_ref = b.trade_id
+and
+    b.external_account_id = e.external_account_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    e.source_id  = @source_id
+and
+    d.name = "Client"
+
+
+
+
+/*
+|  Update traiana prime_broker to prime_broker_symbols.symbol for all trades
+|  for external_accounts who have an entry in external_account_prime_brokers
+*/
+
+update
+	#trades
+set
+	prime_broker = e.symbol
+from
+	#trades a,
+        trades b,
+        external_accounts c,
+	external_account_prime_brokers d,
+	prime_broker_symbols e
+where
+	a.trade_ref = b.trade_id
+and
+	b.external_account_id = c.external_account_id 
+and
+	c.external_account_id = d.external_account_id
+and
+	d.prime_broker_id = e.prime_broker_id
+and
+	e.source_id = @source_id
+	
+
+
+/* 
+	Counterparty rollover time support shelved
+
+/*-----------------------------------------------------------------------,
+| Trade Date determination for Client & Market trades                    |
+| Summary:                                                               |
+| Some counterparties will have different rollover times. There is a     |
+| table in the db, counterparty_rollover_times, which contains a time    |
+| string that a counterpary rolls over at. If a countterparty has a      | 
+| rollover time other than 17:00 EST, this table will be populated with  |
+| the time string of the rollover time. If a counterparty does not have  | 
+| an entry in the counterparty_rollover_times table, the rollover time   |
+| will default to 17:00.                                                 |
+|                                                                        |
+'-----------------------------------------------------------------------*/
+
+update
+	#trades
+set
+	a.trade_date = 
+		case
+			when a.trade_date > convert(char(8), getdate(), 112) +' '+ rtrim(d.time) then
+				dateadd(day, 1, convert(char(15), a.trade_date, 110))
+			else
+				convert(char(12), a.trade_date, 110)
+		end
+from
+	#trades a,
+	trades b,
+	counterparties c,
+	counterparty_rollover_times d
+where
+	a.trade_ref = b.trade_id
+and
+	b.counterparty_id = c.counterparty_id
+and
+	c.counterparty_id = d.counterparty_id
+*/
+
+
+select
+	product_group,
+	action,
+	message_type,
+	process,
+	trade_ref,
+	entity,
+	portfolio,
+	reporting_system,
+	reporter_ticket_number,
+	trader_name,
+	counterparty,
+        reporting_party,
+	prime_broker,
+	trade_date = convert(char(10), trade_date, 110),
+	product_type,
+	traded_currency,
+	counter_currency,
+	traded_amount=sum(traded_amount),
+	counter_amount=sum(counter_amount),
+	dealt_rate,
+	value_date,
+	trade_notification_id,
+	client_give_up
+from
+	#trades
+where
+	counterparty != NULL
+group by
+	trade_ref,
+	product_group,
+	action,
+	message_type,
+	process,
+	entity,
+	portfolio,
+	reporting_system,
+	reporter_ticket_number,
+	trader_name,
+	counterparty,
+	reporting_party,
+	prime_broker,
+	trade_date,
+	product_type,
+	traded_currency,
+	counter_currency,
+	dealt_rate,
+	value_date,
+	trade_notification_id,
+	client_give_up
+order by 
+	trade_ref
+go

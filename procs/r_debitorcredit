@@ -1,0 +1,32 @@
+drop procedure
+	r_debitorcredit
+go
+
+create procedure
+	r_debitorcredit
+
+as
+
+
+create table
+	#deb_or_cred(
+		name varchar(50))
+
+insert into
+	#deb_or_cred
+values(
+	"Debit")
+
+insert into
+        #deb_or_cred
+values(
+        "Credit")
+
+select 
+	name
+from
+	#deb_or_cred
+order by
+	name
+
+go

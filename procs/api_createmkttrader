@@ -1,0 +1,59 @@
+drop procedure
+	api_createmkttrader
+go
+
+create procedure
+	api_createmkttrader
+		@login varchar(50),
+		@trader varchar(50),
+		@external_account varchar(50),
+		@first_name varchar(25)=NULL,
+		@last_name varchar(25)=NULL,
+		@email varchar(50)=NULL,
+		@trader_password varchar(25)=NULL,
+		@sales_code varchar(50)=NULL
+
+as		
+
+declare @trader_type varchar(50)
+declare @tico_account_id int
+declare @top_level_trader varchar(50)
+declare @trader_login varchar(25)
+declare @sales_code_id int
+declare @trader_id int
+
+select
+	@trader_id = trader_id 
+from
+	traders
+where
+	symbol = @trader
+
+if @trader_id != NULL
+begin
+	select
+		msg = "Trader has already been created",
+		symbol = @trader
+	return
+end
+
+select
+        @trader_type = "Desk"
+
+
+exec
+	api_createtrader
+		@login = @login,
+                @trader = @trader,
+                @external_account = @external_account,
+                @trader_type = @trader_type,
+                @trader_login = @trader_login,
+                @trader_password = @trader_password,
+                @sales_code = @sales_code,
+                @first_name = @first_name,
+                @last_name = @last_name,
+                @email = @email
+
+
+go
+

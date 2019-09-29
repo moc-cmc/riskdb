@@ -1,0 +1,31 @@
+drop procedure dtcc_corporatesectors
+go
+
+create procedure
+	dtcc_corporatesectors
+
+as
+
+create table
+	#dtcc(
+		name varchar(50)
+)
+
+insert into #dtcc values("AssuranceUndertaking")
+insert into #dtcc values("CreditInstitution")
+insert into #dtcc values("InvestmentFirm")
+insert into #dtcc values("InsuranceUndertaking")
+insert into #dtcc values("AlternativeInvestmentFund")
+insert into #dtcc values("InstitutionForOccupationalRetirementProvision")
+insert into #dtcc values("ReinsuranceUndertaking")
+insert into #dtcc values("UCITS")
+insert into #dtcc values("Individual QEP")
+
+select
+	name 
+from
+	#dtcc
+order by 
+	name
+
+go

@@ -1,0 +1,43 @@
+drop procedure
+	ag_pendingmappingerrors
+go
+
+
+create procedure
+	ag_pendingmappingerrors 
+			@login varchar(50),
+			@broker_id int,
+			@identifier varchar(100),
+			@trader_mapping_error_id int=NULL output,
+                        @cpty_mapping_error_id int=NULL output
+as
+
+select
+	@trader_mapping_error_id=mapping_error_id
+from
+	mapping_errors a,
+	mapping_error_types b
+where
+	a.mapping_error_type_id = b.mapping_error_type_id
+and
+	a.broker_id=@broker_id
+and
+	a.identifier=@identifier
+and
+	b.name = 'Trader'
+
+select
+	@cpty_mapping_error_id=mapping_error_id
+from
+	mapping_errors a,
+	mapping_error_types b
+where
+	a.mapping_error_type_id = b.mapping_error_type_id
+and
+	a.broker_id=@broker_id
+and
+	a.identifier=@identifier
+and
+	b.name = 'Counterparty'
+
+go

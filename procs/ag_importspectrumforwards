@@ -1,0 +1,211 @@
+use
+	risk_elviro
+go
+
+drop procedure
+	ag_importspectrumforwards
+go
+
+create procedure
+	ag_importspectrumforwards
+		@login varchar(50),
+		@trade_date varchar(50)=NULL,
+		@trade_no varchar(50)=NULL,
+		@counterparty varchar(50)=NULL,
+		@buy_sell varchar(50)=NULL,
+		@con_cur varchar(50)=NULL,
+		@con_amount varchar(50)=NULL,
+		@cou_cur varchar(50)=NULL,
+		@cou_amount varchar(50)=NULL,
+		@rate varchar(50)=NULL,
+		@terms varchar(50)=NULL,
+		@settlement_date varchar(50)=NULL,
+		@usd_value varchar(50)=NULL,
+		@purpose varchar(50)=NULL,
+		@broker varchar(50)=NULL,
+		@broker_fee varchar(50)=NULL,
+		@portfolio varchar(50)=NULL,
+		@trader varchar(50)=NULL,
+		@time varchar(50)=NULL,
+		@ext_ref varchar(50)=NULL,
+		@liq_provider varchar(50)=NULL,
+		@options_liq_provider varchar(50)=NULL
+
+as
+
+declare @source varchar(50)
+declare @source_id int
+declare @trade_id int
+declare @deal_id int
+declare @tally_type varchar(50)
+declare @deal_type varchar(50)
+declare @trade_type varchar(50)
+declare @external_account varchar(50)
+declare @quantity numeric(30,2)
+declare @symbol varchar(50)
+declare @value_date datetime
+declare @cpty varchar(50)
+
+declare @day varchar(2)
+declare @month varchar(2)
+declare @year varchar(2)
+declare @datestring varchar(25)
+declare @trade_timestamp datetime
+declare @price float
+declare @strategy varchar(50)
+declare @identifier varchar(200)
+
+declare @tally_broker varchar(50)
+
+if @buy_sell not in("Sell", "Buy")
+	return
+
+select
+	@source = "Spectrum"
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+select
+	@tally_type = "Spot",
+	@deal_type = "Market Forward",
+	@trade_type = "Spot"
+
+/* select
+	@day = left(@settlement_date, 2),
+	@month = left(right(@settlement_date, 5), 2),
+	@year = right(@settlement_date, 2)
+
+select
+	@datestring = rtrim(@month) + "/" + rtrim(@day) + "/" + rtrim(@year) */
+
+select
+	@value_date = convert(datetime, @settlement_date, 3)
+
+
+/* select
+	@day = left(@trade_date, 2),
+	@month = left(right(@trade_date, 5), 2),
+	@year = right(@trade_date, 2)
+
+select
+	@datestring = rtrim(@month) + "/" + rtrim(@day) + "/" + rtrim(@year) + " " + rtrim(@time)
+ */
+
+select
+	@trade_timestamp = convert(datetime, @trade_date, 3)
+
+if @broker = "OPTIONS"
+	select
+		@broker = "BLANK"
+
+select
+	@tally_broker = a.symbol
+from
+	brokers a,
+	broker_symbols b
+where
+	a.broker_id = b.broker_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @broker
+if @tally_broker = NULL
+begin
+	select
+		@tally_broker = symbol
+	from
+		brokers
+	where
+		symbol = @broker
+	if @tally_broker = NULL
+	begin
+		select
+			status = "Error",
+			message = "Broker symbol not found",
+			broker = @broker
+		return
+	end
+end
+
+select
+	@cpty = a.name
+from
+	counterparties a,
+	counterparty_symbols b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @liq_provider
+if @cpty = NULL
+begin
+	select
+		@cpty = name
+	from
+		counterparties
+	where
+		name = @liq_provider
+	if @cpty = NULL
+	begin
+		select
+			@cpty = "VELO-VELOCITY"
+	end
+end
+
+
+select
+	@external_account = @counterparty,
+	@quantity = convert(numeric(30,2), @con_amount) * -1.0,
+	@symbol = rtrim(@con_cur) + rtrim(@cou_cur),
+	@price = abs(convert(float, @cou_amount)) / abs(convert(float, @con_amount)),
+	@strategy = @portfolio,
+	@identifier = rtrim(@tally_broker) + "-" + @trade_no
+	
+	
+/* select
+	external_account = @external_account,
+	quantity = @quantity,
+	symbol = @symbol,
+	value_date = @value_date,
+	trade_date = @trade_timestamp,
+	price = @price,
+	trader = @trader,
+	broker = @tally_broker */
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = @source,
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = @deal_type,
+		@trade_type = @trade_type,
+		@external_account = @external_account,
+		@counterparty = @cpty,
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@price = @price,
+		@trade_date = @trade_timestamp,
+		@trader = @trader,
+		@strategy = @strategy,
+		@broker = @tally_broker,
+		@identifier = @identifier
+
+
+go

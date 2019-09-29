@@ -1,0 +1,155 @@
+
+create procedure
+	mc2_tallystrategytransfer
+		@login varchar(25),
+		@buy_from varchar(50),
+		@sell_to varchar(50),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@quantity numeric(30,2),
+		@price float,
+		@value_date datetime = NULL
+as
+
+declare @trade_id int
+declare @second_trade_id int
+declare @deal_id int
+declare @tally_type varchar(25)
+declare @counterparty_account varchar(100)
+declare @buy_sell varchar(6)
+declare @fixing_date datetime 
+
+declare @symbol varchar(50)
+declare @trade_date datetime
+declare @external_account varchar(50)
+declare @sales_code varchar(50)
+declare @trade_type varchar(25)
+declare @contract_id int
+declare @buy_quantity numeric(30,2)
+declare @sell_quantity numeric(30,2)
+
+select
+	@counterparty_account = "INT-TRANSFER"
+
+select 
+	@tally_type = "Forward",
+	@trade_type = "Forward",
+	@buy_quantity = abs(@quantity),
+	@sell_quantity = abs(@quantity) * -1.0,
+	@sales_code = "None",
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency),
+	@trade_date = getdate()
+
+select
+    @contract_id = contract_id
+from
+    contracts
+where
+    symbol = @symbol
+if @@rowcount != 1
+begin
+
+    declare @evaluation_currency varchar(50)
+    declare @fund_id int
+
+    exec
+        r_defaultfundforlogin
+                @login,
+                @fund_id output
+
+    select
+        @evaluation_currency = a.symbol
+    from
+        products a,
+        funds b
+    where
+        a.product_id = b.evaluation_currency_id
+
+    exec r_addbatchfwdsubscription
+            @login,
+            @symbol,
+            @dealt_currency,
+            @counter_currency,
+            @evaluation_currency
+
+    if not exists (select contract_id from contracts where symbol=@symbol)
+    begin
+        select
+            status = "Error",
+            message = "Contract not found",
+            symbol=@symbol
+
+        return
+    end
+
+end
+
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty_account
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @counterparty_account
+	return
+end
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "Market Forward",
+		@trade_type = @trade_type,	
+		@external_account = @external_account,
+		@counterparty = @counterparty_account,
+		@quantity = @buy_quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@price = @price,
+		@trade_date = @trade_date,
+		@sales_code = @sales_code,
+		@fixing_date = @fixing_date,
+		@strategy = @buy_from
+
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @second_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "Market Forward",
+		@trade_type = @trade_type,	
+		@external_account = @external_account,
+		@counterparty = @counterparty_account,
+		@quantity = @sell_quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@price = @price,
+		@trade_date = @trade_date,
+		@sales_code = @sales_code,
+		@fixing_date = @fixing_date,
+		@strategy = @sell_to
+
+
+exec
+	mc_inspectdealtrades
+		@login,
+		@deal_id
+
+
+
+/* ### DEFNCOPY: END OF DEFINITION */

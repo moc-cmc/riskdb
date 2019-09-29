@@ -1,0 +1,47 @@
+drop procedure r_firstbusinessdayofmonth
+go
+
+create procedure
+	r_firstbusinessdayofmonth
+		@a_date datetime,
+		@first_business_day datetime output
+
+as
+
+declare @first_day datetime
+declare @last_day_prev_month datetime
+declare @year varchar(4)
+declare @month varchar(2)
+declare @intmonth int
+
+select
+	@intmonth = datepart(month, @a_date),
+	@year = convert(char(4), datepart(year, @a_date))
+
+if @intmonth < 10
+begin
+	select
+		@month = "0"+convert(char(1), @intmonth)
+end
+else
+begin
+	select
+		@month = convert(char(2), @intmonth)
+end
+
+select
+	@first_day = convert(date, rtrim(@year)+rtrim(@month)+"01")
+
+exec
+	r_prevbusinessday
+		@first_day,
+		@last_day_prev_month output
+		
+		
+exec
+	r_nextbusinessday
+		@last_day_prev_month,
+		@first_business_day output
+
+go
+

@@ -1,0 +1,51 @@
+drop procedure
+	ag_addmcdesktop
+go
+
+create procedure
+	ag_addmcdesktop
+		@login varchar(50),
+		@name varchar(100)
+
+as
+
+declare @mc_desktop_id int
+
+
+select
+	@mc_desktop_id = mc_desktop_id
+from
+	mc_desktops
+where
+	name = @name
+if @mc_desktop_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Desktop name already exists"
+	return
+end
+
+
+exec
+	j_nextkey
+		"mc_desktops",
+		@mc_desktop_id output
+
+insert into
+	mc_desktops(
+		mc_desktop_id,
+		name)
+values(
+	@mc_desktop_id,
+	@name)
+
+
+exec
+	ag_clientconfighome
+		@login = @login,
+		@mc_desktop = @name
+
+
+go
+

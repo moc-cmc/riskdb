@@ -1,0 +1,601 @@
+
+if object_id("mc_tallyspot") != NULL
+    drop procedure
+        mc_tallyspot
+go
+
+create procedure
+	mc_tallyspot
+		@login char(25),
+		@symbol char(25),
+		@broker char(100),
+		@strategy char(100),
+		@trader char(25),
+		@quantity numeric(30,6),
+		@price float,
+		@value_date datetime = NULL
+
+
+as
+
+declare @account_id int
+declare @contract_id int
+declare @trade_quantity numeric(30,0)
+declare @remainder_quantity numeric(30,0)
+declare @internal_account_id int
+declare @external_account_id int
+declare @external_account char(25)
+declare @trade_id int
+declare @deal_id int
+declare @trade_date datetime
+declare @strategy_id int
+declare @trader_id int
+declare @allocations int
+declare @ext_spot_allocation_id int
+declare @allocation float
+declare @broker_id int
+declare @day varchar(4)
+declare @month varchar(4)
+declare @year varchar(4)
+declare @datestring char(20)
+declare @fund_id int
+declare @trade_price float
+declare @price_style char(30)
+declare @inverted_contract_id int
+declare @pip_adjustment float
+declare @market_rate float
+declare @active_status_id int
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200),
+		arguments char(255) NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"run_name",
+	"Intraday P&L",
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments from #links
+
+select
+	@trade_price = @price
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+if @fund_id = NULL
+begin
+	select
+		id = -1,
+		error = "Problem finding default fund for user"
+	return
+end
+
+
+select
+	@quantity = @quantity * 1000000.00000
+select
+	@account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select 	
+		id = -1,
+		error = "Problem determining current user"
+	return
+end
+
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = @broker
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding broker",
+		broker = @broker
+	return
+end
+
+select
+	@strategy_id = strategy_id
+from
+	strategies
+where
+	name = @strategy
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding strategy",
+		strategy = @strategy
+	return
+end
+
+select
+	@trader_id = trader_id
+from
+	traders
+where
+	symbol=@trader	
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding default trader"
+	return
+end
+
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding contract with symbol",
+		symbol = @symbol
+	return
+end
+
+select
+	@trade_date = getdate()
+
+select
+	@active_status_id=status_id
+from
+	statuses
+where
+	name="Active"
+if @@rowcount < 1
+begin
+	select 
+		id = -1,
+		error = "Could not find Active Status"
+return
+	
+end
+
+/* The pip adjustment */
+select
+        @pip_adjustment = adjustment
+from
+        pip_adjustments
+where
+        fund_id = @fund_id
+and
+        broker_id = @broker_id
+and
+        contract_id = @contract_id
+if @@rowcount = 0
+        select
+                @pip_adjustment = 0
+
+select
+        @price_style = a.name
+from
+        price_styles a,
+        contract_price_styles b
+where
+        a.price_style_id = b.price_style_id
+and
+        b.contract_id = @contract_id
+
+if @price_style = "Inverted"
+begin
+        select
+                @market_rate = 1.0 / @trade_price
+
+        if @quantity > 0
+        begin
+                select
+                        @trade_price = @trade_price + @pip_adjustment
+        end
+        if @quantity < 0
+        begin
+                select
+                        @trade_price = @trade_price - @pip_adjustment
+        end
+
+        select
+                @trade_price = 1.0 / @trade_price
+end
+else
+begin
+        select
+                        @market_rate = @trade_price
+
+        if @quantity > 0
+        begin
+                select
+                        @trade_price = @trade_price + @pip_adjustment
+        end
+        if @quantity < 0
+        begin
+                select
+                        @trade_price = @trade_price - @pip_adjustment
+        end
+end
+
+/* end pip adjustment */
+
+if @value_date = NULL
+begin
+	exec
+		r_contractvaluedate
+			@contract_id,
+			@trade_date,
+			@value_date output
+
+	/* exec
+		r_nextbusinessday
+			@trade_date,
+			@value_date output
+
+	exec
+		r_nextbusinessday
+			@value_date,
+			@value_date output
+	exec
+		r_nextbusinessday
+			@value_date,
+			@value_date output 
+
+
+
+	if @symbol != "USDCAD" and @symbol != "CADUSD"
+	begin
+		exec
+			r_nextbusinessday
+				@value_date,
+				@value_date output
+
+	end
+
+	if datepart(hour, @trade_date) >= 17
+		exec
+			r_nextbusinessday
+				@value_date,
+				@value_date output */
+end
+else
+begin
+	select
+		@day = convert(varchar(4), datepart(day, @value_date)),
+		@month = convert(varchar(4), datepart(month, @value_date)),
+		@year = convert(varchar(4), datepart(year, @value_date))
+
+	select
+		@datestring = rtrim(@month) + "/" + rtrim(@day) + "/" + rtrim(@year)
+
+	select
+		@value_date = convert(datetime, @datestring)
+end
+
+/* select
+	@value_date = convert(char(2), datepart(month, @value_date)) + "/" +
+		convert(char(2), datepart(day, @value_date)) + "/" +
+		convert(char(4), datepart(year, @value_date)) */
+
+if @value_date < @trade_date
+begin
+	select
+		id = -1,
+		error = "Value date is before trade date",
+		value_date = @value_date,
+		trade_date = @trade_date
+	return
+end
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "deals"
+	select
+		@deal_id = last_id
+	from
+		keys
+	where
+		relation = "deals"
+commit tran
+
+insert into
+	deals
+values(
+	@deal_id,
+	getdate())
+
+select
+	@remainder_quantity = @quantity
+
+begin tran
+select
+	@ext_spot_allocation_id = 0
+select
+	@allocations = count(*)
+from
+	external_spot_allocations
+where
+	fund_id = @fund_id
+and
+	ext_spot_allocation_id > @ext_spot_allocation_id
+
+while @allocations > 0
+begin
+	select
+		@ext_spot_allocation_id = min(ext_spot_allocation_id)
+	from
+		external_spot_allocations
+	where
+		fund_id = @fund_id
+	and
+		ext_spot_allocation_id > @ext_spot_allocation_id
+
+	select
+		@external_account_id = external_account_id,
+		@internal_account_id = internal_account_id,
+		@allocation = percentage	
+	from
+		external_spot_allocations
+	where
+		ext_spot_allocation_id = @ext_spot_allocation_id
+
+	select
+		@trade_quantity = @quantity * @allocation
+
+	select
+		@remainder_quantity = @remainder_quantity - @trade_quantity
+
+
+	begin tran
+		update
+			keys
+		set
+			last_id = last_id + 1
+		where
+			relation = "trades"
+		select
+			@trade_id = last_id
+		from
+			keys
+		where
+			relation = "trades"
+	commit tran
+	
+	
+	insert into
+		trades
+	values(
+		@trade_id,
+		@deal_id,
+		@account_id,
+		@internal_account_id,
+		@external_account_id,
+		@trade_quantity,
+		@contract_id,
+		@trade_price,
+		@trade_date,
+		@trader_id,
+		@strategy_id,
+		1,
+		@broker_id)
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem adding trade"
+		rollback tran
+		return
+	end
+
+	insert into
+		trade_types
+	(trade_id,
+	 trade_type)
+	values
+	(@trade_id,
+	 "S")
+	if @@rowcount < 1
+	begin
+		select
+			id=-1,
+			error="Could not add trade type"
+		rollback tran
+		return
+	end
+
+	insert into
+               trade_prices
+        values(
+                @trade_id,
+                @market_rate,
+                getdate())
+
+	
+	insert into
+		trade_value_dates
+	values(
+		@trade_id,
+		@value_date)
+
+	/* exec
+		r_distributetrade
+			@login,
+			@trade_id */
+
+	select
+		@allocations = count(*)
+	from
+		external_spot_allocations
+	where
+		fund_id = @fund_id
+	and
+		ext_spot_allocation_id > @ext_spot_allocation_id
+	
+end
+	
+select
+	@internal_account_id = NULL,
+	@external_account_id = NULL
+
+select
+	@internal_account_id = remainder_int_account_id,
+	@external_account_id = remainder_ext_account_id
+from
+	external_spot_allocations
+where
+	ext_spot_allocation_id = @ext_spot_allocation_id
+if @@rowcount != 1
+begin
+	select
+		@internal_account_id = spot_internal_account_id,
+		@external_account_id = spot_external_account_id
+	from
+		default_accounts
+	where
+		tico_account_id = @account_id
+	if @internal_account_id = NULL
+	begin
+		select
+			@internal_account_id = min(internal_account_id)
+		from
+			internal_accounts
+	end
+
+	if @external_account_id = NULL
+	begin
+		select
+			@external_account_id = min(external_account_id)
+		from
+			external_accounts
+	end
+
+end
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "trades"
+	select
+		@trade_id = last_id
+	from
+		keys
+	where
+		relation = "trades"
+commit tran
+
+insert into
+	trades
+values(
+	@trade_id,
+	@deal_id,
+	@account_id,
+	@internal_account_id,
+	@external_account_id,
+	@remainder_quantity,
+	@contract_id,
+	@trade_price,
+	@trade_date,
+	@trader_id,
+	@strategy_id,
+	1,
+	@broker_id)
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem adding trade"
+	rollback tran
+	return
+end
+
+insert into
+        trade_types
+(trade_id,
+ trade_type)
+ values
+(@trade_id,
+ "S")
+if @@rowcount < 1
+begin
+        select
+                id=-1,
+                error="Could not add trade type"
+        rollback tran
+        return
+end
+
+commit tran
+
+insert into
+	trade_value_dates
+values(
+	@trade_id,
+	@value_date)
+
+insert into
+	trade_prices
+values(
+	@trade_id,
+	@market_rate,
+	getdate())
+
+insert into
+    deal_notifications
+    (source_id,
+     deal_id,
+     status_id,
+     capture_date,
+     notify_date,
+     error)
+values
+    (1,
+     @deal_id,
+     @active_status_id,
+     getdate(),
+     getdate(),
+     "")
+
+
+/* exec
+	r_distributetrade
+		@login,
+		@trade_id  */
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+exec
+	r_intradayfwdpl
+		@login
+
+go

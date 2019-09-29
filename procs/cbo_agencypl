@@ -1,0 +1,30 @@
+
+if object_id("cbo_agencypl") != NULL
+    drop procedure
+        cbo_agencypl
+go
+
+create procedure
+	cbo_agencypl
+		@login varchar(30),
+		@run_name varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+as
+
+declare @total_pl float
+
+
+exec
+	cbo_agencyrunpl
+		@login,
+		@run_name,
+		@begin_date,
+		@end_date,
+		@total_pl output,
+		"Y"
+
+
+
+
+go

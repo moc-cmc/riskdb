@@ -1,0 +1,75 @@
+
+if object_id("r_messagereceipts") != NULL
+    drop procedure
+        r_messagereceipts
+go
+
+create procedure
+    r_messagereceipts
+        @login varchar(50),
+        @delivery_method varchar(25)
+as
+
+/*
+ * Returns message_receipts that require delivery. 
+ */
+
+select
+    a.message_receipt_id,
+    a.message_id,
+    receipt_status = aa.name,
+    receipt_status_date = a.status_date,
+    recipient_login = abb.login,
+    recipient_first_name = abb.given_names,
+    recipient_last_name = abb.surname,
+    recipient_address = ab.address,
+    recipient_delivery_method = aba.name,
+    message_author_login = abb.login,
+    message_author_first_name = abb.given_names,
+    message_author_last_name = abb.surname,
+    message_date = b.date,
+    message_subject = b.subject,
+    message_content = b.content,
+    message_properties = b.properties,
+    message_priority = bc.name,
+    message_status = bd.name,
+    message_item_relation = convert(varchar(30), object_name(b.item_relation_id)),
+    message_item_id = b.item_id,
+    channel_name = bb.name
+from
+    message_receipts a,
+        statuses aa,
+        message_recipients ab,
+            delivery_methods aba,
+            tico_accounts abb,
+    messages b,
+        tico_accounts ba,
+        channels bb,
+        priorities bc,
+        statuses bd
+where
+    a.status_id = aa.status_id
+and
+    a.message_recipient_id = ab.message_recipient_id
+        and
+            ab.delivery_method_id = aba.delivery_method_id
+        and
+            ab.user_id = abb.account_id
+and
+    a.message_id = b.message_id
+        and
+            b.author_user_id = ba.account_id
+        and
+            b.channel_id = bb.channel_id
+        and
+            b.priority_id = bc.priority_id
+        and
+            b.status_id = bd.status_id
+and
+    aa.name = "Pending"
+and
+    bd.name = "Active" 
+and
+    aba.name = @delivery_method
+
+go

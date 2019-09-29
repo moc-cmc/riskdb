@@ -1,0 +1,68 @@
+
+if object_id("cbo_ccyconversionrate") != NULL
+    drop procedure
+        cbo_ccyconversionrate
+go
+
+create procedure
+	cbo_ccyconversionrate
+		@product_id int,
+		@evaluation_currency_id int,
+		@source_id int,
+		@price_date datetime,
+		@conversion_rate float output
+
+as
+
+
+declare @contract_id int
+
+select
+	@contract_id = contract_id
+from
+	forwards
+where
+	product_id = @product_id
+and
+	currency_id = @evaluation_currency_id
+
+
+select
+	@conversion_rate = price
+from
+	bo_spot_settles
+where
+	source_id = @source_id
+and
+	contract_id = @contract_id
+and
+	price_date = @price_date
+
+if @conversion_rate != NULL
+	return
+
+select
+	@contract_id = contract_id
+from
+	forwards
+where
+	product_id = @evaluation_currency_id
+and
+	currency_id = @product_id
+
+
+select
+	@conversion_rate = 1.0 / price
+from
+	bo_spot_settles
+where
+	source_id = @source_id
+and
+	contract_id = @contract_id
+and
+	price_date = @price_date
+
+return
+
+
+go

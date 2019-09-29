@@ -1,0 +1,359 @@
+
+if object_id("r_resolvebroker") != NULL
+    drop procedure
+        r_resolvebroker
+go
+
+create procedure
+	r_resolvebroker
+        @login varchar(50),
+        @source varchar(50),
+        
+        @broker_id int = NULL out,
+        @symbol varchar(100) = NULL out,
+        @broker_source_id int = NULL out,
+        @broker_source varchar(50) = NULL out,
+
+        @source_symbol varchar(50) = NULL out,
+        
+        @create char(1) = NULL out,
+        @report char(1) = NULL
+as
+
+/* messages */
+declare @to varchar(50)
+declare @issue varchar(250)
+declare @subject varchar(250)
+declare @content varchar(250)
+declare @check_sql varchar(250)
+
+declare @should_create char(1)
+declare @source_id int
+
+declare @exec_sql varchar(1024)
+
+select
+    @should_create = @create,
+    @create = "N"
+    
+if @login = NULL or @source = NULL
+begin
+    if @report != "N"
+        select
+            status = "Error",
+            message = "Login and source required",
+            login = @login,
+            source = @source
+    raiserror 99001, "@login and @source required"
+    return
+end
+
+/* Resolve the @source_id from @source */
+exec
+    r_resolvesource
+        @login = @login,
+        @source_id = @source_id out,
+        @name = @source,
+        @report = @report
+if @source_id = NULL
+    return
+        
+if @broker_id = NULL
+begin
+
+    /* Lookup @broker_id through broker_symbols.symbol */
+    if @broker_id = NULL and @source_symbol != NULL
+        select
+            @broker_id = a.broker_id
+        from
+            brokers a
+        join
+            broker_symbols b
+                on
+                    a.broker_id = b.broker_id
+                and
+                    b.source_id = @source_id
+        where
+            b.symbol = @source_symbol
+
+    /* Lookup @broker_id by symbol */
+    if @broker_id = NULL and @symbol != NULL
+        select
+            @broker_id = broker_id
+        from
+            brokers
+        where
+            symbol = @symbol
+
+end
+
+if @broker_id = NULL
+begin
+
+    /* ---------------------------- MARK: Create ---------------------------- */
+
+    if @should_create != "N" and /* has permission */ exists (
+        select
+            *
+        from
+            source_permissions
+        where
+            source_id = @source_id
+        and
+            autocreates_brokers = "Y"
+    )
+    begin
+    
+        if @symbol = NULL
+        begin
+            
+            select
+                @issue = "unsupported:r_resolveexternalaccount():missing:@symbol",
+                @to = "support",
+                @subject = "Couldn't autocreate broker without a symbol",
+                @content = "Broker does not exist. r_resolveexternalaccount attempted to create the broker but no @symbol was provided."
+            exec
+                r_postmessage
+                    @login = @login,
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High"
+                    
+            if @report != "N"
+                select
+                    status = "Error",
+                    message = "Cannot create broker without specifying symbol",
+                    broker = @symbol
+                    
+            return
+        end
+
+        if @broker_source_id = NULL
+        begin
+            
+            if @broker_source = NULL
+                select
+                    @broker_source = @symbol
+            
+            exec
+                r_resolvesource
+                    @login = @login,
+                    @source_id = @broker_source_id out,
+                    @name = @broker_source,
+                    @create = "Y",
+                    @report = @report
+            
+            if @broker_source_id = NULL
+            begin
+            
+                select
+                    @issue = "notfound:sources(name=" + @broker_source + ")",
+                    @to = "support",
+                    @subject = "Couldn't autocreate broker source, """ + @broker_source + """, due to implementation error",
+                    @content = "Broker, """ + @symbol + """, does not exist. r_resolvebroker attempted to create the broker but the broker source, """ + @broker_source + """, could not be resolved."
+                exec
+                    r_postmessage
+                        @login = @login,
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High"
+                        
+                if @report != "N"
+                    select
+                        status = "Error",
+                        message = "Cannot create broker without a broker source",
+                        broker = @symbol
+                        
+                return
+            end
+        
+        end
+        
+        /*+-------------------------------------------------------------------* 
+         |                           INSERT brokers                           | 
+         *--------------------------------------------------------------------*/
+
+        exec
+            j_nextkey
+                "brokers",
+                @broker_id out
+        
+        /* 
+         * INSERT brokers - Support for brokers.source_id is added to newer
+         * versions of the schema so that more than one broker may be associated
+         * with a source which is not supported when joining on brokers.symbol =
+         * source.name. For example, "Lava ECN" and "Lava IB" should both have a
+         * source.
+         * 
+         * For trades, the following query should always return a row for every
+         * trade
+         * 
+         * select a.* from trade_identifiers a join trades b on a.trade_id =
+         * b.trade_id join brokers c on b.broker_id = c.broker_id and
+         * a.source_id = c.source_id
+         */
+        insert into
+            brokers (
+                broker_id,
+                symbol
+                /* FEATURE: brokers.source_id */,
+                source_id
+            )
+            values (
+                @broker_id,
+                @symbol
+                /* FEATURE: brokers.source_id */,
+                @broker_source_id
+            )
+        
+        if @@rowcount != 1
+        begin
+        
+            select
+                @issue = "insert:brokers(name=" + @symbol + ")",
+                @to = "support",
+                @subject = "Failed to create broker",
+                @content = "The broker, """ + @symbol + """, does not exist and r_resolveexternalaccount attempted to autocreate it but no row was inserted with (broker_id: " + convert(varchar(10), @broker_id) + ", symbol: '" + @symbol + "').",
+                @check_sql = "if exists(select * from brokers where symbol = """ + @symbol + """) exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+            exec
+                r_manageissue
+                    @login = @login,
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High",
+                    @check_sql = @check_sql
+                    
+            if @report != "N"
+                select
+                    status = "Error",
+                    message = "Couldn't add broker",
+                    broker = @symbol
+            
+            return
+        end
+        
+        /*+-------------------------------------------------------------------* 
+         |                       INSERT broker_symbols                        | 
+         *--------------------------------------------------------------------*/
+
+        if @source_symbol != NULL
+        begin
+        
+            insert into
+                broker_symbols (
+                    broker_id,
+                    source_id,
+                    symbol
+                )
+                values (
+                    @broker_id,
+                    @source_id,
+                    @source_symbol
+                )
+        
+            if @@rowcount != 1
+            begin
+            
+                select
+                    @issue = "insert:broker_symbols(symbol=" + @source_symbol + ")",
+                    @to = "support",
+                    @subject = "Failed to create broker symbol, """ + @source_symbol + """, for broker, """ + @symbol +  """, for source, """ + @source + """",
+                    @content = "The broker, """ + @source_symbol + """, does not exist and r_resolveexternalaccount attempted to autocreate it but no row was inserted with (broker_id: " + convert(varchar(10), @broker_id) + ", source_id: " + convert(varchar(10), @source_id) + ", symbol: '" + @symbol + "').",
+                    @check_sql = "if exists(select * from broker_symbols where broker_id = " + convert(varchar(10), @broker_id) + " and source_id = " + convert(varchar(10), @source_id) + " and symbol = '" + @source_symbol + "') exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+                exec
+                    r_manageissue
+                        @login = @login,
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High",
+                        @check_sql = @check_sql
+                        
+                if @report != "N"
+                    select
+                        status = "Error",
+                        message = "Couldn't add broker symbol",
+                        broker = @symbol,
+                        symbol = @source_symbol
+                
+                return
+            end
+            
+        end
+        
+        select
+            @create = "Y"
+    
+        select
+            @to = "support",
+            @subject = "Broker, """ + @symbol + """, created",
+            @content = "The broker, """ + @symbol + """, was created by " + @login + " on behalf of " + @source + "."
+        exec
+            r_postmessage
+				@login = @login,
+                @to = @to,
+                @channel = "General",
+                @subject = @subject,
+                @content = @content,
+                @priority = "Low"
+                
+    end
+    else
+    begin
+
+        select
+            @issue = "notfound:brokers(name=" + @symbol + ")",
+            @to = "support",
+            @subject = "Broker, """ + @symbol + """, not found",
+            @content = "The broker, """ + @symbol + """, could not be found.",
+            @check_sql = "if exists(select * from brokers where name = """ + @symbol + """) exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+        exec
+            r_manageissue
+                @login = @login,
+                @name = @issue,
+                @to = @to,
+                @channel = "System",
+                @subject = @subject,
+                @content = @content,
+                @priority = "High",
+                @check_sql = @check_sql
+                
+        if @report != "N"
+            select
+                status = "Error",
+                message = "Broker not found",
+                broker = @symbol,
+                source = @source,
+                source_id = @source_id
+        
+        return
+    end
+    
+end
+
+select
+	@symbol = a.symbol,
+	@source_symbol = b.symbol
+from
+	brokers a
+left outer join
+	broker_symbols b
+        on
+            a.broker_id = b.broker_id
+        and
+            b.source_id = @source_id
+where
+	a.broker_id = @broker_id
+
+go

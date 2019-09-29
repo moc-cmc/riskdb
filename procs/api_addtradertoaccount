@@ -1,0 +1,198 @@
+create or replace procedure
+	api_addtradertoaccount
+		@login varchar(100),
+		@trader varchar(50),
+		@account varchar(100)
+
+
+as
+
+declare @tico_account_id int
+declare @trader_id int
+declare @external_account_id int
+declare @default_trader_account_id int
+declare @trader_le_id int
+declare @account_le_id int
+declare @trader_le varchar(150)
+declare @account_le varchar(150)
+declare @already_exists char(1)
+
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+select
+	@trader_id = trader_id,
+	@default_trader_account_id = external_account_id
+from
+	traders
+where
+	symbol = @trader
+if @trader_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining trader",
+		trader = @trader
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining external account",
+		external_account = @account
+	return
+end
+
+select
+	@trader_le_id = a.legal_entity_id,
+	@trader_le = a.name
+from
+	legal_entities a,
+	bo_master_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.external_account_id = @default_trader_account_id
+
+if @trader_le_id = NULL
+begin
+	select
+		@trader_le_id = a.legal_entity_id,
+		@trader_le = a.name
+	from
+		legal_entities a,
+		bo_master_accounts b,
+		fo_sub_accounts c
+	where
+		a.legal_entity_id = b.legal_entity_id
+	and
+		b.bo_master_account_id = c.bo_master_account_id
+	and
+		c.external_account_id = @default_trader_account_id
+
+	if @trader_le_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem determining legal entity for trader by checking master and sub accouunts",
+			trader = @trader
+		return
+	end
+end
+
+select
+	@account_le_id = a.legal_entity_id,
+	@account_le = a.name
+from
+	legal_entities a,
+	bo_master_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.external_account_id = @external_account_id
+
+if @account_le_id = NULL
+begin
+	select
+		@account_le_id = a.legal_entity_id,
+		@account_le = a.name
+	from
+		legal_entities a,
+		bo_master_accounts b,
+		fo_sub_accounts c
+	where
+		a.legal_entity_id = b.legal_entity_id
+	and
+		b.bo_master_account_id = c.bo_master_account_id
+	and
+		c.external_account_id = @external_account_id
+
+	if @account_le_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem determining legal entity for account provided by checking master and sub accouunts",
+			accont = @account
+		return
+	end
+end
+
+if @account_le_id != @trader_le_id
+begin
+	select
+		status = "Error",
+		message = "Trader legal entity and account legal entity must be the same. Values are mismatched",
+		trader = @trader,
+		trader_le = @trader_le,
+		account = @account,
+		account_le = @account_le
+	return
+end
+
+
+
+
+select
+	@already_exists = "Y"
+from
+	external_account_traders
+where
+	external_account_id = @external_account_id
+and
+	trader_id = @trader_id
+
+if @already_exists = "Y"
+begin
+	select
+		status = "Success",
+		message = "Trader already associated with account",
+		trader = @trader,
+		account = @account
+	return
+end
+
+insert into
+	external_account_traders(
+		external_account_id,
+		trader_id)
+values(
+	@external_account_id,
+	@trader_id
+)
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Problem assigning trader to external account"
+	return
+end
+
+select
+	status = "Success",
+	message = "Trader has been added to account",
+	trader = @trader,
+	account = @account
+
+
+
+go

@@ -1,0 +1,259 @@
+
+drop procedure
+	fxa_exotictallies
+go
+
+create procedure
+	fxa_exotictallies
+as
+
+create table
+        #links(
+                meta_type char(200),
+                column char(30),
+                link char(200),
+                arguments char(255) NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "b2b_european_barrier",
+        "B2B European Barrier",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "market_european_barrier",
+        "Market European Barrier",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "client_european_barrier",
+        "Client European Barrier",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "b2b_european_digital",
+        "B2B European Digital",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "market_european_digital",
+        "Market European Digital",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "client_european_digital",
+        "Client European Digital",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "b2b_dig_double_barrier",
+        "B2B Digital Double Barrier",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "market_dig_double_barrier",
+        "Market Digital Double Barrier",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "client_dig_double_barrier",
+        "Client Digital Double Barrier",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "b2b_dig_single_barrier",
+        "B2B Digital Single Barrier",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "market_dig_single_barrier",
+        "Market Digital Single Barrier",
+        NULL)
+
+
+insert into
+        #links
+values(
+        "Column Link",
+        "client_dig_single_barrier",
+        "Client Digital Single Barrier",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "b2b_american_digital",
+        "B2B American Digital Exotic",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "market_american_digital",
+        "Market American Digital Exotic",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "client_american_digital",
+        "Client American Digital Exotic",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "mc_tally_client_digital",
+        "MC Tally Client Digital",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "tally_one_touch_pay_at_hit",
+        "Client One Touch PAH",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "Client Digital Option",
+        "Enter Client Digital Option",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "Market Digital Option",
+        "Enter Market Digital Option",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "Client Double Barrier Option",
+        "Enter Client Double Barrier Option",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "Market Double Barrier Option",
+        "Enter Market Double Barrier Option",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "Client Single Barrier Option",
+        "Enter Client Single Barrier Option",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "Market Single Barrier Option",
+        "Enter Market Single Barrier Option",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "B2B Digital Option",
+        "Enter B2B Digital Option",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "B2B Double Barrier Option",        
+	"Enter B2B Double Barrier Option",
+        NULL)
+
+insert into        
+	#links
+values(
+        "Column Link",
+        /* "B2B Single Barrier Option",         */
+	"b2b_single_barrier_option",
+	"Enter B2B Single Barrier Option",
+        NULL)
+
+select * from #links
+
+
+select
+	client_american_digital = "Enter Client American Digital",
+	market_american_digital = "Enter Market American Digital",
+	b2b_american_digital = "Enter B2B American Digital"
+
+select
+	client_dig_single_barrier = "Enter Client Digital Single Barrier",
+	market_dig_single_barrier = "Enter Market Digital Single Barrier",
+	b2b_dig_single_barrier = "Enter B2B Digital Single Barrier"
+
+select
+	client_dig_double_barrier = "Enter Client Digital Double Barrier",
+	market_dig_double_barrier = "Enter Market Digital Double Barrier",
+	b2b_dig_double_barrier = "Enter B2B Digital Double Barrier"
+
+
+select
+	client_european_digital = "Enter Client European Digital",
+	market_european_digital = "Enter Market European Digital",
+	b2b_european_digital = "Enter B2B European Digital"
+
+select
+	client_european_barrier = "Enter Client European Barrier",
+	market_european_barrier = "Enter Market European Barrier",
+	b2b_european_barrier = "Enter B2B European Barrier"
+
+go
+
+
+

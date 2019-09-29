@@ -1,0 +1,165 @@
+create or replace procedure
+	r_viewfiledropreports
+		@login varchar(50),
+		@filedrop_report varchar(50)=NULL
+
+
+as
+
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @filedrop_report_id int
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_report",
+        "Add Filedrop Report",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_report",
+        "Edit Filedrop Report",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "delete_report",
+        "Delete Filedrop Report",
+        NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+        @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+        @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+        @subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+        @style = "background:#FFFFFF;border: 1px solid white",
+        @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+if @filedrop_report != NULL
+begin
+	select
+        	@filedrop_report_id = filedrop_report_id
+	from
+        	filedrop_reports
+	where
+        	name = @filedrop_report
+	if @@rowcount != 1
+	begin
+        	select
+                	status = "Error",
+                	msg = "Could not find report",
+                	report = @filedrop_report
+        	return
+	end
+end
+
+
+select
+	style = @style,
+	add_report = "ADD REPORT"
+
+create table
+	#filedrop_reports(
+		filedrop_report_id int,
+		filedrop_report varchar(50),
+		section varchar(50) NULL,
+		style varchar(50) NULL,
+		edit_report varchar(50) NULL,
+		delete_report varchar(50) NULL)
+
+insert into
+	#filedrop_reports(
+		filedrop_report_id,
+		filedrop_report,
+		section,
+		style,
+		edit_report,
+		delete_report)
+select
+	filedrop_report_id,
+	filedrop_report = name,
+	section = "Reports",
+	style = @style,
+	edit_report = "EDIT",
+	delete_report = "DELETE"
+from
+	filedrop_reports
+
+if @filedrop_report != NULL
+begin
+        update
+                #filedrop_reports
+        set
+                style = @selected_style
+        where
+                filedrop_report = @filedrop_report
+end
+
+select
+	filedrop_report,
+	section,
+	style,
+	edit_report,
+	delete_report
+from
+	#filedrop_reports
+order by
+	filedrop_report
+
+
+if @filedrop_report != NULL
+begin
+
+	select
+		style = @style,
+		section = "Configured For Report",
+		run = a.name,
+		destination = c.name
+	from
+		runs a,
+		run_fd_report_destinations b,
+		filedrop_destinations c
+	where
+		a.run_id = b.run_id
+	and
+		b.filedrop_report_id = @filedrop_report_id
+	and
+		c.filedrop_destination_id = b.filedrop_destination_id
+end
+
+
+go

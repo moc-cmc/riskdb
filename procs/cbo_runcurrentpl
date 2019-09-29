@@ -1,0 +1,1236 @@
+use
+	risk_cantorny
+go
+
+drop procedure
+	cbo_runcurrentpl
+go
+
+create procedure
+	cbo_runcurrentpl
+		@login varchar(30),
+		@run_name varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL,
+		@total_pl float output,
+		@display_output varchar(10)=NULL
+as
+
+
+declare @start_date datetime
+declare @stop_date datetime
+declare @evaluation_currency_id int
+declare @source_id int
+declare @run_id int
+declare @fund_id int
+declare @total_realized_pl float
+declare @fx_realized_pl float
+declare @options_realized_pl float
+declare @fx_unrealized_pl float
+declare @options_unrealized_pl float
+declare @pos_pl float
+declare @pos_end_evaluation_total float
+declare @trades_end_evaluation_total float
+declare @trades_pl float
+declare @evaluation_currency varchar(20)
+declare @source varchar(30)
+
+declare @id int
+declare @contract_id int
+declare @contracts int
+declare @symbol varchar(50)
+declare @total_begin_unrealized float
+declare @total_end_unrealized float
+declare @total_settled_premium float
+declare @total_unsettled_premium float
+declare @total_premium float
+declare @total_realized float
+declare @total_fwd_unrealized float
+declare @total_end_fwd_unrealized float
+declare @total_fwd_realized float
+declare @total_opt_unrealized float
+declare @total_opt_value float
+declare @total_fwd_value float
+declare @unrevalued_trades float
+declare @trade_date datetime
+
+if @begin_date = NULL
+	select
+		@begin_date = getdate()
+
+if @end_date = NULL
+begin
+	exec
+		r_daterangefordate
+			@begin_date,
+			@begin_date output,
+			@end_date output
+
+	select
+		@start_date = @begin_date,
+		@stop_date = @end_date
+end
+else
+begin
+	exec
+		r_daterangefordate
+			@begin_date,
+			@start_date output,
+			@stop_date output
+
+	exec
+		r_daterangefordate
+			@end_date,
+			@begin_date output,
+			@stop_date output
+end
+
+select
+	@trade_date = convert(datetime, convert(char(11), @stop_date, 1))
+
+
+/* This check makes sure all trades are revalued on their trade date */
+create table
+	#unrevalued_trades(
+		status varchar(40) NULL,
+		trade_id int,
+		bo_trade_date datetime,
+		reval_date datetime)
+/* insert into
+	#unrevalued_trades(
+		trade_id,
+		bo_trade_date,
+		reval_date)
+select
+	trade_id,
+	min(bo_trade_date),
+	min(reval_date)
+from
+	trade_daily_revals
+group by
+	trade_id
+having
+	 convert(date, min(bo_trade_date)) != convert(date, min(reval_date)) */
+
+select
+	@unrevalued_trades = count(*)
+from
+	#unrevalued_trades
+if @unrevalued_trades != 0
+begin
+	update
+		#unrevalued_trades
+	set
+		status = "Missing Reval"
+	select
+		*
+	from
+		#unrevalued_trades
+
+	return
+end
+
+/*
+ * This check makes sure every trade is included in the back office
+ */
+/* select
+	@unrevalued_trades = count(*)
+from
+	trades
+where
+	trade_date >= @start_date
+and
+	trade_date <= @stop_date
+and
+	quantity != 0
+and
+	trade_id not in(
+		select
+			distinct(trade_id)
+		from
+			trade_daily_revals)
+if @unrevalued_trades != 0
+begin
+	select
+		status = "Error",
+		message = "Not all trades for this date range have been revalued",
+		begin_date = @start_date,
+		end_date = @stop_date
+	return
+end */
+
+
+		
+
+
+if lower(convert(char(1), @display_output)) = "y"
+	exec
+		cbo_plstatementlinks
+			@login
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding run with name",
+		run = @run_name
+	return
+end
+
+select
+	@evaluation_currency_id = evaluation_currency_id,
+	@source_id = source_id
+from
+	run_defaults
+where
+	run_id = @run_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		@evaluation_currency_id = evaluation_currency_id,
+		@source_id = source_id
+	from
+		fund_run_defaults
+	where
+		fund_id = @fund_id
+
+	if @evaluation_currency_id = NULL
+	begin
+		select
+			id = -1,
+			error = "Unable to determine default run settings"
+		return
+	end
+end
+
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id 
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+
+
+create table
+	#trades(
+		trade_id int,
+		contract_id int,
+		total_premium float NULL,
+		premium_settle_date datetime NULL,
+		begin_realized_pl_to_date float NULL,
+		end_realized_pl_to_date float NULL,
+		begin_unrealized_pl_to_date float NULL,
+		end_unrealized_pl_to_date float NULL,
+		realized_range_pl float NULL,
+		unrealized_range_pl float NULL,
+		end_evaluation_value float NULL,
+		settle_price float NULL)
+
+
+/*
+ * Find any trades that existed before the range starts
+ * @start_date >= bo_trade_date <= @stop_date
+ */
+insert into
+	#trades(
+		trade_id,
+		contract_id,
+		begin_realized_pl_to_date,
+		begin_unrealized_pl_to_date)
+select
+	a.trade_id,
+	a.contract_id,
+	realized_pl_to_date,
+	unrealized_pl_to_date
+from
+	trade_daily_revals a,
+	trades b,
+	#external_accounts c,
+	#internal_accounts d,
+	#traders e,
+	#strategies f,
+	#brokers g 
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = c.external_account_id
+and
+	b.internal_account_id = d.internal_account_id
+and
+	b.trader_id = e.trader_id
+and
+	b.strategy_id = f.strategy_id
+and
+	b.broker_id = g.broker_id
+and
+	a.bo_trade_date < @start_date
+and
+	a.value_date >= @start_date
+and
+	a.reval_date = @start_date
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+
+
+/*
+ * Find any trades that were done during the range
+ */
+insert into
+	#trades(
+		trade_id,
+		contract_id,
+		begin_realized_pl_to_date,
+		begin_unrealized_pl_to_date,
+		end_evaluation_value,
+		settle_price)
+select
+	a.trade_id,
+	a.contract_id,
+	realized_pl_to_date = 0.0,
+	unrealized_pl_to_date = 0.0,
+	a.evaluation_value,
+	a.close_price
+from
+	trade_daily_revals a,
+	trades b,
+	#external_accounts c,
+	#internal_accounts d,
+	#traders e,
+	#strategies f,
+	#brokers g 
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = c.external_account_id
+and
+	b.internal_account_id = d.internal_account_id
+and
+	b.trader_id = e.trader_id
+and
+	b.strategy_id = f.strategy_id
+and
+	b.broker_id = g.broker_id
+and
+	a.value_date >= @start_date
+and
+	a.bo_trade_date >= @start_date
+and
+	a.bo_trade_date < @stop_date
+and
+	convert(char(11), a.reval_date, 1) = convert(char(11), a.bo_trade_date, 1)
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+
+
+begin tran
+update
+	#trades
+set
+	a.end_realized_pl_to_date = b.realized_pl_to_date,
+	a.end_unrealized_pl_to_date = b.unrealized_pl_to_date,
+	a.realized_range_pl = b.realized_pl_to_date - a.begin_realized_pl_to_date,
+	a.unrealized_range_pl = b.unrealized_pl_to_date - a.begin_unrealized_pl_to_date,
+	a.settle_price = b.close_price,
+	a.end_evaluation_value = b.evaluation_value
+from
+	#trades a,
+	trade_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	b.source_id = @source_id
+and
+	b.evaluation_currency_id = @evaluation_currency_id
+and
+	convert(char(11), b.reval_date, 1) = convert(char(11), b.value_date, 1)
+and
+	b.reval_date <= @stop_date /* TEST */
+commit tran
+
+
+begin tran
+update
+	#trades
+set
+	a.end_realized_pl_to_date = b.realized_pl_to_date,
+	a.end_unrealized_pl_to_date = b.unrealized_pl_to_date,
+	a.realized_range_pl = b.realized_pl_to_date - a.begin_realized_pl_to_date,
+	a.unrealized_range_pl = b.unrealized_pl_to_date - a.begin_unrealized_pl_to_date,
+	a.settle_price = b.close_price,
+	a.end_evaluation_value = b.evaluation_value
+from
+	#trades a,
+	trade_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	b.reval_date = @stop_date
+and
+	b.source_id = @source_id
+and
+	b.evaluation_currency_id = @evaluation_currency_id
+commit tran
+
+
+begin tran
+update
+	#trades
+set
+	a.end_evaluation_value = b.evaluation_value
+from
+	#trades a,
+	trade_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	datepart(day, b.reval_date) = datepart(day, b.value_date)
+and
+	datepart(month, b.reval_date) = datepart(month, b.value_date)
+and
+	datepart(year, b.reval_date) = datepart(year, b.value_date)
+and
+	b.reval_date <= @stop_date
+commit tran
+
+
+begin tran
+update
+	#trades
+set
+	a.end_evaluation_value = b.evaluation_value
+from
+	#trades a,
+	trade_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	a.end_evaluation_value is NULL
+and
+	b.reval_date = @stop_date
+commit tran
+
+
+begin tran
+update
+	#trades
+set
+	a.end_unrealized_pl_to_date = 0,
+	a.unrealized_range_pl = 0
+from
+	#trades a,
+	trade_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	a.unrealized_range_pl is NULL
+commit tran
+
+
+begin tran
+update
+	#trades
+set
+	a.total_premium = b.premium,
+	a.premium_settle_date = b.premium_settle_date
+from
+	#trades a,
+	trade_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	b.source_id = @source_id
+and
+	b.evaluation_currency_id = @evaluation_currency_id
+and
+	b.source_id = @source_id
+commit tran
+	
+
+
+select
+	@evaluation_currency = symbol
+from
+	products
+where
+	product_id = @evaluation_currency_id
+
+select
+	@source = name
+from
+	sources
+where
+	source_id = @source_id
+
+if lower(convert(char(1), @display_output)) = "y"
+	select
+		run_name = @run_name,
+		begin_date = @start_date,
+		end_date = @stop_date,
+		run_date = getdate(),
+		evaluation_currency = @evaluation_currency,
+		evaluation_source_id = @source
+
+create table
+	#reval_output(
+		id int identity,
+		trade_id int NULL,
+		trade_date char(11) NULL,
+		contract_id int NULL,
+		underlying_forward_id int NULL,
+		perspective_contract_id int NULL,
+		symbol varchar(50),
+		quantity numeric(30,4) NULL,
+		price float NULL,
+		value_date varchar(11) NULL,
+		premium float NULL,
+		premium_settle_date datetime NULL,
+		begin_realized float NULL,
+		end_realized float NULL,
+		begin_unrealized float NULL,
+		end_unrealized float NULL,
+		realized_range float NULL,
+		unrealized_range float NULL,
+		ending_valuation float NULL,
+		settle_price float NULL,
+		total_pl float NULL)
+
+create table
+	#trade_revals(
+		trade_id int,
+		trade_date char(11),
+		contract_id int,
+		underlying_forward_id int NULL,
+		perspective_contract_id int NULL,
+		symbol varchar(50),
+		quantity numeric(30,4),
+		price float,
+		value_date varchar(11),
+		premium float NULL,
+		premium_settle_date datetime NULL,
+		begin_realized float NULL,
+		end_realized float NULL,
+		begin_unrealized float NULL,
+		end_unrealized float NULL,
+		realized_range float NULL,
+		unrealized_range float NULL,
+		ending_valuation float NULL,
+		settle_price float NULL)
+insert into
+	#trade_revals
+select
+	a.trade_id,
+	trade_date = convert(char(11), b.trade_date, 1),
+	a.contract_id,
+	underlying_forward_id = NULL,
+	perspective_contract_id = NULL,
+	c.symbol,
+	b.quantity,
+	b.price,
+	value_date = convert(char(11), (select max(d.value_date) from trade_daily_revals d where a.trade_id = d.trade_id), 1),
+	premium = a.total_premium,
+	a.premium_settle_date,
+	begin_realized = a.begin_realized_pl_to_date,
+	end_realized = a.end_realized_pl_to_date,
+	begin_unrealized = a.begin_unrealized_pl_to_date,
+	end_unrealized = a.end_unrealized_pl_to_date,
+	realized_range = a.realized_range_pl,
+	unrealized_range = a.unrealized_range_pl,
+	ending_valuation = a.end_evaluation_value,
+	settle_price = a.settle_price
+from
+	#trades a,
+	trades b,
+	contracts c
+where
+	a.trade_id = b.trade_id
+and
+	b.contract_id = c.contract_id
+
+
+begin tran
+update
+	#trade_revals
+set
+	a.underlying_forward_id = a.contract_id
+from
+	#trade_revals a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+commit tran
+
+
+begin tran
+update
+	#trade_revals
+set
+	a.underlying_forward_id = c.forward_id
+from
+	#trade_revals a,
+	future_contracts b,
+	futures c
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+commit tran
+
+begin tran
+update
+	#trade_revals
+set
+	a.underlying_forward_id = f.forward_id
+from
+	#trade_revals a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	future_contracts e,
+	futures f
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+and
+	e.future_id = f.future_id
+commit tran
+
+
+begin tran
+update
+	#trade_revals
+set
+	a.underlying_forward_id = e.contract_id
+from
+	#trade_revals a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	forwards e
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+commit tran
+
+begin tran
+update
+	#trade_revals
+set
+	a.underlying_forward_id = e.contract_id
+from
+	#trade_revals a,
+	exotic_contracts b,
+	option_expirations c,
+	options d,
+	forwards e
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+commit tran
+
+
+begin tran
+update
+	#trade_revals
+set
+	perspective_contract_id = underlying_forward_id
+commit tran
+
+update
+	#trade_revals
+set
+	a.perspective_contract_id = b.perspective_contract_id
+from
+	#trade_revals a,
+	run_perspective_contracts b
+where
+	a.underlying_forward_id = b.contract_id
+and
+	b.run_id = @run_id
+if @@rowcount = 0
+begin
+	update
+		#trade_revals
+	set
+		a.perspective_contract_id = b.perspective_contract_id
+	from
+		#trade_revals a,
+		def_perspective_contracts b
+	where
+		a.underlying_forward_id = b.contract_id
+end
+
+create table
+	#summary(
+		contract_id int,
+		settled_premium float,
+		unsettled_premium float,
+		realized_pl float,
+		fwd_unrealized_pl float,
+		opt_unrealized_pl float,
+		fwd_ending_value float,
+		opt_ending_value float)
+		
+create table
+	#contracts(
+		id int identity,
+		contract_id int NULL,
+		symbol varchar(50))
+insert into
+	#contracts(
+		symbol)
+select
+	distinct(a.symbol)
+from
+	contracts a,
+	#trade_revals b
+where
+	a.contract_id = b.perspective_contract_id
+order by
+	a.symbol
+
+begin tran
+update
+	#contracts
+set
+	a.contract_id = b.contract_id
+from
+	#contracts a,
+	contracts b
+where
+	a.symbol = b.symbol
+commit tran
+
+		
+select
+	@id = 0
+select
+	@contracts = count(*)
+from
+	#contracts
+where
+	id > @id
+
+while @contracts > 0
+begin
+	select
+		@id = min(id)
+	from
+		#contracts
+	where
+		id > @id
+
+	select
+		@contract_id = contract_id
+	from
+		#contracts
+	where
+		id = @id
+
+	select
+		@total_begin_unrealized = NULL,
+		@total_end_unrealized = NULL,
+		@total_settled_premium = NULL,
+		@total_unsettled_premium = NULL,
+		@total_premium = NULL,
+		@total_realized = NULL,
+		@total_fwd_realized = NULL,
+		@total_fwd_unrealized = NULL,
+		@total_end_fwd_unrealized = NULL,
+		@total_fwd_value = NULL,
+		@total_opt_value = NULL
+
+
+	select
+		@total_settled_premium = sum(premium)
+	from
+		#trade_revals
+	where
+		perspective_contract_id = @contract_id
+	and
+		premium_settle_date <= @stop_date
+	and
+		premium_settle_date >= @start_date
+	if @total_settled_premium = NULL
+		select
+			@total_settled_premium = 0.0
+
+	select
+		@total_unsettled_premium = sum(premium)
+	from
+		#trade_revals
+	where
+		perspective_contract_id = @contract_id
+	and
+		premium_settle_date >= @stop_date
+	if @total_unsettled_premium = NULL
+		select
+			@total_unsettled_premium = 0.0
+
+
+	select
+		@total_premium = sum(premium)
+	from
+		#trade_revals
+	where
+		perspective_contract_id = @contract_id
+	if @total_premium = NULL
+		select
+			@total_premium = 0.0
+		
+
+	select
+		@total_fwd_unrealized = sum(a.unrealized_range),
+		@total_fwd_value = sum(a.ending_valuation),
+		@total_end_fwd_unrealized = sum(a.end_unrealized)
+	from
+		#trade_revals a,
+		forwards b
+	where
+		a.contract_id = b.contract_id
+	and
+		perspective_contract_id = @contract_id
+	if @total_fwd_unrealized = NULL
+		select
+			@total_fwd_unrealized = 0.0,
+			@total_fwd_value = 0.0,
+			@total_end_fwd_unrealized = 0.0
+
+	select
+		@total_opt_unrealized = sum(a.unrealized_range),
+		@total_opt_value = sum(a.ending_valuation)
+	from
+		#trade_revals a,
+		option_contracts b
+	where
+		a.contract_id = b.contract_id
+	and
+		a.perspective_contract_id = @contract_id
+	if @total_opt_unrealized = NULL
+		select
+			@total_opt_unrealized = 0.0,
+			@total_opt_value = 0.0
+
+	select
+		@total_realized = sum(realized_range),
+		@total_end_unrealized = sum(end_unrealized),
+		@total_begin_unrealized = sum(begin_unrealized)
+	from
+		#trade_revals
+	where
+		perspective_contract_id = @contract_id
+
+
+	insert into
+		#summary
+	values(
+		@contract_id,
+		@total_settled_premium,
+		@total_unsettled_premium,
+		@total_realized,
+		@total_fwd_unrealized,
+		@total_opt_unrealized,
+		@total_end_fwd_unrealized,
+		/* @total_fwd_value, TEST */
+		@total_opt_value)
+
+	insert into
+		#reval_output(
+			trade_id,
+			trade_date, 
+			contract_id,
+			underlying_forward_id,
+			perspective_contract_id,
+			symbol,
+			quantity,
+			price,
+			value_date,
+			premium,
+			begin_realized,
+			end_realized,
+			begin_unrealized,
+			end_unrealized,
+			realized_range,
+			unrealized_range,
+			ending_valuation,
+			settle_price,
+			total_pl)
+	select
+		trade_id,
+		trade_date,
+		contract_id,
+		underlying_forward_id,
+		perspective_contract_id,
+		symbol,
+		quantity,
+		price,
+		value_date,
+		premium,
+		begin_realized,
+		end_realized,
+		begin_unrealized,
+		end_unrealized,
+		realized_range,
+		unrealized_range,
+		ending_valuation,
+		settle_price,
+		realized_range + unrealized_range
+	from
+		#trade_revals
+	where
+		perspective_contract_id = @contract_id
+	order by
+		symbol,
+		value_date,
+		trade_date
+
+	select
+		@total_pl = sum(realized_range + unrealized_range)
+	from
+		#trade_revals
+	where
+		perspective_contract_id = @contract_id
+
+	select
+		@symbol = symbol
+	from
+		contracts
+	where
+		contract_id = @contract_id
+
+	select
+		@symbol = "<b>" + rtrim(@symbol) + " Total</b>"
+
+	insert into
+		#reval_output(
+			symbol,
+			premium,
+			realized_range,
+			begin_unrealized,
+			end_unrealized,
+			unrealized_range,
+			ending_valuation,
+			total_pl)
+	values(
+		@symbol,
+		@total_premium,
+		@total_realized,
+		@total_begin_unrealized,
+		@total_end_unrealized,
+		/* @total_end_fwd_unrealized, */
+		@total_fwd_unrealized + @total_opt_unrealized,
+		@total_fwd_value + @total_opt_value,
+		@total_pl)
+		
+
+	select
+		@contracts = count(*)
+	from
+		#contracts
+	where
+		id > @id
+end
+	
+create table
+	#summary_output(
+		id int identity,
+		symbol varchar(50),
+		settled_premium float,
+		unsettled_premium float,
+		realized_pl float,
+		fwd_unrealized_pl float,
+		opt_unrealized_pl float,
+		fwd_ending_value float,
+		opt_ending_value float)
+insert into
+	#summary_output(
+		symbol,
+		settled_premium,
+		unsettled_premium,
+		realized_pl,
+		fwd_unrealized_pl,
+		opt_unrealized_pl,
+		fwd_ending_value,
+		opt_ending_value)
+select
+	a.symbol,
+	b.settled_premium,
+	b.unsettled_premium,
+	b.realized_pl,
+	b.fwd_unrealized_pl,
+	b.opt_unrealized_pl,
+	b.fwd_ending_value,
+	b.opt_ending_value
+from
+	contracts a,
+	#summary b
+where
+	a.contract_id = b.contract_id
+order by
+	a.symbol
+
+select
+	@total_settled_premium = sum(settled_premium),
+	@total_unsettled_premium = sum(unsettled_premium),
+	@total_realized = sum(realized_pl),
+	@total_fwd_unrealized = sum(fwd_unrealized_pl),
+	@total_opt_unrealized = sum(opt_unrealized_pl),
+	@total_opt_value = sum(opt_ending_value),
+	@total_fwd_value = sum(fwd_ending_value)
+from
+	#summary
+if @total_settled_premium = NULL
+	select
+		@total_settled_premium = 0.0
+if @total_unsettled_premium = NULL
+	select
+		@total_unsettled_premium = 0.0
+if @total_realized = NULL
+	select
+		@total_realized = 0.0
+if @total_fwd_unrealized = NULL
+	select
+		@total_fwd_unrealized = 0.0
+if @total_opt_unrealized = NULL
+	select
+		@total_opt_unrealized = 0.0
+if @total_opt_value = NULL
+	select
+		@total_opt_value = 0.0
+if @total_fwd_value = NULL
+	select
+		@total_fwd_value = 0.0
+
+
+insert into
+	#summary_output(
+		symbol,
+		settled_premium,
+		unsettled_premium,
+		realized_pl,
+		fwd_unrealized_pl,
+		opt_unrealized_pl,
+		fwd_ending_value,
+		opt_ending_value)
+values(
+	"<b>Total</b>",
+	@total_settled_premium,
+	@total_unsettled_premium,
+	@total_realized,
+	@total_fwd_unrealized,
+	@total_opt_unrealized,
+	@total_fwd_value,
+	@total_opt_value)
+
+if lower(convert(char(1), @display_output)) = "y"
+	select
+		symbol,
+		settled_premium,
+		realized_pl,
+		unsettled_premium,
+		fwd_unrealized_pl,
+		opt_unrealized_pl,
+		fwd_end_value = fwd_ending_value,
+		opt_end_value = opt_ending_value,
+		total_pl = realized_pl + fwd_unrealized_pl + opt_unrealized_pl
+	from
+		#summary_output
+	order by
+		id
+
+
+if lower(convert(char(1), @display_output)) = "y"
+	select
+		trade_id,
+		trade_date,
+		symbol,
+		quantity,
+		exp_date = value_date,
+		price,
+		settle_price,
+		premium,
+		realized_pl = realized_range,
+		begin_unrealized,
+		end_unrealized,
+		unrealized_range,
+		ending_valuation,
+		total_pl
+	from
+		#reval_output
+	order by
+		id
+
+select
+	@total_pl = sum(realized_range_pl + unrealized_range_pl)
+from
+	#trades
+
+if lower(convert(char(1), @display_output)) = "y"
+	select
+		total_pl = @total_pl
+
+/* update
+	pl_debug
+set
+	a.range_pl = b.total_pl
+from
+	pl_debug a,
+	#reval_output b
+where
+	a.trade_id = b.trade_id
+
+
+insert into
+	pl_debug(
+		trade_id,
+		range_pl)
+select
+	trade_id,
+	total_pl
+from
+	#reval_output
+where
+	trade_id != NULL
+and
+	trade_id not in(
+		select
+			trade_id
+		from
+			pl_debug) */
+
+
+
+
+go

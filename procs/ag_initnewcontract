@@ -1,0 +1,162 @@
+use
+	risk_hehmeyer_dev
+go
+
+drop procedure
+	ag_initnewcontract
+go
+
+create procedure
+	ag_initnewcontract
+		@login varchar(50),
+		@product_type varchar(50),
+		@product varchar(50),
+		@currency varchar(50),
+		@symbol varchar(50)
+as
+
+declare @currency_id int
+declare @product_id int
+declare @product_type_id int
+declare @contract_id int
+declare @exchange_id int
+declare @product_rate_id int
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Product already exists",
+		product = @product
+	return
+end
+
+select
+	@product_type_id = product_type_id
+from
+	product_types
+where
+	name = "Medicine"
+if @product_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Medicine product type id not found"
+	return
+end
+
+
+select
+	@exchange_id = exchange_id
+from
+	exchanges
+where
+	name = "OTC"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "OTC exchange not found"
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	forwards
+where
+	exchange_id = @exchange_id
+and
+	product_id = @product_id
+and
+	currency_id = @currency_id
+if @contract_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Forward already exists"
+	return
+end
+
+exec
+	j_nextkey
+		"products",
+		@product_id output
+
+insert into
+	products
+values(
+	@product_id,
+	@product_type_id,
+	@product,
+	@product)
+
+
+exec
+	j_nextkey
+		"contracts",
+		@contract_id output
+
+insert into
+	forwards
+values(
+	@contract_id,
+	@currency_id,
+	@product_id,
+	1,
+	@exchange_id)
+
+insert into
+	contracts
+values(
+	@contract_id,
+	@symbol,
+	1)
+
+
+exec
+	j_nextkey
+		"product_rates",
+		@product_rate_id output
+
+insert into
+	product_rates
+values(
+	@product_rate_id,
+	@product_id,
+	"1/1/10")
+
+insert into
+	product_rate_points
+values(
+	@product_rate_id,
+	1,
+	0.0)
+
+
+go
+
+
+
+

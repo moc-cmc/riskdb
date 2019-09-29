@@ -1,0 +1,54 @@
+create or replace procedure
+	cbo_wipesaveintmoves
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @fund_id int
+declare @evaluation_ccy_id int
+declare @min_ticket_size numeric(30, 4)
+declare @net_count int
+declare @prenet_count int
+declare @timing_start datetime
+declare @timing_end datetime
+declare @transaction_type_id int
+
+select
+	@trade_date = convert(date, @trade_date)
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Interest Accrual"
+
+if @transaction_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"transaction_types",
+			@transaction_type_id output
+	insert into
+		transaction_types(
+			transaction_type_id,
+			name,
+			direction)
+	values(
+		@transaction_type_id,
+		"Interest Accrual",
+		1)
+end
+
+delete from
+	account_transactions
+where
+	transaction_date = @trade_date
+and
+	transaction_type_id = @transaction_type_id
+
+go
+	

@@ -1,0 +1,36 @@
+
+drop procedure
+	r_modaccessaccount
+go
+
+create procedure
+	r_modaccessaccount
+		@login varchar(25),
+		@group_name varchar(50),
+		@login_name varchar(25),
+		@action varchar(15)
+as
+
+if (@action = "add user")
+begin
+	exec 
+		r_addaccessgroupforlogin
+				@login=@login_name,
+				@access_group=@group_name
+end
+
+if (@action = "remove user")
+begin
+	exec
+		r_rmaccessgroupforlogin
+				@login=@login_name,
+				@access_group=@group_name
+end
+
+exec
+		r_accessgroups	
+			@login=@login
+
+go
+
+

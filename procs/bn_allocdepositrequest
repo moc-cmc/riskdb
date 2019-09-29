@@ -1,0 +1,25 @@
+create or replace procedure
+	bn_allocdepositrequest
+		@login varchar(50),
+		@fo_sub_account varchar(50),
+		@product varchar(50),
+		@amount float
+
+	
+
+as
+
+exec
+	api_allocdepositrequest
+		@login=@login,
+		@sub_account=@fo_sub_account,
+		@product=@product,
+		@amount=@amount
+
+exec
+	bn_letradingbalances
+		@login=@login,
+		@legal_entity=NULL
+
+go
+

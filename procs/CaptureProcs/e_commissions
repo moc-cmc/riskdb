@@ -1,0 +1,84 @@
+use
+	risk_home
+go
+
+drop procedure
+	e_commissions
+go
+
+create procedure
+	e_commissions
+		@login varchar(50),
+		@committed_capture_id int
+as
+
+declare @counterparty varchar(50)
+declare @symbol varchar(50)
+
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"add_commission",
+	"Add Commission",
+	NULL,
+	NULL)
+
+
+select * from #links
+
+select
+	@counterparty = b.name,
+	@symbol = c.symbol
+from
+	committed_captures a,
+	counterparties b,
+	contracts c
+where
+	a.contract_id = c.contract_id
+and
+	a.counterparty_id = b.counterparty_id
+and
+	a.committed_capture_id = @committed_capture_id
+
+select
+	add_commission = "Add Commission",
+	committed_capture_id = @committed_capture_id,
+	counterparty = @counterparty,
+	symbol = @symbol
+
+select
+	a.commission_id,
+	a.committed_capture_id,
+	counterparty = c.name,
+	contract = d.symbol,
+	sales_person = e.symbol,
+	a.price
+from
+	commissions a,
+	committed_captures b,
+	counterparties c,
+	contracts d,
+	traders e
+where
+	a.committed_capture_id = b.committed_capture_id
+and
+	b.counterparty_id = c.counterparty_id
+and
+	b.contract_id = d.contract_id
+and
+	a.trader_id = e.trader_id
+and
+	a.committed_capture_id = @committed_capture_id
+	
+
+
+go

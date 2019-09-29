@@ -1,0 +1,126 @@
+create or replace procedure
+	api_addentryrequest
+		@login varchar(50),
+		@account_transaction_id int,
+		@entry_request_id int=NULL output
+as
+
+declare @new_status_id int
+declare @tico_account_id int
+declare @fo_sub_account_id int
+declare @product_id int
+declare @origination_type_id int
+declare @decimal_precision int
+declare @origination_type varchar(50)
+declare @amount float
+declare @external_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@external_account_id = external_account_id,
+	@amount = amount,
+	@product_id = currency_id
+from
+	account_transactions
+where
+	account_transaction_id = @account_transaction_id
+
+create table
+	#external_accounts(
+		external_account_id int,
+		symbol varchar(50))
+insert into
+	#external_accounts(
+		external_account_id,
+		symbol)
+select
+	a.external_account_id,
+	a.symbol
+from
+	external_accounts a,
+	fo_sub_accounts b,
+	bo_master_accounts c,
+	legal_entity_tico_accounts d
+where
+	a.external_account_id = b.external_account_id
+and
+	b.bo_master_account_id = c.bo_master_account_id
+and
+	c.legal_entity_id = d.legal_entity_id
+and
+	d.tico_account_id = @tico_account_id
+
+select
+	@fo_sub_account_id = a.fo_sub_account_id
+from
+	fo_sub_accounts a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_id = @external_account_id
+if @fo_sub_account_id = NULL
+begin
+	select
+		status = "Sub account not found",
+		sub_account = @external_account_id
+	return
+end
+
+
+select
+	@new_status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @new_status_id = NULL
+begin
+	select
+		status = "Error",
+		mesage = "Problem finding New status"
+	return
+end
+
+select
+	@entry_request_id = NULL
+
+exec
+	j_nextkey
+		"entry_requests",
+		@entry_request_id output
+
+insert into
+	entry_requests(
+		entry_request_id,
+		requestor_id,
+		status_id,
+		account_transaction_id,
+		fo_sub_account_id,
+		product_id,
+		amount,
+		request_date)
+values(
+	@entry_request_id,
+	@tico_account_id,
+	@new_status_id,
+	@account_transaction_id,
+	@fo_sub_account_id,
+	@product_id,
+	@amount,
+	getdate())
+
+go

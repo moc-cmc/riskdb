@@ -1,0 +1,19 @@
+
+if object_id("fxa_dsltypes") != NULL
+    drop procedure
+        fxa_dsltypes
+go
+
+create procedure
+	fxa_dsltypes
+		@login varchar(50)
+as
+
+select
+	symbol = name
+from
+	dsl_types
+order by
+	name
+
+go

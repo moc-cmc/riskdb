@@ -1,0 +1,10 @@
+create or replace procedure
+	r_testhidetext
+		@login varchar(100)
+
+as
+
+select
+	login = @login
+
+go

@@ -1,0 +1,148 @@
+use
+	risk_ram
+go
+
+drop procedure
+	r_importcmesettleslink
+go
+
+create procedure
+	r_importcmesettleslink
+		@login varchar(50)
+as
+
+declare @option_expiration_id int
+declare @option_expirations int
+declare @cutoff datetime
+declare @most_recent datetime
+declare @num_contracts int
+declare @trade_date datetime
+
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "import_settles",
+        "Set Working Expiration",
+        NULL)
+
+select * from #meta
+
+select
+	@cutoff = dateadd(day, -5, getdate())
+
+create table
+	#output(
+		option_expiration_id int,
+		most_recent_settles datetime NULL,
+		num_contracts int NULL,
+		trade_date datetime NULL)
+
+
+
+select
+	@option_expiration_id = 0
+select
+	@option_expirations = count(*)
+from
+	option_expirations
+where
+	expiration >= @cutoff
+and
+	option_expiration_id > @option_expiration_id
+
+while @option_expirations > 0
+begin
+	select
+		@option_expiration_id = min(option_expiration_id)
+	from
+		option_expirations
+	where
+		expiration > @cutoff
+	and
+		option_expiration_id > @option_expiration_id
+
+	select
+		@most_recent = NULL,
+		@num_contracts = NULL,
+		@trade_date = NULL
+
+	select
+		@most_recent = max(a.price_date)
+	from
+		prices a,
+		option_contracts b
+	where
+		a.contract_id = b.contract_id
+	and
+		b.option_expiration_id = @option_expiration_id
+		
+	if @most_recent != NULL
+	begin
+		exec
+			r_nextbusinessday
+				@most_recent,
+				@trade_date output
+
+		select
+			@num_contracts = count(a.contract_id)
+		from
+			prices a,
+			option_contracts b
+		where
+			a.contract_id = b.contract_id
+		and
+			b.option_expiration_id = @option_expiration_id
+		and
+			convert(date, a.price_date) = convert(date, @most_recent)
+	end
+		
+
+	insert into
+		#output
+	values(
+		@option_expiration_id,
+		@most_recent,
+		@num_contracts,
+		@trade_date)
+		
+
+	select
+		@option_expirations = count(*)
+	from
+		option_expirations
+	where
+		expiration > @cutoff
+	and
+		option_expiration_id > @option_expiration_id
+end
+
+select
+	option_expiration = a.symbol,
+	most_recent = convert(varchar(11), b.most_recent_settles, 1),
+	b.num_contracts,
+	trade_date = convert(varchar(11), b.trade_date),
+	import_settles = "IMPORT"
+from
+	option_expirations a,
+	#output b
+where
+	a.option_expiration_id = b.option_expiration_id
+order by
+	a.expiration
+
+
+
+/* select
+	import_cme_settles = "Import CME Opt" */
+
+
+go

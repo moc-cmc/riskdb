@@ -1,0 +1,114 @@
+use
+	risk_untl
+go
+
+if object_id("fxa_intradayfwdplwrap") != NULL
+    drop procedure
+        fxa_intradayfwdplwrap
+go
+
+create procedure
+	fxa_intradayfwdplwrap
+		@login char(100)
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @risk_classes int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"risk_classes",
+	"Risk Class Report",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+	#risk_classes(
+		risk_classes varchar(50))
+
+select
+	@risk_classes = count(*)
+from
+	risk_classes
+
+if @risk_classes > 0
+	insert into
+		#risk_classes(
+			risk_classes)
+		values(
+			"Risk Classes")
+
+
+select
+	section = "Risk Classes",
+	style = @style,
+	risk_classes
+from
+	#risk_classes
+
+
+exec
+	fxa_intradayfwdpl
+		@login=@login
+
+
+
+go

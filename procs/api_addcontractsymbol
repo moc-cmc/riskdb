@@ -1,0 +1,108 @@
+
+drop procedure
+	api_addcontractsymbol
+go
+
+create procedure
+	api_addcontractsymbol
+			@login varchar(25),
+			@name varchar(50),
+			@symbol varchar(50),
+			@source varchar(100)
+as
+
+declare @contract_id int
+declare @source_id int
+declare @source_type_id int
+declare @source_type varchar(50)
+
+select
+	@contract_id=contract_id
+from
+	contracts
+where
+	symbol=@name
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Contract symbol does not exist",
+		contract_symbol=@symbol
+
+	return
+end
+
+select
+	@source_id = source_id,
+	@source_type_id = source_type_id
+from
+	sources
+where
+	name=@source
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Source does not exist",
+		source=@source
+
+	return
+end
+
+select
+	@source_type=name
+from
+	source_types
+where
+	source_type_id=@source_type_id
+
+if(@source_type="Outbound")
+begin
+	if exists (select
+			contract_id
+		   from
+			contract_symbols
+		   where
+			source_id=@source_id
+		   and
+			contract_id=@contract_id)
+	begin
+		select
+			status="Error",
+			msg="Contract already has an Outbound Source",
+			name=@name
+		return
+	end
+end
+
+insert into
+	contract_symbols (
+		contract_id,
+		source_id,
+		symbol )
+values (
+	@contract_id,
+	@source_id,
+	@symbol )
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Problem adding Contract Symbol",
+		contract_symbol=@symbol
+
+	return
+end
+
+select
+	status="OK",
+	msg="Successfully added contract symbol",
+	contract_symbol = @symbol
+
+return
+
+go
+

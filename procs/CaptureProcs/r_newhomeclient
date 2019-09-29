@@ -1,0 +1,167 @@
+###############################################################################
+# Author: Chris O'Connor
+# Copyright (c) Elysium Technology Group
+###############################################################################
+drop procedure r_newhomeclient
+go
+
+create procedure
+	r_newhomeclient
+		@client_code varchar(25)
+		
+		
+as
+
+declare @client_login varchar(50)
+declare @counterparty_id int
+declare @external_account_id int
+declare @tico_account_id int
+
+select
+	@client_login = lower(rtrim(@client_code)+"_client")
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @client_login
+if @tico_account_id != NULL
+begin
+	select
+		status="Error",
+		message="client account already exists"
+	return
+end
+
+
+/* every client needs a login */
+exec 
+	cm_createnewclientlogin
+		@login="etgbilling",
+		@fund_type="FX Agency",
+		@user_name=@client_login,
+		@user_password="k4371KJHuPq1nzA"
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @client_login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login",
+		client_login=@client_login
+	return
+end
+
+exec
+	cm_addextaccount
+		@login="etgbilling", 
+		@account=@client_code,
+		@account_type="Agency Client Spot",
+		@aggregation_style="None",
+		@prime_broker="Risk Database",
+		@notional_amount=1,
+		@credit_limit=1
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @client_code
+if @external_account_id = NULL
+begin
+        select
+                status="Error",
+                message="Problem finding ext account ",
+                account=@client_login
+        return
+end
+
+exec
+	cm_togglerunextaccount
+		@login="etgbilling",
+		@run_name="Total Revenue",
+		@external_account=@client_code
+
+exec 
+	cm_addcounterparty
+		@login="etgbilling",
+		@counterparty=@client_code,
+		@external_account=@client_code,
+		@credit_limit=1
+
+exec
+	cm_addtrader
+		@login="etgbilling",
+		@trader=@client_code,
+		@sales_code="None",
+		@external_account=@client_code
+
+exec
+	cm_settraderlogin
+		@login="etgbilling",
+		@trader=@client_code,
+		@user_name=@client_login
+
+exec
+	cm_addtallydefaults
+		@login="etgbilling",
+		@user_name=@client_login,
+		@tally_type="Spot",
+		@internal_account="ETG Services",
+		@external_account=@client_code,
+		@trader=@client_code,
+		@strategy="Agency",
+		@broker="MPT",
+		@counterparty="ETG"
+
+exec
+        cm_addtallydefaults
+                @login="etgbilling",
+                @user_name=@client_login,
+                @tally_type="Forward",
+                @internal_account="ETG Services",
+                @external_account=@client_code,
+                @trader=@client_code,
+                @strategy="Agency",
+                @broker="MPT",
+                @counterparty="ETG"
+
+exec
+        cm_addtallydefaults
+                @login="etgbilling",
+                @user_name=@client_login,
+                @tally_type="Swap",
+                @internal_account="ETG Services",
+                @external_account=@client_code,
+                @trader=@client_code,
+                @strategy="Agency",
+                @broker="MPT",
+                @counterparty="ETG"
+
+exec
+        cm_addtallydefaults
+                @login="etgbilling",
+                @user_name=@client_login,
+                @tally_type="Option",
+                @internal_account="ETG Services",
+                @external_account=@client_code,
+                @trader=@client_code,
+                @strategy="Agency",
+                @broker="MPT",
+                @counterparty="ETG"
+
+		
+
+
+
+go
+

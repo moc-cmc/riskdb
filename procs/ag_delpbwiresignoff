@@ -1,0 +1,173 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_delpbwiresignoff
+go
+
+create procedure
+	ag_delpbwiresignoff
+		@login varchar(50),
+		@identifier int,
+		@account varchar(50),
+		@product varchar(50),
+		@confirmation_type varchar(50),
+		@value_date datetime,
+		@amount numeric(30,4)
+as
+
+declare @tico_account_id int
+declare @product_id int
+declare @pb_wire_signoff_id int
+declare @external_account_id int
+declare @confirmation_type_id int
+declare @status varchar(50)
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@confirmation_type_id = confirmation_type_id
+from
+	confirmation_types
+where
+	name = @confirmation_type
+if @confirmation_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Confirmation type not found",
+		confirmation_type = @confirmation_type
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Product not found",
+		product = @product
+	return
+end
+
+select
+	@pb_wire_signoff_id = pb_wire_signoff_id
+from
+	pb_wire_signoffs
+where
+	pb_wire_signoff_id = @identifier
+and
+	external_account_id = @external_account_id
+and
+	product_id = @product_id
+and
+	confirmation_type_id = @confirmation_type_id
+and
+	convert(date, value_date) = convert(date, @value_date)
+if @pb_wire_signoff_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to remove wire signoff",
+		identifier = @identifier,
+		account = @account,
+		product = @product,
+		value_date = @value_date,
+		amount = @amount
+	return
+end
+
+select
+	@status = a.name
+from
+	statuses a,
+	pb_wire_signoffs b
+where
+	a.status_id = b.status_id
+and
+	b.pb_wire_signoff_id = @pb_wire_signoff_id
+if @status != "Pending"
+begin
+	select
+		status = "Error",
+		message = "Wire is not Pending status and cannot be deleted",
+		wire_status = @status
+	return
+end
+
+
+begin tran
+	delete
+
+	from
+		pb_wire_signoffs
+	where
+		pb_wire_signoff_id = @pb_wire_signoff_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Delete of signoff failed",
+			identifier = @identifier,
+			account = @account,
+			product = @product,
+			value_date = @value_date,
+			amount = @amount
+		rollback tran
+		return
+	end
+
+	delete
+
+	from
+		wire_allocations
+	where
+		pb_wire_signoff_id = @pb_wire_signoff_id
+commit tran
+
+
+exec
+	ag_confirmsettlements
+		@login = @login,
+		@value_date = @value_date,
+		@account = @account,
+		@product = @product
+
+
+
+go

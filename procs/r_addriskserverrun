@@ -1,0 +1,60 @@
+create or replace procedure
+	r_addriskserverrun
+		@login varchar(50),
+		@run varchar(100)
+
+as
+
+declare @run_id int
+declare @dupe varchar(5)
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Could not find run",
+		run = @run
+	return
+end
+
+select
+	@dupe = "Y"
+from
+	risk_server_runs
+where
+	run_id = @run_id
+
+if @dupe = "Y"
+begin
+	select
+		status = "Error",
+		message = "Run has already been added to MC dropdown",
+		run = @run
+	return
+end
+else
+begin
+insert 
+	into
+		risk_server_runs(
+			run_id)
+	values(
+		@run_id)
+end
+
+select
+	status = "Success",
+	message = "Run has been added to MC dropdown"
+
+exec
+	r_riskserverruns
+		@login=@login
+
+go
+

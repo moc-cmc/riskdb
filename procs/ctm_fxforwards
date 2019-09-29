@@ -1,0 +1,66 @@
+
+if object_id("ctm_fxforwards") != NULL
+    drop procedure
+        ctm_fxforwards
+go
+
+create procedure
+	ctm_fxforwards
+		@login varchar(30)
+as
+
+declare @db_name varchar(30)
+declare @servername varchar(30)
+declare @evaluation_currency varchar(30)
+declare @fund_id int
+declare @sql_string varchar(255)
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency = a.symbol
+from
+	products a,
+	funds b
+where
+	a.product_id = b.evaluation_currency_id
+and
+	b.fund_id = @fund_id
+
+if @evaluation_currency = NULL
+begin
+	select
+		status = "Error",
+		message = "Evalution currency not found for login"
+	return
+end
+
+select
+	@db_name = db_name(),
+	@servername = @@servername
+
+
+/*exec
+        CONTRACTS.contracts.dbo.ct_forwards
+		@login,
+		@db_name,
+		@servername,
+		@evaluation_currency
+*/
+		
+select
+        @sql_string = "exec contracts.dbo.ct_forwards '" +
+                rtrim(@login)+"', '"+
+                rtrim(@db_name)+"', '"+
+                rtrim(@servername)+"', '"+
+                rtrim(@evaluation_currency)+ "'"
+        
+exec            
+        sp_remotesql
+                "CONTRACTS",
+                @sql_string
+
+go

@@ -1,0 +1,30 @@
+
+if object_id("j_transactiontype") != NULL
+    drop procedure
+        j_transactiontype
+go
+ 
+create procedure
+	j_transactiontype
+		@name char(200) output,
+		@transaction_type_id int output
+as
+
+if @name != NULL
+	select
+		@transaction_type_id = transaction_type_id
+	from
+		transaction_types
+	where
+		name = @name
+else
+	select
+		@name = name
+	from
+		transaction_types
+	where
+		transaction_type_id = @transaction_type_id
+
+return
+
+go

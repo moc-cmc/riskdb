@@ -1,0 +1,229 @@
+
+drop procedure r_tallynettedtrade
+go
+
+create procedure r_tallynettedtrade
+				@login varchar(25), 
+				@trade_id int
+
+as
+
+declare @deal_id int
+declare @user_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @quantity numeric(30,4)
+declare @contract_id int
+declare @price float
+declare @trade_date datetime
+declare @trader_id int
+declare @strategy_id int
+declare @status_id int
+declare @broker_id int
+declare @trade_symbol_id int
+declare @source_id int
+declare @notification_source_id int
+declare @active_status_id int
+declare @value_date datetime
+declare @fixing_date datetime
+declare @counterparty_id int
+declare @sales_code_id int
+declare @trade_type_id int
+declare @identifier varchar(100)
+declare @deal_type_id int
+declare @counterparty_type_id int
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name="MPT Manual Tally"
+
+if(@@rowcount  < 1)
+begin
+	select
+		err=-1,
+		message="Could not locate source id for MPT Manual Tally"
+	return
+end
+
+select
+	@notification_source_id = source_id
+from
+	sources
+where
+	name = "BOA Traiana FTP"
+
+if(@@rowcount  < 1)
+begin
+    select
+        err=-1,
+        message="Could not locate source id for BOA Traiana FTP"
+    return
+end
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @@rowcount != 1
+begin
+	select
+		err=-1,
+		message = "Active status not found"
+	return
+end
+
+select
+	@deal_id = deal_id,
+	@user_id = user_id,
+	@identifier = identifier,
+	@internal_account_id = internal_account_id,
+	@external_account_id = external_account_id,
+	@counterparty_id = counterparty_id,
+	@quantity = quantity,
+	@contract_id = contract_id,
+	@trade_type_id = trade_type_id,
+	@value_date = value_date,
+	@fixing_date = fixing_date,
+	@price = price,
+	@trade_date = trade_date,
+	@trader_id = trader_id,
+	@strategy_id = strategy_id,
+	@status_id = status_id,
+	@broker_id = broker_id,
+	@sales_code_id = sales_code_id
+from
+	batch_trades
+where
+	trade_id = @trade_id
+
+if(@@rowcount < 1)
+begin
+	select
+		err=-1,
+		message="Cannot find batched trade for trade_id ", @trade_id
+
+	return
+end
+
+insert into
+	trades
+	(trade_id,
+	 deal_id,
+	 user_id,
+	 identifier,
+	 internal_account_id,
+	 external_account_id,
+	 counterparty_id,
+	 quantity,
+	 contract_id,
+	 trade_type_id,
+	 fixing_date,
+	 value_date,
+	 price,
+	 trade_date,
+	 trader_id,
+	 strategy_id,
+	 status_id,
+	 broker_id,
+	 sales_code_id)
+values
+	(@trade_id,
+	 @deal_id,
+	 @user_id,
+	 @identifier,
+	 @internal_account_id,
+	 @external_account_id,
+	 @counterparty_id,
+	 @quantity,
+	 @contract_id,
+	 @trade_type_id,
+	 @fixing_date,
+	 @value_date,
+	 @price,
+	 @trade_date,
+	 @trader_id,
+	 @strategy_id,
+	 @status_id,
+	 @broker_id,
+	 @sales_code_id)
+
+if(@@rowcount != 1)
+begin
+	select
+		err=-1,
+		message="Could not tally trade for trade_id ", @trade_id
+	return
+end
+
+select 
+	@counterparty_type_id=counterparty_id 
+from
+	fund_agency_counterparties
+
+if(@counterparty_type_id = @counterparty_id)
+begin
+	select 
+		@deal_type_id=deal_type_id
+	from
+		deal_types
+	where
+		name="Client Forward"
+end
+else
+begin
+	select 
+		@deal_type_id=deal_type_id
+	from
+		deal_types
+	where
+		name="Market Forward"
+end
+
+insert into
+	deals
+	(deal_id,
+	 deal_type_id,
+	 timestamp,
+	 status_id)
+values
+	(@deal_id,
+	 @deal_type_id,
+	 getdate(),
+	 @status_id)
+
+exec
+	r_inserttradenotification @trade_id
+
+select 
+		status ="Tallied",
+		message = "Trade successfully tallied",
+		trade_id = @trade_id,
+	  	deal_id = @deal_id,
+		identifier = @identifier,
+		external_account = b.name,
+		trader = c.symbol,
+		contract = d.symbol,
+		value_date = a.value_date,
+		quantity = a.quantity,
+		price = a.price
+from
+		trades a,
+		external_accounts b,
+		traders c,
+		contracts d
+where
+		a.trade_id=@trade_id and
+		a.external_account_id=b.external_account_id and
+		a.trader_id=c.trader_id and
+		a.contract_id=d.contract_id
+
+
+return
+
+go
+	

@@ -1,0 +1,91 @@
+
+if object_id("cm_delsource") != NULL
+    drop procedure
+        cm_delsource
+go
+
+create procedure
+	cm_delsource
+		@login varchar(30),
+		@source varchar(30)
+
+as
+
+declare @source_id int
+declare @total_uses int
+declare @tico_server varchar(100)
+declare @tico_database varchar(100)
+declare @sql_string varchar(200)
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+select @total_uses = @total_uses + count(*) from bo_prices where source_id = @source_id
+select @total_uses = @total_uses + count(*) from  option_expiration_symbols where source_id = @source_id
+select @total_uses = @total_uses + count(*) from run_defaults              where source_id = @source_id
+select @total_uses = @total_uses + count(*) from trade_symbols             where source_id = @source_id
+select @total_uses = @total_uses + count(*) from sources                   where source_id = @source_id
+select @total_uses = @total_uses + count(*) from broker_symbols            where source_id = @source_id
+select @total_uses = @total_uses + count(*) from deal_notifications        where source_id = @source_id
+select @total_uses = @total_uses + count(*) from fund_run_defaults         where source_id = @source_id
+select @total_uses = @total_uses + count(*) from product_symbols           where source_id = @source_id
+select @total_uses = @total_uses + count(*) from future_symbols            where source_id = @source_id
+select @total_uses = @total_uses + count(*) from trade_notifications       where source_id = @source_id
+select @total_uses = @total_uses + count(*) from brokers                   where source_id = @source_id
+select @total_uses = @total_uses + count(*) from contract_symbols          where source_id = @source_id
+select @total_uses = @total_uses + count(*) from bo_spot_settles           where source_id = @source_id
+select @total_uses = @total_uses + count(*) from trader_symbols            where source_id = @source_id
+select @total_uses = @total_uses + count(*) from trade_daily_revals        where source_id = @source_id
+select @total_uses = @total_uses + count(*) from trade_identifiers         where source_id = @source_id
+select @total_uses = @total_uses + count(*) from product_rate_symbols      where source_id = @source_id
+
+
+if @total_uses != 0
+begin
+	select
+		status = "Error",
+		message = "Source is already in use. Cannot delete.",
+		source = @source
+	return
+end
+
+delete
+
+from
+	sources
+where
+	source_id = @source_id
+
+
+select
+	@tico_server = tico_server,
+	@tico_database = tico_database
+from
+	funds
+
+
+select
+	@sql_string = "exec " + rtrim(@tico_database) + "..flush"
+
+exec sp_remotesql @tico_server, @sql_string
+
+
+
+exec
+	cm_sources
+		@login
+
+go

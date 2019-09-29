@@ -1,0 +1,166 @@
+create or replace procedure
+	ag_viewaccountinstructions
+		@login varchar(50),
+		@legal_entity varchar(50),
+		@outside_account varchar(50)
+
+as
+
+declare @has_permission varchar(10)
+declare @legal_entity_id int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+insert into
+        #meta
+values( 
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "back",
+        "Legal Entities Home",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "legal_entity",
+        NULL,
+        NULL)
+
+select * from #meta
+
+exec
+	r_checkaccessgrouppermission
+		@login=@login,
+		@access_group="Wire Admin",
+		@show_perm_denied = "Y",
+		@has_permission = @has_permission output
+
+if @has_permission != "Y"
+begin
+	return
+end
+
+select
+	@legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @legal_entity
+if @@rowcount !=1
+begin
+	select
+		status = "Error",
+		message = "Could not find legal entity",
+		legal_entity = @legal_entity
+	return
+end
+
+select
+        @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+        @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+        @subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+        @style = "background:#FFFFFF;border: 1px solid white",
+        @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+select
+        style = @style,
+	section = "Instruction Operations",
+        back = " Back to Legal Entities Home",
+        legal_entity = @legal_entity,
+        outside_account = @outside_account,
+	recon = "Run Checksum Recon"
+	
+
+
+create table
+	#outside_accounts(
+		pending char(1),
+		outside_account_id int,
+		outside_account_type_id int,
+		outside_account_type varchar(50) NULL,
+		legal_entity_id int,
+		legal_entity_name varchar(150) NULL,	
+		provider_id int,
+		provider_name varchar(50) NULL,	
+		name varchar(50),
+		account_number varchar(100) NULL,
+		account_code varchar(100) NULL,
+		account_code_type_id int NULL,
+                account_code_type varchar(50) NULL,
+		checksu varchar(255) NULL,
+		checksum_user_id int NULL,
+		checksum_user varchar(50) NULL,
+		approval_user_id int NULL,
+		approval_user varchar(50) NULL,
+		next_action varchar(50) NULL,
+		edit varchar(10) NULL,
+		style varchar(255)
+)
+
+insert into
+	#outside_accounts(
+		pending,
+		outside_account_id,
+		name,
+		outside_account_type_id,
+		outside_account_type,
+		legal_entity_id,
+		legal_entity_name,
+		provider_id,
+		provider_name)
+select
+	pending="Y",
+	a.outside_account_id,
+	a.name,
+	b.outside_account_type_id,
+        b.name,
+	c.legal_entity_id,
+        c.name,
+	d.provider_id,
+        d.name
+from
+        pending_outside_accounts a,
+        outside_account_types b,
+        legal_entities c,
+        providers d
+where
+        a.outside_account_type_id = b.outside_account_type_id
+and
+        a.legal_entity_id = c.legal_entity_id
+and
+        a.provider_id = d.provider_id
+and
+        a.legal_entity_id = @legal_entity_id
+and
+	a.name = @outside_account
+
+go
+

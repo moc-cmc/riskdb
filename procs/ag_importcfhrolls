@@ -1,0 +1,136 @@
+use
+	risk_finotec
+go
+
+drop procedure
+	ag_importcfhrolls
+go
+
+create procedure
+	ag_importcfhrolls
+		@login varchar(50),
+		@tradeId varchar(100)=NULL,
+		@executionTime varchar(100)=NULL,
+		@tradeDate varchar(100)=NULL,
+		@valueDate varchar(100)=NULL,
+		@buySell varchar(100)=NULL,
+		@tradeType varchar(100)=NULL,
+		@track varchar(100)=NULL,
+		@dealtAmount varchar(100)=NULL,
+		@amountCurrency varchar(100)=NULL,
+		@rate varchar(100)=NULL,
+		@fee varchar(100)=NULL,
+		@feeCurrency varchar(100)=NULL,
+		@contraAmount varchar(100)=NULL,
+		@contraCurrency varchar(100)=NULL,
+		@pL varchar(100)=NULL,
+		@pLCurrency varchar(100)=NULL,
+		@client varchar(100)=NULL,
+		@row_index int,
+		@row_count int
+
+	
+
+
+as
+
+declare @crq_id int
+declare @savedTradeId varchar(100)
+
+
+if @row_index = 0
+begin
+	exec
+		j_nextkey
+			"cfh_rolls_queue",
+			@crq_id output
+	delete
+
+	from
+		cfh_rolls_queue
+	where
+		crq_id != @crq_id
+end
+else
+begin
+	select
+		@crq_id = last_id
+	from
+		keys
+	where
+		relation = "cfh_rolls_queue"
+
+	if @crq_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Cannot find roll queue identifier"
+		return
+	end
+end
+
+
+if @tradeType in("Open rollover", "Close rollover")
+begin
+	select
+		@savedTradeId = tradeId
+	from
+		cfh_rolls_queue
+	where
+		tradeId = @tradeId
+
+	if @savedTradeId = NULL
+	begin
+		insert into
+			cfh_rolls_queue(
+				crq_id,
+				tradeId,
+				executionTime,
+				tradeDate,
+				valueDate,
+				buySell,
+				tradeType,
+				track,
+				dealtAmount,
+				amountCurrency,
+				rate,
+				fee,
+				feeCurrency,
+				contraAmount,
+				contraCurrency,
+				pL,
+				pLCurrency,
+				client)
+		values(
+			@crq_id,
+			@tradeId,
+			@executionTime,
+			@tradeDate,
+			@valueDate,
+			@buySell,
+			@tradeType,
+			@track,
+			@dealtAmount,
+			@amountCurrency,
+			@rate,
+			@fee,
+			@feeCurrency,
+			@contraAmount,
+			@contraCurrency,
+			@pL,
+			@pLCurrency,
+			@client)
+
+	end
+
+end
+
+
+if @row_count = @row_index + 1
+	exec
+		ag_displaycfhrollqueue
+			@login = @login,
+			@crq_id = @crq_id
+
+
+go

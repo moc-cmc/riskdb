@@ -1,0 +1,88 @@
+
+if object_id("r_perspectivecontract") != NULL
+    drop procedure
+        r_perspectivecontract
+go
+ 
+create procedure
+	r_perspectivecontract
+		@run_id int,
+		@contract_id int,
+		@perspective_contract_id int output
+as
+
+
+declare @forward_id int
+declare @underlying_contract_id int
+
+
+/* if @contract_id = 2510
+begin
+        select
+                @perspective_contract_id = 66
+        return
+end
+
+if @contract_id = 2514
+begin
+        select
+                @perspective_contract_id = 68
+        return
+end
+
+if @contract_id = 2513
+begin
+        select
+                @perspective_contract_id = 14
+        return
+end */
+
+		
+
+select
+	@underlying_contract_id = a.underlying_contract_id
+from
+	options a,
+	option_expirations b,
+	option_contracts c
+where
+	a.option_id = b.option_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.contract_id = @contract_id
+
+if @underlying_contract_id = NULL
+	select
+		@underlying_contract_id = @contract_id
+
+
+exec
+	r_contractforward
+		@underlying_contract_id,
+		@forward_id output
+
+
+select
+	@perspective_contract_id = perspective_contract_id
+from
+	run_perspective_contracts
+where
+	run_id = @run_id
+and
+	contract_id = @forward_id
+
+if @perspective_contract_id = NULL
+	select
+		@perspective_contract_id = perspective_contract_id
+	from
+		def_perspective_contracts
+	where
+		contract_id = @forward_id
+
+if @perspective_contract_id = NULL
+	select
+		@perspective_contract_id = @underlying_contract_id
+
+
+go

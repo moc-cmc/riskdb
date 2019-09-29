@@ -1,0 +1,105 @@
+drop procedure cbo_initializedailycommits
+go
+
+create procedure
+	cbo_initializedailycommits
+		@login varchar(50)=NULL
+
+as
+
+declare @first_trade_date datetime
+declare @last_commit_date datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @current_date datetime
+declare @c_complete_status_id int
+declare @daily_commit_id int
+
+select
+	@first_trade_date = min(trade_date)
+from
+	trades
+
+select
+	@last_commit_date = max(reval_date)
+from
+	committed_daily_revals
+
+if @first_trade_date = NULL
+begin
+	select
+		status = "Error",
+		message = "No trades in database, can not initialize commit"
+	return
+end
+
+exec
+	r_prevbusinessday
+		@first_trade_date,
+		@begin_date output
+
+if @last_commit_date = NULL
+begin
+	select
+		@end_date = @begin_date
+end
+else
+begin
+	select
+		@end_date = @last_commit_date
+end
+
+select
+	@c_complete_status_id = commit_status_id
+from
+	commit_statuses
+where
+	name = "Commit Complete"
+if @c_complete_status_id = NULL
+begin
+	select
+		"error"="Error",
+		"msg"="Can not fine Commit Complete status in commit_statuses"
+	return
+end
+
+select
+	"status"="Starting Initialization",
+	"begin_date"=@begin_date,
+	"end_date"=@end_date
+
+while @begin_date < @end_date
+begin
+	select
+		@current_date = NULL,
+		@daily_commit_id = NULL
+
+	select
+		@current_date = convert(date, @begin_date)
+
+
+	exec
+		j_nextkey 
+			"daily_commits",
+			@daily_commit_id output
+	
+	insert into
+		daily_commits(
+			daily_commit_id,
+			commit_date,
+			commit_status_id)
+	values(
+		@daily_commit_id,
+		@current_date,
+		@c_complete_status_id
+	)
+
+		
+	
+	exec 
+		r_nextbusinessday
+			@current_date,
+			@begin_date output	
+end
+
+go

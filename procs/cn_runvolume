@@ -1,0 +1,1157 @@
+
+if object_id("cn_runvolume") != NULL
+    drop procedure
+        cn_runvolume
+go
+
+create procedure
+	cn_runvolume
+		@login varchar(30),
+		@run_name varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL,
+		@evaluation_currency varchar(50)=NULL,
+		@min_size float=NULL,
+		@reporting_source varchar(50)=NULL
+as
+
+declare @date datetime
+declare @evaluation_currency_id int
+declare @run_id int
+declare @total float
+declare @total_adjusted float
+declare @missing_settles int
+declare @trades int
+declare @bo_valued_trades int
+declare @fo_valued_trades int
+declare @current_valued_trades int
+declare @evaluation_currency_trades int
+declare @status varchar(25)
+declare @message varchar(200)
+declare @style varchar(50)
+
+create table
+	#meta(
+		meta_type char(50),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"min_diff",
+	"Number",
+	"#,###.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"adjusted_volume",
+	"Number",
+	"#,###.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_volume",
+	"Number",
+	"#,###.0000")
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select
+	#meta.meta_type, #meta.name, #meta.action, #meta.value
+from
+	#meta
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding run with name",
+		run = @run_name
+	return
+end
+
+if @evaluation_currency = NULL
+	select
+		@evaluation_currency = "USD"
+
+select
+	@evaluation_currency_id = product_id
+from
+	products
+where
+	symbol = @evaluation_currency
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found",
+		evaluation_currency = @evaluation_currency
+	return
+end
+
+if @begin_date = NULL
+	select
+		@begin_date = getdate()
+
+if @end_date = NULL
+begin
+	exec
+		r_daterangefordate
+			@begin_date,
+			@begin_date output,
+			@end_date output
+end
+else
+begin
+	exec
+		r_daterangefordate
+			@begin_date,
+			@begin_date output,
+			@date output
+	select
+		@date = NULL
+
+	exec
+		r_daterangefordate
+			@end_date,
+			@date output,
+			@end_date output
+end
+		
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#notifications(
+		deal_id int,
+		source_id int,
+		notify_date datetime)
+
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		user_id int,
+		internal_account_id int,
+		external_account_id int,
+		quantity numeric(30,4),
+		contract_id int,
+		multiplier int NULL,
+		price float,
+		trade_date datetime,
+		trader_id int,
+		strategy_id int,
+		status_id int,
+		broker_id int,
+		product_id int NULL,
+		conversion_rate float NULL,
+		evaluation_value float NULL,
+		volume_equivalent float NULL,
+		price_source varchar(20) NULL)
+
+
+if @reporting_source = NULL or @reporting_source = "All"
+begin
+	insert into
+		#notifications
+	select
+		a.deal_id,
+		a.source_id,
+		max(a.notify_date)
+	from
+		deal_notifications a,
+		statuses b
+	where
+		a.status_id = b.status_id
+	and
+		b.name = "Sent"
+	and
+		a.notify_date > @begin_date
+	and
+		a.notify_date <= @end_date
+	group by
+		a.deal_id,
+		a.source_id
+	having
+		a.notify_date = max(a.notify_date)
+
+	insert into
+		#trades(
+			trade_id,
+			deal_id,
+			user_id,	
+			internal_account_id,
+			external_account_id,
+			quantity,
+			contract_id,
+			price,
+			trade_date,
+			trader_id,
+			strategy_id,
+			status_id,
+			broker_id)
+	select
+		a.trade_id,
+		a.deal_id,
+		a.user_id,
+		a.internal_account_id,
+		a.external_account_id,
+		a.quantity,
+		a.contract_id,
+		a.price,
+		a.trade_date,
+		a.trader_id,
+		a.strategy_id,
+		a.status_id,
+		a.broker_id 
+	from
+		trades a,
+		#internal_accounts b,
+		#external_accounts c,
+		#traders d,
+		#strategies e,
+		#brokers f
+	where
+		a.internal_account_id = b.internal_account_id
+	and
+		a.external_account_id = c.external_account_id
+	and
+		a.trader_id = d.trader_id
+	and
+		a.strategy_id = e.strategy_id
+	and
+		a.broker_id= f.broker_id
+	and
+		a.trade_date >= @begin_date
+	and
+		a.trade_date < @end_date
+
+end
+else
+begin
+	insert into
+		#notifications
+	select
+		a.deal_id,
+		a.source_id,
+		max(a.notify_date)
+	from
+		deal_notifications a,
+		statuses b,
+		sources c
+	where
+		a.source_id = c.source_id
+	and
+		a.status_id = b.status_id
+	and
+		b.name = "Sent"
+	and
+		c.name = @reporting_source
+	and
+		a.notify_date > @begin_date
+	and
+		a.notify_date <= @end_date
+	group by
+		a.deal_id,
+		a.source_id
+	having
+		a.notify_date = max(a.notify_date)
+
+	insert into
+		#trades(
+			trade_id,
+			deal_id,
+			user_id,	
+			internal_account_id,
+			external_account_id,
+			quantity,
+			contract_id,
+			price,
+			trade_date,
+			trader_id,
+			strategy_id,
+			status_id,
+			broker_id)
+	select
+		a.trade_id,
+		a.deal_id,
+		a.user_id,
+		a.internal_account_id,
+		a.external_account_id,
+		a.quantity,
+		a.contract_id,
+		a.price,
+		a.trade_date,
+		a.trader_id,
+		a.strategy_id,
+		a.status_id,
+		a.broker_id 
+	from
+		trades a,
+		#internal_accounts b,
+		#external_accounts c,
+		#traders d,
+		#strategies e,
+		#brokers f,
+		#notifications g
+	where
+		a.internal_account_id = b.internal_account_id
+	and
+		a.external_account_id = c.external_account_id
+	and
+		a.trader_id = d.trader_id
+	and
+		a.strategy_id = e.strategy_id
+	and
+		a.broker_id= f.broker_id
+	and
+		a.deal_id = g.deal_id
+	and
+		a.trade_date >= @begin_date
+	and
+		a.trade_date < @end_date
+end
+
+
+
+update
+	#trades
+set
+	a.product_id = b.product_id,
+	a.multiplier = b.quantity
+from
+	#trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.product_id = b.product_id,
+	a.multiplier = c.quantity
+from
+	#trades a,
+	forwards b,
+	futures c,
+	future_contracts d
+where
+	a.contract_id = d.contract_id
+and
+	d.future_id = c.future_id
+and
+	c.forward_id = b.contract_id
+
+update
+	#trades
+set
+	a.product_id = b.product_id,
+	a.multiplier = c.quantity	
+from
+	#trades a,
+	forwards b,
+	futures c,
+	future_contracts d,
+	options e,
+	option_expirations f,
+	option_contracts g
+where
+	a.contract_id = g.contract_id
+and
+	g.option_expiration_id = f.option_expiration_id
+and
+	f.option_id = e.option_id
+and
+	e.underlying_contract_id = d.contract_id
+and
+	d.future_id = c.future_id
+and
+	c.forward_id = b.contract_id
+	
+update
+	#trades
+set
+	a.product_id = b.product_id,
+	a.multiplier = b.quantity
+from
+	#trades a,
+	forwards b,
+	options c,
+	option_expirations d,
+	option_contracts e
+where
+	a.contract_id = e.contract_id
+and
+	e.option_expiration_id = d.option_expiration_id
+and
+	d.option_id = c.option_id
+and
+	c.underlying_contract_id = b.contract_id
+
+
+update
+	#trades
+set
+	a.product_id = b.product_id,
+	a.multiplier = b.quantity
+from
+	#trades a,
+	forwards b,
+	options c,
+	option_expirations d,
+	exotic_contracts e
+where
+	a.contract_id = e.contract_id
+and
+	e.option_expiration_id = d.option_expiration_id
+and
+	d.option_id = c.option_id
+and
+	c.underlying_contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.conversion_rate = b.price,
+	a.price_source = "BO"
+from
+	#trades a,
+	bo_spot_settles b,
+	forwards c
+where
+	a.product_id = c.product_id
+and
+	c.currency_id = @evaluation_currency_id
+and
+	c.contract_id = b.contract_id
+and
+	b.price_date = @end_date
+
+update
+	#trades
+set
+	a.conversion_rate = 1.0 / b.price,
+	a.price_source = "BO"
+from
+	#trades a,
+	bo_spot_settles b,
+	forwards c
+where
+	a.product_id = c.currency_id
+and
+	c.product_id = @evaluation_currency_id
+and
+	c.contract_id = b.contract_id
+and
+	a.conversion_rate = NULL
+and
+	b.price_date = @end_date
+
+update
+        #trades
+set
+        conversion_rate = 1.0,
+	price_source = "NATIVE"
+where
+        product_id = @evaluation_currency_id
+
+
+/* Use the front office settles for any remaining missing prices */
+update
+	#trades
+set
+	a.conversion_rate = b.price,
+	a.price_source = "FO"
+from
+	#trades a,
+	prices b,
+	forwards c
+where
+	a.product_id = c.product_id
+and
+	c.currency_id = @evaluation_currency_id
+and
+	c.contract_id = b.contract_id
+and
+	b.price_date = @end_date
+and
+	a.conversion_rate = NULL
+
+update
+	#trades
+set
+	a.conversion_rate = 1.0 / b.price,
+	a.price_source = "FO"
+from
+	#trades a,
+	prices b,
+	forwards c
+where
+	a.product_id = c.currency_id
+and
+	c.product_id = @evaluation_currency_id
+and
+	c.contract_id = b.contract_id
+and
+	a.conversion_rate = NULL
+and
+	b.price_date = @end_date
+
+
+update
+	#trades
+set
+	a.conversion_rate = b.price,
+	a.price_source = "CURRENT"
+from
+	#trades a,
+	current_prices b,
+	forwards c
+where
+	a.product_id = c.product_id
+and
+	c.currency_id = @evaluation_currency_id
+and
+	c.contract_id = b.contract_id
+and
+	a.conversion_rate = NULL
+
+
+update
+	#trades
+set
+	a.conversion_rate = 1.0 / b.price,
+	a.price_source = "CURRENT"
+from
+	#trades a,
+	current_prices b,
+	forwards c
+where
+	a.product_id = c.currency_id
+and
+	c.product_id = @evaluation_currency_id
+and
+	c.contract_id = b.contract_id
+and
+	a.conversion_rate = NULL
+
+/* Prepare a summary of evaluation price sources for display */
+create table
+	#price_sources(
+		style varchar(50),
+		status varchar(25),
+		message varchar(200),
+		total_trades int,
+		evaluation_currency_trades int,
+		back_office_evaluations int,
+		front_office_evaluations int,
+		live_price_evaluations int)
+
+select
+	@evaluation_currency_trades = count(*)
+from
+	#trades
+where
+	price_source = "NATIVE"
+if @evaluation_currency_trades = NULL
+	select
+		@evaluation_currency_trades = 0
+
+select
+	@bo_valued_trades = count(*)
+from
+	#trades
+where
+	price_source = "BO"
+if @bo_valued_trades = NULL
+	select
+		@bo_valued_trades = 0
+
+select
+	@fo_valued_trades = count(*)
+from
+	#trades
+where
+	price_source = "FO"
+if @fo_valued_trades = NULL
+	select
+		@fo_valued_trades = 0
+
+select
+	@current_valued_trades = count(*)
+from
+	#trades
+where
+	price_source = "CURRENT"
+if @current_valued_trades = NULL
+	select
+		@current_valued_trades = 0
+
+select
+	@trades = count(*)
+from
+	#trades
+if @trades = NULL
+begin
+	select
+		@trades = 0
+
+	insert into
+		#price_sources
+	values(
+		"background:#FF9999",
+		"Empty",
+		"No trades found",	
+		0,
+		0,
+		0,
+		0,
+		0)
+end
+else
+begin
+	if @trades != @evaluation_currency_trades + @bo_valued_trades + @fo_valued_trades + @current_valued_trades
+		select
+			@style = "background:#FF9999",
+			@status = "Incomplete",
+			@message = "Volume cannot be calculated due to missing prices"
+	if @bo_valued_trades + @evaluation_currency_trades = @trades
+		select
+			@style = "background:#99FF99",
+			@status = "Complete",
+			@message = "Only back office settles used"
+	
+	if @fo_valued_trades != 0 and @current_valued_trades = 0
+		select
+			@style = "background:#FFFF99",
+			@status = "Complete",
+			@message = "Some front office settles used"
+	
+	if @current_valued_trades != 0
+		select
+			@style = "background:#FF9999",
+			@status = "Incomplete",
+			@message = "Volume was calculated using some ticking prices"
+	
+	insert into
+		#price_sources
+	values(
+		@style,
+		@status,
+		@message,
+		@trades,
+		@evaluation_currency_trades,
+		@bo_valued_trades,
+		@fo_valued_trades,
+		@current_valued_trades)
+
+end
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+	
+select #price_sources.style, #price_sources.status, #price_sources.message, #price_sources.total_trades, #price_sources.evaluation_currency_trades, #price_sources.back_office_evaluations, #price_sources.front_office_evaluations, #price_sources.live_price_evaluations from #price_sources
+
+
+update
+	#trades
+set
+	evaluation_value = abs(quantity) * multiplier * conversion_rate
+	
+update
+	#trades
+set
+	evaluation_value = abs(quantity) * multiplier
+where
+	product_id = @evaluation_currency_id
+
+
+select
+	@missing_settles = count(*)
+from
+	#trades
+where
+	evaluation_value = NULL
+if @missing_settles != 0
+begin
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select
+		#trades.trade_id, #trades.deal_id, #trades.user_id, #trades.internal_account_id, #trades.external_account_id, #trades.quantity, #trades.contract_id, #trades.multiplier, #trades.price, #trades.trade_date, #trades.trader_id, #trades.strategy_id, #trades.status_id, #trades.broker_id, #trades.product_id, #trades.conversion_rate, #trades.evaluation_value, #trades.volume_equivalent, #trades.price_source
+	from
+		#trades
+	where
+		evaluation_value = NULL
+
+	return
+end
+
+
+if @min_size = NULL
+	select
+		@min_size = 0.0
+
+update
+	#trades
+set
+	volume_equivalent = evaluation_value
+where
+	evaluation_value >= @min_size
+
+update
+	#trades
+set
+	volume_equivalent = @min_size
+where
+	evaluation_value < @min_size
+
+
+	
+select
+	run_name = @run_name,
+	begin_date = @begin_date,
+	end_date = @end_date,
+	evaluation_date = getdate()
+
+create table
+	#by_date(
+		trade_date varchar(30),
+		total_volume float,
+		adjusted_volume float)
+insert into
+	#by_date
+select
+	convert(varchar(11), convert(datetime, convert(varchar(10), dateadd(day, case when datepart(caldayofweek, dateadd(hour, 7, trade_date)) > 5 then 8 - datepart(caldayofweek, dateadd(hour, 7, trade_date)) else 0 end, dateadd(hour, 7, trade_date)), 101))),
+	sum(evaluation_value),
+	sum(volume_equivalent)
+from
+	#trades
+group by
+	convert(datetime, convert(varchar(10), dateadd(day, case when datepart(caldayofweek, dateadd(hour, 7, trade_date)) > 5 then 8 - datepart(caldayofweek, dateadd(hour, 7, trade_date)) else 0 end, dateadd(hour, 7, trade_date)), 101))
+order by
+	convert(datetime, convert(varchar(10), dateadd(day, case when datepart(caldayofweek, dateadd(hour, 7, trade_date)) > 5 then 8 - datepart(caldayofweek, dateadd(hour, 7, trade_date)) else 0 end, dateadd(hour, 7, trade_date)), 101))
+
+select
+	@total = sum(total_volume),
+	@total_adjusted = sum(adjusted_volume)
+from
+	#by_date
+if @total = NULL
+	select
+		@total = 0.0,
+		@total_adjusted = 0.0
+insert into
+	#by_date
+values(
+	"Total",
+	@total,
+	@total_adjusted)
+
+select
+	trade_date,
+	total_volume = total_volume / 1000000.00,
+	adjusted_volume = adjusted_volume / 1000000.00,
+	min_diff = adjusted_volume / 1000000.00 - total_volume / 1000000.00
+from
+	#by_date
+
+
+create table
+	#by_external_account(
+		external_account varchar(50),
+		total_volume float NULL)
+insert into
+	#by_external_account
+select
+	a.symbol,
+	sum(b.evaluation_value)
+from
+	external_accounts a,
+	#trades b
+where
+	a.external_account_id = b.external_account_id
+group by
+	a.symbol
+order by
+	a.symbol
+
+select
+	@total = sum(total_volume)
+from
+	#by_external_account
+if @total = NULL
+	select
+		@total = 0.0
+insert into
+	#by_external_account
+values(
+	"Total",
+	@total)
+select
+	external_account,
+	total_volume = total_volume / 1000000.00
+from
+	#by_external_account
+
+create table
+	#by_internal_account(
+		internal_account varchar(50),
+		total_volume float)
+insert into
+	#by_internal_account
+select
+	a.symbol,
+	sum(b.evaluation_value)
+from
+	internal_accounts a,
+	#trades b
+where
+	a.internal_account_id = b.internal_account_id
+group by
+	a.symbol
+order by
+	a.symbol
+
+select
+	@total = sum(total_volume)
+from
+	#by_internal_account
+if @total = NULL
+	select
+		@total = 0.0
+insert into
+	#by_internal_account
+values(
+	"Total",
+	@total)
+select
+	internal_account,
+	total_volume = total_volume / 1000000.00
+from
+	#by_internal_account
+
+
+create table
+	#by_broker(
+		broker varchar(50),
+		total_volume float)
+insert into
+	#by_broker
+select
+	a.symbol,
+	sum(b.evaluation_value)
+from
+	brokers a,
+	#trades b
+where
+	a.broker_id = b.broker_id
+group by
+	a.symbol
+order by
+	a.symbol
+
+select
+	@total = sum(total_volume)
+from
+	#by_broker
+if @total = NULL
+	select
+		@total = 0.0
+insert into
+	#by_broker
+values(
+	"Total",
+	@total)
+select
+	broker,
+	total_volume = total_volume / 1000000.00
+from
+	#by_broker
+
+create table
+	#by_trader(
+		trader varchar(50),
+		total_volume float)
+insert into
+	#by_trader
+select
+	a.symbol,
+	sum(b.evaluation_value)
+from
+	traders a,
+	#trades b
+where
+	a.trader_id = b.trader_id
+group by
+	a.symbol
+order by
+	a.symbol
+
+select
+	@total = sum(total_volume)
+from
+	#by_trader
+if @total = NULL
+	select
+		@total = 0.0
+insert into
+	#by_trader
+values(
+	"Total",
+	@total)
+select
+	trader,
+	total_volume = total_volume / 1000000.00
+from
+	#by_trader
+
+
+create table
+	#by_strategy(
+		strategy varchar(50),
+		total_volume float)
+insert into
+	#by_strategy
+select
+	a.name,
+	sum(b.evaluation_value)
+from
+	strategies a,
+	#trades b
+where
+	a.strategy_id = b.strategy_id
+group by
+	a.name
+order by
+	a.name
+select
+	@total = sum(total_volume)
+from
+	#by_strategy
+if @total = NULL
+	select
+		@total = 0.0
+insert into
+	#by_strategy
+values(
+	"Total",
+	@total)
+select
+	strategy,
+	total_volume = total_volume / 1000000.00
+from
+	#by_strategy
+
+create table
+	#by_instrument(
+		instrument varchar(50),
+		total_volume float)
+insert into
+	#by_instrument
+select
+	a.name,
+	sum(c.evaluation_value)
+from
+	instruments a,
+	contracts b,
+	#trades c
+where
+	a.instrument_id = b.instrument_id
+and
+	b.contract_id = c.contract_id
+group by
+	a.name
+order by
+	a.name
+
+select
+	@total = sum(total_volume)
+from
+	#by_instrument
+if @total = NULL
+	select
+		@total = 0.0
+
+insert into
+	#by_instrument
+values(
+	"Total",
+	@total)
+
+select
+	instrument,
+	total_volume = total_volume / 1000000.00
+from
+	#by_instrument
+	
+create table
+	#by_deal_notification(
+		deal_notification_source varchar(50),
+		total_volume float)
+insert into
+	#by_deal_notification
+select
+	a.name,
+	sum(c.evaluation_value)
+from
+	sources a,
+	#notifications b,
+	#trades c
+where
+	a.source_id = b.source_id
+and
+	b.deal_id = c.deal_id
+group by
+	a.name
+order by
+	a.name
+select
+	@total = sum(total_volume)
+from
+	#by_deal_notification
+if @total = NULL
+	select
+		@total = 0.0
+insert into
+	#by_deal_notification
+values(
+	"Total",
+	@total)
+
+select
+	deal_notification_source,
+	total_volume = total_volume / 1000000.00
+from
+	#by_deal_notification
+
+
+
+go

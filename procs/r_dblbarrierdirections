@@ -1,0 +1,22 @@
+drop procedure
+	r_dblbarrierdirections
+go
+
+create procedure
+	r_dblbarrierdirections
+		@login varchar(50)
+as
+
+create table
+	#output(
+		name varchar(30))
+insert into #output values("In")
+insert into #output values("Out")
+
+select
+	name
+from
+	#output
+
+go
+

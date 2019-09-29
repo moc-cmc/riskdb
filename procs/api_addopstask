@@ -1,0 +1,169 @@
+drop procedure api_addopstask
+go
+
+create procedure
+	api_addopstask
+		@login varchar(50),
+		@name varchar(100),
+		@ops_task_type varchar(30),
+		@status varchar(20),
+		@ordering int = NULL,
+		@assigned_to varchar(50)=NULL,
+		@task_date datetime=NULL
+
+as
+
+declare @tico_account_id int
+declare @ops_task_id int 
+declare @status_id int
+declare @assigned_to_id int
+declare @ops_task_type_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login",
+		login = @login
+	return
+end
+
+if @assigned_to != NULL
+begin
+	select
+		@assigned_to_id = account_id
+	from
+		tico_accounts
+	where
+		login = @assigned_to
+	if @assigned_to_id = NULL
+	begin
+		select
+			status="Error",
+			message="Problem finding account for assigned to",
+			assigned_to=@assigned_to
+		return
+	end
+end
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = @status
+if @status_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding status",
+		provided_status=@status	
+	return
+end
+
+
+select	
+	@ops_task_type_id = ops_task_type_id
+from
+	ops_task_types
+where
+	name = @ops_task_type
+if @ops_task_type_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding ops task type",
+		ops_task_type=@ops_task_type
+	return
+end
+
+if @ordering = NULL
+begin
+	select
+		@ordering = max(ordering) 
+	from
+		ops_tasks
+	where
+		ops_task_type_id = @ops_task_type_id
+	
+	if @ordering = NULL
+	begin
+		select
+			@ordering = 0
+	end
+	select
+		@ordering = @ordering + 1000
+end
+
+select
+	@ops_task_id = ops_task_id
+from
+	ops_tasks
+where
+	name = @name
+and
+	ordering = @ordering
+and
+	ops_task_type_id = @ops_task_type_id
+if @ops_task_id != NULL
+begin
+	select
+		status="Error",
+		message="Task already exists with specified ordering",
+		name = @name,
+		ordering = @ordering,
+		ops_task_type = @ops_task_type
+	return
+end
+
+if @task_date = NULL
+begin
+	select
+		@task_date = convert(date, getdate())
+end
+
+exec
+	j_nextkey
+		"ops_tasks",
+		@ops_task_id output
+
+insert into
+	ops_tasks(
+		ops_task_id,
+		ops_task_type_id,
+		name,
+		ordering,	
+		status_id,	
+		assigned_to,
+		create_date)
+values(
+	@ops_task_id,
+	@ops_task_type_id,
+	@name,
+	@ordering,
+	@status_id,
+	@assigned_to_id,
+	@task_date)
+if @@rowcount = 1
+begin
+	select
+		status="Success",
+		message = "Task successfully created",
+		name = @name,
+		ordering = @ordering,
+		provided_status = @status,
+		assigned_to = @assigned_to,
+		ops_task_type = @ops_task_type
+
+end
+	
+go
+
+
+

@@ -1,0 +1,169 @@
+create or replace procedure 
+	api_oahashgen
+		@login varchar(50),
+		@outside_account varchar(50),
+		@hash_value varchar(100)=NULL output
+
+as
+
+declare @has_permission char(1)
+declare @hash_string varchar(255)
+declare @tico_account_id int
+declare @outside_account_id int
+declare @outside_account_type_id int
+declare @legal_entity_id int
+declare @legal_entity varchar(150)
+declare @provider_id int
+declare @provider_name varchar(50)
+declare @account_number varchar(100)
+declare @account_code varchar(50)
+declare @account_code_type_id int
+
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+
+/* This feature that will be removed once
+ * all hashes have been created for existing outside accounts
+ */
+declare @allow_creation_pending_only char(1)
+select
+	@allow_creation_pending_only = "N"
+exec
+        r_checkaccessgrouppermission
+                @login=@login,
+                @access_group="Wire Admin",
+                @show_perm_denied = "N",
+                @has_permission = @has_permission output
+
+if @has_permission != "Y"
+begin
+	select
+		status = "Error",
+		message = "Permission denied"
+        return
+end
+
+select
+	@outside_account_id = outside_account_id,
+	@outside_account_type_id = outside_account_type_id,
+	@legal_entity_id = legal_entity_id,
+	@provider_id = provider_id
+from
+	pending_outside_accounts
+where
+	name = @outside_account
+if @outside_account_id = NULL 
+begin
+	if @allow_creation_pending_only = "N"
+	begin
+		select
+			@outside_account_id = outside_account_id,
+			@outside_account_type_id = outside_account_type_id,
+			@legal_entity_id = legal_entity_id,
+			@provider_id = provider_id
+		from
+			outside_accounts
+		where
+			name = @outside_account
+	end
+
+	if @outside_account_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem determining properties"
+		return
+	end
+end
+
+select
+	@account_number = account_number,
+	@account_code = account_code,
+	@account_code_type_id = account_code_type_id
+from
+	outside_account_info
+where
+	outside_account_id = @outside_account_id
+
+select
+        @legal_entity = name
+from
+        legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+        a.legal_entity_id = @legal_entity_id 
+and
+	b.tico_account_id = @tico_account_id
+if @@rowcount !=1
+begin
+        select
+                status = "Error",
+                message = "Could not find legal entity or no permission",
+                legal_entity = @legal_entity
+        return
+end
+
+if @account_number = NULL
+begin
+	/*select
+		status = "Error",
+		message = "Can not generate hash with empty account number"
+	*/
+	return
+end
+
+if @account_code = NULL
+	select
+		@account_code = ""
+
+if @account_code_type_id = NULL
+	select
+		@account_code_type_id = 0
+
+select
+	@provider_name = name
+from
+	providers
+where
+	provider_id = @provider_id
+if @provider_name = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining properties e2"
+	return
+end
+
+select
+	@hash_string = 
+		rtrim(convert(varchar(10), @outside_account_id))+""+
+		rtrim(convert(varchar(10), @outside_account_type_id))+""+
+		rtrim(convert(varchar(10), @legal_entity_id))+""+
+		rtrim(@legal_entity)+""+
+		rtrim(convert(varchar(10), @provider_id))+""+
+		rtrim(@provider_name)+""+
+		rtrim(@account_number)+""+
+		rtrim(@account_code)+""+
+		rtrim(convert(varchar(10), @account_code_type_id))
+
+select
+	
+	@hash_value = hash(rtrim(@hash_string), "md5")++hash(rtrim(@account_number)+rtrim(db_name()), "sha1")
+		
+
+go

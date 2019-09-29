@@ -1,0 +1,41 @@
+drop procedure cbo_outputexchdigicustfees
+go
+
+
+create procedure
+	cbo_outputexchdigicustfees
+		@trade_date datetime
+
+as
+
+
+select
+	'invoke postWithdrawal "'
+        +rtrim(b.symbol)
+        +'" "'
+        +rtrim(d.symbol)
+        +'" "'
+        +rtrim(convert(varchar(30), convert(numeric(30, 8), round(floor(abs(a.amount) * 1000000000) / 1000000000, 10))))
+        +'"'
+from
+	account_transactions a,
+	external_accounts b,
+	fo_sub_accounts c,
+	products d,
+	transaction_types e
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_id = c.external_account_id
+and
+	a.currency_id = d.product_id
+and
+	a.transaction_type_id = e.transaction_type_id
+and
+	e.name = "Digital Custody Fee"
+and
+	a.transaction_date = convert(date, @trade_date)
+order by
+	a.account_transaction_id DESC
+
+go

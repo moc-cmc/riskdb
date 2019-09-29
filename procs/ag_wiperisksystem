@@ -1,0 +1,115 @@
+create or replace procedure
+	ag_wiperisksystem
+		@login varchar(50),
+		@fund_name varchar(150),
+		@total_trades int,
+		@total_transactions int,
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL,
+		@wipe_identifier varchar(50)
+
+as
+
+declare @should_wipe char(1)
+declare @tico_account_id int
+declare @wiped_transactions int
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+
+select
+	@should_wipe = "Y"
+from
+	system_wipe_identifiers
+where
+	identifier = @wipe_identifier
+
+if @should_wipe != "Y"
+begin
+	select
+		status = "Error",
+		message = "Problem finding wipe identifier. Two step process not followed. Not wiping system",
+		provided_wipe_id = @wipe_identifier
+	return
+end
+
+	
+if @should_wipe = "Y"
+begin
+	insert into
+		system_wipe_logs(
+			user_id,
+			timestamp,
+			system_wipe_identifier,
+			begin_date,
+			end_date,
+			total_trades,
+			total_transactions)
+	values(
+		@tico_account_id,
+		getdate(),
+		@wipe_identifier,
+		@begin_date,
+		@end_date,
+		@total_trades,
+		@total_transactions
+	)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem storing system log information. Not wiping system",
+                	wipe_id = @wipe_identifier,
+                	begin_date = @begin_date,
+                	end_date = @end_date,
+                	total_trades = @total_trades,
+                	total_transactions = @total_transactions
+			
+		return
+	end
+		
+	/* DO NOT ACTUALLY WIPE YET 
+	exec
+		tt_deletetrades 
+			@trade_id = 0,
+			@options = "i'm sure"
+
+	delete 
+		*
+	from	
+		account_transactions
+	select
+		@wiped_transactions = @@rowcount
+	*/
+	select
+		status = "OK",
+		message = "Sysem Data Wiped",
+		wiped_trades = @total_trades,
+		wiped_transactions = @wiped_transactions,
+		wipe_identifier = @wipe_identifier
+		
+end
+else
+begin
+	select
+		status = "Error",
+	 	message = "Did not wipe system"
+end
+
+exec
+	ag_risksystemoverview
+		@login=@login
+go
+		

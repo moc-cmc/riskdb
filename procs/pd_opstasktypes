@@ -1,0 +1,18 @@
+drop procedure pd_opstasktypes
+go
+
+create procedure
+	pd_opstasktypes
+
+as
+
+select
+	name = name
+from
+	ops_task_types
+order by
+	name
+	
+
+go
+

@@ -1,0 +1,17 @@
+
+if object_id("cm_fundtypes") != NULL
+    drop procedure
+        cm_fundtypes
+go
+
+create procedure
+	cm_fundtypes
+as
+
+select
+	name
+from
+	fund_types
+
+
+go

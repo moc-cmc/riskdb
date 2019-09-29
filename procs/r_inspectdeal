@@ -1,0 +1,258 @@
+
+if object_id("r_inspectdeal") != NULL
+    drop procedure
+        r_inspectdeal
+go
+
+create procedure
+	r_inspectdeal
+		@deal_id int
+as
+
+declare @is_uniform int
+declare @trade_id int
+declare @quantity numeric(30,4)
+declare @instrument char(50)
+declare @contract_id int
+declare @edit_deal char(20)
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200),
+		arguments char(255) NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_deal",
+	"Edit Deal",
+	"suppressAutoexecute=YES")
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_trade",
+	"Edit Trade",
+	"suppressAutoexecute=YES")
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_order",
+	"Edit Order",
+	"suppressAutoexecute=YES")
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select
+	#links.meta_type, #links.column, #links.link, #links.arguments
+from
+	#links
+
+select
+	@contract_id = min(contract_id)
+from
+	trades
+where
+	deal_id = @deal_id
+
+select
+	@instrument = a.name
+from
+	instruments a,
+	contracts b
+where
+	a.instrument_id = b.instrument_id
+and
+	b.contract_id = @contract_id
+if @instrument = "Forward"
+	select
+		@edit_deal = "EDIT"
+else
+	select
+		@edit_deal = NULL
+
+exec
+	r_dealisuniform
+		@deal_id,
+		@is_uniform output
+if @is_uniform = 1
+begin
+	select
+		@trade_id = min(trade_id)
+	from
+		trades
+	where
+		deal_id = @deal_id
+
+	select
+		@quantity = sum(quantity)
+	from
+		trades
+	where
+		deal_id = @deal_id
+
+	select
+		a.deal_id,
+		trade_date = rtrim(convert(char(25), trade_date, 101)) + " " +  convert(char(10) , trade_date, 8),
+		symbol = b.symbol,
+		value_date = convert(char(11), c.value_date, 1),
+		trade_quantity = @quantity,
+		trade_price = convert(char(30), convert(numeric(30,4), a.price)),
+		trader = d.symbol,
+		broker = e.symbol,
+		strategy = f.name,
+		edit_deal = @edit_deal
+	from
+		trades a,
+		contracts b,
+		trade_value_dates c,
+		traders d,
+		brokers e,
+		strategies f
+	where
+		a.contract_id = b.contract_id
+	and
+		a.trade_id *= c.trade_id
+	and
+		a.trader_id = d.trader_id
+	and
+		a.broker_id = e.broker_id
+	and
+		a.strategy_id = f.strategy_id
+	and
+		a.trade_id = @trade_id
+end
+		
+
+
+
+
+create table
+	#deal_elements(
+		deal_id int,
+		trade_id int NULL,
+		trade_date char(25) NULL,
+		order_id int NULL,
+		order_type char(25) NULL,
+		order_date char(25) NULL,
+		execution_date char(15) NULL,
+		symbol char(15),
+		value_date char(25) NULL,
+		quantity numeric(30,4),
+		price char(30) NULL,
+		external_account char(50),
+		internal_account char(50),
+		trader char(5),
+		strategy char(50),
+		working_status char(50),
+		edit_trade char(10) NULL,
+		edit_order char(10) NULL)
+insert into
+	#deal_elements
+select
+	a.deal_id,
+	a.trade_id,
+	trade_date = rtrim(convert(char(25), trade_date, 101)) + " " +  convert(char(10), trade_date, 8),
+	/* convert(char(25), a.trade_date, 0), */
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	b.symbol,
+	value_date = convert(char(11), c.value_date, 1),
+	a.quantity,
+	trade_price = convert(char(30), convert(numeric(30,4), a.price)),
+	external_account = d.symbol,
+	internal_account = e.symbol,
+	trader = f.symbol,
+	strategy = g.name,
+	working_status = h.name,
+	NULL,
+	/* edit = "EDIT", */
+	NULL
+from
+	trades a,
+	contracts b,
+	trade_value_dates c,
+	external_accounts d,
+	internal_accounts e,
+	traders f,
+	strategies g,
+	statuses h
+where
+	a.trade_id *= c.trade_id
+and
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = d.external_account_id
+and
+	a.internal_account_id = e.internal_account_id
+and
+	a.trader_id = f.trader_id
+and
+	a.strategy_id = g.strategy_id
+and
+	a.status_id = h.status_id
+and
+	a.deal_id = @deal_id
+
+insert into
+	#deal_elements
+select
+	a.deal_id,
+	NULL,
+	NULL,
+	a.order_id,
+	order_type = c.name,
+	convert(char(25), a.order_date, 0),
+	convert(char(11), a.execution_date, 1),
+	b.symbol,
+	NULL,
+	a.quantity,
+	order_price = convert(char(30), convert(numeric(30,4), a.price)),
+	external_account = d.symbol,
+	internal_account = e.symbol,
+	trader = f.symbol,
+	strategy = g.name,
+	working_status = h.name,
+	NULL,
+	edit = "EDIT"
+
+from
+	orders a,
+	contracts b,
+	external_accounts d,
+	order_types c,
+	internal_accounts e,
+	traders f,
+	strategies g,
+	statuses h
+where
+	a.contract_id = b.contract_id
+and
+	a.order_type_id = c.order_type_id
+and
+	a.external_account_id = d.external_account_id
+and
+	a.internal_account_id = e.internal_account_id
+and
+	a.trader_id = f.trader_id
+and
+	a.strategy_id = g.strategy_id
+and
+	a.status_id = h.status_id
+and
+	a.deal_id = @deal_id
+
+
+
+--Adaptive Server has expanded all '*' elements in the following statement
+select
+	#deal_elements.deal_id, #deal_elements.trade_id, #deal_elements.trade_date, #deal_elements.order_id, #deal_elements.order_type, #deal_elements.order_date, #deal_elements.execution_date, #deal_elements.symbol, #deal_elements.value_date, #deal_elements.quantity, #deal_elements.price, #deal_elements.external_account, #deal_elements.internal_account, #deal_elements.trader, #deal_elements.strategy, #deal_elements.working_status, #deal_elements.edit_trade, #deal_elements.edit_order
+from
+	#deal_elements
+go

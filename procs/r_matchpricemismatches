@@ -1,0 +1,301 @@
+
+if object_id("r_matchpricemismatches") != NULL
+    drop procedure
+        r_matchpricemismatches
+go
+
+create procedure 
+		r_matchpricemismatches
+				@login char(30),
+				@fund char(30),
+				@report_commit_id int
+
+as
+
+
+declare @tico_account_id int
+declare @status char(30)
+declare @status_id int
+declare @trade_id int
+declare @report_trade_id int
+declare @report_trade_match_id int
+declare @fund_id int
+declare @fund_report_id int
+declare @current_product_USD_price int
+declare @update_trade int
+declare @quantity numeric(30, 4) 
+declare @report_trade_price float
+declare @native_report_trade_price float
+declare @trade_price float
+declare @price_style_id int
+declare @inverted_price_style_id int
+declare @price_diff float
+declare @match_count int
+declare @mismatches int
+
+
+
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where 
+	login = @login
+if @@rowcount != 1
+begin
+	select 
+		id = -1,
+		error = "Problem determing account from login"
+	return
+end
+
+
+select 
+	@fund_id = fund_id
+from
+	funds
+where
+	name = @fund
+if @@rowcount != 1
+begin                           
+        select                  
+                id = -1,        
+                error = "Problem determing fund"
+        return                  
+end         				
+
+select
+	@fund_report_id = fund_report_id
+from
+	fund_reports
+where	
+	fund_id = @fund_id
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "Problem determing fund report"
+        return
+end
+
+/*
+select
+	@report_commit_id = report_commit_id
+from
+	report_commits
+where
+	trade_date = @trade_date and
+	fund_report_id = @fund_report_id
+if @@rowcount != 1
+begin                           
+        select                  
+                id = -1,        
+                error = "Problem determing report commit id from trade date and fund"
+        return                  
+end        
+*/
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Mismatched"
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "Problem finding 'Mismatched' status"
+        return
+end
+
+select
+        @inverted_price_style_id = price_style_id
+from
+        price_styles
+where
+        name = "Inverted"
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "Problem finding 'Inverted' status"
+        return
+end
+
+
+create table
+	#mismatched_trades
+	(report_trade_match_id int,
+	 report_commit_id int,
+	 trade_id int,
+	 report_trade_id int,
+	 contract_id int,
+	 priduct_id int,
+	 product char(20),
+	 inverted bit,
+	 match_strength float,
+	 symbols_match bit,
+	 status_id int,
+	 status_date datetime,
+	 quantity numeric(30, 4),
+	 USD_quantity numeric(30, 4) NULL,
+	 price_style_id int,
+	 trade_price float,
+	 report_trade_price float,
+	 price float)
+
+insert into #mismatched_trades
+select 
+	a.report_trade_match_id,
+	a.report_commit_id,
+	a.trade_id,
+	a.report_trade_id,
+	b.contract_id,
+	c.product_id,
+	c.symbol,
+	a.inverted,
+	a.match_strength,
+	a.symbols_match,
+	a.status_id,
+	a.status_date,
+	a.quantity,
+	NULL,
+	g.price_style_id,
+	d.price,
+	f.nominal_price,
+	a.price
+from
+	report_trade_matches a,
+	contracts b,
+	products c,
+	trades d,
+	forwards e,
+	report_trades f,
+	contract_price_styles g
+where
+	a.trade_id = d.trade_id and
+	d.contract_id = b.contract_id and
+	b.contract_id = e.contract_id and
+	e.product_id = c.product_id and
+	a.report_trade_id = f.report_trade_id and
+	b.contract_id = g.contract_id and
+	a.report_commit_id = @report_commit_id and
+	a.status_id = @status_id
+
+select
+	@mismatches = @@rowcount
+
+
+
+declare @min_report_trade_match int
+
+select @min_report_trade_match = 0
+
+select
+	@report_trade_match_id = min(report_trade_match_id)
+from
+	#mismatched_trades
+where
+	report_trade_match_id > @min_report_trade_match
+
+while (@report_trade_match_id > @min_report_trade_match)
+begin
+	
+	select 
+		@update_trade = 0,
+		@quantity = 0,
+		@report_trade_price = 0,
+		@trade_price = 0,
+		@price_style_id = 0
+
+	select 	
+		@quantity = quantity,
+		@report_trade_price = report_trade_price,
+		@trade_price = trade_price,
+		@price_style_id = price_style_id
+	from
+		#mismatched_trades
+	where
+		report_trade_match_id = @report_trade_match_id
+		
+		
+
+
+	if @report_trade_price = @trade_price
+	begin
+		select
+			@update_trade = 1
+	end
+	else if @price_style_id = @inverted_price_style_id
+	begin
+		select
+			@native_report_trade_price = (1/@report_trade_price)
+
+		if abs(@trade_price - @native_report_trade_price) < .000005
+		begin
+			select
+                               @update_trade = 1
+		end
+	end
+
+
+	if @update_trade = 1
+	begin
+		begin tran
+			
+			update
+				report_trade_matches
+			set
+				status_id = 2
+			where
+				report_trade_match_id = @report_trade_match_id
+			if @@rowcount != 1
+			begin
+				select
+					id = -1,
+					error = "Problem finding  report_trade_match for id. Trade not updated"
+
+				rollback tran
+			end
+			else
+			begin
+				select 
+					@match_count = @match_count + 1
+				/*
+				select 
+					id = 1,
+					msg = "Successful Match",
+					report_trade_match_id = @report_trade_match_id	
+				*/
+
+				commit tran
+			end
+	end
+
+
+
+	select 
+		@min_report_trade_match = @report_trade_match_id
+	
+	select
+        	@report_trade_match_id = min(report_trade_match_id)
+	from
+       	 	#mismatched_trades
+	where
+	        report_trade_match_id > @min_report_trade_match
+
+end
+
+
+/*
+select
+	"trades_initially_mismatched" = @mismatches,
+	"trades_matched" = @match_count
+*/
+
+
+
+go

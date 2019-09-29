@@ -1,0 +1,73 @@
+use
+	risk_rcm
+go
+
+drop procedure
+	cta_deletereviewstatment
+go
+
+create procedure
+	cta_deletereviewstatment
+		@pl_statement_id int
+as
+
+declare @committed_status_id int
+declare @committed_pls int
+
+
+select
+	@committed_status_id = status_id
+from
+	statuses
+where
+	name = "Committed"
+
+select
+	@committed_pls = count(*)
+from
+	pl_statements
+where
+	pl_statement_id = @pl_statement_id
+and
+	status_id = @committed_status_id
+if @committed_pls = 1
+begin
+	select
+		id = -1,
+		error = "Committed P&L statement cannot be deleted using this utility"
+	return
+end
+	
+delete
+
+from
+	pl_statement_fx_rates
+where
+	pl_statement_id = @pl_statement_id
+delete
+
+from
+	pl_statement_positions
+where
+	pl_statement_id = @pl_statement_id
+delete
+
+from
+	pl_statement_trades
+where
+	pl_statement_id = @pl_statement_id
+delete
+
+from
+	pl_statements_fx
+where
+	pl_statement_id = @pl_statement_id
+delete
+
+from
+	pl_statements
+where
+	pl_statement_id = @pl_statement_id
+
+
+go

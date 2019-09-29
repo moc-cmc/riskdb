@@ -1,0 +1,28 @@
+create or replace procedure
+	r_approvelegalentity
+		@login varchar(50),
+		@legal_entity varchar(50)
+
+as
+
+exec
+	api_approvelegalentity
+		@login=@login,
+		@legal_entity=@legal_entity
+
+	
+exec
+	ag_legalentitieshome
+		@login=@login,
+		@legal_entity=@legal_entity
+
+	
+
+go	
+
+	
+		
+	
+
+
+

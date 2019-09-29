@@ -1,0 +1,43 @@
+drop procedure
+	bo_transactiontype
+go
+
+create procedure
+	bo_transactiontype
+		@name varchar(100),
+		@transaction_type_id int output
+
+as
+
+declare @stub varchar(50)
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = @name
+if @transaction_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"transaction_types",
+			@transaction_type_id output
+
+	select
+		@stub = "tico_label_" + rtrim(convert(varchar(20), @transaction_type_id))
+	
+	insert into
+		transaction_types(
+			transaction_type_id,
+			name,
+			direction,
+			tico_label)
+	values(
+		@transaction_type_id,
+		@name,
+		1,
+		@stub)
+end
+
+go

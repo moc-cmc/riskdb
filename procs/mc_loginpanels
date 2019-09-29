@@ -1,0 +1,60 @@
+
+drop procedure
+	mc_loginpanels
+go
+
+create procedure
+	mc_loginpanels
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+declare @mc_desktop_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@mc_desktop_id = mc_desktop_id
+from
+	mc_desktop_overrides
+where
+	tico_account_id = @tico_account_id
+
+if @mc_desktop_id = NULL
+begin
+	select
+		@mc_desktop_id = a.mc_desktop_id
+	from
+		login_types a,
+		tico_account_types b
+	where
+		a.login_type_id = b.login_type_id
+	and
+		b.tico_account_id = @tico_account_id
+	
+end
+		
+
+select
+	panel = a.name
+from
+	mc_panels a,
+	mc_desktop_panels b
+where
+	a.mc_panel_id = b.mc_panel_id
+and
+	b.mc_desktop_id = @mc_desktop_id
+
+go

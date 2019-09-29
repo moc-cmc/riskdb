@@ -1,0 +1,172 @@
+drop procedure cbo_postcommit
+go
+
+create procedure
+	cbo_postcommit
+		@login varchar(50)
+as
+
+declare @newest_commit_date datetime
+declare @oldest_trade_daily_reval datetime
+declare @most_recent_commit datetime
+declare @commit_log_id int
+declare @tico_account_id int
+declare @status_id int
+declare @trade_date datetime
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+if @@rowcount != 1
+begin
+        select
+                error = "login not found"
+        return
+end
+
+select
+        @status_id = status_id
+from
+        statuses
+where
+        name = "Committed"
+if @@rowcount != 1
+begin
+        select
+                error = "status not found"
+        return
+end
+
+
+select
+	@newest_commit_date = max(reval_date)
+from
+	committed_daily_revals
+
+
+select
+	@most_recent_commit = max(a.transaction_date)
+from
+	int_account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	b.name = "Front Office Commit"
+
+/*select
+	newest_commit_date = @newest_commit_date,
+	most_recent_commit = @most_recent_commit*/
+
+
+begin tran
+insert into
+	committed_daily_revals(
+		trade_id,
+		bo_trade_date,
+		source_id,
+		status_id,
+		contract_id,
+		contract_qty,
+		value_date,
+		reval_date,
+		close_price,
+		native_value,
+		delta,
+		gamma,
+		theta,
+		tau,
+		native_currency_id,
+		evaluation_currency_id,
+		evaluation_value,
+		price_change_to_date,
+		native_realized_pl_to_date,
+		native_unrealized_pl_to_date,
+		realized_pl_to_date,
+		unrealized_pl_to_date,
+		premium_ccy_id,
+		premium,
+		evaluation_premium,
+		premium_settle_date,
+		notional_amount,
+		evaluation_notional)
+select
+	trade_id,
+	bo_trade_date,
+	source_id,
+	status_id,
+	contract_id,
+	contract_qty,
+	value_date,
+	reval_date,
+	close_price,
+	native_value,
+	delta,
+	gamma,
+	theta,
+	tau,
+	native_currency_id,
+	evaluation_currency_id,
+	evaluation_value,
+	price_change_to_date,
+	native_realized_pl_to_date,
+	native_unrealized_pl_to_date,
+	realized_pl_to_date,
+	unrealized_pl_to_date,
+	premium_ccy_id,
+	premium float,
+	evaluation_premium,
+	premium_settle_date,
+	notional_amount,
+	evaluation_notional
+from
+	trade_daily_revals
+where
+	reval_date <= @most_recent_commit
+and
+	reval_date > @newest_commit_date
+commit tran
+
+begin tran
+delete
+
+from
+	trade_daily_revals
+where
+	reval_date < @most_recent_commit
+commit tran
+
+/* Log commit */
+exec
+        j_nextkey
+                "commit_logs",
+                @commit_log_id output
+insert into
+        commit_logs
+values(
+        @commit_log_id,
+        @tico_account_id,
+        @status_id,
+        @most_recent_commit,
+        getdate()
+)
+
+select
+	@trade_date = convert(date, @most_recent_commit)
+
+exec
+	r_commitcommissionfees
+		@login,
+		@trade_date
+/*
+exec
+	r_commitfxsettlements
+		@login,
+		@trade_date
+*/
+
+
+go

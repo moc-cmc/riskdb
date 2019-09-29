@@ -1,0 +1,22 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	r_outsideacounts
+go
+
+create procedure
+	r_outsideacounts
+		@login varchar(50)
+as
+
+
+select
+	name
+from
+	outside_accounts
+order by
+	name
+
+go

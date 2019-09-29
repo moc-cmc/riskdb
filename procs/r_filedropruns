@@ -1,0 +1,20 @@
+create or replace procedure
+	r_filedropruns
+		@login varchar(50)
+
+as
+
+select
+	name = a.name
+from
+	runs a,
+	run_fd_report_destinations b
+where
+	a.run_id = b.run_id 
+group by
+	a.name
+order by
+	a.name
+
+
+go

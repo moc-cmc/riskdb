@@ -1,0 +1,119 @@
+if object_id("cbo_savefotobo") != NULL
+    drop procedure
+        cbo_savefotobo
+go
+
+create procedure
+	cbo_savefotobo
+		@login varchar(30),
+		@symbol varchar(50),
+		@price_date datetime,
+		@value_date datetime,
+		@source varchar(30),
+		@forward_price float
+as
+
+
+declare @contract_id int
+declare @source_id int
+declare @bo_price_id int
+declare @trade_date datetime
+declare @price_style varchar(30)
+declare @instrument varchar(50)
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		id =-1,
+		error = "Symbol not found",
+		symbol = @symbol
+	return
+end
+
+select
+	@instrument = a.name
+from
+	instruments a,
+	contracts b
+where
+	a.instrument_id = b.instrument_id
+and
+	b.contract_id = @contract_id
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Source not found",
+		source = @source
+	return
+end
+
+select
+	@value_date = convert(datetime, convert(char(11), @value_date, 1))
+
+select
+	@trade_date = convert(datetime, convert(char(11), @price_date, 1))
+	
+select
+	@price_date = dateadd(hour, 17, @trade_date)
+
+
+exec
+	j_nextkey
+		"bo_prices",
+		@bo_price_id output
+
+insert into
+	bo_prices
+values(
+	@bo_price_id,
+	3,
+	@contract_id,
+	@price_date,
+	@value_date,
+	@source_id,
+	@forward_price)
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	b.contract_id = @contract_id
+
+if @instrument = "Option"
+begin
+	exec
+		r_editsettle
+			@symbol,
+			@price_date,
+			@forward_price
+end
+
+exec
+	cbo_revaltrades
+		@login,
+		@trade_date,
+		@source,
+		NULL,
+		NULL
+
+	
+		
+go

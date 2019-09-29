@@ -1,0 +1,65 @@
+
+if object_id("cm_delaccountmapping") != NULL
+    drop procedure
+        cm_delaccountmapping
+go
+
+create procedure
+	cm_delaccountmapping
+		@login varchar(50),
+		@external_account varchar(50),
+		@source varchar(50),
+		@mapping varchar(50)
+as
+
+
+declare @external_account_id int
+declare @source_id int
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @external_account
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		external_account = @external_account
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Source name not found",
+		source_name = @source
+	return
+end
+
+delete
+
+from
+	external_account_symbols
+where
+	external_account_id = @external_account_id
+and
+	source_id = @source_id
+and
+	symbol = @mapping
+
+exec
+	cm_accountmappings
+		@login,
+		@external_account
+
+go

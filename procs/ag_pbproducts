@@ -1,0 +1,247 @@
+drop procedure
+	ag_pbproducts
+go
+
+create procedure
+	ag_pbproducts
+		@login varchar(50),
+		@prime_broker varchar(50)=NULL
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @id int
+declare @ids int
+declare @prime_broker_id int
+declare @prime_brokers int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"prime_broker",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"accounts",
+	"Account Deliverable Products",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_product",
+	"Set PB Product",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"remove_product",
+	"Set PB Product",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+	#prime_brokers(
+		id int identity,
+		prime_broker varchar(50) NULL)
+insert into
+	#prime_brokers(
+		prime_broker)
+select
+	a.name
+from
+	sources a,
+	prime_brokers b
+where
+	a.source_id = b.source_id
+order by
+	a.name
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		prime_broker_id int NULL,
+		pb varchar(100) NULL,
+		accounts varchar(25) NULL,
+		prime_broker varchar(100) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		add_product varchar(50) NULL,
+		remove_product varchar(50) NULL)
+	
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#prime_brokers
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#prime_brokers
+	where
+		id > @id
+
+	select
+		@prime_broker = prime_broker
+	from
+		#prime_brokers
+	where
+		id = @id
+
+	select
+		@prime_broker_id = a.prime_broker_id
+	from
+		prime_brokers a,
+		sources b
+	where
+		a.source_id = b.source_id
+	and
+		b.name = @prime_broker
+		
+	insert into
+		#output(
+			style,
+			prime_broker,
+			pb,
+			accounts)
+	values(
+		@pb_style,
+		@prime_broker,
+		@prime_broker,
+		"Accounts")
+
+	insert into
+		#output(
+			prime_broker_id,
+			prime_broker,
+			product_id,
+			product)
+	select
+		prime_broker_id = @prime_broker_id,
+		prime_broker = @prime_broker,
+		product_id,
+		symbol
+	from
+		products
+	order by
+		symbol
+		
+
+	select
+		@ids = count(*)
+	from
+		#prime_brokers
+	where
+		id > @id
+end
+
+
+update
+	#output
+set
+	style = @style,
+	add_product = "Add"
+where
+	product != NULL
+
+
+update
+	#output
+set
+	a.add_product = NULL,
+	a.remove_product = "Remove"
+from
+	#output a,
+	pb_deliverable_products b
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	a.product_id = b.product_id
+
+
+select
+	style,
+	prime_broker,
+	pb,
+	accounts,
+	product,
+	add_product,
+	remove_product
+from
+	#output
+order by
+	id
+
+
+
+
+go

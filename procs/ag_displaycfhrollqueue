@@ -1,0 +1,627 @@
+use
+	risk_finotec
+go
+
+drop procedure
+	ag_displaycfhrollqueue
+go
+
+create procedure
+	ag_displaycfhrollqueue
+		@login varchar(50),
+		@crq_id int
+
+as
+
+
+declare @id int
+declare @ids int
+declare @roll_id int
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @subtotal_style varchar(200)
+declare @selected_style varchar(200)
+
+declare @queued_roll_id int
+declare @batch_id int
+declare @trade_date datetime
+declare @account varchar(50)
+declare @near_quantity numeric(30,4)
+declare @near_counter_qty numeric(30,4)
+declare @far_quantity numeric(30,4)
+declare @far_counter_qty numeric(30,4)
+declare @dealt_currency varchar(50)
+declare @counter_currency varchar(50)
+declare @near_date datetime
+declare @near_price float
+declare @far_date datetime
+declare @far_price float
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_queued_rolls",
+	"Tally Queued Rolls",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "net",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "roll_balance",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "closing_balance",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "dealtamount",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "contraamount",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"far_price",
+	"Number",
+	"#,##0.0000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"near_price",
+	"Number",
+	"#,##0.0000000")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+
+select * from #meta
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@subtotal_style = "background:#FFFFFF;border: 1px solid white;font-style:italic;font-color:grey",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+create table
+	#max_open_dates(
+		symbol varchar(100),
+		value_date datetime NULL)
+insert into
+	#max_open_dates(
+		symbol,
+		value_date)
+select
+	rtrim(amountCurrency) + rtrim(contraCurrency),
+	max(convert(datetime, valueDate))
+from
+	cfh_rolls_queue
+where
+	crq_id = @crq_id
+and
+	tradeType = "Open rollover"
+group by
+	rtrim(amountCurrency) + rtrim(contraCurrency)
+	
+
+
+delete
+	cfh_rolls_queue
+from
+	cfh_rolls_queue a,
+	#max_open_dates b
+where
+	rtrim(a.amountCurrency) + rtrim(a.contraCurrency) = b.symbol
+and
+	convert(datetime, a.valueDate) != b.value_date
+and
+	a.tradeType = "Open rollover"
+and
+	a.crq_id = @crq_id
+
+	
+create table
+	#cfh_rolls_queue(
+		id int identity,
+		crq_id int,
+		tradeId varchar(100) NULL,
+		executionTime varchar(100) NULL,
+		tradeDate varchar(100) NULL,
+		valueDate varchar(100) NULL,
+		buySell varchar(100) NULL,
+		tradeType varchar(100) NULL,
+		track varchar(100) NULL,
+		dealtAmount varchar(100) NULL,
+		amountCurrency varchar(100) NULL,
+		rate varchar(100) NULL,
+		fee varchar(100) NULL,
+		feeCurrency varchar(100) NULL,
+		contraAmount varchar(100) NULL,
+		contraCurrency varchar(100) NULL,
+		pL varchar(100) NULL,
+		pLCurrency varchar(100) NULL,
+		client varchar(100) NULL)
+insert into
+	#cfh_rolls_queue(
+		crq_id,
+		tradeId,
+		executionTime,
+		tradeDate,
+		valueDate,
+		buySell,
+		tradeType,
+		track,
+		dealtAmount,
+		amountCurrency,
+		rate,
+		fee,
+		feeCurrency,
+		contraAmount,
+		contraCurrency,
+		pL,
+		pLCurrency,
+		client)
+select
+	crq_id,
+	tradeId,
+	executionTime,
+	tradeDate,
+	valueDate,
+	buySell,
+	tradeType,
+	track,
+	dealtAmount,
+	amountCurrency,
+	rate,
+	fee,
+	feeCurrency,
+	contraAmount,
+	contraCurrency,
+	pL,
+	pLCurrency,
+	client
+from
+	cfh_rolls_queue
+where
+	crq_id = @crq_id
+
+		
+
+
+create table
+	#close_balances(
+		product varchar(50),
+		balance float)
+insert into
+	#close_balances(
+		product,
+		balance)
+select
+	amountCurrency,
+	sum(convert(float, dealtAmount))
+from
+	#cfh_rolls_queue
+where
+	tradeType = "Close rollover"
+group by
+	amountCurrency
+
+insert into
+	#close_balances(
+		product,
+		balance)
+select
+	contraCurrency,
+	sum(convert(float, contraAmount))
+from
+	#cfh_rolls_queue
+where
+	tradeType = "Close rollover"
+group by
+	contraCurrency
+
+
+create table
+	#close_nets(
+		product varchar(50),
+		balance float)
+insert into
+	#close_nets(
+		product,
+		balance)
+select
+	product,
+	sum(balance)
+from
+	#close_balances
+group by
+	product
+
+/****************************************/
+
+create table
+	#open_balances(
+		product varchar(50),
+		balance float)
+insert into
+	#open_balances(
+		product,
+		balance)
+select
+	amountCurrency,
+	sum(convert(float, dealtAmount))
+from
+	#cfh_rolls_queue
+where
+	tradeType = "Open rollover"
+group by
+	amountCurrency
+
+insert into
+	#open_balances(
+		product,
+		balance)
+select
+	contraCurrency,
+	sum(convert(float, contraAmount))
+from
+	#cfh_rolls_queue
+where
+	tradeType = "Open rollover"
+group by
+	contraCurrency
+
+create table
+	#open_nets(
+		product varchar(50),
+		balance float)
+insert into
+	#open_nets(
+		product,
+		balance)
+select
+	product,
+	sum(balance)
+from
+	#open_balances
+group by
+	product
+
+create table
+	#products(
+		product varchar(50))
+insert into
+	#products(
+		product)
+select
+	amountCurrency
+from
+	#cfh_rolls_queue
+where
+	crq_id = @crq_id
+
+insert into
+	#products(
+		product)
+select
+	contraCurrency
+from
+	#cfh_rolls_queue
+where
+	crq_id = @crq_id
+
+create table
+	#ladder(
+		id int identity,
+		style varchar(250) NULL,
+		product varchar(50) NULL,
+		closing_balance float NULL,
+		roll_balance float NULL,
+		net float NULL)
+insert into
+	#ladder(
+		product)
+select
+	distinct(product)
+from
+	#products
+order by
+	product
+
+update
+	#ladder
+set
+	style = @style
+
+update
+	#ladder
+set
+	a.closing_balance = b.balance
+from
+	#ladder a,
+	#close_nets b
+where
+	a.product = b.product
+
+update
+	#ladder
+set
+	a.roll_balance = b.balance
+from
+	#ladder a,
+	#open_nets b
+where
+	a.product = b.product
+
+update
+	#ladder
+set
+	net = closing_balance + roll_balance
+
+exec
+	j_nextkey
+		"batches",
+		@batch_id output
+select
+	@account = "CFH FXPB"
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#cfh_rolls_queue
+where
+	tradeType = "Close rollover"
+and
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#cfh_rolls_queue
+	where
+		tradeType = "Close rollover"
+	and
+		id > @id
+
+	select
+		@roll_id = NULL,
+		@queued_roll_id = NULL,
+		@trade_date = NULL,
+		@near_quantity = NULL,
+		@near_counter_qty = NULL,
+		@far_quantity = NULL,
+		@far_counter_qty = NULL,
+		@dealt_currency = NULL,
+		@counter_currency = NULL,
+		@near_date = NULL,
+		@near_price = NULL,
+		@far_date = NULL,
+		@far_price = NULL
+
+
+	select
+		@trade_date = convert(datetime, tradeDate),
+		@near_quantity = convert(float, dealtAmount),
+		@near_counter_qty = convert(float, contraAmount),
+		@dealt_currency = amountCurrency,
+		@near_date = convert(datetime, valueDate),
+		@counter_currency = contraCurrency
+	from
+		#cfh_rolls_queue
+	where
+		id = @id
+
+	if @near_quantity = 0.0
+	begin
+		select
+			status = "Error",
+			mesage = "Found closing trade with zero quantity",
+			dealt_currency = @dealt_currency,
+			counter_currency = @counter_currency
+		return
+	end
+	
+	select
+		@near_price = abs(@near_counter_qty) / abs(@near_quantity)
+
+	select
+		@roll_id = id
+	from
+		#cfh_rolls_queue
+	where
+		amountCurrency = @dealt_currency
+	and
+		contraCurrency = @counter_currency
+	and
+		convert(float, dealtAmount) = @near_quantity * -1.0
+	if @roll_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Roll trade not found for closing trade",
+			dealt_currency = @dealt_currency,
+			counter_currency = @counter_currency
+		return
+	end
+
+	select
+		@far_quantity = convert(float, dealtAmount),
+		@far_counter_qty = convert(float, contraAmount),
+		@far_date = convert(datetime, valueDate)
+	from
+		#cfh_rolls_queue
+	where
+		id = @roll_id
+
+		
+	if @far_quantity = 0.0
+	begin
+		select
+			status = "Error",
+			message = "Found roll trade with zero quantity",
+			dealt_currency = @dealt_currency,
+			counter_currency = @counter_currency
+		return
+	end
+
+	select
+		@far_price = abs(@far_counter_qty) / abs(@far_quantity)
+
+
+	exec
+		j_nextkey
+			"queued_rolls",
+			@queued_roll_id output
+
+	insert into
+		queued_rolls(
+			queued_roll_id,
+			batch_id,
+			trade_date,
+			account,
+			near_quantity,
+			far_quantity,
+			dealt_currency,
+			counter_currency,
+			near_date,
+			near_price,
+			far_date,
+			far_price)
+	values(
+		@queued_roll_id,
+		@batch_id,
+		@trade_date,
+		@account,
+		@near_quantity,
+		@far_quantity,
+		@dealt_currency,
+		@counter_currency,
+		@near_date,
+		@near_price,
+		@far_date,
+		@far_price)
+
+		
+	delete
+
+	from
+		#cfh_rolls_queue
+	where
+		id in(@id, @roll_id)
+
+	select
+		@ids = count(*)
+	from
+		#cfh_rolls_queue
+	where
+		tradeType = "Close rollover"
+	and
+		id > @id
+end
+
+
+select
+	section = "Net rolling balances",
+	style,
+	product,
+	closing_balance,
+	roll_balance,
+	net
+from
+	#ladder
+order by
+	id
+
+select
+	section = "Suggested Rolls",
+	style = @style,
+	account,
+	near_quantity,
+	far_quantity,
+	dealt_currency,
+	counter_currency,
+	near_date = convert(varchar(12), near_date),
+	near_price,
+	far_date = convert(varchar(12), far_date),
+	far_price
+from
+	queued_rolls
+where
+	batch_id = @batch_id
+if @@rowcount > 0
+	select
+		style = @style,
+		tally_queued_rolls = "Tally Suggested Rolls",
+		batch_id = @batch_id 
+
+
+
+go

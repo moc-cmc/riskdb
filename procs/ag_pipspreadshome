@@ -1,0 +1,297 @@
+drop procedure
+	ag_pipspreadshome
+go
+
+create procedure
+	ag_pipspreadshome
+		@login varchar(50)
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"trader_overrides",
+	"Trader Spread Overrides",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"preview_fees",
+	"Pips Spread Fee Recon",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_pip_spread",
+	"Set Account Pip Spread Template",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_overrides",
+	"Edit Account Pip Spread Override",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_contracts",
+	"Edit Pip Spread Contracts",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_pip_spread",
+	"Add Pip Spread",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_clients",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+	#accounts(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int,
+		account varchar(50) NULL,
+		pip_spread_id int NULL,
+		pip_spread varchar(200) NULL,
+		overrides int NULL)
+insert into
+	#accounts(
+		external_account_id,
+		account,
+		overrides)
+select
+	a.external_account_id,
+	a.symbol,
+	overrides = 0
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.name in("Client", "Internal")
+order by
+	a.symbol
+
+update
+	#accounts
+set
+	style = @style
+
+update
+	#accounts
+set
+	a.pip_spread_id = b.pip_spread_id
+from
+	#accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#accounts
+set
+	a.pip_spread = b.name
+from
+	#accounts a,
+	pip_spreads b
+where
+	a.pip_spread_id = b.pip_spread_id
+
+
+create table
+	#overrides(
+		external_account_id int,
+		overrides int)
+insert into
+	#overrides(
+		external_account_id,
+		overrides)
+select
+	external_account_id,
+	count(contract_id)
+from
+	pip_spread_overrides
+group by
+	external_account_id
+
+update
+	#accounts
+set
+	a.overrides = b.overrides
+from
+	#accounts a,
+	#overrides b
+where
+	a.external_account_id = b.external_account_id
+
+create table
+	#traders(
+		id int identity,
+		style varchar(250) NULL,
+		trader_id int NULL,
+		trader varchar(50) NULL,
+		overrides int NULL,
+		trader_overrides varchar(25) NULL)
+insert into
+	#traders(
+		trader)
+select
+	distinct(symbol)
+from
+	traders
+
+update
+	#traders
+set
+	a.trader_id = b.trader_id
+from
+	#traders a,
+	traders b
+where
+	a.trader = b.symbol
+
+update
+	#traders
+set
+	style = @style,
+	overrides = 0,
+	trader_overrides = "Edit"
+
+create table
+	#trader_overrides(
+		trader_id int,
+		overrides int)
+insert into
+	#trader_overrides(
+		trader_id,
+		overrides)
+select
+	trader_id,
+	count(contract_id)
+from
+	trader_spread_overrides
+group by
+	trader_id
+
+update
+	#traders
+set
+	a.overrides = b.overrides
+from
+	#traders a,
+	#trader_overrides b
+where
+	a.trader_id = b.trader_id
+
+
+select
+	style = @style,
+	add_pip_spread = "Create New Pip Spread Template",
+	preview_fees = "Preview Fees For Date"
+
+select
+	section = "Pip Spread Templates",
+	style = @style,
+	pip_spread = name,
+	edit_contracts = "Edit"
+from
+	pip_spreads
+order by
+	name
+
+
+select
+	section = "Account Overrides",
+	style,
+	account,
+	pip_spread,
+	edit_pip_spread = "Set Default Template",
+	overrides,
+	edit_overrides = "Edit"
+from
+	#accounts
+order by
+	id
+
+select
+	section = "Trader Overrides",
+	style,
+	trader,
+	overrides,
+	trader_overrides
+from
+	#traders
+order by
+	id
+go
+

@@ -1,0 +1,38 @@
+use
+	risk_edgewater
+go
+
+drop procedure
+	ag_delriskclassmtm
+go
+
+create procedure
+	ag_delriskclassmtm
+		@login varchar(50),
+		@risk_class varchar(50),
+		@trade_date datetime
+
+as
+
+delete
+	beta_risk_class_mtms
+from
+	beta_risk_class_mtms a,
+	risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+and
+	b.name = @risk_class
+and
+	convert(date, a.trade_date) = convert(date, @trade_date)
+
+
+exec
+	bag_riskclasspl
+		@login,
+		@trade_date
+
+
+go
+	
+	

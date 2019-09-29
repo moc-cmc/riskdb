@@ -1,0 +1,421 @@
+create or replace procedure
+	api_processdepositresponse
+		@allocation_request_id int,
+		@deposit_amount numeric(30, 8),
+		@success_status varchar(50),
+		@message varchar(100),
+		@error_message varchar(150)=NULL,
+		@error_code varchar(150)=NULL,
+		@rest_call_id int=NULL
+		
+
+as
+
+declare @open_request char(1)
+
+declare @debit_from varchar(50)
+declare @credit_to varchar(50)
+declare @transaction_type varchar(50)
+declare @product varchar(50)
+declare @amount float
+declare @note varchar(250)
+
+declare @tico_account_id int
+declare @debit_account_id int
+declare @credit_account_id int
+declare @transaction_type_id int
+declare @product_id int
+declare @credit_amount numeric(30, 8)
+declare @debit_amount numeric(30, 8)
+declare @credit_transaction_id int
+declare @debit_transaction_id int
+declare @now datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @transaction_date datetime
+
+declare @processing_status_id int
+declare @status_id int
+declare @status varchar(50)
+declare @fo_ext_account_id int
+declare @bo_ext_account_id int
+declare @fo_ext_account_symbol varchar(100)
+declare @bo_ext_account_symbol varchar(100)
+
+declare @response_message varchar(150)
+
+select
+	@open_request = "Y"
+from
+	allocation_requests a,
+	statuses b
+where
+	a.status_id = b.status_id
+and
+	b.name in("New")
+and
+	a.allocation_request_id = @allocation_request_id
+
+if @open_request != "Y"
+begin
+	select
+		status = "Error", 
+		message = "Problem finding open request from id",
+		allocation_request_id = @allocation_request_id
+	return
+end
+
+
+select
+        @processing_status_id = status_id
+from
+        statuses 
+where
+        name = "Processing"
+if @processing_status_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem finding 'Processing' status id"
+        return
+end
+
+
+if @message = ""
+begin
+        select
+                @message = NULL
+end
+else
+begin
+	select
+		@message = rtrim(@message) + " ("+rtrim(convert(varchar(30), @rest_call_id))+")"
+end
+
+begin tran
+	update
+		allocation_requests
+	set
+		status_id = @processing_status_id,
+		respond_timestamp = getdate(),
+		respond_message = @message
+	where
+		allocation_request_id = @allocation_request_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem intializing allocation request as processesing"
+		rollback tran
+		return
+	end
+commit tran
+
+
+if @success_status = 'true' and @error_message = ""
+begin
+	select
+		@status = "Approved"
+end
+else if @success_status = 'false' or @error_message != ""
+begin
+	select
+		@status = "Rejected"
+end
+else
+begin
+	select
+		@status = "Unknown"
+end
+
+select
+	@status_id = status_id
+from
+	statuses 
+where
+	name = @status
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding status ",
+		status_provided = @status
+	return
+end
+
+if @status != "Approved"
+begin
+	select
+		@response_message = rtrim(@error_message) + " ("+rtrim(convert(varchar(30), @rest_call_id))+")"
+
+	if @error_code != NULL and @error_code != ""
+	begin
+		select
+			@response_message = rtrim(@response_message)+" - "+rtrim(@error_code)
+	end
+      
+        begin tran
+                update
+                        allocation_requests
+                set
+                        status_id = @status_id,
+			respond_message = @response_message
+                where
+                        allocation_request_id = @allocation_request_id
+                if @@rowcount != 1
+                begin
+                        select
+                                status = "Error",
+                                message = "Problem setting status on not approved request"
+                        rollback tran
+                        return
+                end
+        commit tran
+	
+	/* EXIT NOW */
+	return
+end
+
+select
+	@amount = a.amount,
+	@tico_account_id = a.requestor_id,
+	@fo_ext_account_id = c.external_account_id,
+	@fo_ext_account_symbol = c.symbol,
+	@product = d.symbol,
+	@bo_ext_account_id = f.external_account_id,
+	@bo_ext_account_symbol = f.symbol
+from
+	allocation_requests a,
+	fo_sub_accounts b,
+	external_accounts c,
+	products d,
+	bo_master_accounts e,
+	external_accounts f
+where
+	a.fo_sub_account_id = b.fo_sub_account_id
+and
+	b.external_account_id = c.external_account_id
+and
+	a.product_id = d.product_id
+and
+	b.bo_master_account_id = e.bo_master_account_id
+and
+	e.external_account_id = f.external_account_id
+and
+	a.allocation_request_id = @allocation_request_id
+
+
+if @amount != @deposit_amount
+begin
+	select
+		status = "Error",
+		message = "Amount does not match deposit amount provided"
+	/* NEED TO DO SOMETHING HERE */
+	return
+end
+
+select
+	@debit_from = @bo_ext_account_symbol,
+	@credit_to = @fo_ext_account_symbol,
+	@transaction_type = "Allocation"
+
+
+select
+	@debit_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @debit_from
+if @debit_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Debit account not found",
+		debit_from = @debit_from
+	return
+end
+
+select
+	@credit_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @credit_to
+if @credit_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Credit account not found",
+		credit_account = @credit_to
+	return
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = @transaction_type
+if @transaction_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Transaction type not found",
+		transaction_type = @transaction_type
+	return
+end
+
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Product not found",
+		product = @product
+	return
+end
+
+select
+	@credit_amount = abs(@amount),
+	@debit_amount = abs(@amount) * -1.0
+
+
+/* deterimine transaction date by the time the request is processed
+ * using the standard 5pm-5pm schedule. Save with no timestamp
+ */
+select
+	@now = getdate()
+exec
+	r_daterangefordate
+		@now,
+		@begin_date output,
+		@end_date output
+select
+	@transaction_date = convert(date, @end_date)
+
+
+exec
+	j_nextkey
+		"account_transactions",
+		@credit_transaction_id output
+
+exec
+	j_nextkey
+		"account_transactions",
+		@debit_transaction_id output
+
+begin tran
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values(
+		@debit_transaction_id,
+		@tico_account_id,
+		@debit_account_id,
+		@transaction_type_id,
+		@transaction_date,
+		@product_id,
+		@debit_amount,
+		@note)
+	if @@rowcount != 1
+	begin 
+		select
+			status = "Error",
+			messsage = "Unable to book debit. Transfer failed",
+			debit_account = @debit_from,
+			credit_account = @credit_to,
+			amount = @amount
+		rollback tran
+		return
+	end
+
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values(
+		@credit_transaction_id,
+		@tico_account_id,
+		@credit_account_id,
+		@transaction_type_id,
+		@transaction_date,
+		@product_id,
+		@credit_amount,
+		@note)
+	if @@rowcount != 1
+	begin 
+		select
+			status = "Error",
+			messsage = "Unable to book credit. Transfer failed",
+			debit_account = @debit_from,
+			credit_account = @credit_to,
+			amount = @amount
+		rollback tran
+		return
+	end
+
+        update
+                allocation_requests
+        set
+                status_id = @status_id
+        where
+                allocation_request_id = @allocation_request_id
+        if @@rowcount != 1
+        begin
+                select
+                        status = "Error",
+                        message = "Problem setting completed status on allocation request"
+                rollback tran
+                return
+        end
+
+commit tran
+
+select
+	status = "OK",
+	message = "Processed Deposit",
+	a.account_transaction_id,
+	entered_by = b.login,
+	account = c.symbol,
+	transaction_type = d.name,
+	a.transaction_date,
+	product = e.symbol,
+	a.amount,
+	a.note
+from
+	account_transactions a,
+	tico_accounts b,
+	external_accounts c,
+	transaction_types d,
+	products e
+where
+	a.entered_by = b.account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.transaction_type_id = d.transaction_type_id
+and
+	a.currency_id = e.product_id
+and
+	a.account_transaction_id in(@debit_transaction_id, @credit_transaction_id)
+
+go

@@ -1,0 +1,29 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_confirmnonsameday
+go
+
+create procedure
+	ag_confirmnonsameday
+		@login varchar(50),
+		@account varchar(50),
+		@product varchar(50),
+		@value_date datetime,
+		@non_same_day numeric(30,4)
+as
+
+
+exec
+	ag_addpbwiresignoff
+		@login = @login,
+		@account = @account,
+		@product = @product,
+		@confirmation_type = "Non Same Day",
+		@value_date = @value_date,
+		@amount = @non_same_day
+
+
+go

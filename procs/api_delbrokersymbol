@@ -1,0 +1,88 @@
+
+drop procedure
+	api_delbrokersymbol
+go
+
+create procedure 
+	api_delbrokersymbol
+		@login varchar(25),
+		@name varchar(50),
+		@source_name varchar(100),
+		@mapping varchar(100)
+as
+
+declare @broker_id int
+declare @source_id int
+
+select
+	@broker_id=broker_id
+from
+	brokers
+where
+	symbol=@name
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Could not find broker",
+		broker=@name
+
+	return
+end
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name=@source_name
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Could not find source",
+		source=@source_name
+
+	return
+end
+
+begin tran
+
+	delete from
+		broker_symbols
+	where
+		broker_id=@broker_id
+	and
+		source_id=@source_id
+	and
+		symbol=@mapping
+
+	if (@@rowcount != 1)
+	begin
+		rollback tran
+
+		select
+			status="Error",
+			msg="Could not delete Broker mapping",
+			name=@name
+
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Broker mapping deleted",
+	name=@name
+
+exec
+	r_mappingoverview2
+			@login=@login
+
+return
+
+go
+

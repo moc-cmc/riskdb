@@ -1,0 +1,47 @@
+
+if object_id("mc2_tallyndfmarketswap") != NULL
+    drop procedure
+        mc2_tallyndfmarketswap
+go
+
+create procedure
+	mc2_tallyndfmarketswap
+		@login char(25),
+		@buy_sell varchar(50),
+		@counterparty varchar(50),
+		@quantity numeric(30,4),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@near_date datetime,
+		@near_price float,
+		@near_fixing_date datetime,
+		@far_date datetime,
+		@far_price float,
+		@far_fixing_date datetime
+as
+
+declare @deal_id int
+
+exec api_tallymarketswap
+		@login,
+		@buy_sell,
+		@counterparty,
+		@quantity,
+		@dealt_currency,
+		@counter_currency,
+		@near_date,
+		@near_price,
+		@far_date,
+		@far_price,
+		@deal_id output,
+		@near_fixing_date,
+		@far_fixing_date	
+
+
+exec
+	mc_inspectdealtrades
+		@login,
+		@deal_id
+
+
+go

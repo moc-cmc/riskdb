@@ -1,0 +1,289 @@
+
+if object_id("r_runfwdpllinks") != NULL
+    drop procedure
+        r_runfwdpllinks
+go
+
+create procedure
+	r_runfwdpllinks
+		@login char(30)
+as
+
+create table
+	#meta(
+		meta_type char(50),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"account",
+	"Current External Account P&L",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_view",
+	"Preferences",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_fwd_view",
+	"Forward P&L Preferences",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"market_rate",
+	"Number",
+	"#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"client_rate",
+	"Number",
+	"#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"pos_pl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"trades_pl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"trades_quantity",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"starting_pos",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"quantity",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"last",
+	"Number",
+	"#,##0.0000")
+insert into
+	#meta
+values(
+	"Column Format",
+	"trade_price",
+	"Number",
+	"#,##0.00####")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_pl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"trading_profit_loss",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_position",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"starting_position",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"option_delta",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_delta",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"delta",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"position_profit_loss",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"profit_loss",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_profit_loss",
+	"Number",
+	"#,##0.00") 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"previous_fwd",
+	"Previous Day FWD P&L",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"previous",
+	"Previous Day P&L",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"range",
+	"Date Range Forward P&L",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"mtd",
+	"MTD FWD P&L",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"limits",
+	"Limits",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"deltas",
+	"Deltas",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"run_name",
+	"Run Filters",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_values",
+	"Deal Trade Inspector",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"orders",
+	"Run Orders",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"sorting",
+	"Intraday P&L",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select
+	#meta.meta_type, #meta.name, #meta.action, #meta.value
+from
+	#meta
+
+go

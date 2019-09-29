@@ -1,0 +1,14 @@
+create or replace procedure
+	pd_oacodetypes
+		@login varchar(50)
+
+as
+
+select
+	name
+from
+	outside_account_code_types
+order by 
+	name
+
+go

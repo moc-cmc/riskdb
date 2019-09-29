@@ -1,0 +1,50 @@
+create or replace procedure
+	r_deleteriskserverrun
+		@login varchar(50),
+		@run varchar(100)
+
+as
+
+declare @run_id int
+declare @dupe varchar(5)
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Could not find run",
+		run = @run
+	return
+end
+
+delete from
+	risk_server_runs
+where
+	run_id = @run_id
+if @@rowcount = 1
+begin
+	select
+		status = "Success",
+		message = "Run has been removed from MC dropdown"
+end
+else
+begin
+	select
+		status = "Error",
+		message = "No run to remove from MC dropdown",
+		run = @run
+	return
+end
+
+exec
+	r_riskserverruns
+		@login=@login
+
+go
+

@@ -1,0 +1,507 @@
+
+if object_id("fxa_tallyfundspotoptions") != NULL
+    drop procedure
+        fxa_tallyfundspotoptions
+go
+
+
+create procedure
+	fxa_tallyfundspotoptions
+		@login char(25),
+		@symbol char(25),
+		@trader char(25),
+		@broker char(100),
+		@strategy char(100),
+		@quantity numeric(30,5),
+		@price float,
+		@premium_amount float=NULL,
+		@conversion_rate float,
+		@premium_settledate	datetime=NULL
+
+
+as
+
+declare @account_id int
+declare @contract_id int
+declare @trade_quantity numeric(30,0)
+declare @remainder_quantity numeric(30,0)
+declare @trade_premium float
+declare @remainder_premium float
+declare @internal_account_id int
+declare @external_account_id int
+declare @trade_id int
+declare @deal_id int
+declare @trade_date datetime
+declare @transaction_date datetime
+declare @strategy_id int
+declare @trader_id int
+declare @allocations int
+declare @ext_spot_allocation_id int
+declare @allocation float
+declare @broker_id int
+declare @product_symbol char(25)
+declare @product_id int
+declare @int_account_name char(25)
+declare @ext_account_name char(25)
+declare @note char(255)
+declare @fund_id int
+declare @instrument char(30)
+declare @underlying_contract_id int
+declare @value_date datetime
+declare @active_status_id   int
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200),
+		arguments char(255) NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"run_name",
+	"Intraday P&L",
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments from #links
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+if @fund_id = NULL
+begin
+	select
+		id = -1,
+		error = "Problem finding default fund for user"
+	return
+end
+
+select
+        @active_status_id=status_id
+from
+        statuses
+where
+        name="Active"
+if @@rowcount < 1
+begin
+        select
+                id = -1,
+                error = "Could not find Active Status"
+        return
+end
+
+select
+	@strategy_id = strategy_id
+from
+	strategies
+where
+	name = @strategy
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding strategy",
+		strategy = @strategy
+	return
+end
+
+
+select
+	@quantity = @quantity * 1000000.00000
+select
+	@account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select 	
+		id = -1,
+		error = "Problem determining current user"
+	return
+end
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = @broker
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding broker",
+		broker = @broker
+	return
+end
+
+select
+	@trader_id = trader_id
+from
+	traders
+where
+	symbol = @trader
+/*	tico_account_id = @account_id */
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding trader",
+		trader = @trader
+	return
+end
+
+
+select
+	@trade_date = getdate()
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding contract with symbol",
+		symbol = @symbol
+	return
+end
+
+select
+	@underlying_contract_id = a.underlying_contract_id
+from
+	options a,
+	option_expirations b,
+	option_contracts c
+where
+	a.option_id = b.option_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.contract_id = @contract_id
+
+select
+	@instrument = b.name
+from
+	contracts a,
+	instruments b
+where
+	a.instrument_id = b.instrument_id
+and
+	a.contract_id = @underlying_contract_id
+
+if(@premium_settledate = NULL)
+begin
+	if @instrument = "Forward"
+	begin
+		exec
+			r_contractvaluedate
+				@underlying_contract_id,
+				@trade_date,
+				@value_date output
+	end
+	else
+	begin
+		select
+			@value_date = @trade_date
+	end
+end
+else
+begin
+	select @value_date = @premium_settledate
+end
+
+exec
+	r_contractproduct
+		@contract_id,
+		@product_id output
+
+exec
+	r_nextbusinessday
+		@trade_date,
+		@transaction_date output
+
+exec
+	r_nextbusinessday
+		@transaction_date,
+		@transaction_date output
+
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "deals"
+	select
+		@deal_id = last_id
+	from
+		keys
+	where
+		relation = "deals"
+commit tran
+
+insert into
+	deals
+values(
+	@deal_id,
+	getdate())
+
+select
+	@remainder_quantity = @quantity
+
+select
+	@premium_amount = abs(@premium_amount) * sign(@quantity) * -1.0
+select 
+	@remainder_premium = @premium_amount
+	
+select
+	@ext_spot_allocation_id = 0
+select
+	@allocations = count(*)
+from
+	external_spot_allocations
+where
+	fund_id = @fund_id
+and
+	ext_spot_allocation_id > @ext_spot_allocation_id
+
+while @allocations > 0
+begin
+	select
+		@ext_spot_allocation_id = min(ext_spot_allocation_id)
+	from
+		external_spot_allocations
+	where
+		fund_id = @fund_id
+	and
+		ext_spot_allocation_id > @ext_spot_allocation_id
+
+	select
+		@external_account_id = external_account_id,
+		@internal_account_id = internal_account_id,
+		@allocation = percentage	
+	from
+		external_spot_allocations
+	where
+		ext_spot_allocation_id = @ext_spot_allocation_id
+
+	select
+		@trade_quantity = @quantity * @allocation
+	select
+		@remainder_quantity = @remainder_quantity - @trade_quantity
+
+	select
+		@trade_premium = @premium_amount * @allocation
+	select
+		@remainder_premium = @remainder_premium - @trade_premium
+
+
+	begin tran
+		update
+			keys
+		set
+			last_id = last_id + 1
+		where
+			relation = "trades"
+		select
+			@trade_id = last_id
+		from
+			keys
+		where
+			relation = "trades"
+	commit tran
+	
+	
+	insert into
+		trades
+	values(
+		@trade_id,
+		@deal_id,
+		@account_id,
+		@internal_account_id,
+		@external_account_id,
+		@trade_quantity,
+		@contract_id,
+		@price,
+		@trade_date,
+		@trader_id,
+		@strategy_id,
+		1,
+		@broker_id)
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem adding trade"
+		rollback tran
+		return
+	end
+
+	if @premium_amount != NULL
+	begin
+		select 
+			@int_account_name = symbol
+		from
+			internal_accounts
+		where
+			internal_account_id = @internal_account_id
+			
+		select 
+			@ext_account_name = symbol
+		from
+			external_accounts
+		where
+			external_account_id = @external_account_id
+		
+		select 
+			@note = convert(char(255), @trade_id)
+
+		exec
+			r_contractproduct
+				@contract_id,
+				@product_id output
+
+		
+		exec
+			s_addaccountoptpremium
+				@login,
+				@ext_account_name,
+				@premium_settledate,
+				@trade_premium,
+				@trade_id,
+				@conversion_rate
+
+
+	end
+	
+	select
+		@allocations = count(*)
+	from
+		external_spot_allocations
+	where
+		fund_id = @fund_id
+	and
+		ext_spot_allocation_id > @ext_spot_allocation_id
+	
+end
+	
+select
+	@internal_account_id = remainder_int_account_id,
+	@external_account_id = remainder_ext_account_id
+from
+	external_spot_allocations
+where
+	ext_spot_allocation_id = @ext_spot_allocation_id
+if @@rowcount != 1
+begin
+	select
+		@internal_account_id = spot_internal_account_id,
+		@external_account_id = spot_external_account_id
+	from
+		default_accounts
+	where
+		tico_account_id = @account_id
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem finding default accounts for tally"
+		return
+	end
+end
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "trades"
+	select
+		@trade_id = last_id
+	from
+		keys
+	where
+		relation = "trades"
+commit tran
+
+insert into
+	trades
+values(
+	@trade_id,
+	@deal_id,
+	@account_id,
+	@internal_account_id,
+	@external_account_id,
+	@remainder_quantity,
+	@contract_id,
+	@price,
+	@trade_date,
+	@trader_id,
+	@strategy_id,
+	1,
+	@broker_id)
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem adding trade"
+	rollback tran
+	return
+end
+
+insert into
+    deal_notifications
+    (source_id,
+     deal_id,
+     status_id,
+     capture_date,
+     notify_date,
+     error)
+values
+    (1,
+     @deal_id,
+     @active_status_id,
+     getdate(),
+     getdate(),
+     "")
+
+select
+	@ext_account_name = symbol
+from
+	external_accounts
+where
+	external_account_id = @external_account_id
+
+exec
+	s_addaccountoptpremium
+		@login,
+		@ext_account_name,
+		@value_date,
+		@remainder_premium,
+		@trade_id,
+		@conversion_rate
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+exec
+	r_intradaypl
+		@login
+	
+go

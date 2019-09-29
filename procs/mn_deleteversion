@@ -1,0 +1,96 @@
+use
+	risk_atglobal
+go
+
+drop procedure
+	mn_deleteversion
+go
+
+create procedure
+	mn_deleteversion
+		@login varchar(50),
+		@master_allocation varchar(50),
+		@version int
+as
+
+declare @master_allocation_id int
+declare @ma_version_id int
+declare @status varchar(50)
+declare @active_ma_versions int
+declare @active_status_id int
+
+select
+	@master_allocation_id = master_allocation_id
+from
+	master_allocations
+where
+	name = @master_allocation
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Master allocation not found",
+		master_allocation = @master_allocation
+	return
+end
+
+select
+	@ma_version_id = ma_version_id
+from
+	ma_versions
+where
+	master_allocation_id = @master_allocation_id
+and
+	version = @version
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Version not found",
+		master_allocation = @master_allocation,
+		version = @version
+	return
+end
+
+select
+	@status = a.name
+from
+	statuses a,
+	ma_versions b
+where
+	a.status_id = b.status_id
+and
+	b.ma_version_id = @ma_version_id
+
+if @status != "Queued"
+begin
+	select
+		status = "Error",
+		message = "Only queued versions can be removed"
+	return
+end
+
+
+delete
+
+from
+	ma_versions
+where
+	ma_version_id = @ma_version_id
+
+delete
+
+from
+	sub_accounts
+where
+	ma_version_id = @ma_version_id
+
+
+exec
+	mn_maversions
+		@login,
+		@master_allocation
+
+
+go
+

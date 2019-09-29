@@ -1,0 +1,39 @@
+drop procedure tt_isfundagency
+go
+
+create procedure
+	tt_isfundagency
+		@source_id int,
+		@mapping varchar(30),
+		@is_fund_agency char(1)=NULL output
+
+as
+
+declare @counterparty_id int
+
+select
+	@counterparty_id = a.counterparty_id
+from
+	counterparties a,
+	counterparty_symbols b,
+	fund_agency_counterparties c
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @mapping
+
+select
+	@is_fund_agency = "Y"
+
+if @counterparty_id = NULL
+	select
+		@is_fund_agency = "N"
+
+
+go
+
+	

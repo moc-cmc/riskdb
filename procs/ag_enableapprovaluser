@@ -1,0 +1,73 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	ag_enableapprovaluser
+go
+
+create procedure
+	ag_enableapprovaluser
+		@login varchar(50),
+		@user_name varchar(50)
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @enabled_by int
+
+select
+	@enabled_by = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @enabled_by = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@admin_level = admin_level
+from
+	approval_users
+where
+	tico_account_id = @enabled_by
+if @admin_level != 0
+begin
+	select
+		status = "Restricted Access",
+		message = "Your account is not configured to perform this operation"
+	return
+end
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @user_name
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve user name",
+		user_name = @user_name
+	return
+end
+
+update
+	approval_users
+set
+	admin_level = 10
+where
+	tico_account_id = @tico_account_id
+
+exec
+	ag_approvaladminhome
+		@login = @login
+
+go

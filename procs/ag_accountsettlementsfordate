@@ -1,0 +1,615 @@
+
+drop procedure
+	ag_accountsettlementsfordate
+go
+	
+
+create procedure
+	ag_accountsettlementsfordate
+		@login varchar(50),
+		@account varchar(50),
+		@begin_date datetime,
+		@end_date datetime,
+		@transaction_date datetime,
+		@transaction_id int,
+		@product varchar(50)=NULL
+as
+
+
+declare @external_account_id int
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @currency_id int
+declare @total_converted float
+declare @product_id int
+declare @total float
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"transaction_id",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"transaction_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"end_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"begin_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"range_transactions",
+	"Range Transaction History",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"product",
+	"Account Settlements For Date",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_tran",
+	"Edit Ledger Entry",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"rate",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"conversion_rate",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"counter_amt",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dealt_amt",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_balance",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"converted_balance",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closed_balance",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+
+select
+	@currency_id = currency_id
+from
+	account_transactions
+where
+	account_transaction_id = @transaction_id
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+create table
+	#trades(
+		trade_id int,
+		external_account_id int,
+		trade_date datetime,
+		contract_id int,
+		value_date datetime,
+		product_id int,
+		product_qty float,
+		currency_id int,
+		currency_qty float,
+		price float,
+		broker_id int,
+		counterparty_id int,
+		amount float NULL)
+insert into
+	#trades(
+		trade_id,
+		external_account_id,
+		trade_date,
+		contract_id,
+		value_date,
+		product_id,
+		product_qty,
+		currency_id,
+		currency_qty,
+		price,
+		broker_id,
+		counterparty_id)
+select
+	a.trade_id,
+	a.external_account_id,
+	a.trade_date,
+	a.contract_id,
+	a.value_date,
+	b.product_id,
+	a.quantity * -1.0,
+	b.currency_id,
+	a.quantity * a.price,
+	a.price,
+	a.broker_id,
+	a.counterparty_id
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, a.value_date) = convert(date, @transaction_date)
+and
+	a.external_account_id = @external_account_id
+
+create table
+	#balances(
+		product_id int,
+		balance float)
+
+insert into
+	#balances
+select
+	product_id,
+	product_qty
+from
+	#trades
+
+insert into
+	#balances
+select
+	currency_id,
+	currency_qty
+from
+	#trades
+
+create table
+	#net_balances(
+		style varchar(250) NULL,
+		product_id int,
+		balance float,
+		value_date datetime NULL,
+		closed_balance float NULL,
+		net_balance float NULL,
+		converted_balance float NULL,
+		conversion_rate float NULL)
+
+insert into
+	#net_balances(
+		product_id,
+		balance)
+select
+	product_id,
+	sum(balance)
+from
+	#balances
+group by
+	product_id
+
+update
+	#net_balances
+set
+	value_date = @transaction_date,
+	closed_balance = 0.0,
+	converted_balance = 0.0,
+	style = @style
+
+update
+	#net_balances
+set
+	style = @selected_style
+where
+	product_id = @product_id
+
+update
+	#net_balances
+set
+	a.closed_balance = b.amount * -1.0,
+	a.conversion_rate = b.conversion_rate,
+	a.value_date = b.transaction_date,
+	a.converted_balance = b.converted_amount
+from
+	#net_balances a,
+	settlement_balances b
+where
+	a.product_id = b.product_id
+and
+	b.external_account_id = @external_account_id
+and
+	convert(date, b.transaction_date) = convert(date, @transaction_date)
+
+update
+	#net_balances
+set
+	closed_balance = 0.0,
+	net_balance = balance,
+	converted_balance = balance
+where
+	product_id = @currency_id
+
+
+update
+	#net_balances
+set
+	net_balance = balance + closed_balance
+
+update
+	#net_balances
+set
+	style = @error_style
+where
+	product_id != @currency_id
+and
+	abs(net_balance) > 1.0
+	
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		account varchar(50) NULL,
+		product varchar(50) NULL,
+		value_date varchar(11) NULL,
+		balance float NULL,
+		closed_balance float NULL,
+		net_balance float NULL,
+		converted_balance float NULL,
+		conversion_rate float NULL)
+insert into
+	#output
+select
+	a.style,
+	account = @account,
+	product = b.symbol,
+	value_date = convert(varchar(11), a.value_date),
+	a.balance,
+	a.closed_balance,
+	a.net_balance,
+	a.converted_balance,
+	a.conversion_rate
+from
+	#net_balances a,
+	products b
+where
+	a.product_id = b.product_id
+and
+	b.name not like "%CFD"
+order by
+	b.symbol
+
+select
+	@total_converted = sum(converted_balance)
+from
+	#output
+
+if @total_converted != NULL
+	insert into
+		#output(
+			style,
+			account,
+			converted_balance)
+values(
+	@total_style,
+	"Total",
+	@total_converted)
+
+create table
+	#back_to_transactions(
+		style varchar(250),
+		range_transactions varchar(50),
+		account varchar(50),
+		begin_date datetime,
+		end_date datetime)
+
+		
+create table
+	#trades_output(
+		id int identity,
+		style varchar(250) NULL,
+		trade_id varchar(50) NULL,
+		account varchar(50) NULL,
+		trade_date datetime NULL,
+		dealt_ccy varchar(50) NULL,
+		dealt_amt float NULL,
+		counter_ccy varchar(50) NULL,
+		counter_amt float NULL,
+		rate float NULL,
+		counterparty varchar(50) NULL,
+		platform varchar(50) NULL,
+		amount float NULL)
+
+if @product != NULL
+begin
+	insert into
+		#back_to_transactions
+	values(
+		@style,
+		"Return To Transaction History",
+		@account,
+		@begin_date,
+		@end_date)
+
+	select
+		@product_id = product_id
+	from
+		products
+	where
+		symbol = @product
+	update
+		#trades
+	set
+		amount = product_qty
+	where
+		product_id = @product_id
+	update
+		#trades
+	set
+		amount = currency_qty
+	where
+		currency_id = @product_id
+
+	insert into
+		#trades_output(
+			style,
+			trade_id,
+			account,
+			trade_date,
+			dealt_ccy,
+			dealt_amt,
+			counter_ccy,
+			counter_amt,
+			rate,
+			counterparty,
+			platform,
+			amount)
+	select
+		style = @style,
+		convert(varchar(50), a.trade_id),
+		b.symbol,
+		a.trade_date,
+		c.symbol,
+		a.product_qty,
+		d.symbol,
+		a.currency_qty,
+		a.price,
+		e.name,
+		f.symbol,
+		a.amount
+	from
+		#trades a,
+		external_accounts b,
+		products c,
+		products d,
+		counterparties e,
+		brokers f
+	where
+		a.external_account_id= b.external_account_id
+	and
+		a.product_id = c.product_id
+	and
+		a.currency_id = d.product_id
+	and
+		a.counterparty_id = e.counterparty_id
+	and
+		a.broker_id = f.broker_id
+	and
+		a.amount != NULL
+	order by
+		a.trade_date
+
+	select
+		@total = sum(amount)
+	from
+		#trades_output
+	if @total != NULL
+		insert into
+			#trades_output(
+				style,
+				trade_id,
+				amount)
+		values(
+			@total_style,
+			rtrim(@product) + " Total",
+			@total)
+
+end
+
+
+
+select
+	section = "Back To Transactions",
+	style,
+	range_transactions,
+	account,
+	begin_date,
+	end_date
+from
+	#back_to_transactions
+	
+	
+
+select
+	section = "FX Settlement Balances",
+	begin_date = @begin_date,
+	end_date = @end_date,
+	transaction_date = @transaction_date,
+	transaction_id = @transaction_id,
+	style,
+	account,
+	product,
+	value_date,
+	balance,
+	closed_balance,
+	net_balance,
+	converted_balance,
+	conversion_rate
+from
+	#output
+order by
+	id
+
+select
+	section = rtrim(@product) + " Trades Settling " + convert(varchar(11), @transaction_date),
+	style,
+	trade_id,
+	account,
+	trade_date,
+	dealt_ccy,
+	dealt_amt,
+	counter_ccy,
+	counter_amt,
+	rate,
+	counterparty,
+	platform,
+	amount
+from
+	#trades_output
+order by
+	id
+
+go

@@ -1,0 +1,152 @@
+use
+	risk_home
+go
+
+if object_id("api_tallyb2bforwardfordate") != NULL
+    drop procedure
+        api_tallyb2bforwardfordate
+go
+
+create procedure
+	api_tallyb2bforwardfordate
+		@login varchar(50),
+		@trade_date datetime,
+		@tally_type varchar(25),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@counterparty varchar(50),
+		@quantity numeric(30,2),
+		@dealt_currency varchar(20),
+		@counter_currency varchar(20),
+		@client_price float,
+		@client_val_date datetime,
+		@market_price float,
+		@market_val_date datetime,
+		@deal_id int output,
+		@client_fixing_date datetime = NULL,
+		@market_fixing_date datetime = NULL
+
+as
+
+
+declare @symbol varchar(50)
+declare @client_trade_id int
+declare @market_trade_id int
+
+declare @client_quantity numeric(30,4)
+declare @market_quantity numeric(30,4)
+
+declare @client_external_account varchar(50)
+declare @market_external_account varchar(50)
+declare @market_sales_code varchar(25)
+
+
+if @client_buys_sells = "Client Buys"
+begin
+	select
+		@client_quantity = abs(@quantity) * -1.0
+end
+if @client_buys_sells = "Client Sells"
+begin
+	select
+		@client_quantity = abs(@quantity)
+end
+
+select
+	@market_quantity = @client_quantity * -1.0
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
+
+
+if @client_val_date != NULL
+begin
+	if @market_val_date = NULL
+		select
+			@market_val_date = @client_val_date
+end
+
+select
+	@client_external_account = a.symbol
+from
+	external_accounts a,
+	traders b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @client_user
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Could not found account for client user",
+		client_user = @client_user
+	return
+end
+
+select
+	@market_external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @counterparty
+	return
+end
+
+select
+	@market_sales_code = "None"
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @client_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "B2B Forward",
+		@trade_type = @tally_type,
+		@external_account = @client_external_account,
+		@quantity = @client_quantity,
+		@symbol = @symbol,
+		@value_date = @client_val_date,
+		@price = @client_price,
+		@trade_date = @trade_date,
+		@trader = @client_user,
+		@fixing_date = @client_fixing_date
+
+exec 
+	r_inserttradenotification @client_trade_id
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @market_trade_id output,
+		@deal_id = @deal_id,
+		@tally_type = @tally_type,
+		@deal_type = "B2B Forward",
+		@trade_type = @tally_type,
+		@external_account = @market_external_account,
+		@counterparty = @counterparty,
+		@quantity = @market_quantity,
+		@symbol = @symbol,
+		@value_date = @market_val_date,
+		@price = @market_price,
+		@trade_date = @trade_date,
+		@sales_code = @market_sales_code,
+		@fixing_date = @market_fixing_date
+	
+
+exec
+	r_inserttradenotification @market_trade_id
+
+go

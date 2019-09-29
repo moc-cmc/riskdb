@@ -1,0 +1,1445 @@
+
+if object_id("r_clientagstatement2") != null
+  drop procedure
+    r_clientagstatement2
+go
+
+create procedure
+	r_clientagstatement2
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @run_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @fx_transaction_type_id int
+
+exec
+	r_clientstatementlinks
+		@login
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+if @trade_date = NULL
+	select
+		@trade_date = max(bo_trade_date)
+	from
+		committed_daily_revals
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evalution Currency not found"
+	return
+end
+
+
+if @run_name = NULL
+begin
+	select
+		@run_name = name
+	from
+		funds
+	where
+		fund_id = @fund_id
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+select
+  section = @run_name + " - Trading Statement",
+  customer = @run_name,
+	statement_begin_date = @begin_date,
+	statement_end_date = @end_date
+
+create table
+	#external_accounts(
+		external_account_id int)
+
+insert into
+	#external_accounts(
+		external_account_id)
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts(
+			external_account_id)
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+select
+	@fx_transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "FX Settlement"
+if @fx_transaction_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "FX Settlement transaction type not found"
+	return
+end
+
+/* Fetch all the trades */
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+    trade_type_id int,
+		trade_date datetime,
+		external_account_id int,
+		quantity float,
+		contract_id int,
+		product_id int,
+		currency_id int,
+		price float,
+		value_date datetime,
+		margin float NULL,
+		product_qty float NULL,
+		product_equiv float NULL,
+		currency_qty float NULL,
+		currency_equiv float NULL,
+		evaluation_currency_id int)
+insert into
+	#trades(
+		trade_id,
+		deal_id,
+    trade_type_id,
+		trade_date,
+		external_account_id,
+		quantity,
+		contract_id,
+		product_id,
+		currency_id,
+		price,
+		value_date,
+		margin,
+		evaluation_currency_id)
+select
+	a.trade_id,
+	a.deal_id,
+  a.trade_type_id,
+	a.trade_date,
+	a.external_account_id,
+	a.quantity,
+	a.contract_id,
+	c.product_id,
+	c.currency_id,
+	a.price,
+	a.value_date,
+	margin = 0.025,
+	evaluation_currency_id = @evaluation_currency_id
+from
+	trades a,
+	#external_accounts b,
+	forwards c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = c.contract_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+update
+	#trades
+set
+	a.quantity = a.quantity * -1.0
+from
+	#trades a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+and
+	c.name = "Client" 
+
+update
+	#trades
+set
+	product_qty = quantity,
+	currency_qty = quantity * price * -1.0
+
+
+/* Set the margin rates */
+update
+	#trades
+set
+	a.margin = b.margin
+from
+	#trades a,
+	product_margins b
+where
+	a.product_id = b.product_id
+and
+	b.margin > a.margin
+
+update
+	#trades
+set
+	a.margin = b.margin
+from
+	#trades a,
+	product_margins b
+where
+	a.currency_id = b.product_id
+and
+	b.margin > a.margin
+
+/* End Trade Fetch */
+
+/* Fetch all account transactions */
+
+create table
+	#account_transactions(
+		account_transaction_id int,
+		entered_by int,
+		external_account_id int,
+		transaction_type_id int,
+		transaction_date datetime,
+		currency_id int,
+		amount float,
+		evaluation_currency_id int,
+		begin_equiv float NULL,
+		end_equiv float NULL)
+insert into
+	#account_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		evaluation_currency_id)
+select
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	a.amount,
+	evaluation_currency_id = @evaluation_currency_id
+from
+	account_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	convert(date, a.transaction_date) <= convert(date, @end_date)
+
+create table
+	#all_products(
+		product_id int)
+insert into
+	#all_products
+select
+	distinct(product_id)
+from
+	#trades
+insert into
+	#all_products
+select
+	distinct(currency_id)
+from
+	#trades
+insert into
+	#all_products
+select
+	distinct(currency_id)
+from
+	#account_transactions
+
+create table
+	#conversion_rates(
+		product_id int,
+		evaluation_currency_id int NULL,
+		begin_rate float NULL,
+		end_rate float NULL)
+insert into
+	#conversion_rates(
+		product_id)
+select
+	distinct(product_id)
+from
+	#all_products
+
+/* For conversion rate from the @evaluation_currency_id to the external
+ * account's native, we'll make sure that we populate conversion rates with
+ * those currencies as well */
+insert into
+  #conversion_rates(
+    product_id)
+select distinct
+  b.evaluation_currency_id
+from
+  #external_accounts a,
+  external_accounts b
+where
+  a.external_account_id = b.external_account_id
+and
+  b.evaluation_currency_id not in (
+    select
+      product_id
+    from
+      #conversion_rates
+  )
+
+update
+	#conversion_rates
+set
+	evaluation_currency_id = @evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	begin_rate = 1.0,
+	end_rate = 1.0
+where
+	product_id = evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	a.begin_rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	a.evaluation_currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @begin_date)
+
+update
+	#conversion_rates
+set
+	a.begin_rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	a.evaluation_currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @begin_date)
+and
+	a.begin_rate = NULL
+
+update
+	#conversion_rates
+set
+	a.end_rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	a.evaluation_currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+
+update
+	#conversion_rates
+set
+	a.end_rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	a.evaluation_currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.end_rate = NULL
+
+
+update
+	#trades
+set
+	a.product_equiv = a.product_qty * b.end_rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+
+update
+	#trades
+set
+	a.currency_equiv = a.currency_qty * b.end_rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+
+update
+	#account_transactions
+set
+	a.begin_equiv = a.amount * b.begin_rate
+from
+	#account_transactions a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+
+update
+	#account_transactions
+set
+	a.end_equiv = a.amount * b.end_rate
+from
+	#account_transactions a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+/* Find the open trade equity */
+create table
+	#open_trade_equity(
+		external_account_id int,
+		product_id int,
+		quantity float,
+		equiv float NULL)
+
+insert into
+	#open_trade_equity
+select
+	external_account_id,
+	product_id,
+	sum(product_qty),
+	sum(product_equiv)
+from
+	#trades
+where
+	value_date > @end_date
+group by
+	external_account_id,
+	product_id
+insert into
+	#open_trade_equity
+select
+	external_account_id,
+	currency_id,
+	sum(currency_qty),
+	sum(currency_equiv)
+from
+	#trades
+where
+	value_date > @end_date
+group by
+	external_account_id,
+	currency_id
+
+create table
+	#net_open_equity(
+		external_account_id int,
+		product_id int,
+		quantity float NULL,
+		equiv float NULL)
+insert into
+	#net_open_equity
+select
+	external_account_id,
+	product_id,
+	sum(quantity),
+	sum(equiv)
+from
+	#open_trade_equity
+group by
+	external_account_id,
+	product_id
+
+	
+
+/* Find the Maturing Balances  */
+
+create table
+	#maturing_balances(
+		external_account_id int,
+		product_id int,
+		quantity float)
+insert into
+	#maturing_balances
+select
+	external_account_id,
+	product_id,
+	sum(product_qty) 
+from
+	#trades
+where
+	convert(date, value_date) = convert(date, @end_date)
+group by
+	external_account_id,
+	product_id
+
+insert into
+	#maturing_balances
+select
+	external_account_id,
+	currency_id,
+	sum(currency_qty)
+from
+	#trades
+where
+	convert(date, value_date) = convert(date, @end_date)
+group by
+	external_account_id,
+	currency_id
+
+create table
+	#maturing_totals(
+		external_account_id int,
+		product_id int,
+		quantity float)
+insert into
+	#maturing_totals
+select
+	external_account_id,
+	product_id,
+	sum(quantity)
+from
+	#maturing_balances
+group by
+	external_account_id,
+	product_id
+
+/* Get the opening and closing balances by currency */
+create table
+	#opening_balances(
+		external_account_id int,
+		product_id int,
+		quantity float,
+		equiv float NULL)
+insert into
+	#opening_balances
+select
+	external_account_id,
+	currency_id,
+	sum(amount),
+	sum(begin_equiv)
+from
+	#account_transactions
+where
+	convert(date, transaction_date) < convert(date, @end_date)
+group by
+	external_account_id,
+	currency_id
+
+create table
+	#closing_balances(
+		external_account_id int,
+		product_id int,
+		quantity float,
+		equiv float NULL)
+insert into
+	#closing_balances
+select
+	external_account_id,
+	currency_id,
+	sum(amount),
+	sum(end_equiv)
+from
+	#account_transactions
+where
+	transaction_date < @end_date
+group by
+	external_account_id,
+	currency_id
+
+create table
+	#settlements(
+		external_account_id int,
+		product_id int,
+		quantity float,
+		equiv float)
+insert into
+	#settlements
+select
+	external_account_id,
+	currency_id,
+	sum(amount),
+	sum(end_equiv)
+from
+	#account_transactions
+where
+	transaction_type_id = @fx_transaction_type_id
+and
+	transaction_date >= @begin_date
+and
+	transaction_date < @end_date
+group by
+	external_account_id,
+	currency_id
+
+create table
+	#cash(
+		external_account_id int,
+		product_id int,
+		quantity float,
+		equiv float)
+insert into
+	#cash
+select
+	external_account_id,
+	currency_id,
+	sum(amount),
+	sum(end_equiv)
+from
+	#account_transactions
+where
+	transaction_date >= @begin_date
+and
+	transaction_date < @end_date
+and
+	transaction_type_id != @fx_transaction_type_id
+and
+	transaction_type_id not in(
+		select
+			transaction_type_id
+		from
+			fee_transaction_types)
+group by
+	external_account_id,
+	currency_id
+
+
+create table
+	#fees(
+		external_account_id int,
+		product_id int,
+		quantity float,
+		equiv float)
+insert into
+	#fees
+select
+	a.external_account_id,
+	a.currency_id,
+	sum(a.amount),
+	sum(a.end_equiv)
+from
+	#account_transactions a,
+	fee_transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date < @end_date
+group by
+	a.external_account_id,
+	a.currency_id
+
+
+create table
+	#net_activity(
+		external_account_id int,
+		product_id int,
+		opening_balance float NULL,
+		maturing_fx float NULL,
+		cash float NULL,
+		fees float NULL,
+		settled_premium float NULL,
+		closing_balance float NULL,
+		unsettled_prem float NULL,
+		open_position float NULL,
+		open_option_pos float NULL,
+		total_equity float NULL)
+insert into
+	#net_activity(
+		external_account_id,
+		product_id)
+select
+	a.external_account_id,
+	b.product_id
+from
+	#external_accounts a,
+	#conversion_rates b
+update
+	#net_activity
+set
+	opening_balance = 0.0,
+	maturing_fx = 0.0,
+	cash = 0.0,
+	fees = 0.0,
+	settled_premium = 0.0,
+	closing_balance = 0.0,
+	unsettled_prem = 0.0,
+	open_position = 0.0,
+	open_option_pos = 0.0,
+	total_equity = 0.0
+
+update
+	#net_activity
+set
+	a.opening_balance = b.quantity
+from
+	#net_activity a,
+	#opening_balances b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+	#net_activity
+set
+	a.maturing_fx = b.quantity
+from
+	#net_activity a,
+	#settlements b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+	#net_activity
+set
+	a.fees = b.quantity
+from
+	#net_activity a,
+	#fees b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+	
+update
+	#net_activity
+set
+	a.cash = b.quantity
+from
+	#net_activity a,
+	#cash b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+	#net_activity
+set
+	a.closing_balance = b.quantity
+from
+	#net_activity a,
+	#closing_balances b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+	#net_activity
+set
+	a.open_position = b.quantity
+from
+	#net_activity a,
+	#net_open_equity b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+  #net_activity
+set
+  total_equity = closing_balance + unsettled_prem + open_position + open_option_pos
+
+/* Create the Equity Value Summary */
+create table
+  #equity_value_summary(
+    external_account_id int,
+    product_id int,
+    evaluation_currency_id int,
+    total_equity float,
+    conversion_rate float NULL,
+    converted_value float NULL)
+insert into
+  #equity_value_summary (
+    external_account_id,
+    product_id,
+    evaluation_currency_id,
+    total_equity
+  )
+select
+  a.external_account_id,
+  a.product_id,
+  @evaluation_currency_id,
+  a.total_equity
+from
+  #net_activity a
+
+update
+  #equity_value_summary
+set
+  evaluation_currency_id = c.evaluation_currency_id,
+  conversion_rate = b.end_rate / d.end_rate,
+  converted_value = a.total_equity * b.end_rate / d.end_rate
+from
+  #equity_value_summary a,
+  #conversion_rates b,
+  external_accounts c,
+  #conversion_rates d
+where
+  a.product_id = b.product_id
+and
+  a.evaluation_currency_id = b.evaluation_currency_id
+and
+  a.external_account_id = c.external_account_id
+and
+  c.evaluation_currency_id = d.product_id
+and
+  a.evaluation_currency_id = d.evaluation_currency_id
+
+
+/* Calculate Margin Summary */
+create table
+  #margin_summary(
+    external_account_id int,
+    net_equity float,
+    net_margin_use float NULL,
+    available_funds float NULL,
+    currency_id int NULL)
+insert into
+  #margin_summary (
+    external_account_id,
+    net_equity
+  )
+select
+  external_account_id,
+  net_equity = sum(converted_value)
+from
+  #equity_value_summary
+group by
+  external_account_id
+
+
+/* Calculate Margin Usage */
+create table
+  #product_balances(
+    external_account_id int,
+    product_id int,
+    margin float,
+    quantity float,
+    equiv float)
+
+insert into
+  #product_balances(
+    external_account_id,
+    product_id,
+    margin,
+    quantity,
+    equiv)
+select
+  external_account_id,
+  product_id,
+  margin,
+  sum(product_qty),
+  sum(product_equiv)
+from
+  #trades
+group by
+	external_account_id,
+	product_id,
+	margin
+
+insert into
+  #product_balances(
+    external_account_id,
+    product_id,
+    margin,
+    quantity,
+    equiv)
+select
+  external_account_id,
+  currency_id,
+  margin,
+  sum(currency_qty),
+  sum(currency_equiv)
+from
+  #trades
+group by
+	external_account_id,
+	currency_id,
+	margin
+
+/* Calculate Account > Margin > Product margin usage */
+create table
+  #account_margin_product_usage(
+    external_account_id int,
+    margin float,
+    product_id int,
+    quantity float,
+    equiv float,
+    margin_use float NULL)
+insert into
+  #account_margin_product_usage(
+    external_account_id,
+    margin,
+    product_id,
+    quantity,
+    equiv)
+select
+  external_account_id,
+  margin,
+  product_id,
+  sum(quantity),
+  sum(equiv)
+from
+  #product_balances
+group by
+	external_account_id,
+	margin,
+	product_id
+
+delete
+  #account_margin_product_usage
+where
+  equiv >= 0
+
+update
+  #account_margin_product_usage
+set
+  margin_use = margin * abs(equiv)
+
+/* Calculate Account > Margin margin usage */
+create table
+  #account_margin_usage(
+    external_account_id int,
+    margin float,
+    equiv float,
+    margin_use float NULL)
+insert into
+  #account_margin_usage(
+    external_account_id,
+    margin,
+    equiv,
+    margin_use)
+select
+  external_account_id,
+  margin,
+  total_equiv = sum(equiv),
+  sum(margin_use)
+from
+  #account_margin_product_usage
+group by
+	external_account_id,
+	margin
+
+/* Calculate Account margin usage */
+create table
+  #account_usage(
+    external_account_id int,
+    equiv float NULL,
+    margin_use float NULL)
+insert into
+  #account_usage(
+    external_account_id,
+    equiv,
+    margin_use)
+select
+  external_account_id,
+  sum(equiv),
+  sum(margin_use)
+from
+  #account_margin_usage
+group by
+	external_account_id
+
+/* Update margin summary */
+update
+  #margin_summary
+set
+  net_margin_use = b.margin_use,
+  available_funds = a.net_equity - b.margin_use
+from
+  #margin_summary a,
+  #account_usage b
+where
+  a.external_account_id = b.external_account_id
+
+select section = "#margin_summary", * from #margin_summary
+
+/* DEBUGGING
+select "#product_balances", external_account_id, margin, product=b.symbol, quantity=convert(numeric(30,0), quantity), equiv=convert(numeric(30,0), equiv) from #product_balances a join products b on a.product_id = b.product_id order by external_account_id, margin, product
+select "#account_margin_product_usage", external_account_id, margin, product=b.symbol, quantity=convert(numeric(30,0), quantity), equiv=convert(numeric(30,0), equiv), margin_use=convert(numeric(30,0), margin_use) from #account_margin_product_usage a join products b on a.product_id = b.product_id order by external_account_id, margin, product
+select "#account_margin_usage", external_account_id, margin, equiv=convert(numeric(30,0), equiv), margin_use=convert(numeric(30,0), margin_use) from #account_margin_usage order by external_account_id, margin
+select "#account_usage", * from #account_usage
+select "#account_usage", external_account_id, equiv=convert(numeric(30,0), equiv), margin_use=convert(numeric(30,0), margin_use) from #account_usage order by external_account_id
+*/
+
+/* Calculate Open Trades */
+create table
+  #open_trades(
+    row_kind int,
+    contract varchar(25),
+    value_date datetime NULL,
+    trade_id int NULL,
+    buy_sell varchar(10) NULL,
+    symbol varchar(25),
+    dealt_amount float,
+    rate float NULL,
+    counter_amount float,
+    market_rate float NULL,
+    market_value float NULL,
+    trade_date datetime NULL,
+    style varchar(75))
+insert into
+  #open_trades(
+    row_kind,
+    contract,
+    value_date,
+    trade_id,
+    buy_sell,
+    symbol,
+    dealt_amount,
+    rate,
+    counter_amount,
+    trade_date,
+    style)
+select
+  row_kind = 0,
+  contract = c.symbol,
+  a.value_date,
+  a.trade_id,
+  buy_sell = case when a.product_qty >= 0 then "Bought" else "Sold" end,
+  symbol = c.symbol,
+  dealt_amount = a.product_qty,
+  rate = a.price,
+  counter_amount = a.currency_qty,
+  a.trade_date,
+	style = "background:#FFFFFF;border: 1px solid white"
+from
+  #trades a,
+  trade_types b,
+  contracts c
+where
+  a.trade_type_id = b.trade_type_id
+and
+  a.contract_id = c.contract_id
+and
+  a.value_date >= @end_date
+order by
+  c.symbol,
+  a.trade_id
+
+update
+  #open_trades
+set
+  market_rate = b.close_price,
+  market_value = -b.native_unrealized_pl_to_date
+from
+  #open_trades a,
+  committed_daily_revals b
+where
+  a.trade_id = b.trade_id
+and
+  b.reval_date = @end_date
+
+insert into
+  #open_trades (
+    row_kind,
+    contract,
+    symbol,
+    dealt_amount,
+    counter_amount,
+    market_value,
+    style
+  )
+select
+  row_kind = 1,
+  contract,
+  symbol = "<b>Total</b>",
+  dealt_amount = sum(dealt_amount),
+  counter_amount = sum(counter_amount),
+  market_value = sum(market_value),
+	style = "background:#fff;border:1px solid white;height:2em;font-weight:bold"
+from
+  #open_trades
+group by
+  contract
+
+update
+  #open_trades
+set
+  dealt_amount = abs(dealt_amount),
+  counter_amount = abs(counter_amount)
+where
+  row_kind = 0
+
+
+/* Calculate Maturing Trades */
+create table
+  #maturing_trades(
+    row_kind int,
+    contract varchar(25),
+    value_date datetime NULL,
+    trade_id int NULL,
+    buy_sell varchar(10) NULL,
+    symbol varchar(25),
+    rate float NULL,
+    dealt_amount float,
+    dealt_ccy varchar(10) NULL,
+    counter_amount float,
+    counter_ccy varchar(10) NULL,
+    trade_date datetime NULL,
+    style varchar(75))
+insert into
+  #maturing_trades(
+    row_kind,
+    contract,
+    value_date,
+    trade_id,
+    buy_sell,
+    symbol,
+    rate,
+    dealt_amount,
+    dealt_ccy,
+    counter_amount,
+    counter_ccy,
+    trade_date,
+    style)
+select
+  row_kind = 0,
+  contract = c.symbol,
+  a.value_date,
+  a.trade_id,
+  buy_sell = case when a.product_qty >= 0 then "Bought" else "Sold" end,
+  symbol = c.symbol,
+  rate = a.price,
+  dealt_amount = a.product_qty,
+  dealt_ccy = d.symbol,
+  counter_amount = a.currency_qty,
+  counter_ccy = e.symbol,
+  a.trade_date,
+	style = "background:#FFFFFF;border: 1px solid white"
+from
+  #trades a,
+  trade_types b,
+  contracts c,
+  products d,
+  products e
+where
+  a.trade_type_id = b.trade_type_id
+and
+  a.contract_id = c.contract_id
+and
+  a.product_id = d.product_id
+and
+  a.currency_id = e.product_id
+and
+  a.value_date >= @begin_date
+and
+  a.value_date < @end_date
+order by
+  c.symbol,
+  a.trade_id
+
+insert into
+  #maturing_trades (
+    row_kind,
+    contract,
+    symbol,
+    dealt_amount,
+    counter_amount,
+    style
+  )
+select
+  row_kind = 1,
+  contract,
+  symbol = "<b>Total</b>",
+  dealt_amount = sum(dealt_amount),
+  counter_amount = sum(counter_amount),
+	style = "background:#fff;border:1px solid white;height:2em;font-weight:bold"
+from
+  #maturing_trades
+group by
+  contract
+
+update
+  #maturing_trades
+set
+  dealt_amount = abs(dealt_amount),
+  counter_amount = abs(counter_amount)
+where
+  row_kind = 0
+
+
+/* Select out Today's Trades */
+select
+  section = "Today's Trades",
+  trade_type = b.name,
+  a.trade_id,
+  a.value_date,
+  dealt_ccy = c.symbol,
+  dealt_amount = a.product_qty,
+  counter_ccy = d.symbol,
+  counter_amount = a.currency_qty,
+  rate = a.price,
+  a.trade_date,
+  style = "background:#fff"
+from
+  #trades a,
+  trade_types b,
+  products c,
+  products d
+where
+  a.trade_type_id = b.trade_type_id
+and
+  a.product_id = c.product_id
+and
+  a.currency_id = d.product_id
+and
+  a.trade_date >= @begin_date
+and
+  a.trade_date < @end_date
+order by
+  c.symbol,
+  d.symbol,
+  a.trade_id
+
+/* Select out Open Trades FX */
+select
+  section = "Open Trades FX",
+  value_date,
+  trade_id,
+  "Buy/Sell" = buy_sell,
+  symbol,
+  dealt_amount = dealt_amount,
+  rate,
+  counter_amount = counter_amount,
+  market_rate,
+  market_value,
+  trade_date,
+	style
+from
+  #open_trades
+order by
+  contract,
+  row_kind,
+  trade_id
+
+/* Select out Maturing Trades */
+select
+  section = "Maturing Trades",
+  value_date,
+  trade_id,
+  "Buy/Sell" = buy_sell,
+  symbol,
+  rate,
+  dealt_amount = dealt_amount,
+  dealt_ccy,
+  counter_amount = counter_amount,
+  counter_ccy,
+  trade_date,
+	style
+from
+  #maturing_trades
+order by
+  contract,
+  row_kind,
+  trade_id
+
+/* Select out the Maturing Totals */
+select
+	section = "Maturing Totals",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = c.symbol,
+	currency = a.symbol,
+	amount = b.quantity
+from
+	products a,
+	#maturing_totals b,
+	external_accounts c
+where
+	a.product_id = b.product_id
+and
+	b.external_account_id = c.external_account_id
+order by
+	c.symbol,
+	a.symbol
+
+/* Select out the Account Activity */
+select
+	section = "Account Activity",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = b.symbol,
+	activity = c.name,
+	a.amount,
+	currency = d.symbol
+from
+	#account_transactions a,
+	external_accounts b,
+	transaction_types c,
+	products d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_type_id = c.transaction_type_id
+and
+	a.currency_id = d.product_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date < @end_date
+order by
+	b.symbol,
+	a.transaction_date
+
+select
+	section = "Net Equity Activity",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = b.symbol,
+	product = c.symbol,
+	a.opening_balance,
+	a.maturing_fx,
+	a.cash,
+	a.fees,
+	a.settled_premium,
+	a.closing_balance,
+	a.unsettled_prem,
+	a.open_position,
+	a.open_option_pos,
+	a.total_equity
+from
+	#net_activity a,
+	external_accounts b,
+	products c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = c.product_id
+order by
+	b.symbol,
+	c.symbol
+
+/* Show the Equity Value Summary */
+select
+	section = "Equity Value Summary",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = b.symbol,
+	product = c.symbol,
+  a.total_equity,
+  a.conversion_rate,
+  a.converted_value,
+  evaluation_ccy = d.symbol
+from
+	#equity_value_summary a,
+	external_accounts b,
+	products c,
+  products d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = c.product_id
+and
+  a.evaluation_currency_id = d.product_id
+order by
+	b.symbol,
+	c.symbol
+
+/* Show the Margin Summary */
+select
+	section = "Margin Summary",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = b.symbol,
+  a.net_equity,
+  a.net_margin_use,
+  a.available_funds,
+  currency = c.symbol
+from
+	#margin_summary a,
+	external_accounts b,
+  products c
+where
+	a.external_account_id = b.external_account_id
+and
+	c.product_id = @evaluation_currency_id
+order by
+	b.symbol
+
+exec
+  r_showdisclaimer
+    "Daily Trading Statement"
+
+go

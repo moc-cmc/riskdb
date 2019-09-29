@@ -1,0 +1,87 @@
+
+drop procedure
+	api_edittradersymbol
+go
+
+create procedure api_edittradersymbol
+			@login varchar(25),
+			@name varchar(150),
+			@source_name varchar(150),
+			@mapping varchar(100),
+			@new_mapping varchar(100)
+as
+
+declare @trader_id int
+declare @source_id int
+
+select
+	@trader_id = trader_id
+from
+	traders
+where
+	symbol=@name
+
+if (@@rowcount !=1)
+begin
+	select
+		status="Error",
+		msg="Cannot find Trader",
+		trader=@name
+	return
+end
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name=@source_name
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Source does not exist",
+		source=@source_name
+	return
+end
+
+begin tran
+	update
+		trader_symbols
+	set
+		symbol=@new_mapping
+	where
+		trader_id=@trader_id
+	and
+		source_id=@source_id
+	and
+		symbol=@mapping
+
+	if (@@rowcount != 1)
+	begin
+		select
+			status="Error",
+			msg="Could not edit Trader Mapping",
+			mapping=@mapping
+		
+		rollback tran
+	
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Trader Symbol Edited",
+	name=@name
+
+exec
+	r_mappingoverview @login
+
+return
+
+go
+
+	

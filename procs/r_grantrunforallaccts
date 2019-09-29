@@ -1,0 +1,92 @@
+
+drop procedure
+	r_grantrunforallaccts
+go
+
+create procedure
+	r_grantrunforallaccts
+		@account_name varchar(50)
+
+as
+
+declare @account_id int
+declare @run_name varchar(50)
+
+select
+	@account_id = account_id
+from	
+	tico_accounts
+where
+	login = @account_name
+if @@rowcount != 1
+begin
+        select
+
+  
+               status = -1,
+                error = "Problem deterimining login",
+		login = @account_name	
+        return
+end
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(30),
+                action char(200) NULL,
+                value char(255) NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "account_name",
+        NULL,
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "View Details",
+        "Manage Access By Account",
+        NULL
+)
+
+
+declare run_cursor cursor for
+	select
+		name
+	from
+		runs
+
+open run_cursor
+fetch run_cursor into @run_name
+
+while @@sqlstatus = 0
+begin
+	exec
+		r_grantaccount
+			@account_name,
+			@run_name
+
+	fetch run_cursor into @run_name
+end
+
+
+close run_cursor 
+deallocate run_cursor
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+select
+	account_name = @account_name	,
+	msg = "You have successfully added all runs for account "+ rtrim(@account_name),
+	view_details = "View Details"
+
+go
+

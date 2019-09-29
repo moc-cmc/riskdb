@@ -1,0 +1,48 @@
+
+if object_id("fxa_tallyndfclientswap") != NULL
+    drop procedure
+        fxa_tallyndfclientswap
+go
+
+create procedure
+	fxa_tallyndfclientswap	
+		@login char(25),
+		@client_user varchar(25),
+		@client_buys_sells varchar(25),
+		@quantity numeric(30,4),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@near_date datetime = NULL,
+		@near_price float,	
+		@near_fixing_date datetime,
+		@far_date datetime = NULL,
+		@far_price float,
+		@far_fixing_date datetime
+		
+		
+as
+
+declare @deal_id int
+
+exec api_tallyclientswap
+		@login,
+		@client_user,
+		@client_buys_sells,
+		@quantity,
+		@dealt_currency,
+		@counter_currency,
+		@near_date,
+		@near_price,
+		@far_date,
+		@far_price,
+		@deal_id output,
+		@near_fixing_date,
+		@far_fixing_date
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+go

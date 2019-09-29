@@ -1,0 +1,1304 @@
+use
+	risk_futdemo
+go
+
+drop procedure
+	mn_dailyrisk
+go
+
+create procedure
+	mn_dailyrisk
+		@login varchar(50),
+		@portfolio varchar(50),
+		@trade_date datetime=NULL
+
+as
+
+declare @trading_level float
+declare @min_date datetime
+declare @max_date datetime
+declare @day float
+declare @day_pl float
+declare @month float
+declare @month_pl float
+declare @lifetime float
+declare @lifetime_pl float
+declare @year float
+declare @year_pl float
+declare @id int
+declare @ids int
+declare @vami float
+declare @roc float
+declare @mean float
+declare @total_variance float
+declare @volatility float
+declare @worst_drawdown float
+declare @drawdown_date datetime
+declare @drawdown_string varchar(50)
+declare @pl_statement_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @total_pl float
+declare @total_exposure float
+declare @fund_id int
+declare @fund_ccy_id int
+declare @trading_day_id int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"close_price",
+	"Number",
+	"#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"weighted_sector",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"liquidating_value",
+	"Number",
+	"#,##0.00")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"of_total",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"volatility",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"of_sector",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ten_day_vol",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"p_l",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"contribution",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"value",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ytd",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"delta",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"exposure_equiv",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"exposure",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"mtd",
+	"Number",
+	"#,##0.00%")
+
+select * from #meta
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund_ccy_id = evaluation_currency_id 
+from
+	funds
+where
+	fund_id = @fund_id
+
+if @trade_date = NULL
+	select
+		@trade_date = max(trade_date)
+	from
+		trading_days
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#external_accounts(
+		external_account_id int)
+
+
+insert into
+	#external_accounts
+select
+	a.external_account_id
+from
+	cta_portfolio_ext_accts a,
+	cta_portfolios b
+where
+	a.portfolio_id = b.portfolio_id
+and
+	b.name = rtrim(@portfolio)
+
+
+select
+	@min_date = min(a.trade_date),
+	@max_date = max(a.trade_date)
+from
+	external_margin_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+	
+if @min_date = NULL
+	select
+		@min_date = getdate()
+if @max_date = NULL
+	select
+		@max_date = getdate()
+
+create table
+	#trading_levels(
+		external_account_id int,
+		date datetime,
+		trading_level float NULL)
+insert into
+	#trading_levels(
+		external_account_id,
+		date)
+select
+	a.external_account_id,
+	max(a.date)
+from
+	trading_levels a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+group by
+	a.external_account_id
+
+update
+	#trading_levels
+set
+	a.trading_level = b.trading_level
+from
+	#trading_levels a,
+	trading_levels b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.date = b.date
+
+	
+select
+	@trading_level = sum(trading_level)
+from
+	#trading_levels
+where
+	trading_level != NULL
+
+	
+create table
+	#returns(
+		id int identity,
+		date datetime,
+		begin_value float,
+		begin_option_value float NULL,
+		end_value float,
+		cash_activity float,
+		option_value float,
+		p_l float NULL,
+		roc float NULL,
+		vami float NULL,
+		mean float NULL,
+		variance_to_mean float NULL,
+		squared float NULL)
+insert into
+	#returns(
+		date,
+		begin_value,
+		end_value,
+		cash_activity,
+		option_value)
+select
+	a.trade_date,
+	sum(a.begin_balance),
+	sum(a.end_balance),
+	sum(a.cash_activity),
+	sum(a.option_value)
+from
+	external_margin_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+group by
+	a.trade_date
+order by
+	a.trade_date
+
+
+update
+	#returns
+set
+	a.begin_option_value = b.option_value
+from
+	#returns a,
+	#returns b
+where
+	a.id = b.id + 1
+	
+		
+/* delete
+
+from
+	#returns
+where
+	begin_option_value = NULL */
+
+update
+	#returns
+set
+	begin_option_value = option_value,
+	vami = 1000.00
+where
+	id = 1
+
+update
+	#returns
+set
+	p_l = (end_value + option_value - cash_activity) - (begin_value + begin_option_value)
+
+update
+	#returns
+set
+	roc = 1.0 - (end_value + option_value - cash_activity) / (begin_value + begin_option_value)
+
+	
+
+select
+	@id = 1,
+	@vami = 1000.00
+select
+	@ids = count(*)
+from
+	#returns
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#returns
+	where
+		id > @id
+
+	select
+		@roc = roc
+	from
+		#returns
+	where
+		id = @id
+
+	select
+		@vami = @vami * (1.0 + @roc)
+
+	update
+		#returns
+	set
+		vami = @vami
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#returns
+	where
+		id > @id
+end
+
+
+select
+	@day = roc,
+	@day_pl = p_l
+from
+	#returns
+where
+	convert(date, date) = convert(date, @max_date)
+
+create table
+	#months(
+		month varchar(50),
+		first datetime,
+		last datetime,
+		p_l float)
+insert into
+	#months
+select
+	rtrim(datename(month, date)) + " " + rtrim(datename(year, date)),
+	min(date),
+	max(date),
+	sum((end_value + option_value - cash_activity) - (begin_value + begin_option_value))
+from
+	#returns
+group by
+	rtrim(datename(month, date)) + " " + rtrim(datename(year, date))
+
+
+select
+	@month_pl = p_l
+from
+	#months
+where
+	last = (select
+			max(last)
+		from
+			#months)
+
+select
+	@month = @month_pl / @trading_level
+
+
+select
+	@year_pl = sum(p_l)
+from
+	#returns
+where
+	datepart(year, date) = datepart(year, @max_date)
+
+select
+	@year = @year_pl / @trading_level
+
+select
+	@lifetime_pl = sum(p_l)
+from
+	#returns
+
+select
+	@lifetime = @lifetime_pl / @trading_level
+
+
+
+select
+	@mean = avg(roc)
+from
+	#returns
+
+update
+	#returns
+set
+	mean = @mean
+
+update
+	#returns
+set
+	variance_to_mean = roc - mean
+
+update
+	#returns
+set
+	squared = variance_to_mean * variance_to_mean
+
+select
+	@total_variance = sum(squared)
+from
+	#returns
+select
+	@volatility = sqrt(@total_variance)
+
+
+
+
+select
+	@worst_drawdown = min(roc)
+from
+	#returns
+
+select
+	@drawdown_date = date
+from
+	#returns
+where
+	roc = @worst_drawdown
+
+select
+	@vami = vami
+from
+	#returns
+where
+	convert(date, date) = convert(date, @max_date)
+
+
+create table
+	#output(
+		category varchar(50),
+		value float NULL)
+
+create table
+	#accounts_output(
+		section varchar(200), 
+		external_account_id int,
+		account varchar(50),
+		trading_level float NULL,
+		liquidating_value float NULL)
+
+insert into
+	#accounts_output(
+		section,
+		external_account_id,
+		account)
+select
+	section = rtrim(@portfolio) + " Accounts",
+	a.external_account_id,
+	account = a.symbol
+from
+	external_accounts a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+
+update
+	#accounts_output
+set
+	a.trading_level = b.trading_level
+from
+	#accounts_output a,
+	#trading_levels b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#accounts_output
+set
+	a.liquidating_value = b.end_balance + b.option_value + b.futures_value
+from
+	#accounts_output a,
+	external_margin_transactions b
+where
+	a.external_account_id = b.external_account_id
+and
+	convert(date, b.trade_date) = convert(date, @end_date)
+
+
+select
+	section,
+	account,
+	trading_level,
+	liquidating_value
+from
+	#accounts_output
+order by
+	account
+
+
+
+
+insert into
+	#output
+values(
+	"MTD",
+	@month)
+insert into
+	#output
+values(
+	"YTD",
+	@year)
+insert into
+	#output
+values(
+	"Cumulative",
+	@lifetime)
+
+insert into
+	#output
+values(
+	"Today",
+	@day)
+
+
+insert into
+	#output
+values(
+	"Volatility",
+	@volatility)
+
+select
+	@drawdown_string = "Worst Drawdown " + convert(varchar(11), @drawdown_date, 1)
+
+insert into
+	#output
+values(
+	@drawdown_string,
+	@worst_drawdown)
+
+
+select
+	section = "Returns Summary",
+	style = "background:#fff;border: 1px solid white",
+	category,
+	value
+from
+	#output
+
+select
+	@trading_day_id = trading_day_id
+from
+	trading_days 
+where
+	convert(date, trade_date) = convert(date, @end_date)
+
+
+select
+	@pl_statement_id = pl_statement_id
+from
+	pl_statements
+where
+	trading_day_id = @trading_day_id
+
+
+create table
+	#contract_pls(
+		contract_id int,
+		p_l float,
+		delta float NULL)
+insert into
+	#contract_pls
+select
+	a.contract_id,
+	sum(a.p_l),
+	sum(a.quantity * a.delta)
+from
+	pl_statement_positions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.pl_statement_id = @pl_statement_id
+group by
+	a.contract_id
+
+
+insert into
+	#contract_pls
+select
+	a.contract_id,
+	sum(a.p_l),
+	sum(a.quantity * a.delta)
+from
+	pl_statement_trades a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.pl_statement_id = @pl_statement_id
+group by
+	contract_id
+
+
+
+create table
+	#contract_totals(
+		contract_id int,
+		forward_id int NULL,
+		p_l float,
+		delta float NULL)
+insert into
+	#contract_totals(
+		contract_id,
+		p_l,
+		delta)
+select
+	contract_id,
+	sum(p_l),
+	sum(delta)
+from
+	#contract_pls
+group by
+	contract_id
+
+update
+	#contract_totals
+set
+	a.forward_id = c.forward_id,
+	a.delta = a.delta * c.quantity
+from
+	#contract_totals a,
+	future_contracts b,
+	futures c
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+
+update
+	#contract_totals
+set
+	a.forward_id = f.forward_id,
+	a.delta = a.delta * d.quantity * f.quantity
+from
+	#contract_totals a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	future_contracts e,
+	futures f
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+and
+	e.future_id = f.future_id
+
+
+create table
+	#forward_totals(
+		forward_id int,
+		p_l float,
+		ten_day_vol float NULL,
+		data_points int NULL,
+		delta float NULL)
+insert into
+	#forward_totals(
+		forward_id,
+		p_l,
+		delta)
+select
+	forward_id,
+	sum(p_l),
+	sum(delta)
+from
+	#contract_totals
+group by
+	forward_id
+
+update
+	#forward_totals
+set
+	a.ten_day_vol = b.volatility,
+	a.data_points = b.data_points
+from
+	#forward_totals a,
+	forward_vols b
+where
+	a.forward_id = b.forward_id
+and
+	convert(date, b.trade_date) = convert(date, @end_date)
+
+
+
+create table
+	#sector_pl(
+		id int identity,
+		style varchar(250) NULL,
+		root_class_id int NULL,
+		root_class varchar(100) NULL,
+		product_type_id int,
+		asset_class varchar(100),
+		forward_id int,
+		currency_id int,
+		product_id int,
+		product varchar(100),
+		p_l float,
+		contribution float NULL,
+		ten_day_vol float NULL,
+		data_points int NULL,
+		delta float NULL,
+		fund_ccy_id int NULL)
+insert into
+	#sector_pl(
+		product_type_id,
+		asset_class,
+		forward_id,
+		currency_id,
+		product_id,
+		product,
+		p_l,
+		ten_day_vol,
+		data_points,
+		delta)
+select
+	c.product_type_id,
+	asset_class = d.name,
+	a.forward_id,
+	b.currency_id,
+	b.product_id,
+	product = c.name,
+	a.p_l,
+	a.ten_day_vol,
+	a.data_points,
+	a.delta
+from
+	#forward_totals a,
+	forwards b,
+	products c,
+	product_types d
+where
+	a.forward_id = b.contract_id
+and
+	b.product_id = c.product_id
+and
+	c.product_type_id = d.product_type_id
+order by
+	d.name,
+	c.name
+
+	
+update
+	#sector_pl
+set
+	fund_ccy_id = @fund_ccy_id
+
+update
+	#sector_pl
+set
+	style = "background:#fff;border: 1px solid white"
+
+
+update
+	#sector_pl
+set
+	a.root_class_id = b.parent
+from
+	#sector_pl a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+
+update
+	#sector_pl
+set
+	a.root_class = b.name
+from
+	#sector_pl a,
+	product_types b
+where
+	a.root_class_id = b.product_type_id
+
+update
+	#sector_pl
+set
+	root_class = asset_class
+where
+	root_class = NULL
+
+select
+	@total_pl = sum(p_l)
+from
+	#sector_pl
+
+if @total_pl != 0.0
+	update
+		#sector_pl
+	set
+		contribution = p_l / abs(@total_pl)
+	
+
+create table
+	#sector_output(
+		id int identity,
+		style varchar(250),
+		sector varchar(100) NULL,
+		root_class varchar(100) NULL,
+		asset_class varchar(100),
+		forward_id int,
+		currency_id int,
+		product_id int,
+		product varchar(50),
+		p_l float,
+		contribution float,
+		ten_day_vol float NULL,
+		data_points int NULL,
+		delta float NULL,
+		fund_ccy_id int NULL)
+insert into
+	#sector_output(
+		style,
+		root_class,
+		asset_class,
+		forward_id,
+		currency_id,
+		product_id,
+		product,
+		p_l,
+		contribution,
+		ten_day_vol,
+		data_points,
+		delta,
+		fund_ccy_id)
+select
+	style,
+	root_class,
+	asset_class,
+	forward_id,
+	currency_id,
+	product_id,
+	product,
+	p_l,
+	contribution,
+	ten_day_vol,
+	data_points,
+	delta,
+	fund_ccy_id
+from
+	#sector_pl
+order by
+	root_class,
+	product
+
+
+
+create table
+	#min_ids(
+		root_class varchar(100),
+		id int)
+insert into
+	#min_ids
+select
+	root_class,
+	min(id)
+from
+	#sector_output
+group by
+	root_class
+
+update
+	#sector_output
+set
+	a.sector = a.root_class,
+	a.style = "background:#FFFFCC;border: 1px solid white"
+from
+	#sector_output a,
+	#min_ids b
+where
+	a.id = b.id
+
+
+create table
+	#sectors(
+		id int,
+		style varchar(250),
+		sector_name varchar(100) NULL,
+		sector varchar(100) NULL,
+		asset_class varchar(100) NULL,
+		forward_id int NULL,
+		currency_id int NULL,
+		base_currency varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		p_l float NULL,
+		contribution float NULL,
+		ten_day_vol float NULL,
+		data_points int NULL,
+		delta float NULL,
+		close_price float NULL,
+		exposure float NULL,
+		sector_total float NULL,
+		of_sector float NULL,
+		weighted_sector float NULL,
+		of_total float NULL,
+		fund_ccy_id int NULL,
+		exposure_equiv float NULL)
+insert into
+	#sectors
+select
+	a.id * 10,
+	a.style,
+	a.root_class,
+	a.sector,
+	a.asset_class,
+	a.forward_id,
+	a.currency_id,
+	b.symbol,
+	a.product_id,
+	a.product,
+	a.p_l,
+	a.contribution,
+	a.ten_day_vol,
+	a.data_points,
+	a.delta,
+	close_price = NULL,
+	exposure = NULL,
+	sector_total = NULL,
+	of_sector = NULL,
+	weighted_sector = NULL,
+	of_total = NULL,
+	a.fund_ccy_id,
+	exposure_equiv = NULL
+from
+	#sector_output a,
+	products b
+where
+	a.currency_id *= b.product_id
+order by
+	a.id
+
+
+insert into
+	#sectors(
+		id,
+		style,
+		sector)
+select
+	id - 1,
+	style,
+	sector
+from
+	#sectors
+where
+	sector != NULL
+
+update
+	#sectors
+set
+	style = "background:#fff;border: 1px solid white",
+	sector = NULL
+where
+	asset_class != NULL
+
+create table
+	#fut_prices(
+		forward_id int,
+		contract_id int,
+		expiration datetime,
+		price float)
+insert into
+	#fut_prices
+select
+	a.forward_id,
+	b.contract_id,
+	b.expiration,
+	c.price	
+from
+	futures a,
+	future_contracts b,
+	prices c
+where
+	a.future_id = b.future_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+
+
+create table
+	#nearest_prices(
+		forward_id int,
+		nearest datetime,
+		price float NULL)
+insert into
+	#nearest_prices(
+		forward_id,
+		nearest)
+select
+	forward_id,
+	min(expiration)
+from
+	#fut_prices
+group by
+	forward_id
+
+
+update
+	#nearest_prices
+set
+	a.price = b.price
+from
+	#nearest_prices a,
+	#fut_prices b
+where
+	a.forward_id = b.forward_id
+and
+	a.nearest = b.expiration
+
+update
+        #sectors
+set
+        a.close_price = 1.0 / d.price
+from
+        #sectors a,
+        forwards b,
+        forwards c,
+        prices d
+where
+        a.forward_id = b.contract_id
+and
+        b.product_id = c.currency_id
+and
+        b.currency_id = c.product_id
+and
+        c.contract_id = d.contract_id
+and
+        convert(date, d.price_date) = convert(date, @end_date)
+
+
+update
+	#sectors
+set
+	a.close_price = b.price
+from
+	#sectors a,
+	prices b
+where
+	a.forward_id = b.contract_id
+and
+	convert(date, b.price_date) = convert(date, @end_date)
+
+update
+	#sectors
+set
+	a.close_price = b.price
+from
+	#sectors a,
+	#nearest_prices b
+where
+	a.forward_id = b.forward_id
+and
+	a.close_price = NULL
+and
+	b.price != NULL
+
+update
+	#sectors
+set
+	exposure = close_price * delta
+
+update
+	#sectors
+set
+	exposure_equiv = exposure
+where
+	currency_id = @fund_ccy_id
+
+update
+	#sectors
+set
+	a.exposure_equiv = a.exposure * c.price
+from
+	#sectors a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.fund_ccy_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+
+update
+	#sectors
+set
+	a.exposure_equiv = a.exposure * (1.0 / c.price)
+from
+	#sectors a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.fund_ccy_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.exposure_equiv = NULL
+
+
+create table
+	#sector_totals(
+		sector_name varchar(50),
+		exposure float NULL,
+		volatility float NULL,
+		of_total float NULL)
+
+insert into
+	#sector_totals(
+		sector_name,
+		exposure,
+		volatility)
+select
+	sector_name,
+	sum(abs(exposure_equiv)),
+	avg(ten_day_vol)
+from
+	#sectors
+where
+	sector_name != NULL
+and
+	exposure != NULL
+group by
+	sector_name
+
+update
+	#sectors
+set
+	a.sector_total = b.exposure
+from
+	#sectors a,
+	#sector_totals b
+where
+	a.sector_name = b.sector_name
+
+update
+	#sectors
+set
+	of_sector = abs(exposure_equiv) / sector_total,
+	weighted_sector = (abs(exposure_equiv) / sector_total) * ten_day_vol
+where
+	sector_total != 0.0
+
+select
+	@total_exposure = sum(abs(exposure_equiv))
+from
+	#sectors
+where
+	exposure_equiv != NULL
+
+if @total_exposure != 0.0
+begin
+	update
+		#sectors
+	set
+		of_total = abs(exposure_equiv) / @total_exposure
+
+	update
+		#sector_totals
+	set
+		of_total = (abs(exposure)) / @total_exposure
+end
+
+select
+	sector = sector_name,
+	exposure,
+	volatility,
+	of_total
+from
+	#sector_totals
+order by
+	sector_name
+
+
+
+select
+	style,
+	sector,
+	base_currency,
+	product,
+	p_l,
+	contribution,
+	ten_day_vol,
+	data_points,
+	delta,
+	close_price,
+	exposure = exposure_equiv,
+	of_sector,
+	weighted_sector,
+	of_total,
+	exposure_equiv
+from
+	#sectors
+order by
+	id
+
+go

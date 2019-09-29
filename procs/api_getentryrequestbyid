@@ -1,0 +1,52 @@
+create or replace procedure
+	api_getentryrequestbyid
+		@entry_request_id int
+
+as
+
+declare @open_request char(1)
+
+select
+	@open_request = "Y"
+from
+	entry_requests a,
+	statuses b
+where
+	a.status_id = b.status_id
+and
+	b.name in("New")
+and
+	a.entry_request_id = @entry_request_id
+
+if @open_request != "Y"
+begin
+	select
+		status = "Error", 
+		message = "Problem finding open request from id",
+		entry_request_id = @entry_request_id
+	return
+end
+
+select
+	entry_request_id = a.entry_request_id,
+	external_account_id = c.external_account_id,
+	external_account_symbol = c.symbol,
+	external_account_name = c.name,
+	product_id = d.product_id,
+	product_symbol = d.symbol,
+	amount = convert(numeric(30, 8), round(floor(abs(a.amount) * 1000000000) / 1000000000, 10)) * sign(a.amount)
+from
+	entry_requests a,
+	fo_sub_accounts b,
+	external_accounts c,
+	products d
+where
+	a.fo_sub_account_id = b.fo_sub_account_id
+and
+	b.external_account_id = c.external_account_id
+and
+	a.product_id = d.product_id
+and
+	a.entry_request_id = @entry_request_id
+
+go

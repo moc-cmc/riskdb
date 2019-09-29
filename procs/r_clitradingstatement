@@ -1,0 +1,22 @@
+drop procedure
+	r_clitradingstatement
+go
+
+create procedure
+	r_clitradingstatement
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime=NULL
+
+as
+
+
+
+exec	
+	r_clientagstatement
+		@login,
+		@run_name,
+		@trade_date
+
+
+go

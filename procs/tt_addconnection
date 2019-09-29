@@ -1,0 +1,177 @@
+create or replace procedure
+	tt_addconnection
+		@login varchar(50),
+		@name varchar(50),
+		@ops_name varchar(70)=NULL,
+		@source varchar(50),
+		@integration varchar(50),
+		@connection_status varchar(10)=NULL,
+		@stale_threshold int=NULL,
+		@monitoring_enabled char(1)=NULL
+
+as
+
+declare @connection_id int
+declare @source_id int
+declare @source_type varchar(30)
+declare @integration_id int
+declare @connection_status_id int
+
+select
+	@connection_id = connection_id
+from
+	connections
+where
+	name = @name
+if @connection_id != NULL
+begin
+	select
+		status = "error",
+		message = "Connection already exists by this name",
+		name = @name,
+		connection_id = @connection_id
+	return
+end
+
+if @ops_name != NULL
+begin
+	select
+		@connection_id = connection_id
+	from
+		connections
+	where
+		ops_name = @ops_name
+	if @connection_id != NULL
+	begin
+		select
+			status = "error",
+			message = "Connection already exists for this ops name",
+			ops_name = @ops_name,
+			connection_id = @connection_id
+		return
+	end
+end	
+
+select
+	@source_id = a.source_id,
+	@source_type = b.name
+from
+	sources a,
+	source_types b
+where
+	a.source_type_id = b.source_type_id
+and
+	a.name = @source
+if @source_id = NULL
+begin
+	select
+		status = "error",
+		message = "Problem finding source for name",
+		source = @source
+	return
+end
+
+select
+	@integration_id = integration_id
+from
+	integrations
+where
+	name = @integration
+if @integration_id = NULL
+begin
+	select
+		status = "error",
+		message = "Problem finding integration",
+		integration = @integration
+	return
+end
+
+select
+	@connection_status_id = connection_status_id
+from
+	connection_statuses
+where
+	name = @connection_status
+if @connection_status_id = NULL
+begin
+	select
+		status = "error",
+		message = "Problem finding connection status",
+		connection_status = @connection_status
+	return
+end
+
+if @monitoring_enabled != NULL and (upper(@monitoring_enabled) not in("Y", "N"))
+begin
+	select
+		status = "error",
+		message = "Must provide Y or N for to specify if monitoring should be enabled"
+	return
+end
+
+if @monitoring_enabled = "Y" and @stale_threshold = NULL and @source_type = "Outbound"
+begin
+	select
+		status = "error",
+		message = "Connections with an Outbound source type that enable monitoring need a stale threshold provided",
+		monitoring_enabled = @monitoring_enabled,
+		source_type = @source_type,
+		stale_threshold = @stale_threshold
+	return
+end
+
+exec
+	j_nextkey 
+		"connections",
+		@connection_id output
+
+insert into
+	connections(
+		connection_id,
+		name,
+		ops_name,
+		source_id,
+		integration_id,
+		connection_status_id,
+		stale_threshold,
+		monitoring_enabled)
+values(
+	@connection_id,
+	@name,
+	@ops_name,
+	@source_id,
+	@integration_id,
+	@connection_status_id,
+	@stale_threshold,
+	@monitoring_enabled
+)
+if @@rowcount != 1
+begin
+	select
+		status = "error",
+		message = "Problem creating new connection entry",
+		connection_id = @connection_id,
+		name = @name,
+		ops_name = @ops_name,
+		integration = @integration,
+		connection_status = @connection_status,
+		stale_threshold = @stale_threshold,
+		monitoring_enabled = @monitoring_enabled
+	return
+end
+
+
+select
+	status = "Success",
+	message = "Successfully created integration connection",
+	connection_id = @connection_id,
+	name = @name,
+	ops_name = @ops_name,
+	integration = @integration,
+	connection_status = @connection_status,
+	stale_threshold = @stale_threshold,
+	monitoring_enabled = @monitoring_enabled
+
+
+
+go

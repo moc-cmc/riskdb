@@ -1,0 +1,77 @@
+drop procedure mc4_tallymktoptionsimple
+go
+
+create procedure
+	mc4_tallymktoptionsimple
+		@login varchar(50)=NULL,
+		@buy_sell varchar(1)=NULL,
+		@counterparty varchar(50)=NULL,
+		@dealt_ccy varchar(10)=NULL,
+		@counter_ccy varchar(10)=NULL,
+		@strike varchar(20)=NULL,
+		@call_put varchar(5)=NULL,
+		@timezone varchar(50)=NULL,
+		@expiration datetime=NULL,
+		@option_settle datetime=NULL,
+		@quantity numeric(30, 4)=NULL,
+		@premium_ccy varchar(10)=NULL,
+		@premium_amount numeric(30, 4)=NULL,
+		@premium_settle datetime=NULL,
+		@strategy varchar(50)=NULL,
+		@trade_note varchar(255)=NULL,
+		@trade_date datetime=NULL,
+		@fixing_date datetime=NULL
+
+
+as
+
+declare @trade_id int
+declare @deal_id int
+
+declare @quantity_string varchar(30)
+declare @premium_amount_s varchar(30)
+
+select
+        @quantity_string = convert(varchar(30), @quantity),
+        @premium_amount_s = convert(varchar(30), @premium_amount)
+
+exec
+        api_tallymktoptionsimple
+                @login = @login,
+                @buy_sell = @buy_sell,
+                @counterparty = @counterparty,
+                @dealt_ccy = @dealt_ccy,
+                @counter_ccy = @counter_ccy,
+                @strike = @strike,
+                @call_put = @call_put,
+                @timezone = @timezone,
+                @expiration = @expiration,
+                @option_settle = @option_settle,
+                @quantity = @quantity_string,
+                @premium_ccy = @premium_ccy,
+                @premium_amount = @premium_amount_s,
+                @premium_settle = @premium_settle,
+                @strategy = @strategy,
+                @trade_note = @trade_note,
+                @trade_date = @trade_date,
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@fixing_date = @fixing_date
+
+
+if @trade_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Could not tally trade"
+	return
+end
+
+select
+	status = "Success",
+	trade_id = @trade_id,
+	deal_id = @deal_id
+
+
+
+go

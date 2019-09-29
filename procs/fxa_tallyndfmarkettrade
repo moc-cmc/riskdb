@@ -1,0 +1,50 @@
+
+if object_id("fxa_tallyndfmarkettrade") != NULL
+    drop procedure
+        fxa_tallyndfmarkettrade
+go
+
+create procedure
+	fxa_tallyndfmarkettrade	
+		@login varchar(25),
+		@tally_type varchar(25),
+		@buy_sell varchar(5),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@counterparty_account varchar(25),
+		@quantity numeric(30,2),
+		@price float,
+		@value_date datetime = NULL,
+		@fixing_date datetime = NULL
+as
+
+declare @trade_id int
+declare @deal_id int
+
+
+exec
+	api_tallymarkettrade
+		@login,
+		@tally_type,
+		@buy_sell,
+		@dealt_currency,
+		@counter_currency,
+		@counterparty_account,
+		@quantity,
+		@price,
+		@value_date,
+		@deal_id output,
+		@trade_id output,
+		@fixing_date
+
+exec 
+	r_inserttradenotification @trade_id
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+
+go

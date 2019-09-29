@@ -1,0 +1,493 @@
+
+if object_id("tt_currenexcreatetags") != null
+    drop procedure
+        tt_currenexcreatetags
+go
+
+
+create proc
+	tt_currenexcreatetags
+        @agent varchar(50),
+        @source varchar(50),
+        /* @cli_source varchar(50), */
+        @default_login varchar(50),
+        
+        /*
+        @mass_status_req_id varchar(50),
+        @last_report_requested char(1), 
+        */
+    
+        @order_id varchar(50),
+        /*
+        @cli_order_id2 varchar(50),
+        @cli_order_id varchar(50),
+        @orig_cli_order_id varchar(50),
+    
+        @account varchar(25),
+        @subaccount varchar(25),
+        @account_trader varchar(25),
+        @exec_firm varchar(25),
+        @exec_broker varchar(25), 
+        */
+    
+        @order_status varchar(25),
+        @order_reject_reason varchar(50),
+        @message varchar(50),
+
+        @exec_id varchar(50),
+        @exec_type varchar(25),
+        @trade_date datetime,
+        @transact_date datetime,
+        /*
+        @product varchar(25),
+        @symbol varchar(50),
+        @currency varchar(5),
+        @settle_date datetime,
+        @side varchar(5),
+        @stop_side varchar(5),
+        @stop_price float,
+        */
+        @qty numeric(30,4),
+        /*
+        @price float,
+        */
+        
+        /*
+        @order_type varchar(50),
+        */
+        @order_qty numeric(30,4),
+        /*
+        @order_price float,
+        @min_qty numeric(30,4),
+        @cum_qty numeric(30,4),
+        */
+        @leaves_qty numeric(30,4),
+        /*
+        @avg_price float,
+        @below_min varchar(50),
+        */
+        
+        @time_in_force varchar(25),
+        @expire_date datetime,
+        @expire_time datetime
+as
+
+declare @bench_start datetime
+select
+    @bench_start = getdate()
+
+declare @new_status_id int
+declare @pending_status_id int
+declare @cancelled_status_id int
+declare @committed_status_id int
+
+declare @deal_tag varchar(50)
+declare @deal_tag_id int
+declare @deal_tag_status_id int
+declare @deal_tag_quantity numeric(30,4)
+declare @next_status_id int
+declare @trade_tag varchar(50)
+declare @trade_tag_id int
+declare @trade_tags_quantity numeric(30,4)
+
+declare @sql varchar(250)
+
+/* 
+ * Ignore NEW orders because we don't take any action for them.
+ */
+if @exec_type = "NEW"
+begin
+    return
+end
+
+create table
+    #messages (
+        id int identity,
+        subject varchar(25),
+        message varchar(125)
+    )
+
+/* 
+ * FIND @new_status_id = "New" status
+ * FIND @pending_status_id = "Pending" status
+ * FIND @cancelled_status_id = "Cancelled" status
+ * FIND @committed_status_id = "Committed" status
+ */
+select
+    @new_status_id = status_id
+from
+    statuses
+where
+    name = "New"
+    
+select
+    @pending_status_id = status_id
+from
+    statuses
+where
+    name = "Pending"
+    
+select
+    @cancelled_status_id = status_id
+from
+    statuses
+where
+    name = "Cancelled"
+
+select
+    @committed_status_id = status_id
+from
+    statuses
+where
+    name = "Committed"
+
+if @new_status_id is null or @pending_status_id is null or @cancelled_status_id = null or @committed_status_id = null
+begin
+    select
+        status = "Error",
+        message = "Couldn't find New, Pending, Cancelled and/or Committed statuses",
+        new_status_id = @new_status_id,
+        pending_status_id = @pending_status_id,
+        cancelled_status_id = @cancelled_status_id,
+        committed_status_id = @committed_status_id
+    return
+end
+
+/* insert into #messages select "Benchmark", "M1 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+/*
+ * FIND @deal_tag and @trade_tag
+ */
+select
+    @deal_tag = @order_id,
+    @trade_tag = @exec_id
+
+if @exec_type = "TRADE"
+begin
+    
+    if exists (
+        select
+            *
+        from
+            trade_tags
+        where
+            tag = @trade_tag
+    )
+    begin
+        select
+            status = "Dup",
+            message = "Ignoring duplicate trade tag",
+            trade_tag = @trade_tag
+        return
+    end
+    
+    /* 
+     * Case @exec_type = TRADE
+     * 
+     * If the @order_status = "PARTIAL_FILLED" (@next_status_id = "Pending")
+     * then there are more trades coming or the deal will be cancelled. If the
+     * @order_status = "FILLED" (@new_status_id = "Committed") then we're done
+     * with this deal. Call tt_processdealtags to commit the trades and deals.
+     */
+    begin tran
+
+/* insert into #messages select "Benchmark", "M2 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+        /*
+         * FIND @deal_tag_id: Resolve the deal tag and create it if necessary
+         */
+        select
+            @deal_tag_id = deal_tag_id,
+            @deal_tag_quantity = quantity,
+            @deal_tag_status_id = status_id
+        from
+            deal_tags
+        where
+            tag = @deal_tag
+        
+        if @deal_tag_id = null
+        begin
+        
+            select
+                @deal_tag_quantity = @leaves_qty + @qty
+        
+            /*
+             * INSERT deal_tags: 
+             */
+            insert into
+                deal_tags (
+                    status_id,
+                    tag,
+                    quantity,
+                    tag_date
+                )
+            values (
+                @new_status_id,
+                @deal_tag,
+                @deal_tag_quantity,
+                @transact_date
+            )
+            
+            if @@rowcount != 1
+            begin
+                select
+                    status = "Error",
+                    message = "Failed to create deal_tags for tag, '" + @deal_tag + "'",
+                    deal_tag = @deal_tag
+                return
+            end
+            
+            select
+                @deal_tag_id = @@identity,
+                @deal_tag_status_id = @new_status_id
+            
+            insert into
+                #messages
+            select
+                subject = "New Deal Tag",
+                message = "Created deal tag " + convert(varchar(10), @deal_tag_id) + " for tag, '" + @deal_tag + "', with status, " + @order_status
+                
+/* insert into #messages select "Benchmark", "M3 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+        end
+        
+        /*
+         * INSERT trade_tags: 
+         */
+        insert into
+            trade_tags (
+                deal_tag_id,
+                tag,
+                quantity,
+                tag_date
+            )
+        values (
+            @deal_tag_id,
+            @trade_tag,
+            @qty,
+            @transact_date
+        )
+        
+        if @@rowcount != 1
+        begin
+            select
+                status = "Error",
+                message = "Failed to create trade_tags for tag, '" + @trade_tag + "'",
+                deal_tag = @deal_tag,
+                trade_tag = @trade_tag
+            
+            select
+                subject,
+                message
+            from
+                #messages
+            order by
+                id
+            
+            return
+        end
+            
+        select
+            @trade_tag_id = @@identity
+ 
+        insert into
+            #messages
+        select
+            subject = "New Trade Tag",
+            message = "Created trade tag " + convert(varchar(10), @trade_tag_id) + " for tag, '" + @trade_tag + "', for deal tag, '" + @deal_tag + "'"
+            
+/* insert into #messages select "Benchmark", "M4 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+        
+        /* 
+         * RESOLVE @next_status_id based on existing @order_status,
+         * @deal_tag_status_id, @deal_tag_quantity
+         */
+        select
+            @trade_tags_quantity = sum(quantity)
+        from
+            trade_tags
+        where
+            deal_tag_id = @deal_tag_id
+        
+        select
+            @next_status_id = case
+                when @trade_tags_quantity = @deal_tag_quantity then
+                    @committed_status_id
+                when @trade_tags_quantity > 0 then
+                    @pending_status_id
+                else
+                    @pending_status_id
+            end
+        
+        /* 
+         * UPDATE #deal_tags: Based on the order quantity and status
+         */
+        update
+            deal_tags
+        set
+            status_id = @next_status_id
+        where
+            deal_tag_id = @deal_tag_id
+        
+        insert into
+            #messages
+        select
+            subject = "Deal Tag Status",
+            message = "Updated deal tag " + convert(varchar(10), @deal_tag_id) + " for tag, '" + @deal_tag + "', with status, " + rtrim(a.name) + ", quantity: " + convert(varchar(30), convert(numeric(30,3), @trade_tags_quantity/1e6)) + " / " + convert(varchar(30), convert(numeric(30,3), @deal_tag_quantity/1e6))
+        from
+            statuses a
+        where
+            a.status_id = @next_status_id
+                
+/* insert into #messages select "Benchmark", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+    commit tran
+    
+    /*
+     * Perform actions for this tag
+     */
+/*
+ * Process any deal tags
+ * Schedule a tt_processdealtags 
+ */
+declare @next_date datetime
+select
+    @sql = "exec tt_processdealtags '" + @default_login + "'",
+    @next_date = getdate()
+exec
+    r_managetimer
+        @login = @default_login,
+        @name = "tt_processdealtags",
+        @next_date = @next_date,
+        @interval = 30,
+        @iterations = -1,
+        @sql = @sql
+ 
+/*
+    exec
+        tt_processdealtags
+            @login = @default_login,
+            @deal_tag_id = @deal_tag_id
+*/
+     
+/* insert into #messages select "Benchmark", "M6 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+end
+else if @exec_type = "CANCELED" or @exec_type = "EXPIRED"
+begin
+
+/* insert into #messages select "Benchmark", "M7 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+    /*
+     * FIND @deal_tag_id: Resolve the deal tag and create it if necessary
+     */
+    select
+        @deal_tag_id = deal_tag_id,
+        @deal_tag_quantity = quantity,
+        @deal_tag_status_id = status_id
+    from
+        deal_tags
+    where
+        tag = @deal_tag
+    
+    select
+        @trade_tags_quantity = sum(quantity)
+    from
+        trade_tags
+    where
+        deal_tag_id = @deal_tag_id
+    
+    if @deal_tag_id != null
+    begin
+        
+/* insert into #messages select "Benchmark", "M8 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+        /*
+         * UPDATE deal_tags: 
+         */
+        update
+            deal_tags
+        set
+            status_id = @cancelled_status_id,
+            quantity = @trade_tags_quantity
+        where
+            deal_tag_id = @deal_tag_id
+        
+        if @@rowcount != 1
+        begin
+            select
+                status = "Error",
+                message = "Failed to update deal_tags for tag, '" + @deal_tag + "'",
+                deal_tag = @deal_tag
+            
+            select
+                subject,
+                message
+            from
+                #messages
+            order by
+                id
+            
+            return
+        end
+        
+        insert into
+            #messages
+        select
+            subject = "Cancel Deal Tag",
+            message = "Cancelled deal tag " + convert(varchar(10), @trade_tag_id) + " for tag, '" + @deal_tag + "'"
+            
+/* insert into #messages select "Benchmark", "M9 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+        /*
+         * Perform actions for this tag
+         */
+        /*
+         * Process any deal tags
+         * Schedule a tt_processdealtags 
+         */
+        select
+            @sql = "exec tt_processdealtags '" + @default_login + "'"
+        exec
+            r_managetimer
+                @login = @default_login,
+                @name = "tt_processdealtags",
+                @interval = 1,
+                @sql = @sql
+/*
+        exec
+            tt_processdealtags
+                @login = @default_login,
+                @deal_tag_id = @deal_tag_id
+*/
+         
+/* insert into #messages select "Benchmark", "M9 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" */
+
+    end
+
+end
+else
+begin
+    select
+        status = "Error",
+        message = "Unsupported @exec_type, '" + @exec_type + "'",
+        exec_type = @exec_type
+    return
+end
+
+insert into
+    #messages
+select
+    "Benchmark",
+    "Total took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms"
+
+select
+    subject,
+    message
+from
+    #messages
+order by
+    id
+
+go

@@ -1,0 +1,166 @@
+drop procedure
+	cbo_wipesnapshotcommit
+go
+
+create procedure
+	cbo_wipesnapshotcommit
+		@login varchar(50),
+		@uncommit_date datetime
+as
+
+
+declare @commit_session_id int
+declare @bench_start datetime
+declare @volume_status varchar(10)
+declare @should_run varchar(1)
+declare @id int
+declare @ids int
+declare @name varchar(50)
+declare @uncommit_proc varchar(50)
+declare @description varchar(50)
+declare @run_status varchar(50)
+declare @run_message varchar(50)
+
+select
+        @uncommit_date = convert(varchar(8), @uncommit_date, 112)
+
+create table
+        #messages(
+                id int,
+                message varchar(50),
+                duration varchar(16) NULL
+        )
+
+create table
+	#commit_procs(
+		commit_proc_id int,
+		name varchar(50),
+		commit_proc varchar(50) NULL,
+		uncommit_proc varchar(50) NULL,
+		description varchar(50),
+		should_run varchar(1),
+		ordering int,
+		debug varchar(1) NULL
+	)
+
+insert into
+	#commit_procs(
+		commit_proc_id,
+		name,
+		commit_proc,
+		uncommit_proc,
+		description,
+		should_run,
+		ordering,
+		debug)
+select
+	commit_proc_id,
+	name,
+	commit_proc,
+	uncommit_proc,
+	description,
+	should_run,
+	ordering,
+	debug
+from
+	commit_procs
+where
+        should_run = "Y"
+and
+        uncommit_proc != NULL
+
+select
+        @id = 0
+select
+        @ids = count(*)
+from
+        #commit_procs
+where
+        ordering > @id
+
+insert into #messages values(0, "Starting uncommit for date: "+ convert(varchar(8), @uncommit_date, 112), "")	
+
+while @ids > 0
+begin
+	select
+                @id = min(ordering)
+        from
+                #commit_procs
+        where
+                ordering > @id
+	order by
+		ordering DESC
+
+	select
+		@bench_start = NULL,
+		@name = NULL,
+		@uncommit_proc = NULL,
+		@description = NULL
+
+	select
+		@name = name,
+		@uncommit_proc = uncommit_proc,
+		@description = description
+	from
+		#commit_procs
+	where
+		ordering = @id
+
+	insert into #messages values(@id, @name, NULL)
+
+
+	select @bench_start = getdate()
+
+	exec
+		@uncommit_proc
+			@login=@login,
+                        @trade_date=@uncommit_date,
+			@run_status=@run_status output
+
+	update #messages set duration = convert(varchar(12), convert(numeric(10, 2), datediff(millisecond, @bench_start, getdate()))) + " ms" where id = @id
+
+	/*	
+	if @run_status = "Fail"
+	begin
+		insert into
+			commit_messages(
+				commit_date,
+				commit_proc,
+				run_message
+			)
+		select
+			@uncommit_date,
+			@name,
+			@run_message
+
+		return
+	end
+	else
+	begin
+		insert into
+			commit_messages(
+                                commit_date,
+                                commit_proc,
+                                run_message
+                        )
+                select
+                        @uncommit_date,
+                        @name,
+                        @run_message
+	end
+	*/
+
+	select
+                @ids = count(*)
+        from
+                #commit_procs
+        where
+                ordering > @id
+end
+
+select
+        #messages.id, #messages.message, #messages.duration
+from
+        #messages
+
+go

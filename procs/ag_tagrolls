@@ -1,0 +1,400 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_tagrolls
+go
+
+
+create procedure
+	ag_tagrolls
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @fund_id int
+declare @deals int
+declare @deal_id int
+declare @roll_trader_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @trade_id int
+declare @trader_id int
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"back_to_rolls",
+	"Manage Rollovers",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tag",
+	"Tag Swap Deal",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pb_products",
+	"Prime Broker Products",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_queued_settlements",
+	"Tally Queued Settlements",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_clients",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_market",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closed_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"unsettled_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"settled_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+if @trade_date = NULL
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@roll_trader_id = roll_trader_id
+from
+	fund_roll_traders
+where
+	fund_id = @fund_id
+if @roll_trader_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Fund roll trader not found"
+	return
+end
+
+create table
+	#swap_deals(
+		deal_id int)
+insert into
+	#swap_deals(
+		deal_id)
+select
+	distinct(a.deal_id)
+from
+	trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+and
+	b.name in("Swap Near", "Swap Far")
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		deal_id int NULL,
+		deal_type varchar(50) NULL,
+		account varchar(50) NULL,
+		trade_id int NULL,
+		trade_type varchar(50) NULL,
+		trade_date datetime NULL,
+		quantity numeric(30,4) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		price float NULL,
+		trader_id int NULL,
+		trader varchar(50) NULL,
+		tag varchar(50) NULL)
+		
+
+select
+	@deal_id = 0
+select
+	@deals = count(*)
+from
+	#swap_deals
+where
+	deal_id > @deal_id
+
+while @deals > 0
+begin
+	select
+		@deal_id = min(deal_id)
+	from
+		#swap_deals
+	where
+		deal_id > @deal_id
+
+	select
+		@trader_id = NULL
+
+	insert into
+		#output(
+			style,
+			deal_id,
+			deal_type)
+	select
+		style = @subtotal_style,
+		a.deal_id,
+		b.name
+	from
+		deals a,
+		deal_types b
+	where
+		a.deal_type_id = b.deal_type_id
+	and
+		a.deal_id = @deal_id
+
+	insert into
+		#output(
+			style,
+			trade_id,
+			account,
+			trade_type,
+			trade_date,
+			quantity,
+			contract_id,
+			symbol,
+			value_date,
+			price,
+			trader_id,
+			trader)
+	select
+		style = @style,
+		a.trade_id,
+		d.symbol,
+		c.name,
+		a.trade_date,
+		a.quantity,
+		a.contract_id,
+		b.symbol,
+		a.value_date,
+		a.price,
+		a.trader_id,
+		e.symbol
+	from
+		trades a,
+		contracts b,
+		trade_types c,
+		external_accounts d,
+		traders e
+	where
+		a.contract_id = b.contract_id
+	and
+		a.trade_type_id = c.trade_type_id
+	and
+		a.external_account_id = d.external_account_id
+	and
+		a.trader_id = e.trader_id
+	and
+		a.deal_id = @deal_id
+	order by
+		a.trade_id
+
+	select
+		@trade_id = max(trade_id)
+	from
+		trades
+	where
+		deal_id = @deal_id
+
+	select
+		@trader_id = trader_id
+	from
+		#output
+	where
+		trade_id = @trade_id
+
+	if @trader_id = @roll_trader_id
+	begin
+		update
+			#output
+		set
+			tag = "Tag as Market Swap"
+		where
+			deal_id = @deal_id
+	end
+	else
+	begin
+		update
+			#output
+		set
+			tag = "Tag as Roll"
+		where
+			deal_id = @deal_id
+	end	
+
+	select
+		@deals = count(*)
+	from
+		#swap_deals
+	where
+		deal_id > @deal_id
+end
+
+select
+	style = @style,
+	back_to_rolls = "Back To Manage Rollovers",
+	trade_date = @trade_date
+
+select
+	section = "Swaps for " + convert(varchar(11), @trade_date),
+	style,
+	deal_type,
+	deal_id,
+	trade_id,
+	trade_date,
+	account,
+	trade_type,
+	quantity,
+	symbol,
+	value_date = convert(varchar(11), value_date, 1),
+	price,
+	tag
+from
+	#output
+order by
+	id
+	
+
+
+go

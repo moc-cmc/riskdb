@@ -1,0 +1,17 @@
+drop procedure
+	cbo_viewcommitstatuswrap
+go
+
+create procedure
+	cbo_viewcommitstatuswrap
+		@login varchar(50)
+
+as
+
+
+exec
+	cbo_viewcommitstatus
+		@login
+
+
+go

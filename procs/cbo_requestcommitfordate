@@ -1,0 +1,23 @@
+drop procedure
+	cbo_requestcommitfordate
+go
+
+create procedure
+	cbo_requestcommitfordate
+		@login varchar(50),
+		@trade_date datetime=NULL
+
+as
+
+exec
+	r_editcommitstatus	
+		@login=@login,
+		@commit_date=@trade_date,
+		@commit_status="Commit Requested",
+		@show_output="N"
+
+exec
+	cbo_viewcommitstatus	
+		@login
+
+go	

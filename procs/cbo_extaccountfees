@@ -1,0 +1,196 @@
+drop procedure cbo_extaccountfees
+go
+
+create procedure
+	cbo_extaccountfees	
+		@login varchar(50),
+		@external_account varchar(50),
+		@fee_schedule varchar(50),
+		@trade_date datetime,
+		@total_quantity float=NULL output,
+		@total_breaks  float=NULL output,
+		@fee_currency varchar(20) output
+
+as
+
+declare @run_id int
+declare @begin_day_string char(20)
+declare @end_day_string char(20)
+declare @evaluation_currency_id int
+declare @fund_id int
+declare @max_commit_date datetime
+declare @fee_schedule_id int
+declare @fee_schedule_type_id int
+declare @fee_schedule_type varchar(50)
+declare @fee_currency_id int 
+
+
+declare @external_account_id int
+declare @external_account_type_id int
+declare @begin_date datetime
+declare @end_date datetime
+
+declare @debug char(1)
+select @debug = "N"
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@fee_schedule_id = fee_schedule_id,
+	@fee_schedule_type_id = fee_schedule_type_id,
+	@fee_currency_id = fee_product_id
+from
+	fee_schedules
+where
+	name = @fee_schedule
+if @fee_schedule_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Fee schedule not found",
+		fee_schedule = @fee_schedule
+	return
+end
+
+select
+	@fee_schedule_type = name
+from
+	fee_schedule_types
+where
+	fee_schedule_type_id = @fee_schedule_type_id
+if @fee_schedule_type = NULL
+begin
+        select
+                status = "Error",
+                message = "Fee schedule type not found",
+                fee_schedule_type = @fee_schedule_type
+        return
+end
+
+/* output value */
+select
+	@fee_currency = symbol
+from
+	products
+where
+	product_id = @fee_currency_id
+
+
+
+select
+	@external_account_id = external_account_id,
+	@external_account_type_id = external_account_type_id
+from
+	external_accounts
+where
+	symbol = @external_account
+if @external_account_id = NULL
+begin
+	select
+		error="Error",
+		msg="Problem determining external account",
+		external_account=@external_account
+	return
+end
+
+
+	
+create table
+	#product_transactions(
+		product_transaction_id int,
+		deal_id int,
+		transaction_date datetime,
+		product_id int NULL,
+		value_date datetime,
+		quantity numeric(30,4),
+		trade_price float,
+		external_account_id int,
+		price float,
+		fee_schedule_id int NULL,
+		fee_schedule_name varchar(50) NULL,
+		fee_schedule_type_id int NULL,
+		fee_schedule_type varchar(50) NULL,
+		trade_id int NULL)
+
+insert into
+	#product_transactions
+select
+	a.product_transaction_id,
+	a.deal_id,
+	a.transaction_date,
+	a.product_id,
+	a.value_date,
+	a.quantity,
+	a.price,
+	a.external_account_id,
+	a.price,
+	b.fee_schedule_id,
+	@fee_schedule,
+	@fee_schedule_type_id,
+	@fee_schedule_type,
+	b.trade_id
+from
+	product_transactions a,
+	fs_product_transactions b
+where
+	a.product_transaction_id = b.product_transaction_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.transaction_date > @begin_date
+and
+	a.transaction_date <= @end_date
+and
+	b.fee_schedule_id = @fee_schedule_id
+
+
+
+if @debug = "Y"
+select debug="#product_transactions", * from #product_transactions
+
+select
+	@total_quantity = sum(quantity),
+	@total_breaks = sum(quantity * (1-price)) * -1
+from
+	#product_transactions
+
+create table
+	#client_account_types
+(
+	external_account_type_id int
+)
+insert into
+	#client_account_types
+select
+	external_account_type_id
+from
+	external_account_types
+where
+	name in("Client")
+
+if @external_account_type_id in(select @external_account_type_id from #client_account_types)
+begin
+	select
+		@total_quantity = @total_quantity * -1,
+		@total_breaks = @total_breaks * -1
+end
+
+
+go

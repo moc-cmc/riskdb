@@ -1,0 +1,322 @@
+
+drop procedure
+	ag_allocatenetwires
+go
+
+create procedure
+	ag_allocatenetwires
+		@login varchar(50),
+		@pb_wire_signoff_id int
+as
+
+declare @tico_account_id int
+declare @external_account_id int
+declare @account_transaction_id int
+declare @currency_id int
+declare @transaction_date datetime
+declare @transaction_type_id int
+declare @amount numeric(30,4)
+declare @ids int
+declare @id int
+
+declare @in_transaction_type_id int
+declare @out_transaction_type_id int
+declare @sub_transaction_type_id int
+declare @net_transaction_type_id int
+declare @is_net_account char(1)
+declare @net_account_amount numeric(30, 4)
+declare @net_account_transaction_id int
+declare @net_external_account_id int
+declare @processed_status_id int
+declare @sub_account_amount numeric(30, 4)
+declare @sub_account_transaction_id int
+declare @sub_external_account_id int
+declare @wire_external_account_id int
+declare @wire_status_id int
+
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@wire_external_account_id = external_account_id,
+	@currency_id = product_id,
+	@transaction_date = value_date,
+	@wire_status_id = status_id
+from
+	pb_wire_signoffs
+where
+	pb_wire_signoff_id = @pb_wire_signoff_id
+if @wire_external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Wire signoff not found",
+		pb_wire_signoff_id = @pb_wire_signoff_id
+	return
+end
+
+select
+	@processed_status_id = status_id
+from
+	statuses
+where
+	name = "Processed"
+
+if @wire_status_id = @processed_status_id
+begin
+	return
+end
+
+select
+	@is_net_account = "Y"
+from
+	wire_net_accounts
+where
+	wire_net_account_id = @wire_external_account_id
+if @is_net_account != "Y"
+begin
+	select
+		status = "Error",
+		message = "Called for account that is not defined as a net account for wires"
+	return
+end
+
+
+select
+	@out_transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Wire Allocation Out"
+if @out_transaction_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"transaction_types",
+			@out_transaction_type_id output
+
+	insert into
+		transaction_types(
+			transaction_type_id,
+			name,
+			direction)
+	values(
+		@out_transaction_type_id,
+		"Wire Allocation Out",
+		1)
+end
+
+select
+        @in_transaction_type_id = transaction_type_id
+from
+        transaction_types
+where
+        name = "Wire Allocation In"
+if @in_transaction_type_id = NULL
+begin
+        exec
+                j_nextkey
+                        "transaction_types",
+                        @in_transaction_type_id output
+
+        insert into
+                transaction_types(
+                        transaction_type_id,
+                        name,
+                        direction)
+        values(
+                @in_transaction_type_id,
+                "Wire Allocation In",
+                1)
+end
+
+
+create table
+	#allocations(
+		id int identity,
+		external_account_id int,
+		confirmation_type_id int,
+		amount numeric(30,4))
+insert into
+	#allocations(
+		external_account_id,
+		confirmation_type_id,
+		amount)
+select
+	external_account_id,
+	confirmation_type_id,
+	amount
+from
+	wire_allocations
+where
+	pb_wire_signoff_id = @pb_wire_signoff_id
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#allocations
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#allocations
+	where
+		id > @id
+
+	select
+		@net_account_transaction_id = NULL,
+		@sub_account_transaction_id = NULL,
+		@sub_external_account_id = NULL,
+		@net_external_account_id = NULL,
+		@amount = NULL,
+		@net_account_amount = NULL,
+		@sub_account_amount = NULL
+
+	select
+		@sub_external_account_id = external_account_id,
+		@amount = amount,
+		@net_account_amount = amount * -1,
+		@sub_account_amount = amount
+	from
+		#allocations
+	where
+		id = @id
+
+	select
+		@net_external_account_id = wire_net_account_id
+	from
+		wire_net_accounts
+	where
+		external_account_id = @sub_external_account_id
+	if @net_external_account_id = NULL
+	begin
+		select
+			status = "Error",
+			messasge = "Problem finding net account for sub account",
+			sub_external_account_id = @sub_external_account_id,
+			net_external_account_id = @net_external_account_id,
+			pb_wire_signoff_id = @pb_wire_signoff_id
+			
+
+        	select
+                	@ids = count(*)
+        	from
+                	#allocations
+        	where
+	                id > @id
+
+		continue
+	end
+
+	select
+		@net_account_amount = @net_account_amount * -1,
+		@sub_account_amount = @sub_account_amount * -1
+	from
+		external_account_directions
+	where
+		external_account_id = @external_account_id
+	and
+		direction = -1
+
+		
+
+        exec
+                j_nextkey
+                        "account_transactions",
+                        @net_account_transaction_id output
+
+        if @net_account_amount < 0
+                select
+                        @net_transaction_type_id = @out_transaction_type_id
+
+        if @net_account_amount > 0
+                select
+                        @net_transaction_type_id = @in_transaction_type_id
+
+        insert into
+                account_transactions(
+                        account_transaction_id,
+                        entered_by,
+                        external_account_id,
+                        transaction_type_id,
+                        transaction_date,
+                        currency_id,
+                        amount,
+                        note)
+        values(
+                @net_account_transaction_id,
+                @tico_account_id,
+                @net_external_account_id,
+                @net_transaction_type_id,
+                @transaction_date,
+                @currency_id,
+                @net_account_amount,
+                convert(varchar(50), @pb_wire_signoff_id))
+	
+
+	exec
+		j_nextkey
+			"account_transactions",
+			@sub_account_transaction_id output
+
+	if @sub_account_amount < 0
+		select
+			@sub_transaction_type_id = @out_transaction_type_id
+
+	if @sub_account_amount > 0
+		select
+			@sub_transaction_type_id = @in_transaction_type_id
+
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values(
+		@sub_account_transaction_id,
+		@tico_account_id,
+		@sub_external_account_id,
+		@sub_transaction_type_id,
+		@transaction_date,
+		@currency_id,
+		@sub_account_amount,
+		convert(varchar(50), @pb_wire_signoff_id))
+		
+	select
+		@ids = count(*)
+	from
+		#allocations
+	where
+		id > @id
+end
+
+
+go
+
+
+

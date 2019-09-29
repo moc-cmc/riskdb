@@ -1,0 +1,54 @@
+drop procedure cm_savebospotsettles
+go
+
+create procedure
+	cm_savebospotsettles
+		@login varchar(50),
+		@price_date datetime,
+		@source varchar(50)
+
+as
+
+declare @source_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+insert into
+	bo_spot_settles(
+		contract_id,
+		source_id,
+		price_date,
+		price)
+select
+	contract_id,
+	source_id = @source_id,
+	price_date,
+	price
+from
+	prices
+where
+	convert(char(11), price_date, 1) = convert(char(11), @price_date, 1)
+and
+	contract_id not in(
+		select
+			contract_id
+		from
+			bo_spot_settles
+		where
+			convert(char(11), price_date, 1) = convert(char(11), @price_date, 1))
+
+go
+

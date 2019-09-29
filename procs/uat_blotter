@@ -1,0 +1,851 @@
+use
+	risk_qson
+go
+
+drop procedure
+	uat_blotter
+go
+
+create procedure
+	uat_blotter
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @trader_id int
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+declare @source_id int
+declare @tico_account_id int
+declare @active_status_id int
+declare @edit_status_id int
+declare @cancelled_status_id int
+declare @cancelling_src_status_id int
+declare @sent_status_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"old_value_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"create_spot",
+	"UAT Create Spot Trade",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"last_px",
+	"Number",
+	"#,##0.000000;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	"#,##0.000000;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "spot_ref",
+        "Number",
+        "#,##0.000000;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+if @trade_date = NULL
+        select
+                @trade_date = getdate()
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+create table
+	#connections(
+		connection_id int,
+		source_id int)
+
+insert into
+	#connections(
+		connection_id,
+		source_id)
+select
+	a.connection_id,
+	a.source_id
+from
+	connections a,
+	connection_tico_accounts b
+where
+	a.connection_id = b.connection_id
+and
+	b.tico_account_id = @tico_account_id
+
+create table
+        #trade_notifications(
+                trade_notification_id int,
+                trade_id int,
+                source_id int,
+                status_id int)
+	
+select
+        @active_status_id = status_id
+from
+        statuses
+where
+        name = "Active"
+select
+        @edit_status_id = status_id
+from
+        statuses
+where
+        name = "Edit"
+select
+        @cancelled_status_id = status_id
+from
+        statuses
+where
+        name = "Cancelled"
+
+select
+        @sent_status_id = status_id
+from
+        statuses
+where
+        name = "Sent"
+
+
+insert into
+        #trade_notifications
+select
+        a.trade_notification_id,
+        a.trade_id,
+        a.source_id,
+        a.status_id
+from
+        trade_notifications a,
+	#connections b
+where
+	a.source_id = b.source_id
+and
+	a.status_id in(@active_status_id,@cancelled_status_id,@edit_status_id)
+
+insert into
+        #trade_notifications
+select top 100
+        a.trade_notification_id,
+        a.trade_id,
+        a.source_id,
+        a.status_id
+from
+        trade_notifications a,
+        #connections b,
+	trades c
+where
+        a.source_id = b.source_id
+and
+	a.trade_id = c.trade_id
+and
+	c.trade_date >= @begin_date
+and
+	c.trade_date < @end_date
+and
+        a.status_id in(@sent_status_id)
+order by
+	a.trade_id DESC
+
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		trade_type_id int,
+		trade_type varchar(25) NULL,
+		deal_type_id int NULL,
+		deal_type varchar(25) NULL,
+		internal_account_id int,
+		internal_account varchar(30) NULL,
+		external_account_id int,
+		external_account varchar(50) NULL,
+		external_account_type_id int NULL,
+		external_account_type varchar(15) NULL,
+		trader_id int,
+		trader varchar(50) NULL,
+		counterparty_id int,
+		counterparty varchar(50) NULL,
+                agency_vs_counterparty varchar(40) NULL,
+		fund_agency_trade char(1) NULL,
+		fund_agency_buy_sell varchar(8) NULL,
+		client_buy_sell varchar(4) NULL,
+		broker_id int,
+		broker varchar(25) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(30) NULL,
+		ext_account_pb varchar(25) NULL,
+		contract_id int,
+		std_contract varchar(50) NULL,
+		traded_ccy varchar(10) NULL,
+                counter_ccy varchar(10) NULL,
+		quantity float NULL,
+		abs_qty float NULL,
+		abs_counter_qty float NULL,
+                abs_far_counter_qty float NULL,
+		trade_date datetime,
+		trade_day datetime NULL,
+		value_date datetime NULL,
+		fixing_date datetime NULL,
+		db_price float,
+		std_price float NULL,
+		spot_reference float NULL,
+		sales_code_id int,
+		sales_code varchar(15) NULL,
+		strategy_id int,
+		strategy varchar(30) NULL,
+		identifier varchar(100) NULL,
+		deal_identifier varchar(80) NULL,
+		deal_status_id int NULL,
+		deal_status varchar(20) NULL,
+		trade_status_id int,
+		trade_status varchar(20) NULL,
+		trade_notification_id int,
+		notification_status_id int,
+		notification_status varchar(15) NULL,
+		notification_source_id int,
+		notification_source varchar(25) NULL,
+                source_trade_trade_id int NULL,
+		source_trade_deal_id int NULL,
+		swap_symbol varchar(30) NULL,
+		cl_or_lp varchar(4) NULL,
+		client_prime_broker varchar(50) NULL,
+		is_inverted_contract char(1) NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		style varchar(50) NULL
+		)
+
+insert into
+	#trades
+(
+	style,
+	trade_id,
+	deal_id,
+	trade_type_id,
+	internal_account_id,
+	external_account_id,
+	trader_id,
+	counterparty_id,
+	fund_agency_trade,
+	contract_id,
+	broker_id,
+	quantity,
+	trade_date,
+	value_date,
+	fixing_date,
+	db_price,
+	std_price,
+	spot_reference,
+	sales_code_id,
+	strategy_id,
+	identifier,
+	trade_status_id,
+	trade_notification_id,
+	notification_status_id,
+	notification_source_id,
+	abs_qty,
+	cl_or_lp,
+	abs_counter_qty
+)
+select 
+	style = @style,
+	trade_id = a.trade_id,
+	deal_id = a.deal_id,
+	trade_type_id = a.trade_type_id,
+	internal_account_id = a.internal_account_id,
+	external_account_id = a.external_account_id,
+	trader_id = a.trader_id,
+	counterparty_id = a.counterparty_id,
+        fund_agency_trade = "N", /* defaults to 'N', updated to 'Y' if fund_agency trade */
+	contract_id = a.contract_id,
+	broker_id = a.broker_id,
+	quantity = a.quantity,
+	trade_date = a.trade_date,
+	value_date = convert(varchar(12), a.value_date),
+	fixing_date = convert(varchar(12), a.fixing_date),
+	db_price = a.price,
+	std_price = a.price,
+	spot_reference = a.spot_reference,
+	sales_code_id = a.sales_code_id,
+	strategy_id = a.strategy_id,
+	identifier = a.identifier,
+	trade_status_id = a.status_id,
+	trade_notification_id = b.trade_notification_id,
+	notification_status_id = b.status_id,
+	notification_source_id = b.source_id,
+	abs_qty = abs(a.quantity),
+	cl_or_lp = "LP",
+	abs_counter_qty = round(abs(a.quantity) * a.price, 2)
+from
+	trades a,
+	#trade_notifications b
+where
+	a.trade_id = b.trade_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+update
+    #trades
+set
+    std_price = case 
+        when d.name = "Inverted" and c.factor != NULL then
+            (1 / a.db_price) * c.factor * d.factor
+        when d.name = "Inverted" then
+            (1 / a.db_price) * d.factor
+        when c.factor != NULL then
+            a.db_price * c.factor * d.factor
+        else
+            a.db_price * d.factor
+    end
+from
+    #trades a,
+    contracts b,
+    contract_price_styles c,
+    price_styles d
+where
+    a.contract_id = b.contract_id
+and
+    b.contract_id = c.contract_id
+and
+    c.price_style_id = d.price_style_id
+
+update
+	#trades
+set
+	deal_type_id = b.deal_type_id,
+	deal_status_id = b.status_id
+from
+	#trades a,
+	deals b
+where
+	a.deal_id =  b.deal_id
+
+update
+	#trades
+set
+	deal_identifier = b.symbol
+from
+	#trades a,
+	deal_exec_symbols b
+where
+	a.deal_id =  b.deal_id
+
+update
+	#trades
+set
+	deal_type = b.name
+from
+	#trades a,
+	deal_types b
+where
+	a.deal_type_id = b.deal_type_id
+
+update
+	#trades
+set
+	trade_type = b.name
+from
+	#trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+update
+	#trades
+set
+	trade_type = b.symbol
+from
+	#trades a,
+	trade_type_symbols b
+where
+	a.trade_type_id = b.trade_type_id
+and
+	a.notification_source_id = b.source_id
+
+update
+	#trades
+set
+	internal_account = b.symbol
+from
+	#trades a,
+	internal_accounts b
+where
+	a.internal_account_id = b.internal_account_id
+
+update 
+        #trades
+set
+        external_account = b.symbol,
+	external_account_type_id = b.external_account_type_id
+from
+        #trades a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+
+update
+	#trades 
+set
+	external_account_type = b.name
+from
+	#trades a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+
+update
+	#trades
+set
+	external_account = b.symbol
+from
+	#trades a,
+	external_account_symbols b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.notification_source_id = b.source_id
+
+update
+	#trades
+set
+	ext_account_pb = b.symbol
+from
+	#trades a,
+	client_give_ups b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.notification_source_id = b.source_id
+
+update
+        #trades
+set
+        client_prime_broker = b.symbol
+from
+        #trades a,
+        client_give_ups b
+where
+        a.external_account_id = b.external_account_id
+and
+        a.notification_source_id = b.source_id
+
+update
+        #trades
+set
+        client_prime_broker = e.symbol
+from
+        #trades a,
+        counterparty_give_ups  e
+where
+        a.counterparty_id = e.counterparty_id
+and
+        e.source_id = a.notification_source_id
+and
+        client_prime_broker = NULL
+
+update
+	#trades
+set
+	trader = b.symbol
+from
+        #trades a,
+        traders b
+where
+        a.trader_id = b.trader_id
+
+update
+        #trades
+set
+        trader = b.symbol
+from
+        #trades a,
+        trader_symbols b
+where
+        a.trader_id = b.trader_id
+and
+        a.notification_source_id = b.source_id
+
+update
+	#trades
+set
+	counterparty = b.name,
+	agency_vs_counterparty = b.name
+from
+	#trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+update
+        #trades
+set
+        counterparty = b.symbol,
+	agency_vs_counterparty = b.symbol
+from
+        #trades a,
+        counterparty_symbols b
+where
+        a.counterparty_id = b.counterparty_id
+and
+        b.source_id = a.notification_source_id
+
+update
+	#trades
+set
+	broker = b.symbol
+from
+	#trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+update
+        #trades
+set
+        broker = b.symbol
+from
+        #trades a,
+        broker_symbols b
+where
+        a.broker_id = b.broker_id
+and
+        b.source_id = a.notification_source_id
+
+update 
+	#trades
+set
+	strategy = b.name
+from
+	#trades a,
+	strategies b
+where
+	a.strategy_id = b.strategy_id
+
+update
+        #trades
+set
+        sales_code = b.name
+from
+        #trades a,
+        sales_codes b
+where
+        a.sales_code_id = b.sales_code_id
+
+update
+	#trades
+set
+	fund_agency_trade = "Y",
+	cl_or_lp = "CL",
+	agency_vs_counterparty = a.external_account
+from
+	#trades a,
+	fund_agency_counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+update
+	#trades
+set
+	fund_agency_buy_sell = "SELL",
+        client_buy_sell = "BUY"
+where
+	quantity < 0
+
+update
+        #trades
+set
+        fund_agency_buy_sell = "BUY",
+	client_buy_sell = "SELL"
+where
+        quantity > 0
+
+update 
+	#trades
+set
+	std_contract = b.symbol,
+        traded_ccy = g.symbol,
+        counter_ccy = f.symbol
+from
+	#trades a,
+	contracts b,
+	forwards e,
+	products f,
+	products g
+where
+	a.contract_id = b.contract_id
+and
+	b.contract_id=e.contract_id
+and
+        e.currency_id=f.product_id
+and
+        e.product_id=g.product_id
+
+update
+	#trades
+set
+	std_contract = rtrim(a.counter_ccy)+rtrim(a.traded_ccy)
+from
+	#trades a,
+	contracts b,
+	contract_price_styles c,
+	price_styles d
+where
+	a.contract_id = b.contract_id
+and
+	b.contract_id = c.contract_id
+and
+	c.price_style_id = d.price_style_id
+and
+	d.name = "Inverted"
+
+
+update
+	#trades
+set
+	deal_status = b.name
+from
+	#trades a,
+	statuses b
+where
+	a.deal_status_id = b.status_id
+
+update
+        #trades
+set
+	trade_status = b.name
+from
+        #trades a,
+        statuses b
+where
+        a.trade_status_id = b.status_id
+
+update
+	#trades
+set
+	notification_status = b.name
+from
+	#trades a,
+	statuses b
+where
+	a.notification_status_id = b.status_id
+
+update
+	#trades
+set
+	notification_status = b.status_symbol
+from
+	#trades a,
+	status_symbols b
+where
+	a.notification_status_id = b.status_id
+
+update
+	#trades
+set
+	prime_broker_id = d.prime_broker_id,
+	prime_broker = c.name
+from
+	#trades a,
+	external_account_prime_brokers b,
+	prime_brokers d,
+	sources c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.prime_broker_id = d.prime_broker_id
+and
+	c.source_id = d.source_id
+
+update
+	#trades
+set
+	prime_broker = b.symbol
+from
+	#trades a,
+	prime_broker_symbols b
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = a.notification_source_id
+
+update
+	#trades
+set
+	notification_source = b.name
+from
+	#trades a,
+	sources b
+where
+	a.notification_source_id = b.source_id
+
+update
+	#trades
+set
+	trade_day = case
+		when a.trade_date > convert(char(8), a.trade_date, 112) +' 17:00' then
+			dateadd(day, 1, convert(char(15), a.trade_date, 112))
+		else
+			convert(char(12), a.trade_date, 112)
+	end
+from
+	#trades a
+
+update
+	#trades
+set
+	swap_symbol = c.symbol
+from
+	#trades a,
+	swap_symbol_trades b,
+	swap_symbols c
+where
+	a.trade_id = b.trade_id
+and
+	b.swap_symbol_id = c.swap_symbol_id
+	
+select 
+        section = "Pending ACK - "+ rtrim(notification_source),
+        /*trade_report_id = trade_notification_id,*/
+        trade_id = trade_id,
+        /*link_id = deal_id,*/
+	swap_symbol,
+        /*order_id = deal_identifier,
+        exec_id = identifier,*/
+        type=trade_type,
+        /*trade_date = rtrim(convert(varchar(12), trade_date))+" "+rtrim(convert(varchar(10), trade_date, 108)),*/
+        trade_date = convert(datetime, trade_date, 109),
+        value = convert(char(12), value_date),
+        fixing = convert(char(12), fixing_date),
+        b_s = client_buy_sell,
+        symbol = std_contract,
+        ccy = traded_ccy,
+        qty = abs(quantity),
+        settl_ccy = counter_ccy,
+        settl_qty=abs_counter_qty,
+        price = std_price,
+        spot_ref = spot_reference,
+        exec_firm= external_account,
+        exec_trader = trader,
+        contra_firm = counterparty,
+        clearing_firm = prime_broker,
+        exec_system = broker,
+        style
+from
+        #trades
+where
+        notification_status = "NEW"
+order by
+        trade_id DESC
+select top 100
+	section = "Acknowledged Trades - "+ rtrim(notification_source) +" (last 100)",
+        /*trade_report_id = trade_notification_id,*/
+        trade_id = trade_id,
+        /*link_id = deal_id,*/
+        swap_symbol,
+        /*order_id = deal_identifier,
+        exec_id = identifier,*/
+        type=trade_type,
+        /*trade_date = rtrim(convert(varchar(12), trade_date))+" "+rtrim(convert(varchar(10), trade_date, 108)),*/
+        trade_date = convert(datetime, trade_date, 109),
+        value = convert(char(12), value_date),
+        fixing = convert(char(12), fixing_date),
+        b_s = client_buy_sell,
+        symbol = std_contract,
+        ccy = traded_ccy,
+        qty = abs(quantity),
+        settl_ccy = counter_ccy,
+        settl_qty=abs_counter_qty,
+        price = std_price,
+        spot_ref = spot_reference,
+        exec_firm= external_account,
+        exec_trader = trader,
+        contra_firm = counterparty,
+        clearing_firm = prime_broker,
+        exec_system = broker,
+        style
+from
+        #trades
+where
+	notification_status = "Sent"
+order by
+        trade_id DESC
+
+
+
+go

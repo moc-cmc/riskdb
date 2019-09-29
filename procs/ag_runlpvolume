@@ -1,0 +1,422 @@
+drop procedure
+	ag_runlpvolume
+go
+
+
+create procedure
+	ag_runlpvolume
+		@login char(30),
+		@run_name char(200),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+as
+
+declare @begin_day_string varchar(22)
+declare @end_day_string varchar(22)
+
+declare @counterparty varchar(50)
+declare @run_id int
+declare @counterparty_id int
+declare @counterparties int
+declare @total float
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"volume",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"cp_name",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"products",
+	"Product Type Products",
+	NULL)
+
+
+
+select * from #meta
+
+
+if @begin_date = NULL
+	select
+		@begin_date = getdate()
+	if datepart(hour, @begin_date) >= 17
+		exec
+			r_nextbusinessday
+				@begin_date,
+				@begin_date output
+
+	select
+		@begin_day_string = convert(char(2), datepart(month, @begin_date)) + "/" +
+			convert(char(2), datepart(day, @begin_date)) + "/" +
+			convert(char(4), datepart(year, @begin_date))
+	select
+		@begin_date = convert(datetime, @begin_day_string)
+
+	exec
+		r_prevbusinessday
+			@begin_date,
+			@begin_date output
+
+	select
+		@begin_date = dateadd(hour, 17, @begin_date)
+
+if @end_date = NULL
+	exec
+		r_nextbusinessday
+			@begin_date,
+			@end_date output
+
+/*	select
+		@end_date = dateadd(day, 1, @begin_date) */
+select
+	@end_day_string = convert(char(2), datepart(month, @end_date)) + "/" +
+			convert(char(2), datepart(day, @end_date)) + "/" +
+			convert(char(4), datepart(year, @end_date)) + " 17:00"
+	select
+		@end_date = convert(datetime, @end_day_string)
+
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding run with name",
+		run = @run_name
+	return
+end
+
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+create table
+	#trades(
+		trade_id int,
+		volume float)
+insert into
+	#trades
+select
+	h.trade_id,
+	h.evaluation_notional
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g,
+	committed_daily_revals h
+where
+	a.trade_id = h.trade_id
+and
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id= f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date <= @end_date
+and
+	convert(char(11), h.bo_trade_date) = convert(char(11), h.reval_date)
+
+
+create table
+	#volume(
+		id int identity,
+		counterparty_id int,
+		broker_id int,
+		volume float)
+
+insert into
+	#volume(
+		counterparty_id,
+		broker_id,
+		volume)
+select
+	a.counterparty_id,
+	a.broker_id,
+	sum(b.volume)
+from
+	trades a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+group by
+	a.counterparty_id,
+	a.broker_id
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(200) NULL,
+		cp_name varchar(50) NULL,
+		counterparty varchar(50) NULL,
+		broker varchar(50) NULL,
+		volume float NULL)
+
+select
+	@counterparty_id = 0
+select
+	@counterparties = count(*)
+from
+	#volume
+where
+	counterparty_id > @counterparty_id
+
+while @counterparties > 0
+begin
+	select
+		@counterparty_id = min(counterparty_id)
+	from
+		#volume
+	where
+		counterparty_id > @counterparty_id
+
+	select
+		@counterparty = name
+	from
+		counterparties
+	where
+		counterparty_id = @counterparty_id
+
+	select
+		@total = NULL
+
+	insert into
+		#output(
+			style,
+			cp_name,
+			counterparty)
+	values(
+		"background:#FFFFCC;border: 1px solid white",
+		@counterparty,
+		@counterparty)
+
+	insert into
+		#output(
+			style,
+			cp_name,
+			broker,
+			volume)
+	select
+		style = "background:#FFFFFF;border: 1px solid white",
+		cp_name = @counterparty,
+		a.symbol,
+		b.volume
+	from
+		brokers a,
+		#volume b
+	where
+		a.broker_id = b.broker_id
+	and
+		b.counterparty_id = @counterparty_id
+
+	select
+		@total = sum(volume)
+	from
+		#volume
+	where
+		counterparty_id = @counterparty_id
+
+	insert into
+		#output(
+			style,
+			cp_name,
+			broker,
+			volume)
+	values(
+		"background:#FFFFFF;border: 1px solid white",
+		@counterparty,
+		"Total",
+		@total)
+
+	select
+		@counterparties = count(*)
+	from
+		#volume
+	where
+		counterparty_id > @counterparty_id
+end
+
+
+select
+	style,
+	cp_name,
+	counterparty,
+	broker,
+	volume = volume / 1000000.0
+from
+	#output
+order by
+	cp_name,
+	id
+
+go

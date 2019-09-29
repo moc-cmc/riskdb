@@ -1,0 +1,147 @@
+use
+	risk_jeff
+go
+
+drop procedure
+	ag_accountmarginshome
+go
+
+create procedure
+	ag_accountmarginshome
+		@login varchar(50)
+as
+
+declare @fund_id int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"account",
+	"Account Margin Schedule",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		products int NULL)
+insert into
+	#output(
+		style,
+		external_account_id,
+		account,
+		products)
+select
+	style = @style,
+	a.external_account_id,
+	a.symbol,
+	products = 0
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.name = "Client"
+order by
+	a.symbol
+
+
+create table
+	#products(
+		external_account_id int,
+		products int)
+insert into
+	#products(
+		external_account_id,
+		products)
+select
+	external_account_id,
+	count(product_id)
+from
+	account_product_margins
+group by
+	external_account_id
+
+update
+	#output
+set
+	a.products = b.products
+from
+	#output a,
+	#products b
+where
+	a.external_account_id = b.external_account_id
+
+
+select
+	style,
+	account,
+	products
+from
+	#output
+order by
+	id
+
+
+go

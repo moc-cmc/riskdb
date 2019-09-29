@@ -1,0 +1,448 @@
+use
+	risk_rcm
+go
+
+drop procedure
+	r_importrjopos
+go
+
+create procedure
+	r_importrjopos
+		@login varchar(30),
+		@precid varchar(5)=NULL,
+		@pfirm varchar(5)=NULL,
+		@poffic varchar(5)=NULL,
+		@prr varchar(5)=NULL,
+		@pacct varchar(5)=NULL,
+		@pclass varchar(5)=NULL,
+		@psubcl varchar(5)=NULL,
+		@patype varchar(5)=NULL,
+		@pcard varchar(5)=NULL,
+		@pbs varchar(5)=NULL,
+		@pqty varchar(20)=NULL,
+		@psdsc1 varchar(50)=NULL,
+		@pprtpr varchar(15)=NULL,
+		@ptdate varchar(10)=NULL,
+		@poc varchar(10)=NULL,
+		@pctym varchar(10)=NULL,
+		@psbcus varchar(10)=NULL,
+		@pstype varchar(10)=NULL,
+		@psubty varchar(10)=NULL,
+		@pstrik varchar(20)=NULL,
+		@pexpdt varchar(10)=NULL,
+		@pspred varchar(10)=NULL,
+		@psname varchar(30)=NULL,
+		@psrcac varchar(15)=NULL,
+		@psdate varchar(10)=NULL,
+		@exch varchar(10)=NULL,
+		@ptrdex varchar(10)=NULL,
+		@pfc varchar(10)=NULL,
+		@psymbl varchar(10)=NULL,
+		@pptype varchar(10)=NULL,
+		@ptpric varchar(20)=NULL,
+		@pcalc varchar(10)=NULL,
+		@pcmnt1 varchar(10)=NULL,
+		@pcmnt2 varchar(10)=NULL,
+		@pgivio varchar(10)=NULL,
+		@pgivf varchar(10)=NULL,
+		@pbqty varchar(20)=NULL,
+		@psqty varchar(20)=NULL,
+		@pcurat varchar(10)=NULL,
+		@row_date datetime=NULL,
+		@row_index int,
+		@row_count int
+		
+as
+
+declare @id int
+declare @rjo_source_id int
+declare @external_account_id int
+declare @external_account varchar(50)
+declare @trade_date datetime
+declare @quantity int
+declare @buy_sell varchar(15)
+declare @strike numeric(30,6)
+declare @contract_symbol varchar(50)
+declare @option_expiration_id int
+declare @expiration_symbol varchar(50)
+declare @future_id int
+declare @contract_id int
+declare @price_factor float
+declare @price_format varchar(50)
+declare @trade_price float
+declare @contract varchar(50)
+declare @instrument varchar(50)
+declare @identifier varchar(50)
+declare @deal_id int
+declare @trade_id int
+declare @older_trades int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"map_expiration",
+	"Option Exp Symbols",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_symbol",
+	"Set Contract Symbol",
+	NULL)
+
+ 
+select * from #meta
+
+select
+	@rjo_source_id = source_id
+from
+	sources
+where
+	name = "RJO"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "RJO source not found"
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_account_symbols
+where
+	symbol = @pacct
+and
+	source_id = @rjo_source_id
+if @external_account_id = NULL
+begin
+	select
+		@external_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = @pacct
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Account not found",
+			account = @pacct
+		return
+	end
+end
+
+select
+	@external_account = symbol
+from
+	external_accounts
+where
+	external_account_id = @external_account_id
+
+
+if @row_date = NULL
+begin
+	select
+		status = "Error",
+		message = "Row date must be provided"
+	return
+end
+
+select
+	@trade_date = convert(datetime, @ptdate)
+select
+	@identifier = rtrim(convert(varchar(50), @trade_date, 1) ) + "-" + convert(varchar(50), @row_index)
+
+
+select
+	@trade_id = trade_id
+from
+	trades
+where
+	identifier = @identifier
+and
+	convert(date, trade_date) = convert(date, @trade_date)
+if @trade_id != NULL
+begin
+	select
+		status = "Dupe",
+		message = "Record is already imported",
+		identifier = @identifier
+	return
+end
+	
+
+select
+	@quantity = convert(int, convert(float, @pqty))
+
+if @pbs = "2"
+	select
+		@buy_sell = "Sell"
+else
+	select
+		@buy_sell = "Buy"
+	
+
+select
+	@strike = convert(float, @pstrik)
+
+select
+	@contract_symbol = rtrim(@psdsc1)
+
+if @strike != 0
+begin
+	select
+		@option_expiration_id = option_expiration_id
+	from
+		option_expiration_symbols
+	where
+		source_id = @rjo_source_id
+	and
+		symbol = @contract_symbol
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Option expiration symbol not found",
+			source = "RJO",
+			symbol = @contract_symbol,
+			map_expiration = "MAP"
+		return
+	end
+	else
+	begin
+		select
+			@expiration_symbol = symbol
+		from
+			option_expirations
+		where
+			option_expiration_id = @option_expiration_id
+
+		exec
+			r_optioncontract
+				@expiration_symbol,
+				@pstrik,
+				@psubty,
+				@contract_id output
+
+	end
+end
+
+if @contract_id = NULL
+begin
+	select
+		@contract_id = contract_id
+	from
+		contract_symbols
+	where
+		source_id = @rjo_source_id
+	and
+		symbol = @contract_symbol
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Contract not found",
+			source = "RJO",
+			symbol = @contract_symbol,
+			set_symbol = "Map Symbol"
+		return
+	end
+end
+
+select
+	@future_id = NULL
+exec
+	r_underlyingfuture
+		@contract_id,
+		@future_id output
+
+select
+	@price_factor = NULL,
+	@price_format = NULL
+
+select
+	@price_factor = a.factor,
+	@price_format = b.name
+from
+	future_price_factors a,
+	price_formats b
+where
+	a.future_id = @future_id
+and
+	a.price_format_id = b.price_format_id
+and
+	a.source_id = @rjo_source_id
+if @price_factor = NULL
+	select
+		@price_factor = 1.0
+
+if @price_format = "32nds"
+begin
+	exec
+		r_pricefromdashbond
+			@contract_id,
+			@ptpric,
+			@trade_price output
+
+	if @strike != 0
+	begin
+		exec
+			r_pricefromdashbond
+				@contract_id,
+				@pstrik,
+				@strike output
+	end
+end
+else
+begin
+	exec
+		x_resolvepricefromstring
+			@ptpric,
+			@trade_price output
+
+	select
+		@strike = convert(float, @pstrik)
+
+end
+
+select
+	@trade_price = @trade_price * @price_factor,
+	@strike = @strike * @price_factor
+
+select
+	@contract = symbol
+from
+	contracts
+where
+	contract_id = @contract_id
+
+update
+	option_contracts
+set
+	strike = @strike
+where
+	contract_id = @contract_id
+
+select
+	@instrument = a.name
+from
+	instruments a,
+	contracts b
+where
+	a.instrument_id = b.instrument_id
+and
+	b.contract_id = @contract_id
+
+if @instrument = "Future"
+begin
+	exec
+		api_tallyextaccountfuture
+			@login = @login,
+			@trade_date = @trade_date,
+			@source = "RJO",
+			@identifier = @identifier,
+			@external_account = @external_account,
+			@buy_sell = @buy_sell,
+			@symbol = @contract,
+			@quantity = @quantity,
+			@price = @trade_price,
+			@deal_id = @deal_id output,
+			@trade_id = @trade_id output
+end
+if @instrument = "Option"
+begin
+	exec
+		api_tallyextaccountfutopt
+			@login = @login,
+			@trade_date = @trade_date,
+			@source = "RJO",
+			@identifier = @identifier,
+			@external_account = @external_account,
+			@buy_sell = @buy_sell,
+			@symbol = @contract,
+			@quantity = @quantity,
+			@price = @trade_price,
+			@deal_id = @deal_id output,
+			@trade_id = @trade_id output
+end
+
+select
+	@id = id
+from
+	rjo_pos_file
+where
+	identifier = @identifier
+if @id = NULL
+begin
+
+	exec
+		j_nextkey
+			"rjo_pos_file",
+			@id output
+	
+	insert into
+		rjo_pos_file
+	values(
+		@id,
+		@rjo_source_id,
+		@external_account_id,
+		@trade_date,
+		@identifier,
+		@precid,
+		@pfirm,
+		@poffic,
+		@prr,
+		@pacct,
+		@pclass,
+		@psubcl,
+		@patype,
+		@pcard,
+		@pbs,
+		@pqty,
+		@psdsc1,
+		@pprtpr,
+		@ptdate,
+		@poc,
+		@pctym,
+		@psbcus,
+		@pstype,
+		@psubty,
+		@pstrik,
+		@pexpdt,
+		@pspred,
+		@psname,
+		@psrcac,
+		@psdate,
+		@exch,
+		@ptrdex,
+		@pfc,
+		@psymbl,
+		@pptype,
+		@ptpric,
+		@pcalc,
+		@pcmnt1,
+		@pcmnt2,
+		@pgivio,
+		@pgivf,
+		@pbqty,
+		@psqty,
+		@pcurat)
+end
+	
+	
+	
+go
+

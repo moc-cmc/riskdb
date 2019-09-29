@@ -1,0 +1,34 @@
+create or replace procedure
+	api_getextaccountfromsymbol
+		@external_account varchar(100)
+
+as
+
+declare @external_account_id int
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @external_account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding external account from provided",
+		provided = @external_account
+	return
+end
+
+select
+	external_account_id = external_account_id,
+	symbol = symbol,
+	name = name
+from
+	external_accounts
+where
+	external_account_id = @external_account_id
+
+go
+

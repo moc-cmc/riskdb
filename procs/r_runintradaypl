@@ -1,0 +1,2145 @@
+
+if object_id("r_runintradaypl") != NULL
+    drop procedure
+        r_runintradaypl
+go
+
+
+create procedure
+	r_runintradaypl
+		@login char(30),
+		@run_name char(200),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+as
+
+declare @sorting char(100)
+declare @run_id int
+declare @begin_day_string char(20)
+declare @end_day_string char(20)
+declare @net_change float
+declare @positions int
+declare @trades int
+declare @trade_id int
+declare @trade_date datetime
+declare @contract_id int
+declare @quantity numeric(30,2)
+declare @trade_price float
+declare @open_price float
+declare @begin_value float
+declare @close_price float
+declare @end_value float
+declare @p_l float
+declare @native_currency_id int
+declare @native_pl float
+declare @default_day datetime
+declare @trader_id int
+declare @broker_id int
+declare @contracts int
+declare @pos_pl float
+declare @trade_pl float
+declare @current_position numeric(30,2)
+declare @total_pos_pl float
+declare @total_deltas_pl float
+declare @total_day_trade_pl float
+declare @total_pl float
+declare @total_pl_string char(40)
+declare @trade_total numeric(30,2)
+declare @curr_adj_trade_total numeric(30,0)
+declare @pos_total numeric(30,2)
+declare @perspective_contract_id int
+declare @delta float
+declare @price_style char(100)
+declare @price_factor float
+declare @has_deltas int
+
+declare @get_product_id int
+declare @get_product_qty float
+declare @give_product_id int
+declare @give_product_qty float
+declare @usd_equivalent_qty float
+declare @total_longs float
+declare @total_shorts float
+declare @resid_status_id int
+declare @has_exposure int
+declare @is_expired int
+declare @instrument char(100)
+
+declare @deal_id int
+declare @value_date datetime
+declare @pl_view_style char(50)
+declare @product_type_id int
+
+declare @e_id int
+declare @longs numeric(30,2)
+declare @shorts numeric(30,2)
+declare @avg_long float
+declare @avg_short float
+
+declare @non_opt_native_total_pl float
+declare @non_opt_usd_total_pl float
+declare @non_opt_native_trades_pl float
+declare @non_opt_native_pos_pl float
+declare @non_opt_usd_trades_pl float
+declare @non_opt_usd_pos_pl float
+
+declare @fund_id int
+declare @rolls_pl numeric(30,2)
+declare @roll_trader_id int
+
+select
+    graphs = '<div id="graphs" style="background:#fff;width:100%;height:140px"></div>'
+
+create table
+	#display_lasts(
+		contract_id int,
+		price float,
+		display_price float,
+		timestamp datetime)
+insert into
+	#display_lasts
+select
+	contract_id,
+	price,
+	price,
+	timestamp
+from
+	current_prices
+insert into
+	#display_lasts
+select
+	a.contract_id,
+	1.0 / b.price,
+	b.price,
+	timestamp = getdate()
+from
+	forwards a,
+	current_prices b,
+	forwards c
+where
+	b.contract_id = c.contract_id
+and
+	c.product_id = a.currency_id
+and
+	c.currency_id = a.product_id
+    
+create table
+	#product_types(
+		product_type_id int,
+		trades_pl float NULL,
+		pos_pl float NULL,
+		total_pl float NULL)
+	
+exec
+	r_runintradaypllinks
+		@login
+
+select
+	@pl_view_style = a.name,
+	@sorting = d.name
+from
+	pl_view_styles a,
+	pl_preferences b,
+	tico_accounts c,
+	sorting_styles d
+where
+	a.pl_view_style_id = b.pl_view_style_id
+and
+	b.ti_account_id = c.account_id
+and
+	b.sorting_style_id = d.sorting_style_id
+and
+	c.login = @login
+if @@rowcount = 0
+	select
+		@pl_view_style = "Default",
+		@sorting = "By Contract"
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@roll_trader_id = roll_trader_id
+from
+	fund_roll_traders
+where
+	fund_id = @fund_id
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding run with name",
+		run = @run_name
+	return
+end
+
+if @begin_date = NULL
+	select
+		@begin_date = getdate()
+	if datepart(hour, @begin_date) >= 17
+		exec
+			r_nextbusinessday
+				@begin_date,
+				@begin_date output
+
+	select
+		@begin_day_string = convert(char(2), datepart(month, @begin_date)) + "/" +
+			convert(char(2), datepart(day, @begin_date)) + "/" +
+			convert(char(4), datepart(year, @begin_date))
+	select
+		@begin_date = convert(datetime, @begin_day_string)
+
+	exec
+		r_prevbusinessday
+			@begin_date,
+			@begin_date output
+
+	select
+		@begin_date = dateadd(hour, 17, @begin_date)
+
+if @end_date = NULL
+	exec
+		r_nextbusinessday
+			@begin_date,
+			@end_date output
+
+/*	select
+		@end_date = dateadd(day, 1, @begin_date) */
+select
+	@end_day_string = convert(char(2), datepart(month, @end_date)) + "/" +
+			convert(char(2), datepart(day, @end_date)) + "/" +
+			convert(char(4), datepart(year, @end_date)) + " 17:00"
+	select
+		@end_date = convert(datetime, @end_day_string)
+
+
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders	
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies	
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts	
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts	
+
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers	
+
+
+
+create table
+	#positions(
+		contract_id int,
+		quantity numeric(30,2),
+		trade_date datetime,
+		open_price float NULL,
+		close_price float NULL,
+		change float NULL,
+		p_l float NULL,
+		native_currency_id int NULL,
+		native_pl float NULL,
+		product_type_id int NULL)
+
+
+
+insert into
+	#positions
+select
+	contract_id,
+	convert(numeric(30,2),quantity),
+	date,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL
+from
+	run_position_cache
+where
+	run_id = @run_id
+and
+	date = @begin_date
+if @@rowcount = 0
+begin
+	select
+		@resid_status_id = status_id
+	from
+		statuses
+	where
+		name = "Resid"
+
+	insert into
+		#positions
+	select
+		a.contract_id,
+		sum(convert(numeric(30,2),a.quantity)),
+		max(a.trade_date),
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL
+	from
+		trades a,
+		#external_accounts b,
+		#internal_accounts c,
+		#traders d,
+		#strategies e,
+		#brokers f
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.internal_account_id = c.internal_account_id
+	and
+		a.trader_id = d.trader_id
+	and
+		a.strategy_id = e.strategy_id
+	and
+		a.broker_id = f.broker_id
+	and
+		a.status_id != @resid_status_id
+	and
+		a.trade_date <= @begin_date
+	group by
+		a.contract_id
+
+
+	delete
+	
+	from
+		#positions
+	where
+		contract_id in(
+			select
+				contract_id
+			from
+				future_contracts
+			where
+				expiration < dateadd(day, -1, @begin_date))
+	
+	delete
+	
+	from
+		#positions
+	where
+		contract_id in(
+			select
+				a.contract_id
+			from
+				option_contracts a,
+				option_expirations b
+			where
+				a.option_expiration_id = b.option_expiration_id
+			and
+				b.expiration < dateadd(day, -1, @begin_date))
+	
+	delete
+	
+	from
+		#positions
+	where
+		contract_id in(
+			select
+				a.contract_id
+			from
+				exotic_contracts a,
+				option_expirations b
+			where
+				a.option_expiration_id = b.option_expiration_id
+			and
+				b.expiration < dateadd(day, -1, @begin_date))
+	delete
+	
+	from
+		#positions
+	where
+		contract_id in(
+			select
+				a.contract_id
+			from
+				exotic_contracts a,
+				option_expirations b
+			where
+				a.option_expiration_id = b.option_expiration_id
+			and
+				a.ko_ki_date < @begin_date)
+
+	insert into
+		run_position_cache
+	select
+		run_id = @run_id,
+		date = @begin_date,
+		contract_id,
+		convert(numeric(30,0), quantity)
+	from
+		#positions
+end
+
+
+	
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		contract_id int,
+		quantity numeric(30,2),
+		trade_date datetime,
+		price float,
+		close_price float NULL,
+		change float NULL,
+		p_l float NULL,
+		native_currency_id int NULL,
+		native_pl float NULL)
+
+create table
+	#deals(
+		deal_id int,
+		contract_id int,
+		value_date datetime NULL,
+		quantity numeric(30,2),
+		trade_date datetime,
+		trade_price float,
+		close_price float NULL,
+		change float NULL,
+		p_l float NULL,
+		broker_id int,
+		trader_id int)
+
+insert into
+	#trades
+select
+	a.trade_id,
+	a.deal_id,
+	a.contract_id,
+	convert(numeric(30,2), a.quantity),
+	a.trade_date,
+	a.price,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f 
+where
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id= f.broker_id
+and
+	a.quantity != 0
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date <= @end_date
+
+/* AVERAGE PRICING */
+create table
+	#deals_avg(
+		contract_id int,
+		value_date datetime,
+		longs numeric(30,2) NULL,
+		avg_long float NULL,
+		shorts numeric(30,2) NULL,
+		avg_short float NULL,
+		net numeric(30,2) NULL,
+		close_price float NULL,
+		p_l float NULL)
+
+
+
+select
+	@contract_id = 0
+select
+	@positions = count(*)
+from
+	#positions
+where
+	contract_id > @contract_id
+
+while @positions > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#positions
+	where
+		contract_id > @contract_id
+
+	select
+		@quantity = quantity
+	from
+		#positions
+	where
+		contract_id = @contract_id
+
+	select
+		@open_price = NULL,
+		@close_price = NULL,
+		@p_l = NULL,
+		@begin_value = NULL,
+		@end_value = NULL,
+		@native_currency_id = NULL,
+		@native_pl = NULL
+
+	exec
+		r_posplfordate
+			"Intraday",
+			@contract_id, 
+			@quantity,
+			@begin_date,
+			@end_date,
+			@open_price output,
+			@begin_value output,
+			@close_price output,
+			@end_value output,
+			@p_l output,
+			@native_currency_id output,
+			@native_pl output
+				
+
+	exec
+		r_contractproducttype
+			@contract_id,
+			@product_type_id output
+
+	if @p_l = NULL
+	begin
+		select
+			@e_id = -1
+			/* error = "Found NULL p&l for contract",
+			contract_id = @contract_id */
+	end
+	else
+	begin
+		update
+			#product_types
+		set
+			pos_pl = pos_pl + @p_l,
+			total_pl = total_pl + @p_l
+		where
+			product_type_id = @product_type_id
+		if @@rowcount != 1
+			insert into
+				#product_types
+			values(
+				@product_type_id,
+				0,
+				@p_l,
+				@p_l)
+	end
+	
+	select
+		@price_style = NULL,
+		@price_factor = NULL
+	select
+		@price_style = a.name,
+		@price_factor = b.factor
+	from
+		price_styles a,
+		contract_price_styles b
+	where
+		a.price_style_id = b.price_style_id
+	and
+		b.contract_id = @contract_id
+
+	if @price_factor = NULL
+		select
+			@price_factor = 1.0
+	
+	if @price_style = "Inverted"
+	begin
+		select
+			@open_price = 1 / @open_price,
+			@close_price = 1 / @close_price
+	end
+
+	select
+		@open_price = @open_price * @price_factor,
+		@close_price = @close_price * @price_factor
+
+	update
+		#positions
+	set
+		open_price = @open_price,
+		close_price = @close_price,
+		change = @close_price - @open_price,
+		p_l = @p_l,
+		native_currency_id = @native_currency_id,
+		native_pl = @native_pl,
+		product_type_id = @product_type_id
+	where
+		contract_id = @contract_id
+
+	select
+		@positions = count(*)
+	from
+		#positions
+	where
+		contract_id > @contract_id
+end
+
+
+select
+	@trade_id = 0
+select
+	@trades = count(*)
+from
+	#trades
+where
+	trade_id > @trade_id
+
+
+while @trades > 0
+begin
+	select
+		@trade_id = min(trade_id)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+
+	select
+		@deal_id = deal_id,
+		@trade_date = trade_date,
+		@contract_id = contract_id,
+		@quantity = quantity,
+		@trade_price = price,
+		@close_price = NULL,
+		@p_l = NULL,
+		@native_currency_id = NULL,
+		@native_pl = NULL
+	from
+		#trades
+	where
+		trade_id = @trade_id
+
+	select
+		@trader_id = trader_id,
+		@broker_id = broker_id
+	from
+		trades
+	where
+		trade_id = @trade_id
+
+	select
+		@value_date= NULL
+	select
+		@value_date = value_date
+	from
+		trade_value_dates
+	where
+		trade_id = @trade_id
+
+	exec
+		r_tradeplfordate
+			"Intraday",
+			@trade_id,
+			@quantity,
+			@trade_price,
+			@begin_value output,
+			@end_date,
+			@close_price output,
+			@end_value output,
+			@p_l output,
+			@native_currency_id output,
+			@native_pl output
+
+
+	if @p_l = NULL
+	begin
+		select
+			@e_id = -1
+			/* error = "Found NULL trades p&l for contract",
+			contract_id = @contract_id */
+	end
+	else
+	begin
+		exec
+			r_contractproducttype
+				@contract_id,
+				@product_type_id output
+
+		update
+			#product_types
+		set
+			trades_pl = trades_pl + @p_l,
+			total_pl = total_pl + @p_l
+		where
+			product_type_id = @product_type_id
+		if @@rowcount != 1
+			insert into
+				#product_types
+			values(
+				@product_type_id,
+				@p_l,
+				0,
+				@p_l)
+	end
+
+
+	select
+		@price_style = NULL,
+		@price_factor = NULL
+
+	select
+		@price_style = a.name,
+		@price_factor = b.factor
+	from
+		price_styles a,
+		contract_price_styles b
+	where
+		a.price_style_id = b.price_style_id
+	and
+		b.contract_id = @contract_id
+
+	if @price_factor = NULL
+		select
+			@price_factor = 1.0
+
+	if @price_style = "Inverted"
+	begin
+		select
+			@trade_price = 1 / @trade_price,
+			@close_price = 1 / @close_price
+	end
+
+	select
+		@trade_price = @trade_price * @price_factor,
+		@close_price = @close_price * @price_factor
+
+
+	update
+		#trades
+	set
+		price = @trade_price,
+		close_price = @close_price,
+		change = @close_price - @trade_price,
+		p_l = @p_l,
+		native_currency_id = @native_currency_id,
+		native_pl = @native_pl
+	where
+		trade_id = @trade_id
+
+
+	update
+		#deals
+	set
+		quantity = quantity + @quantity,
+		p_l = p_l + @p_l,
+		trade_date = @trade_date,
+		close_price = @close_price,
+		change = @close_price - @trade_price,
+		trader_id = @trader_id,
+		broker_id = @broker_id
+	where
+		deal_id = @deal_id
+	and
+		contract_id = @contract_id
+	and
+		value_date = @value_date
+	and
+		convert(char(30), convert(numeric(30,4), trade_price)) = convert(char(30), convert(numeric(30,4), @trade_price))
+	and
+		sign(quantity) = sign(@quantity)
+	if @@rowcount != 1
+	begin
+		insert into
+			#deals
+		values(
+			@deal_id,
+			@contract_id,
+			@value_date,
+			@quantity,
+			@trade_date,
+			@trade_price,
+			@close_price,
+			@close_price - @trade_price,
+			@p_l,
+			@broker_id,
+			@trader_id)
+	end
+
+
+	/* average pricing section */
+	if @value_date = NULL
+		exec
+			r_contractexpiration
+				@contract_id,
+				@value_date output
+	if @value_date = NULL
+		select
+			@value_date = @end_date
+
+	select
+		@longs = NULL,
+		@shorts = NULL
+	if @quantity > 0 and @trader_id != @roll_trader_id
+	begin
+		select
+			@longs = longs,
+			@avg_long = avg_long
+		from
+			#deals_avg
+		where
+			contract_id = @contract_id
+		and
+			value_date = @value_date
+		if @longs = NULL
+		begin
+			insert into
+				#deals_avg
+			values(
+				@contract_id,
+				@value_date,
+				@quantity,
+				@trade_price,
+				0,
+				@trade_price,
+				@quantity,
+				@close_price,
+				@p_l)	
+
+		end
+		else
+		begin
+			update
+				#deals_avg
+			set
+				avg_long = ((@quantity * @trade_price) + (@longs * @avg_long)) / (@longs + @quantity),
+				longs = longs + @quantity,
+				p_l = p_l + @p_l,
+				net = net + @quantity
+			where
+				contract_id = @contract_id
+			and
+				value_date = @value_date
+		end
+
+	end
+	if @quantity < 0 and @trader_id != @roll_trader_id
+	begin
+		select
+			@shorts = shorts,
+			@avg_short = avg_short
+		from
+			#deals_avg
+		where
+			contract_id = @contract_id
+		and
+			value_date = @value_date
+		if @shorts = NULL
+			insert into
+				#deals_avg
+			values(
+				@contract_id,
+				@value_date,
+				0,
+				@trade_price,
+				@quantity,
+				@trade_price,
+				@quantity,
+				@close_price,
+				@p_l)
+		else
+		begin
+			update
+				#deals_avg
+			set
+				avg_short = ((@quantity * @trade_price) + (@shorts * @avg_short)) / (@shorts + @quantity),
+				shorts = shorts + @quantity,
+				p_l = p_l + @p_l,
+				net = net + @quantity
+			where
+				contract_id = @contract_id
+			and
+				value_date = @value_date
+		end	
+
+	end
+
+	select
+		@trades = count(*)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+
+end
+
+delete
+
+from
+	#deals
+where
+	quantity = 0
+
+
+
+if @pl_view_style != "View Only NB"
+	select
+		run = "<font size=2><b>P&L</b></font>",
+		run_name = @run_name,
+		deltas = "DELTAS",
+		previous = "Previous Day",
+		mtd = "Month to date",
+		range = "Date Range",
+		run_date = convert(char(20), getdate(), 0),
+		begin_date = convert(char(20), @begin_date, 0),
+		end_date = convert(char(20), @end_date, 0),
+		orders = "View Orders",
+		set_view = "View Style"
+else
+	select
+		run = "<font size=2><b>P&L</b></font>",
+		run_name = @run_name,
+		previous = "Previous Day",
+		range = "Date Range",
+		run_date = convert(char(20), getdate(), 0),
+		begin_date = convert(char(20), @begin_date, 0),
+		end_date = convert(char(20), @end_date, 0)
+
+
+create table
+	#pos_output(
+		symbol char(100),
+		quantity numeric(30,2) NULL,
+		close_price char(30) NULL,
+		last char(30) NULL,
+		change char(30) NULL,
+		position_pl char(30) NULL)	
+insert into
+	#pos_output
+select
+	a.symbol,
+	b.quantity,
+	close_price = convert(char(30), convert(numeric(30, 4), b.open_price)),
+	last = convert(char(30), convert(numeric(30, 4), b.close_price)),
+	change = convert(char(30), convert(numeric(30, 4), b.change)),
+	position_pl = convert(char(30), convert(numeric(30, 2), b.p_l))
+from
+	contracts a,
+	#positions b
+where
+	a.contract_id = b.contract_id
+and
+	b.quantity != 0
+order by
+	b.product_type_id,
+	a.symbol
+
+select
+	@total_pos_pl = sum(p_l)
+from
+	#positions
+if @total_pos_pl = NULL
+	select
+		@total_pos_pl = 0
+
+insert into
+	#pos_output
+values(
+	"<font size=2><b>Position Total</b></font>",
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	convert(char(30), convert(numeric(30, 2), @total_pos_pl)))
+
+
+
+create table
+	#roll_deals(
+		deal_id char(100) NULL,
+		trade_date char(20) NULL,
+		symbol char(100) NULL,
+		value_date char(20) NULL,
+		quantity numeric(30,2) NULL,
+		trade_price char(30) NULL,
+		last_price char(30) NULL,
+		change char(30) NULL,
+		/* daily_trades_profit_loss char(30) NULL, */
+		profit_loss char(30) NULL,
+		trader char(30) NULL,
+		broker char(30) NULL,
+		edit_values char(30) NULL)
+insert into
+	#roll_deals
+select
+	convert(char(100), b.deal_id),
+	trade_date = convert(char(20), b.trade_date, 0),
+	a.symbol,
+	convert(char(15), b.value_date, 1),
+	b.quantity,
+	trade_price = convert(char(30), convert(numeric(30, 4), b.trade_price)),
+	last = convert(char(30), convert(numeric(30, 4), b.close_price)),
+	diff = convert(char(30), convert(numeric(30, 4), b.change)),
+	p_l = convert(char(30), convert(numeric(30, 2), b.p_l)),
+	trader = c.symbol,
+	broker = d.symbol,
+	edit_values = "EDIT"
+from
+	contracts a,
+	#deals b,
+	traders c,
+	brokers d
+where
+	a.contract_id = b.contract_id
+and
+	b.trader_id = c.trader_id
+and
+	b.broker_id = d.broker_id
+and
+	b.trader_id = @roll_trader_id
+order by
+	a.symbol, convert(datetime, b.trade_date)
+
+select
+	@rolls_pl = sum(convert(numeric(30,2), profit_loss))
+from
+	#roll_deals
+
+insert into
+	#roll_deals
+values(
+	"<font size=2><b>Rolls Total</b></font>",
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	convert(char(30), convert(numeric(30, 2), @rolls_pl)),
+	NULL,
+	NULL,
+	NULL)
+
+
+
+create table
+	#deal_output(
+		deal_id char(100) NULL,
+		trade_date char(20) NULL,
+		symbol char(100) NULL,
+		value_date char(20) NULL,
+		quantity numeric(30,2) NULL,
+		trade_price char(30) NULL,
+		last_price char(30) NULL,
+		change char(30) NULL,
+		/* daily_trades_profit_loss char(30) NULL, */
+		profit_loss char(30) NULL,
+		trader char(30) NULL,
+		broker char(30) NULL,
+		edit_values char(30) NULL)
+
+if @sorting = "By Contract"
+begin
+insert into
+	#deal_output
+select
+	convert(char(100), b.deal_id),
+	trade_date = convert(char(20), b.trade_date, 0),
+	a.symbol,
+	convert(char(15), b.value_date, 1),
+	b.quantity,
+	trade_price = convert(char(30), convert(numeric(30, 4), b.trade_price)), 
+	last = convert(char(30), convert(numeric(30, 4), b.close_price)),
+	diff = convert(char(30), convert(numeric(30, 4), b.change)),
+	p_l = convert(char(30), convert(numeric(30, 2), b.p_l)),
+	trader = c.symbol,
+	broker = d.symbol,
+	edit_values = "EDIT"
+from
+	contracts a,
+	#deals b,
+	traders c,
+	brokers d
+where
+	a.contract_id = b.contract_id
+and
+	b.trader_id = c.trader_id
+and
+	b.broker_id = d.broker_id
+order by
+	a.symbol, convert(datetime, b.trade_date)
+end
+
+if @sorting = "By Time"
+begin
+insert into
+	#deal_output
+select
+	convert(char(100), b.deal_id),
+	trade_date = convert(char(20), b.trade_date, 0),
+	a.symbol,
+	convert(char(15), b.value_date, 1),
+	b.quantity,
+	trade_price = convert(char(30), convert(numeric(30, 4), b.trade_price)),
+	last = convert(char(30), convert(numeric(30, 4), b.close_price)),
+	diff = convert(char(30), convert(numeric(30, 4), b.change)),
+	/* p_l = convert(char(30), convert(numeric(30, 2), b.p_l)), */
+	p_l = convert(char(30), convert(numeric(30, 2), b.p_l)),
+	trader = c.symbol,
+	broker = d.symbol,
+	edit_values = "EDIT"
+from
+	contracts a,
+	#deals b,
+	traders c,
+	brokers d
+where
+	a.contract_id = b.contract_id
+and
+	b.trader_id = c.trader_id
+and
+	b.broker_id = d.broker_id
+order by
+	convert(datetime, b.trade_date)
+end
+	
+/* update
+	#deal_output
+set
+	trade_price = convert(char(30), convert(numeric(30,2), trade_price)),
+	last_price = convert(char(30), convert(numeric(30,2), last_price))
+where
+	symbol like "%JPY" */
+
+select
+	@total_day_trade_pl = sum(p_l)
+from
+	#trades
+if @total_day_trade_pl = NULL
+	select
+		@total_day_trade_pl = 0
+
+insert into
+	#deal_output
+values(
+	"<font size=2><b>Trades</b></font>",
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	convert(char(30), convert(numeric(30, 2), @total_day_trade_pl)),
+	NULL,
+	NULL,
+	NULL)
+	
+
+
+create table
+	#breakdown(
+		contract_id int,
+		symbol_starting_position numeric(30,2),
+		daily_trade_quantity numeric(30,2),
+		current_position numeric(30,2),
+		pos_pl float NULL,
+		daily_trades_p_and_l float NULL,
+		change float NULL,
+		product_type_id int NULL)
+
+create table
+	#contracts(
+		contract_id int)
+
+create table
+	#deltas(
+		contract_id int,
+		delta float NULL,
+		option_delta float NULL,
+		total_delta float NULL,
+		p_l float NULL,
+		product_type_id int NULL,
+		non_opt_native_pl float NULL,
+		non_opt_usd_pl float NULL,
+		last_price float NULL,
+		implied_entry float NULL,
+		multiplier float NULL)
+	
+insert into
+	#contracts
+select
+	contract_id
+from
+	#positions
+insert into
+	#contracts
+select
+	contract_id
+from
+	#trades
+where
+	contract_id not in(
+		select
+			contract_id
+		from
+			#contracts)
+
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	#contracts
+where
+	contract_id > @contract_id
+
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#contracts
+	where
+		contract_id > @contract_id	
+
+	select
+		@current_position = NULL,
+		@trade_pl = NULL,
+		@pos_pl = NULL
+
+	select
+		@trade_total = sum(a.quantity)
+	from
+		#trades a,
+		trades b,
+		strategies c
+	where
+		a.contract_id = @contract_id
+	and
+		a.trade_id = b.trade_id
+	and
+		b.strategy_id = c.strategy_id
+	and
+		c.name != "Currency Balance Management"
+	if @trade_total = NULL
+		select
+			@trade_total = 0
+
+	select
+		@pos_total = sum(quantity)
+	from
+		#positions
+	where
+		contract_id = @contract_id
+	if @pos_total = NULL
+		select
+			@pos_total = 0
+
+	select
+		@current_position = @trade_total + @pos_total
+
+	select
+		@perspective_contract_id = NULL,
+		@delta = NULL
+
+	select
+		@instrument = a.name
+	from
+		instruments a,
+		contracts b
+	where
+		a.instrument_id = b.instrument_id
+	and
+		b.contract_id = @contract_id
+
+	exec
+		r_contractproducttype
+			@contract_id,
+			@product_type_id output
+
+	if @instrument = "Forward" or @instrument = "Future"
+	begin
+		exec
+			b_contractdelta
+				@run_id,
+				@end_date,
+				@contract_id,
+				@current_position,
+				@perspective_contract_id output,
+				@delta output
+	
+		if @delta != NULL
+		begin
+			select
+				@non_opt_native_total_pl = NULL,
+				@non_opt_usd_total_pl = NULL,
+				@non_opt_native_trades_pl = NULL,
+				@non_opt_native_pos_pl = NULL,
+				@non_opt_usd_trades_pl = NULL,
+				@non_opt_usd_pos_pl = NULL 
+
+			select
+				@non_opt_native_trades_pl = sum(native_pl),
+				@non_opt_usd_trades_pl = sum(p_l)
+			from
+				#trades
+			where
+				contract_id = @contract_id
+
+			if @non_opt_native_trades_pl = NULL
+				select
+					@non_opt_native_trades_pl = 0.0,
+					@non_opt_usd_trades_pl = 0.0
+			
+			select
+				@non_opt_native_pos_pl = sum(native_pl),
+				@non_opt_usd_pos_pl = sum(p_l)
+			from
+				#positions
+			where
+				contract_id = @contract_id
+
+			if @non_opt_native_pos_pl = NULL
+				select
+					@non_opt_native_pos_pl = 0.0,
+					@non_opt_usd_pos_pl = 0.0
+
+
+			select
+				@non_opt_native_total_pl = @non_opt_native_trades_pl + @non_opt_native_pos_pl,
+				@non_opt_usd_total_pl = @non_opt_usd_trades_pl + @non_opt_usd_pos_pl
+
+			update
+				#deltas
+			set
+				delta = delta + @delta,
+				total_delta = total_delta + @delta,
+				non_opt_native_pl = non_opt_native_pl + @non_opt_native_total_pl,
+				non_opt_usd_pl = non_opt_usd_pl + @non_opt_usd_total_pl
+			where
+				contract_id = @perspective_contract_id
+			if @@rowcount != 1
+				insert into
+					#deltas
+				values(
+					@perspective_contract_id,
+					@delta,
+					0,
+					@delta,
+					0,
+					@product_type_id,
+					@non_opt_native_total_pl,
+					@non_opt_usd_total_pl,
+					NULL,
+					NULL,
+					1.0
+					)
+		end
+	end
+	else
+	begin
+
+		exec
+			r_optcontractdelta
+				@run_id,
+				@contract_id,
+				@current_position,
+				@end_date,
+				@perspective_contract_id output,
+				@delta output
+
+		if @delta = NULL
+			select
+				@delta = 0
+
+
+		if @delta != NULL
+		begin
+			update
+				#deltas
+			set
+				option_delta = option_delta + @delta,
+				total_delta = total_delta + @delta
+			where
+				contract_id = @perspective_contract_id
+			if @@rowcount != 1
+				insert into
+					#deltas
+				values(
+					@perspective_contract_id,
+					0,
+					@delta,
+					@delta,
+					0,
+					@product_type_id,
+					0.0,
+					0.0,
+					NULL,
+					NULL,
+					1.0)
+		end
+
+	end
+
+	select
+		@trade_pl = sum(a.p_l)
+	from
+		#trades a,
+		trades b,
+		strategies c
+	where
+		a.contract_id = @contract_id
+	and
+		a.trade_id = b.trade_id
+	and
+		b.strategy_id = c.strategy_id
+	and
+		c.name != "Currency Balance Management"
+	if @trade_pl = NULL
+	begin
+		select
+			@trade_pl = 0
+	end
+
+	select
+		@pos_pl = sum(p_l)
+	from
+		#positions
+	where
+		contract_id = @contract_id
+	if @pos_pl = NULL
+		select
+			@pos_pl = 0
+
+
+	/* NEW PART TESTING TESTING*/
+	update
+		#deltas
+	set
+		p_l = p_l + @trade_pl + @pos_pl
+	where
+		contract_id = @perspective_contract_id
+
+	update
+		#deltas
+	set
+		last_price = a.price
+	from
+		#display_lasts a,
+		#deltas b
+	where
+		a.contract_id = b.contract_id /* TEST */
+
+	update
+		#deltas
+	set
+		multiplier = a.quantity
+	from
+		futures a,
+		future_contracts b,
+		#deltas c
+	where
+		a.future_id = b.future_id
+	and
+		b.contract_id = c.contract_id
+
+	update
+		#deltas
+	set
+		implied_entry = last_price - (non_opt_native_pl / (delta * multiplier))
+	where
+		delta != 0
+
+	select
+		@net_change = NULL
+
+	exec
+		r_pricechange
+			@contract_id,
+			@begin_date,
+			@net_change output
+
+	select
+		@is_expired = NULL
+
+	exec
+		r_isexpired
+			@contract_id,
+			@begin_date,
+			@is_expired output
+
+	exec
+		r_contractproducttype
+			@contract_id,
+			@product_type_id output
+
+	if @is_expired = NULL
+		select
+			@is_expired = 0
+
+	if @is_expired = 0
+		insert into
+			#breakdown
+		values(
+			@contract_id,
+			@pos_total,
+			@trade_total,
+			@current_position,
+			@pos_pl,
+			@trade_pl,
+			@net_change,
+			@product_type_id)
+	
+	select
+		@contracts = count(*)
+	from
+		#contracts
+	where
+		contract_id > @contract_id
+end
+
+
+
+create table
+	#output(
+		symbol char(50) NULL,
+		starting_pos numeric(30,2) NULL,
+		position_profit_loss char(30) NULL,
+		trades_quantity char(30) NULL,
+		trading_profit_loss char(30) NULL,
+		total_position char(30) NULL,
+		total_profit_loss char(30) NULL,
+		last_price char(30) NULL,
+		change char(30) NULL,
+		contract char(100) NULL)
+
+
+delete
+	#breakdown
+from
+	#breakdown a,
+	contracts b,
+	instruments c
+where
+	a.symbol_starting_position = 0
+and
+	a.contract_id = b.contract_id
+and
+	b.instrument_id = c.instrument_id
+and
+	c.name not in("Forward", "Future")
+and
+	a.contract_id not in(
+		select
+			contract_id
+		from
+			#trades
+		where
+			quantity != 0)
+	
+
+insert into
+	#output
+select
+	a.symbol,
+	b.symbol_starting_position,
+	position_pl = /* "<div align=right>" +*/ convert(char(30), convert(numeric(30, 2), b.pos_pl)) /* + "</div>"*/,
+	/* trades_quantity = "<div align=right>" + convert(char(30), convert(numeric(30,0), b.daily_trade_quantity)) + "</div>",*/
+	trades_quantity = convert(char(30), convert(numeric(30,0), b.daily_trade_quantity)),
+	daily_trades_p_and_l = convert(char(30), convert(numeric(30, 2), b.daily_trades_p_and_l)),
+	total_position = convert(char(30), convert(numeric(30, 0), b.current_position)),
+	total_p_and_l = convert(char(30), convert(numeric(30, 2), b.pos_pl + b.daily_trades_p_and_l)),
+	last = "<div align=right>" + convert(char(30), convert(numeric(30, 4), c.display_price)) + "</div>",
+	change = "<div align=right>" + convert(char(30), convert(numeric(30, 4), b.change)) + "</div>",
+	contract = "<div align=right>" + a.symbol + "</div>"
+from
+	contracts a,
+	#breakdown b,
+	#display_lasts c,
+	instruments d
+where
+	a.contract_id = b.contract_id
+and
+	a.instrument_id = d.instrument_id
+and
+	d.name in("Forward", "Future")
+and
+	a.contract_id *= c.contract_id
+order by
+	b.product_type_id,
+	a.symbol
+
+
+insert into
+	#output
+select
+	a.symbol,
+	b.symbol_starting_position,
+	position_pl = /* "<div align=right>" +*/ convert(char(30), convert(numeric(30, 2), b.pos_pl)) /* + "</div>"*/,
+	/* trades_quantity = "<div align=right>" + convert(char(30), convert(numeric(30,0), b.daily_trade_quantity)) + "</div>", */
+	trades_quantity = convert(char(30), convert(numeric(30,0), b.daily_trade_quantity)),
+	daily_trades_p_and_l = convert(char(30), convert(numeric(30, 2), b.daily_trades_p_and_l)),
+	total_position = convert(char(30), convert(numeric(30, 0), b.current_position)),
+	total_p_and_l = convert(char(30), convert(numeric(30, 2), b.pos_pl + b.daily_trades_p_and_l)),
+	last = "<div align=right>" + convert(char(30), convert(numeric(30, 4), c.display_price)) + "</div>",
+	change = "<div align=right>" + convert(char(30), convert(numeric(30, 4), b.change)) + "</div>",
+	contract = ""
+from
+	contracts a,
+	#breakdown b,
+	#display_lasts c,
+	instruments d
+where
+	a.contract_id = b.contract_id
+and
+	a.instrument_id = d.instrument_id
+and
+	d.name not in("Forward", "Future")
+and
+	a.contract_id *= c.contract_id
+order by
+	b.product_type_id,
+	a.symbol
+
+
+select
+	@curr_adj_trade_total = sum(daily_trades_p_and_l)
+from
+	#breakdown
+
+select
+	@total_pl = @total_pos_pl + @curr_adj_trade_total
+
+
+insert into
+	#output
+values(
+	"<font size=2><b>Total</b></font",
+	NULL,
+	/* "<div align=right>" + */ convert(char(30), convert(numeric(30, 2), @total_pos_pl)) /* + "</div>"*/,
+	NULL,
+	convert(char(30), convert(numeric(30, 2), @curr_adj_trade_total)),
+	NULL,
+	convert(char(30), convert(numeric(30, 2), @total_pl)),
+	NULL,
+	NULL,
+	NULL)
+
+ 
+create table
+	#deltas_output(
+		symbol char(100),
+		delta char(30) NULL,
+		option_delta char(30) NULL,
+		total_delta char(30) NULL,
+		contract char(100) NULL,
+		implied_entry char(30) NULL,
+		last char(30) NULL,
+		total_pl char(30) NULL)
+				
+
+select
+	@has_deltas = count(*)
+from
+	#deltas
+if @has_deltas > 0
+begin
+				
+	insert into
+		#deltas_output
+	select
+		a.symbol,
+		delta = convert(char(30), convert(numeric(30,0), b.delta)),
+		option_delta = convert(char(30), convert(numeric(30,0), b.option_delta)),
+		total_delta = convert(char(30), convert(numeric(30,0), b.total_delta)),
+		contract = "<div align=right>" + a.symbol + "</div>",
+		implied_entry = convert(char(30), convert(numeric(30,4), b.implied_entry)),
+		last = convert(char(30), convert(numeric(30,4), c.display_price)),
+		total_pl = convert(char(30), convert(numeric(30,2), b.p_l))
+	from
+		contracts a,
+		#deltas b,
+		#display_lasts c
+	where
+		a.contract_id = b.contract_id
+	and
+		b.contract_id *= c.contract_id
+	and
+		(b.p_l != 0
+	or
+		b.total_delta != 0) 
+	order by
+		b.product_type_id,
+		a.symbol
+
+	select
+		@total_deltas_pl = sum(p_l)
+	from
+		#deltas
+
+	insert into
+		#deltas_output
+	values(
+		"<b><font size=2>Total</font></b>",
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		convert(char(30), convert(numeric(30,2), @total_deltas_pl)))
+
+end
+
+create table
+	#deals_avg_output(
+		symbol char(50),
+		value_date char(11) NULL,
+		longs numeric(30,2) NULL,
+		avg_long char(30) NULL,
+		shorts numeric(30,2) NULL,
+		avg_short char(30) NULL,
+		net numeric(30,2) NULL,
+		last_price char(30) NULL,
+		profit_loss float NULL)
+
+insert into
+	#deals_avg_output
+select
+	a.symbol,
+	value_date = convert(char(11), b.value_date, 1),
+	b.longs,
+	avg_long = convert(char(30), convert(numeric(30,4), b.avg_long)),
+	b.shorts,
+	avg_short = convert(char(30), convert(numeric(30,4), b.avg_short)),
+	b.net,
+	last_price = convert(char(30), convert(numeric(30,4), b.close_price)),
+	profit_loss = b.p_l
+from
+	contracts a,
+	#deals_avg b
+where
+	a.contract_id = b.contract_id
+order by
+	a.symbol
+
+select
+	@trade_total = NULL
+select
+	@trade_total = sum(p_l)
+from
+	#deals_avg
+if @trade_total = NULL
+	select
+		@trade_total = 0.0
+insert into
+	#deals_avg_output
+values(
+	"<font size=2><b>Trades Total</b></font>",
+	NULL,	
+	NULL,	
+	NULL,	
+	NULL,	
+	NULL,	
+	NULL,	
+	NULL,	
+	@trade_total)
+
+if @pl_view_style = "Average Price View"
+begin	
+	select
+		symbol,
+		delta,
+		option_delta,
+		total_delta,
+		contract,
+		last,
+		total_pl
+	from
+		#deltas_output
+
+	select
+		symbol,
+		starting_position = quantity,
+		previous_close = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" + close_price,
+		last_price = last,
+		change,
+		position_profit_loss = position_pl
+	from
+		#pos_output
+	
+	if datediff(day, @begin_date, @end_date) < 7
+		
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #deals_avg_output.symbol, #deals_avg_output.value_date, #deals_avg_output.longs, #deals_avg_output.avg_long, #deals_avg_output.shorts, #deals_avg_output.avg_short, #deals_avg_output.net, #deals_avg_output.last_price, #deals_avg_output.profit_loss from #deals_avg_output
+
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #output.symbol, #output.starting_pos, #output.position_profit_loss, #output.trades_quantity, #output.trading_profit_loss, #output.total_position, #output.total_profit_loss, #output.last_price, #output.change, #output.contract from #output
+end
+
+if @pl_view_style = "Delta Breakdown Top"
+begin	
+	select
+		symbol,
+		delta,
+		option_delta,
+		total_delta,
+		contract,
+		last,
+		total_pl
+	from
+		#deltas_output
+
+	select
+		symbol,
+		starting_position = quantity,
+		previous_close = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" + close_price,
+		last_price = last,
+		change,
+		position_profit_loss = position_pl
+	from
+		#pos_output
+	
+	if datediff(day, @begin_date, @end_date) < 7
+		
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #deal_output.deal_id, #deal_output.trade_date, #deal_output.symbol, #deal_output.value_date, #deal_output.quantity, #deal_output.trade_price, #deal_output.last_price, #deal_output.change, #deal_output.profit_loss, #deal_output.trader, #deal_output.broker, #deal_output.edit_values from #deal_output
+	
+	
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #output.symbol, #output.starting_pos, #output.position_profit_loss, #output.trades_quantity, #output.trading_profit_loss, #output.total_position, #output.total_profit_loss, #output.last_price, #output.change, #output.contract from #output
+end
+if @pl_view_style = "Delta Breakdown Top Detail"
+begin	
+	select
+		symbol,
+		delta,
+		option_delta,
+		total_delta,
+		contract,
+		last,
+		total_pl
+	from
+		#deltas_output
+
+	select
+		symbol,
+		starting_position = quantity,
+		previous_close = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" + close_price,
+		last_price = last,
+		change,
+		position_profit_loss = position_pl
+	from
+		#pos_output
+	
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #deal_output.deal_id, #deal_output.trade_date, #deal_output.symbol, #deal_output.value_date, #deal_output.quantity, #deal_output.trade_price, #deal_output.last_price, #deal_output.change, #deal_output.profit_loss, #deal_output.trader, #deal_output.broker, #deal_output.edit_values from #deal_output
+	
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #output.symbol, #output.starting_pos, #output.position_profit_loss, #output.trades_quantity, #output.trading_profit_loss, #output.total_position, #output.total_profit_loss, #output.last_price, #output.change, #output.contract from #output
+end
+if @pl_view_style = "View Only NB"
+begin
+	select
+		symbol,
+		delta,
+		option_delta,
+		total_delta,
+		contract,
+		last,
+		total_pl
+	from
+		#deltas_output
+
+	select
+		symbol,
+		starting_position = quantity,
+		previous_close = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" + close_price,
+		last_price = last,
+		change,
+		position_profit_loss = position_pl
+	from
+		#pos_output
+
+	select
+		deal_id,
+		trade_date,
+		symbol,
+		value_date,
+		quantity,
+		trade_price,
+		last_price,
+		change,
+		profit_loss,
+		trader
+	from
+		#deal_output
+
+	
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #output.symbol, #output.starting_pos, #output.position_profit_loss, #output.trades_quantity, #output.trading_profit_loss, #output.total_position, #output.total_profit_loss, #output.last_price, #output.change, #output.contract from #output
+
+end
+
+if @pl_view_style = "Default"
+begin
+	select
+		symbol,
+		starting_position = quantity,
+		previous_close = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" + close_price,
+		last_price = last,
+		change,
+		position_profit_loss = position_pl
+	from
+		#pos_output
+	
+	
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #deal_output.deal_id, #deal_output.trade_date, #deal_output.symbol, #deal_output.value_date, #deal_output.quantity, #deal_output.trade_price, #deal_output.last_price, #deal_output.change, #deal_output.profit_loss, #deal_output.trader, #deal_output.broker, #deal_output.edit_values from #deal_output
+
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #output.symbol, #output.starting_pos, #output.position_profit_loss, #output.trades_quantity, #output.trading_profit_loss, #output.total_position, #output.total_profit_loss, #output.last_price, #output.change, #output.contract from #output
+	
+	select
+		symbol,
+		delta,
+		option_delta,
+		total_delta,
+		contract,
+		last,
+		total_pl
+	from
+		#deltas_output
+end
+if @pl_view_style = "Delta Breakdown Top No Start Pos"
+begin  
+	select
+		symbol,
+		delta,
+		option_delta,
+		total_delta,
+		contract,
+		last,
+		total_pl
+	from
+		#deltas_output
+
+	if datediff(day, @begin_date, @end_date) < 7
+		
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #deal_output.deal_id, #deal_output.trade_date, #deal_output.symbol, #deal_output.value_date, #deal_output.quantity, #deal_output.trade_price, #deal_output.last_price, #deal_output.change, #deal_output.profit_loss, #deal_output.trader, #deal_output.broker, #deal_output.edit_values from #deal_output
+
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #output.symbol, #output.starting_pos, #output.position_profit_loss, #output.trades_quantity, #output.trading_profit_loss, #output.total_position, #output.total_profit_loss, #output.last_price, #output.change, #output.contract from #output
+	
+end
+if @pl_view_style = "Delta Breakdown Only"
+begin
+	select
+		symbol,
+		delta,
+		option_delta,
+		total_delta,
+		contract,
+		last,
+		total_pl
+	from
+		#deltas_output
+end
+
+if @pl_view_style = "Cash Balance View"
+begin
+	select
+		symbol,
+		spot = delta,
+		option_delta,
+		position = total_delta,
+		/* contract, */
+		implied_entry,
+		last,
+		total_pl,
+		contract
+	from
+		#deltas_output
+
+	exec
+		cl_prodcashladder
+			@login,
+			@run_name,
+			@begin_date,
+			@end_date
+	exec
+		r_runintradaypllinks
+			@login
+
+	
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #deals_avg_output.symbol, #deals_avg_output.value_date, #deals_avg_output.longs, #deals_avg_output.avg_long, #deals_avg_output.shorts, #deals_avg_output.avg_short, #deals_avg_output.net, #deals_avg_output.last_price, #deals_avg_output.profit_loss from #deals_avg_output
+
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #roll_deals.deal_id, #roll_deals.trade_date, #roll_deals.symbol, #roll_deals.value_date, #roll_deals.quantity, #roll_deals.trade_price, #roll_deals.last_price, #roll_deals.change, #roll_deals.profit_loss, #roll_deals.trader, #roll_deals.broker, #roll_deals.edit_values from #roll_deals
+
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #output.symbol, #output.starting_pos, #output.position_profit_loss, #output.trades_quantity, #output.trading_profit_loss, #output.total_position, #output.total_profit_loss, #output.last_price, #output.change, #output.contract from #output
+
+end
+
+
+select
+	asset_class = a.name,
+	pos_pl = convert(char(30), convert(numeric(30,2), b.pos_pl)),
+	trades_pl = convert(char(30), convert(numeric(30,2), b.trades_pl)),
+	total_pl = convert(char(30), convert(numeric(30,2), b.total_pl))
+from
+	product_types a,
+	#product_types b
+where
+	a.product_type_id = b.product_type_id
+order by
+	a.name desc
+
+exec
+	r_intradaypl
+		@login
+
+if @pl_view_style = "Delta Breakdown Top Detail"
+begin
+    select
+        '<script type="text/javascript">jQuery("#graphs").chart(jQuery(".OutputTable").eq(6), { plot:"bar.clustered", orientation:"horizontal", strokeWidth:1, barWidth:-5, series:[1,2,3], bind:{ rowStart:2 }, yaxis: { includeZero:0 } })</script>'
+    /* select
+        '<script type="text/javascript">jQuery("#graphs").chart(jQuery(".OutputTable").eq(6), { plot:"bar.stacked", orientation:"horizontal", strokeWidth:1, barWidth:-5, series:[1,2], bind:{ rowStart:2 }, yaxis:{includeZero:true}, colors: [ "#e3ff0e", "rgba(128,128,255,0.5)" ] })</script>' */
+end
+
+go

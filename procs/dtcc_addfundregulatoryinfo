@@ -1,0 +1,118 @@
+drop procedure dtcc_addfundregulatoryinfo
+go
+
+create procedure 
+	dtcc_addfundregulatoryinfo
+		@login varchar(50),
+		@fund varchar(50),
+		@legal_name varchar(50)=NULL,
+		@shortcode varchar(50)=NULL,
+		@country varchar(50)=NULL,
+		@branch_location varchar(50)=NULL,
+		@corporate_sector varchar(50)=NULL,
+		@party_region varchar(50)=NULL,
+		@financial_juristiction varchar(10)=NULL,
+		@lei_number varchar(50)=NULL,
+		@o_code varchar(10)=NULL
+
+as
+
+declare @fund_regulatory_info_id int
+declare @fund_id int
+
+select
+	@fund_id = fund_id
+from
+	funds
+where
+	name = @fund
+if @fund_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem determining fund",
+		fund=@fund
+	return
+end
+
+select
+	@fund_regulatory_info_id = fund_regulatory_info_id
+from
+	fund_regulatory_info
+where
+	fund_id = @fund_id
+
+if @fund_regulatory_info_id = NULL
+begin
+	/* Add new record */
+	exec
+		j_nextkey 
+			"fund_regulatory_info",
+			@fund_regulatory_info_id output
+
+	insert into
+		fund_regulatory_info(
+			fund_regulatory_info_id,
+			fund_id,
+			legal_name,
+			shortcode,
+			country,
+			branch_location,
+			corporate_sector,
+			party_region,
+			financial_juristiction ,
+			lei_number,
+			o_code )
+	values(
+		@fund_regulatory_info_id,
+		@fund_id,
+		@legal_name,
+		@shortcode,
+		@country,
+		@branch_location,
+		@corporate_sector,
+		@party_region,
+		@financial_juristiction,
+		@lei_number,
+		@o_code)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			msg = "Problem adding regulatory info for fund"
+		return
+	end
+end
+else
+begin
+	/* Update info */
+	update
+		fund_regulatory_info
+	set
+		legal_name = @legal_name,
+		shortcode = @shortcode,	
+		country = @country,
+		branch_location = @branch_location,
+		corporate_sector = @corporate_sector,
+		party_region = @party_region,
+		financial_juristiction = @financial_juristiction,
+		lei_number = @lei_number,
+		o_code = @o_code
+	where
+		fund_regulatory_info_id = @fund_regulatory_info_id
+	if @@rowcount != 1
+	begin
+                select
+                        status = "Error",
+                        msg = "Problem updating regulatory info for fund"
+                return
+	end
+end
+
+exec
+	r_manageregulatoryinfo
+		@login
+
+
+go
+

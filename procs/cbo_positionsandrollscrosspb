@@ -1,0 +1,952 @@
+drop procedure cbo_positionsandrolls
+go
+
+
+create procedure
+	cbo_positionsandrolls
+		@login varchar(50),
+		@value_date datetime=NULL,
+		@prime_broker varchar(50)=NULL
+as
+
+
+declare @fund_id int
+declare @fund varchar(100)
+declare @roll_trader_id int
+declare @prime_broker_id int
+declare @transaction_type_id int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"currency",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"value_date",
+	NULL,
+	NULL)
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "settle_date",
+        NULL,
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"return_to_recon",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"balance",
+	"Account Product Trades",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"client_settlements",
+	"Client Account Settlements",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"settled_fx",
+	"Account Settlement Entries",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"settle",
+	"Add FX Settlement",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"net_position",
+	"Client Maturing Positions",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"position",
+	"Client Maturing Positions",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_roll",
+	"Enter Market Roll",
+	NULL) 
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "close_settle_balances",
+        "Close Settle Balances",
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"allocate",
+	"Allocate Client Roll",
+	NULL) 
+
+/*
+insert into
+	#meta
+values(
+	"Column Link",
+	"import_citi_rolls",
+	"Import Citi Rolls",
+	NULL) 
+*/
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"roll_rate",
+	"Number",
+	"#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closing_rate",
+	"Number",
+	"#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"unsettled_fx",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"settled_fx",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund = name
+from
+	funds
+where
+	fund_id = @fund_id
+
+select	
+	@roll_trader_id = roll_trader_id
+from
+	fund_roll_traders
+where
+	fund_id = @fund_id
+
+create table
+	#prime_brokers
+(
+	prime_broker_id int
+)
+
+select
+	@prime_broker_id = a.prime_broker_id
+from
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.name = @prime_broker
+if @prime_broker_id = NULL
+begin
+	insert into
+		#prime_brokers
+	select
+		a.prime_broker_id
+	from
+        	prime_brokers a,
+        	sources b
+	where
+        	a.source_id = b.source_id
+end
+else
+begin
+	insert into
+		#prime_brokers
+	values(
+		@prime_broker_id
+	)
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "FX Settlement"
+
+
+
+create table
+	#counterparty_accounts(
+		external_account_id int)
+
+insert into
+	#counterparty_accounts
+select
+	a.external_account_id
+from
+	external_accounts a,
+	external_account_prime_brokers b,
+	external_account_types c,
+	#prime_brokers d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.external_account_type_id = c.external_account_type_id
+and
+	b.prime_broker_id = d.prime_broker_id
+and
+	c.name = "Counterparty"
+
+create table
+	#client_accounts(
+		external_account_id int)
+
+insert into
+	#client_accounts
+select
+	a.external_account_id
+from
+	external_accounts a,
+	external_account_prime_brokers b,
+	external_account_types c,
+	#prime_brokers d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.external_account_type_id = c.external_account_type_id
+and
+	b.prime_broker_id = d.prime_broker_id
+and
+	c.name = "Client"
+
+
+
+
+create table
+	#trades(
+		trade_id int)
+insert into
+	#trades
+select
+	a.trade_id
+from
+	trades a,
+	fund_external_accounts b /* ,
+	statuses c  */
+where
+	a.external_account_id = b.external_account_id
+/* and
+	a.status_id = c.status_id
+and
+	c.name != "Resid"  */
+and 
+	convert(date, a.value_date) = convert(date, @value_date)
+and
+	b.fund_id = @fund_id
+/* TESTING TESTING */
+create table
+	#cpty_positions(
+		id int identity,
+		external_account_id int,
+		product_id int,
+		currency_id int,
+		contract_id int,
+		dealt_amount float,
+		counter_amount float)
+
+insert into
+	#cpty_positions(
+		external_account_id,
+		contract_id,
+		product_id,
+		currency_id,
+		dealt_amount,
+		counter_amount)
+select
+	a.external_account_id,
+	a.contract_id,
+	b.product_id,
+	b.currency_id,
+	a.quantity,
+	a.quantity * a.price * -1.0
+from
+	trades a,
+	forwards b,
+	#trades c,
+	#counterparty_accounts d
+where
+	a.trade_id = c.trade_id
+and
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = d.external_account_id
+
+/* NEW PART AREA */
+
+create table
+	#cpty_product_nets(
+		external_account_id int,
+		product_id int,
+		quantity numeric(30,4))
+insert into
+	#cpty_product_nets
+select
+	external_account_id,
+	product_id,
+	sum(dealt_amount)
+from
+	#cpty_positions
+group by
+	external_account_id,
+	product_id
+
+insert into
+	#cpty_product_nets
+select
+	external_account_id,
+	currency_id,
+	sum(counter_amount)
+from
+	#cpty_positions
+group by
+	external_account_id,
+	currency_id
+
+create table
+	#net_cpty_balances(
+		external_account_id int,
+		product_id int,
+		balance float,
+		settled_fx float NULL,
+		unsettled_fx float NULL,
+		settle varchar(50) NULL)
+insert into
+	#net_cpty_balances(
+		external_account_id,
+		product_id,
+		balance)
+select
+	external_account_id,
+	product_id,
+	sum(quantity)
+from
+	#cpty_product_nets
+group by
+	external_account_id,
+	product_id
+
+update
+	#net_cpty_balances
+set
+	settled_fx = 0.0
+
+update
+	#net_cpty_balances
+set
+	a.settled_fx = b.amount
+from
+	#net_cpty_balances a,
+	account_transactions b
+where
+	a.product_id = b.currency_id
+and
+	a.external_account_id = b.external_account_id
+and
+	b.transaction_type_id = @transaction_type_id
+and
+	convert(date, b.transaction_date) = convert(date, @value_date)
+
+update
+	#net_cpty_balances
+set
+	unsettled_fx = balance - settled_fx
+
+/* Allow settlment for all currencies - Temp FIX
+   comment out eval ccy join*/
+
+/* 
+update
+	#net_cpty_balances
+set
+	a.settle = "SETTLE"
+from
+	#net_cpty_balances a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.evaluation_currency_id
+and
+	abs(a.unsettled_fx) >= 0.01
+*/
+update  
+        #net_cpty_balances
+set     
+        a.settle = "SETTLE"
+from    
+        #net_cpty_balances a,
+        external_accounts b
+where   
+        a.external_account_id = b.external_account_id
+and     
+        abs(a.unsettled_fx) >= 0.01
+
+/* TESTING TESTING */
+
+create table
+	#counterparty_positions(
+		id int identity,
+		external_account_id int,
+		contract_id int,
+		quantity numeric(30,4),
+		closing_date datetime NULL,
+		closing_rate float NULL,
+		roll_date datetime NULL,
+		roll_rate float NULL)
+
+/* Exclude Resids in showing pair positions */
+insert into
+	#counterparty_positions(
+		external_account_id,
+		contract_id,
+		quantity)
+select
+	a.external_account_id,
+	a.contract_id,
+	sum(a.quantity)
+from
+	trades a,
+	forwards b,
+	#trades c,
+	#counterparty_accounts d,
+	statuses e
+where
+	a.trade_id = c.trade_id
+and
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = d.external_account_id
+and
+	a.status_id = e.status_id
+and
+	e.name != "Resid"
+group by
+	a.external_account_id,
+	a.contract_id
+
+update
+	#counterparty_positions
+set
+	closing_date = @value_date
+
+update
+	#counterparty_positions
+set
+	a.closing_rate = b.closing_rate,
+	a.roll_date = b.roll_date,
+	a.roll_rate = b.roll_rate
+from
+	#counterparty_positions a,
+	ext_account_biproduct_rates b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = b.contract_id
+and
+	convert(date, a.closing_date) = convert(date, b.closing_date)
+
+/************************/
+create table
+	#client_positions(
+		id int identity,
+		external_account_id int,
+		contract_id int,
+		quantity numeric(30,4),
+		closing_date datetime NULL,
+		closing_rate float NULL,
+		roll_date datetime NULL,
+		roll_rate float NULL)
+insert into
+	#client_positions(
+		external_account_id,
+		contract_id,
+		quantity)
+select
+	a.external_account_id,
+	a.contract_id,
+	sum(a.quantity)
+from
+	trades a,
+	forwards b,
+	#trades c,
+	#client_accounts d,
+	statuses e
+where
+	a.trade_id = c.trade_id
+and
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = d.external_account_id
+and
+	a.status_id = e.status_id
+and
+	e.name != "Resid"
+group by
+	a.external_account_id,
+	a.contract_id
+update
+	#client_positions
+set
+	closing_date = @value_date
+
+update
+	#client_positions
+set
+	a.closing_rate = b.closing_rate,
+	a.roll_date = b.roll_date,
+	a.roll_rate = b.roll_rate
+from
+	#client_positions a,
+	ext_account_biproduct_rates b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = b.contract_id
+and
+	convert(date, a.closing_date) = convert(date, b.closing_date)
+
+create table
+	#roll_dates(
+		roll_date datetime)
+insert into
+	#roll_dates
+select
+	distinct(roll_date)
+from
+	#counterparty_positions
+where
+	roll_date != NULL
+
+insert into
+	#roll_dates
+select
+	distinct(roll_date)
+from
+	#client_positions
+where
+	roll_date != NULL
+and
+	roll_date not in(
+		select
+			roll_date
+		from
+			#roll_dates)
+
+
+create table
+	#rolled_trades(
+		external_account_id int,
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4))
+insert into
+	#rolled_trades
+select
+	a.external_account_id,
+	a.contract_id,
+	a.value_date,
+	sum(a.quantity)
+from
+	trades a,
+	fund_external_accounts b,
+	#roll_dates c
+where
+	a.external_account_id = b.external_account_id
+and 
+	a.value_date = c.roll_date
+and
+	b.fund_id = @fund_id
+and
+	a.trader_id = @roll_trader_id
+group by
+	a.external_account_id,
+	a.contract_id,
+	a.value_date
+	
+
+/************************/
+
+create table
+	#counterparty_balances(
+		id int identity,
+		section varchar(250) NULL,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		position numeric(30,4) NULL,
+		client_roll_amount numeric(30,4) NULL,
+		client_no_roll_amount numeric(30,4) NULL,
+		roll_amount numeric(30,4) NULL,
+		closing_date varchar(11) NULL,
+		closing_rate float NULL,
+		rolled_amount numeric(30,4) NULL,
+		roll_date varchar(11) NULL,
+		roll_rate float NULL)
+insert into
+	#counterparty_balances(
+	section,
+	style,
+	external_account_id,
+	account,
+	contract_id,
+	symbol,
+	position,
+	closing_date,
+	closing_rate,
+	roll_date,
+	roll_rate)
+select
+	section = @fund + " Maturing Positions For " + convert(varchar(11), @value_date, 1),
+	style = "background:#FFFFFF;border: 1px solid white",
+	c.external_account_id,
+	account = c.symbol,
+	a.contract_id,
+	a.symbol,
+	position = b.quantity,
+	closing_date = convert(varchar(11), b.closing_date, 1),	
+	b.closing_rate,
+	b.roll_date,
+	b.roll_rate
+from
+	contracts a,
+	#counterparty_positions b,
+	external_accounts c
+where
+	a.contract_id = b.contract_id
+and
+	b.external_account_id = c.external_account_id
+order by
+	c.symbol, a.symbol
+
+
+create table
+	#client_balances(
+		id int identity,
+		section varchar(250) NULL,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		settlement_style varchar(50) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		position numeric(30,4) NULL,
+		roll_amount numeric(30,4) NULL,
+		closing_date varchar(11) NULL,
+		closing_rate float NULL,
+		rolled_amount numeric(30,4) NULL,
+		roll_date varchar(11) NULL,
+		roll_rate float NULL,
+		allocate varchar(50) NULL,
+		no_roll_amount float NULL)
+insert into
+	#client_balances(
+		section,
+		style,
+		external_account_id,
+		account,
+		settlement_style,
+		contract_id,
+		symbol,
+		position,
+		roll_amount,
+		closing_date,
+		closing_rate,
+		roll_date,
+		roll_rate)
+select
+	section = "Client Balances",
+	style = "background:#FFFFFF;border: 1px solid white",
+	c.external_account_id,
+	account = c.symbol,
+	d.name,
+	a.contract_id,
+	a.symbol,
+	position = b.quantity,
+	roll_amount = b.quantity,
+	closing_date = convert(varchar(11), b.closing_date, 1),	
+	b.closing_rate,
+	roll_date = convert(varchar(11), b.roll_date, 1),
+	b.roll_rate
+from
+	contracts a,
+	#client_positions b,
+	external_accounts c,
+	settlement_methods d
+where
+	a.contract_id = b.contract_id
+and
+	b.external_account_id = c.external_account_id
+and
+	c.settlement_method_id = d.settlement_method_id
+order by
+	c.symbol,
+	a.symbol
+update
+	#client_balances
+set
+	allocate = "Allocate"
+where
+	roll_amount != 0.0
+
+update
+	#client_balances
+set
+	roll_amount = 0.0,
+	roll_date = NULL,
+	roll_rate = NULL,
+	allocate = NULL
+where
+	settlement_style != "Roll"
+
+update
+	#client_balances
+set
+	no_roll_amount = position - roll_amount
+
+create table
+	#net_client_rolls(
+		contract_id int,
+		roll_amount numeric(30,4))
+insert into
+	#net_client_rolls
+select
+	contract_id,
+	sum(roll_amount)
+from
+	#client_balances
+group by
+	contract_id
+
+create table
+	#net_client_no_rolls(
+		contract_id int,
+		no_roll_amount numeric(30,4))
+insert into
+	#net_client_no_rolls
+select
+	contract_id,
+	sum(no_roll_amount)
+from
+	#client_balances
+group by
+	contract_id
+
+	
+update
+	#counterparty_balances
+set
+	a.client_roll_amount = b.roll_amount
+from
+	#counterparty_balances a,
+	#net_client_rolls b
+where
+	a.contract_id = b.contract_id
+
+update
+	#counterparty_balances
+set
+	a.client_no_roll_amount = b.no_roll_amount
+from
+	#counterparty_balances a,
+	#net_client_no_rolls b
+where
+	a.contract_id = b.contract_id
+
+/* TESTING */
+update
+	#counterparty_balances
+set
+	roll_amount = position + client_roll_amount 
+
+update
+	#counterparty_balances
+set
+	a.rolled_amount = b.quantity
+from
+	#counterparty_balances a,
+	#rolled_trades b
+where
+	a.contract_id = b.contract_id
+and
+	a.roll_date = b.value_date
+and
+	a.external_account_id = b.external_account_id
+
+
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	/*import_citi_rolls = "Import Citi Rolls",*/
+	tally_roll = "Manual Roll Tally",
+	client_settlements = "Client Account Settlements",
+	close_settle_balances = "Close Settle Balances",
+	closing_date = @value_date,
+	prime_broker = @prime_broker,
+	value_date = @value_date,
+	settle_date = @value_date
+
+	
+
+select
+	section = "Maturing Balances",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = a.symbol,
+	b.symbol,
+	balance = convert(numeric(30,2), c.balance),
+	c.settled_fx,
+	c.unsettled_fx,
+	c.settle,
+	value_date = @value_date,
+	currency = b.symbol
+from
+	external_accounts a,
+	products b,
+	#net_cpty_balances c
+where
+	a.external_account_id = c.external_account_id
+and
+	b.product_id = c.product_id
+order by
+	a.symbol,
+	b.symbol
+
+select
+	section,
+	style,
+	account,
+	symbol,
+	net_position = position,
+	client_roll_amount,
+	/* cilent_delivery = client_no_roll_amount, */
+	remaining = roll_amount,
+	closing_date,
+	closing_rate,
+	rolled_amount,
+	roll_date,
+	roll_rate,
+	value_date = convert(varchar(11), @value_date, 1)
+from
+	#counterparty_balances
+order by
+	id
+
+select
+	section,
+	style,
+	return_to_recon = "Yes",
+	account,
+	settlement_style,
+	symbol,
+	position,
+	roll_amount,
+	closing_date,
+	closing_rate,
+	roll_date,
+	roll_rate,
+	allocate,
+	value_date = convert(varchar(11), @value_date, 1)
+from
+	#client_balances
+order by
+	id
+
+
+go

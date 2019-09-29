@@ -1,0 +1,78 @@
+create or replace procedure
+	inv_mint
+		@login varchar(50),
+		@month varchar(20),
+		@year varchar(10)
+
+as 
+
+declare @first_of_month datetime
+declare @last_of_month datetime
+declare @first_biz_day datetime
+declare @last_biz_day datetime
+
+exec
+	r_firstandlastdayofmonth
+                @month=@month,
+                @year=@year,
+		@first_of_month=@first_of_month output,
+		@last_of_month=@last_of_month output,
+		@first_biz_day=@first_biz_day output,
+		@last_biz_day=@last_biz_day output
+
+/*
+select
+	first_of_month = @first_of_month
+	last_of_month = @last_of_month
+	first_biz_day = @first_biz_day
+	last_biz_day = @last_biz_day
+*/
+
+declare @total_volume numeric(30, 4)	
+declare @monthly_min numeric(20, 4)	
+declare @minimum_adjustment numeric(20, 4)	
+declare @invoice_amount numeric(20, 4)	
+declare @tier2 float
+declare @per_mio float
+declare @message varchar(100)
+
+select
+	@monthly_min = 0,
+	@per_mio = .75
+
+select 
+	@total_volume = sum(evaluation_notional) 
+from 
+	committed_daily_revals
+where 
+	bo_trade_date >= convert(date, @first_biz_day) 
+and 
+	bo_trade_date <= convert(date, @last_biz_day)
+and 
+	convert(date,reval_date) = convert(date, bo_trade_date)
+
+select
+	@message = "Volume charged at $0.75 per"
+
+declare @display_volume varchar(20)
+select
+	@display_volume = rtrim(convert(varchar(20), convert(int, round(@total_volume/1000000, 2))))
+select
+	@message = rtrim(@message)+" Total volume: "+@display_volume+" mio"
+select
+	@tier2 = (@total_volume / 1000000) * @per_mio
+select
+	@invoice_amount = @monthly_min + @tier2
+
+select
+	client = "Mint "+rtrim(@month)+" "+rtrim(@year),
+	invoice_amount = @invoice_amount, 
+	billed_volume = @tier2, 
+	monthly_min = @monthly_min, 
+	message = @message
+	/*per_mio = @per_mio,
+	first_biz_day = @first_biz_day, 
+	last_biz_day = @last_biz_day*/
+
+
+go

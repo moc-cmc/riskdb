@@ -1,0 +1,369 @@
+use
+	risk_cc
+go
+
+
+drop procedure
+        mn_positionsasof
+go
+
+create procedure
+	mn_positionsasof
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @run_id int
+declare @total_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"run_name",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"quantity",
+	"Position Trades",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"year_to_date",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"month_to_date",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"daily",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"value",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white"
+
+
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run = @run_name
+	return
+end
+
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+
+create table
+	#positions(
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4),
+		last_trade datetime NULL)
+
+insert into
+	#positions(
+		contract_id,
+		value_date,
+		quantity,
+		last_trade)
+select
+	a.contract_id,
+	a.value_date,
+	sum(a.quantity),
+	max(a.trade_date)
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g
+where
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id= f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date <= @end_date
+group by
+	contract_id,
+	value_date
+
+delete
+
+from
+	#positions
+where
+	quantity = 0
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		symbol varchar(50),
+		value_date varchar(25),
+		quantity numeric(30,4),
+		last_trade datetime)	
+insert into
+	#output(
+		style,
+		symbol,
+		value_date,
+		quantity,
+		last_trade)
+select
+	style = @style,
+	b.symbol,
+	a.value_date,
+	a.quantity,
+	a.last_trade
+from
+	#positions a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+order by
+	b.symbol
+
+	
+select
+	section = rtrim(@run_name) + " Open Positions as of " + convert(varchar(11), @end_date),
+	style,
+	run_name = @run_name,
+	trade_date = @trade_date,
+	symbol,
+	value_date = convert(varchar(11), value_date, 1),
+	quantity,
+	last_trade
+from
+	#output
+order by
+	id
+
+
+
+go

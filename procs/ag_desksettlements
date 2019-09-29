@@ -1,0 +1,646 @@
+drop procedure
+	ag_desksettlements
+go
+
+create procedure
+	ag_desksettlements
+		@login varchar(50),
+		@account varchar(50),
+		@begin_date datetime,
+		@end_date datetime
+as
+
+
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @external_account_id int
+declare @style varchar(200)
+declare @total_style varchar(200)
+declare @error_style varchar(200)
+declare @desk_id int
+declare @desks int
+declare @desk varchar(50)
+declare @value_dates int
+declare @value_date datetime
+declare @equiv float
+declare @min_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"not_currency",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_fwd_price",
+	"Edit Statement Fwd Price",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"value",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white"
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found"
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+if @begin_date = NULL
+begin
+	select
+		@begin_date = convert(datetime, convert(date, getdate()))
+	exec
+		r_prevbusinessday
+			@begin_date,
+			@begin_date output
+end
+
+if @end_date = NULL
+begin
+	exec
+		r_nextbusinessday
+			@begin_date,
+			@end_date output
+end
+
+create table
+	#desks(
+		desk_id int,
+		name varchar(50))
+insert into
+	#desks
+select
+	desk_id,
+	name
+from
+	desks
+
+select
+	@desk_id = max(desk_id)
+from
+	#desks
+
+select
+	@desk_id = @desk_id + 1
+
+insert into
+	#desks
+values(
+	@desk_id,
+	"None")
+
+
+
+create table
+	#trades(
+		trade_id int,
+		trader_id int,
+		desk_id int NULL,
+		contract_id int,
+		product_id int,
+		product_qty numeric(30,4),
+		currency_id int,
+		currency_qty numeric(30,4),
+		value_date datetime)
+
+insert into
+	#trades(
+		trade_id,
+		trader_id,
+		contract_id,
+		product_id,
+		product_qty,
+		currency_id,
+		currency_qty,
+		value_date)	
+select
+	a.trade_id,
+	a.trader_id,
+	a.contract_id,
+	b.product_id,
+	a.quantity,
+	b.currency_id,
+	a.quantity * a.price * -1.0,
+	a.value_date
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.value_date >= @begin_date
+and
+	a.value_date <= @end_date
+
+update
+	#trades
+set
+	desk_id = 0
+
+update
+	#trades
+set
+	a.desk_id = b.desk_id
+from
+	#trades a,
+	desk_traders b
+where
+	a.trader_id = b.trader_id
+
+
+create table
+	#balances(
+		desk_id int,
+		product_id int,
+		value_date datetime,
+		balance float)
+
+insert into
+	#balances
+select
+	desk_id,
+	product_id,
+	value_date,
+	sum(product_qty)
+from
+	#trades
+group by
+	desk_id,
+	product_id,
+	value_date
+
+
+insert into
+	#balances
+select
+	desk_id,
+	currency_id,
+	value_date,
+	sum(currency_qty)
+from
+	#trades
+group by
+	desk_id,
+	currency_id,
+	value_date
+
+create table
+	#net_balances(
+		desk_id int,
+		product_id int,
+		value_date datetime,
+		balance float,
+		equiv float NULL)
+insert into
+	#net_balances(
+		desk_id,
+		product_id,
+		value_date,
+		balance)
+select
+	desk_id,
+	product_id,
+	value_date,
+	sum(balance)
+from
+	#balances
+group by
+	desk_id,
+	product_id,
+	value_date
+
+delete
+
+from
+	#net_balances
+where
+	balance = 0.0
+
+update
+	#net_balances
+set
+	equiv = balance
+where
+	product_id = @evaluation_currency_id
+
+update
+	#net_balances
+set
+	a.equiv = a.balance * c.price
+from
+	#net_balances a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, a.value_date)
+	
+
+update
+	#net_balances
+set
+	a.equiv = a.balance * (1.0 / c.price)
+from
+	#net_balances a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	b.product_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, a.value_date)
+and
+	a.equiv = NULL
+	
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		desk varchar(50) NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		balance float NULL,
+		equiv float NULL)
+
+create table
+	#value_dates(
+		value_date datetime)
+
+select
+	@desk_id = 0
+select
+	@desks = count(*)
+from
+	#net_balances
+where
+	desk_id > @desk_id
+
+while @desks > 0
+begin
+	select
+		@desk_id = min(desk_id)
+	from
+		#net_balances
+	where
+		desk_id > @desk_id
+
+	select
+		@desk = name
+	from
+		#desks
+	where
+		desk_id = @desk_id
+
+	truncate table
+		#value_dates
+
+	insert into
+		#value_dates
+	select
+		distinct(value_date)
+	from
+		#net_balances
+	where
+		desk_id = @desk_id
+
+	select
+		@value_date = "8/8/88"
+
+	select
+		@value_dates = count(*)
+	from
+		#value_dates
+	where
+		value_date > @value_date
+
+	while @value_dates > 0
+	begin	
+		select
+			@value_date = min(value_date)
+		from
+			#value_dates
+		where
+			value_date > @value_date
+	
+		insert into
+			#output(
+				style,
+				desk,
+				symbol,
+				value_date,
+				balance,
+				equiv)
+		select
+			style = @style,
+			desk = c.name,
+			b.symbol,
+			a.value_date,
+			a.balance,
+			a.equiv
+		from
+			#net_balances a,
+			products b,
+			#desks c
+		where
+			a.product_id = b.product_id
+		and
+			a.desk_id = c.desk_id
+		and
+			a.desk_id = @desk_id
+		and
+			a.value_date = @value_date
+		order by
+			a.value_date,
+			c.name,
+			b.symbol
+
+		select
+			@min_id = min(a.id)
+		from
+			#output a,
+			#desks b
+		where
+			a.desk = b.name
+		and
+			b.desk_id = @desk_id
+		and
+			a.value_date = @value_date
+
+		update
+			#output
+		set
+			a.desk = NULL
+		from
+			#output a,
+			#desks b
+		where
+			a.desk = b.name
+		and
+			b.desk_id = @desk_id
+		and
+			a.value_date = @value_date
+		and
+			a.id != @min_id
+
+
+		select
+			@equiv = NULL
+		select
+			@equiv = sum(equiv)
+		from
+			#net_balances
+		where
+			desk_id = @desk_id
+		and
+			value_date = @value_date
+
+		insert into
+			#output(
+				style,
+				symbol,
+				equiv)
+		values(
+			@total_style,
+			"Total",
+			@equiv)
+
+		select
+			@value_dates = count(*)
+		from
+			#value_dates
+		where
+			value_date > @value_date
+
+	end
+
+
+	select
+		@desks = count(*)
+	from
+		#net_balances
+	where
+		desk_id > @desk_id
+end
+	
+create table
+	#desk_totals(
+		id int identity,
+		style varchar(200) NULL,
+		desk varchar(50) NULL,
+		desk_id int NULL,
+		equiv float NULL)
+insert into
+	#desk_totals(
+		desk_id,
+		equiv)
+select
+	desk_id,
+	sum(equiv)
+from
+	#net_balances
+group by
+	desk_id
+
+update
+	#desk_totals
+set
+	a.desk = b.name
+from
+	#desk_totals a,
+	#desks b
+where
+	a.desk_id = b.desk_id
+
+update
+	#desk_totals
+set
+	style = @style
+
+select
+	@equiv = NULL
+select
+	@equiv = sum(equiv)
+from
+	#desk_totals
+
+insert into
+	#desk_totals(
+		style,
+		desk,
+		equiv)
+values(
+	@total_style,
+	"Total",
+	@equiv)
+
+create table
+	#date_totals(
+		id int identity,
+		style varchar(200) NULL,
+		value_date datetime NULL,
+		equiv float NULL)
+insert into
+	#date_totals(
+		value_date,
+		equiv)
+select
+	value_date,
+	sum(equiv)
+from
+	#net_balances
+group by
+	value_date
+order by
+	value_date
+
+update
+	#date_totals
+set
+	style = @style
+
+select
+	@equiv = NULL
+
+select
+	@equiv = sum(equiv)
+from
+	#date_totals
+insert into
+	#date_totals(
+		style,
+		equiv)
+values(
+	@total_style,
+	@equiv)
+
+select
+	section = "Totals By Desk",
+	style,
+	desk,
+	equiv
+from
+	#desk_totals 
+order by
+	id
+
+select
+	section = "Totals By Value",
+	style,
+	value_date,
+	equiv
+from
+	#date_totals
+	
+select
+	section = "Details By Value Date",
+	style,
+	desk,
+	symbol,
+	value_date,
+	balance,
+	equiv
+from
+	#output
+order by
+	id
+
+go

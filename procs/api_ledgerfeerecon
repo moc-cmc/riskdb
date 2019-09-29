@@ -1,0 +1,78 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	api_ledgerfeerecon
+go
+
+create procedure
+	api_ledgerfeerecon
+		@login varchar(50),
+		@trade_date datetime,
+		@tally_fees varchar(10)=NULL,
+		@display_output varchar(10)=NULL
+as
+
+declare @ledger_fee_schedules int
+declare @ledger_fee_schedule_id int
+declare @name varchar(50)
+declare @batch_id int
+
+
+exec
+	j_nextkey
+		"batches",
+		@batch_id output
+
+
+select
+	@ledger_fee_schedule_id = 0
+select
+	@ledger_fee_schedules = count(*)
+from
+	ledger_fee_schedules
+where
+	ledger_fee_schedule_id > @ledger_fee_schedule_id
+
+while @ledger_fee_schedules > 0
+begin
+	select
+		@ledger_fee_schedule_id = min(ledger_fee_schedule_id)
+	from
+		ledger_fee_schedules
+	where
+		ledger_fee_schedule_id > @ledger_fee_schedule_id
+
+	select
+		@name = name
+	from
+		ledger_fee_schedules
+	where
+		ledger_fee_schedule_id = @ledger_fee_schedule_id
+
+	exec
+		api_scheduledledgerfees
+			@login = @login,
+			@batch_id = @batch_id,
+			@ledger_fee_schedule = @name,
+			@trade_date = @trade_date,
+			@tally_fees = @tally_fees
+
+	select
+		@ledger_fee_schedules = count(*)
+	from
+		ledger_fee_schedules
+	where
+		ledger_fee_schedule_id > @ledger_fee_schedule_id
+end
+
+
+if @display_output = "Yes"
+	exec
+		ag_queuedinterestmoves
+			@login = @login,
+			@batch_id = @batch_id
+
+
+go

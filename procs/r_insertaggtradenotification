@@ -1,0 +1,218 @@
+if object_id("r_insertaggtradenotification") != NULL
+    drop procedure
+        r_insertaggtradenotification
+go
+
+create procedure
+    r_insertaggtradenotification
+        @trade_id int
+as
+
+/*
+declare @bd datetime
+declare @ed datetime
+
+
+select @bd = getdate()
+*/
+
+declare @broker_id int
+declare @external_account_id int
+declare @trader_id int
+declare @counterparty_id int
+declare @status_id int
+declare @trade_type_id int
+
+declare @booking_id int
+declare @client_trade_id int
+declare @trade_match_id int
+declare @trade_matching_enabled varchar(10)
+declare @netted_status_id int
+
+select
+	@netted_status_id = status_id
+from
+	statuses
+where
+	name = "Netted"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		msg = "Could not find status",
+		trade_status = "Netted"
+	return
+end
+
+select
+    source_id
+into
+    #notifications
+from
+    trade_notifications
+where
+    trade_id = @trade_id
+
+select
+    @broker_id = broker_id,
+    @external_account_id = external_account_id,
+    @trader_id = trader_id,
+    @counterparty_id = counterparty_id,
+    @trade_type_id = trade_type_id
+from
+    aggregated_trades
+where
+    trade_id = @trade_id
+if @@rowcount = 0
+begin
+    return
+end
+
+/*
+create table
+    #exclusion_sources(
+	source_id int
+)
+create table
+    #notifier_exclusions (
+        source_id int,
+        status_id int NULL,
+        broker_id int NULL,
+        external_account_id int NULL,
+        trader_id int NULL,
+        counterparty_id int NULL,
+        trade_type_id int NULL
+    )
+*/
+
+select
+	a.source_id,
+	a.status_id,
+	a.broker_id,
+	a.external_account_id,
+        a.trader_id,
+	a.counterparty_id,
+	a.trade_type_id
+into
+	#notifier_exclusions
+from
+	notifier_exclusions a
+where
+    (
+        a.external_account_id = NULL
+    or
+        a.external_account_id = @external_account_id
+    )
+and (
+        a.broker_id = NULL
+    or
+        a.broker_id = @broker_id
+    )
+and (
+        a.status_id = NULL
+    or
+        a.status_id = @netted_status_id
+    )
+and (
+        a.trader_id = NULL
+    or
+        a.trader_id = @trader_id
+    )
+and (
+        a.counterparty_id = NULL
+    or
+        a.counterparty_id = @counterparty_id
+    )
+and (
+        a.trade_type_id = NULL
+    or
+        a.trade_type_id = @trade_type_id
+    )
+
+
+
+/*create table
+    #notifiers (
+        source_id int,
+        status_id int NULL,
+	broker_id int NULL,
+	external_account_id int NULL,
+	trader_id int NULL,
+	counterparty_id int NULL,
+        notification_status_id int,
+    )*/
+
+select
+    a.source_id,
+    a.status_id,
+    a.broker_id,
+    a.external_account_id,
+    a.trader_id,
+    a.counterparty_id,
+    a.notification_status_id
+into
+    #notifiers
+from
+    trade_notifiers a
+where
+    a.source_id not in(select source_id from #notifier_exclusions)
+and
+    a.source_id not in(select source_id from #notifications)
+and
+    (
+        a.external_account_id = NULL
+    or
+        a.external_account_id = @external_account_id
+    )
+and (
+        a.broker_id = NULL
+    or
+        a.broker_id = @broker_id
+    )
+and (
+        a.status_id = NULL
+    or
+        a.status_id = @netted_status_id
+    )
+and (
+        a.trader_id = NULL
+    or
+        a.trader_id = @trader_id
+    )
+and (
+        a.counterparty_id = NULL
+    or
+        a.counterparty_id = @counterparty_id
+    )
+and (
+        a.trade_type_id = NULL
+    or
+        a.trade_type_id = @trade_type_id
+    )
+
+
+insert into
+    trade_notifications (
+        source_id,
+        trade_id,
+        status_id,
+        capture_date
+    )
+select
+    a.source_id,
+    @trade_id,
+    min(a.notification_status_id),
+    getdate()
+from
+    #notifiers a
+group by
+    a.source_id
+
+
+/*
+select @ed = getdate()
+select "msg"="datediff", "ss"=datediff(ss, @bd, @ed), "ms"=datediff(ms, @bd, @ed)
+*/
+
+
+go

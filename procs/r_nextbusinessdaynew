@@ -1,0 +1,27 @@
+
+if object_id("r_nextbusinessdaynew") != NULL
+    drop procedure
+        r_nextbusinessdaynew
+go
+ 
+create procedure
+	r_nextbusinessdaynew
+		@a_date datetime,
+		@next_date datetime output
+as
+
+declare @weekday int
+
+select
+	@weekday = datepart(weekday, @a_date)
+if @weekday = 6
+	select
+		@next_date = dateadd(day, 3, @a_date)
+else if @weekday = 7
+	select
+		@next_date = dateadd(day, 2, @a_date)
+else
+	select
+		@next_date = dateadd(day, 1, @a_date)
+
+go

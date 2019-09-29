@@ -1,0 +1,25 @@
+create or replace procedure
+	r_ticoreports
+
+
+as
+
+
+create table
+	#output(name varchar(50))
+
+insert into #output values("Daily Trading Statement")
+insert into #output values("Monthly Trading Statement")
+/*
+insert into #output values("Trading Daily Statement")
+insert into #output values("Trading Monthly Statement")
+insert into #output values("Bank Daily Statement")
+insert into #output values("Bank Monthly Statement")
+insert into #output values("Entity Daily Statement")
+insert into #output values("Entity Monthly Statement")
+*/
+
+
+select name from #output order by name
+
+go

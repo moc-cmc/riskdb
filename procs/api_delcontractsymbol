@@ -1,0 +1,88 @@
+
+drop procedure
+	api_delcontractsymbol	
+go
+
+create procedure 
+	api_delcontractsymbol	
+		@login varchar(25),
+		@name varchar(50),
+		@source_name varchar(100),
+		@mapping varchar(100)
+as
+
+declare @contract_id int
+declare @source_id int
+
+select
+	@contract_id=contract_id
+from
+	contracts	
+where
+	symbol=@name
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Could not find contract",
+		contract=@name
+
+	return
+end
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name=@source_name
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Could not find source",
+		source=@source_name
+
+	return
+end
+
+begin tran
+
+	delete from
+		contract_symbols
+	where
+		contract_id=@contract_id
+	and
+		source_id=@source_id
+	and
+		symbol=@mapping
+
+	if (@@rowcount != 1)
+	begin
+		rollback tran
+
+		select
+			status="Error",
+			msg="Could not delete Contract mapping",
+			name=@name
+
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Contract mapping deleted",
+	name=@name
+
+exec
+	r_mappingoverview2
+			@login=@login
+
+return
+
+go
+

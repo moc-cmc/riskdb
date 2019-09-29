@@ -1,0 +1,57 @@
+
+create or replace procedure
+	tt_resolvesourcebroker
+		@login varchar(50),
+		@source varchar(50),
+		@broker varchar(50),
+		@autocreate_broker char(1)=NULL,
+		@broker_id int=NULL output,
+		@source_id int=NULL output
+as
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	return
+end
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = @broker
+if @broker_id = NULL and @autocreate_broker = "Y"
+begin
+	exec
+		j_nextkey
+			"brokers",
+			@broker_id output
+	insert into
+		brokers(
+			broker_id,
+			symbol,
+			source_id)
+	values(
+		@broker_id,
+		@broker,
+		@source_id
+	)
+	if @@rowcount != 1
+	begin
+		select
+			@broker_id = NULL
+	end
+end
+
+/* do your error checking in whatever proc is calling this one */
+
+
+go 
+

@@ -1,0 +1,392 @@
+use
+	risk_rcm
+go
+
+drop procedure
+	cta_createforwardvols
+go
+
+create procedure
+	cta_createforwardvols
+		@login varchar(50),
+		@days int,
+		@trade_date datetime
+
+as
+
+declare @contract_id int
+declare @contracts int
+declare @begin_date datetime
+declare @end_date datetime
+declare @day_count int
+declare @max_count int
+declare @forward_id int
+declare @mean float
+declare @variance float
+declare @daily_volatility float
+declare @annualized_vol float
+declare @forward_vol_id int
+declare @data_points int
+declare @weekday varchar(20)
+declare @date datetime
+
+
+select
+	@date = @trade_date
+
+select
+	@day_count = @days + 1
+
+create table
+	#dates(
+		date datetime)
+
+while @day_count > 0
+begin
+	insert into
+		#dates
+	values(
+		@date)
+
+	select
+		@date = dateadd(day, -1, @date)
+	
+	select
+		@weekday = datename(weekday, @date)
+	if @weekday = "Sunday"
+		select
+			@date = dateadd(day, -2, @date)
+
+	select
+		@day_count = @day_count - 1
+end
+
+select
+	@begin_date = min(date),
+	@end_date = max(date)
+from
+	#dates
+
+
+
+select
+	begin_date = @begin_date,
+	end_date = @end_date,
+	days = datediff(day, @begin_date, @end_date)
+
+
+create table
+	#best_contracts(
+		contract_id int,
+		forward_id int NULL,
+		num_prices int)
+
+create table
+	#price_count(
+		contract_id int,
+		num_prices int)
+
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	forwards
+where
+	contract_id > @contract_id
+
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		forwards
+	where
+		contract_id > @contract_id
+
+	insert into
+		#price_count
+	select
+		a.contract_id,
+		count(a.price_id)
+	from
+		prices a,
+		forwards b
+	where
+		a.contract_id = b.contract_id
+	and
+		convert(date, a.price_date) >= convert(date, @begin_date)
+	and
+		convert(date, a.price_date) <= convert(date, @end_date)
+	and
+		b.contract_id = @contract_id
+	group by
+		a.contract_id
+
+	insert into
+		#price_count
+	select
+		a.contract_id,
+		count(a.price_id)
+	from
+		prices a,
+		future_contracts b,
+		futures c
+	where
+		a.contract_id = b.contract_id
+	and
+		b.future_id = c.future_id
+	and
+		convert(date, a.price_date) >= convert(date, @begin_date)
+	and
+		convert(date, a.price_date) <= convert(date, @end_date)
+	and
+		c.forward_id = @contract_id
+	group by
+		a.contract_id
+
+	select
+		@max_count = NULL
+	select
+		@max_count = max(num_prices)
+	from
+		#price_count
+	
+	insert into
+		#best_contracts(
+			contract_id,
+			num_prices)
+	select
+		contract_id,
+		num_prices
+	from
+		#price_count
+	where
+		num_prices = @max_count
+	
+
+	truncate table 	#price_count
+
+	
+	select
+		@contracts = count(*)
+	from
+		forwards
+	where
+		contract_id > @contract_id
+
+end
+
+update
+	#best_contracts
+set
+	a.forward_id = b.contract_id
+from
+	#best_contracts a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#best_contracts
+set
+	a.forward_id = c.forward_id
+from
+	#best_contracts a,
+	future_contracts b,
+	futures c
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+
+delete
+
+from
+	#best_contracts
+where
+	contract_id != forward_id
+and
+	forward_id in(
+		select
+			contract_id
+		from
+			#best_contracts)
+
+
+create table
+	#distribution(
+		id int identity,
+		price float,
+		price_date datetime,
+		daily_log float NULL,
+		variance_to_mean float NULL,
+		squared float NULL)
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	#best_contracts
+where
+	contract_id > @contract_id
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#best_contracts
+	where
+		contract_id > @contract_id
+
+	select
+		@forward_id = forward_id
+	from
+		#best_contracts
+	where
+		contract_id = @contract_id
+
+	truncate table
+		#distribution
+
+	insert into
+		#distribution(
+			price,
+			price_date)
+	select
+		price,
+		price_date
+	from
+		prices
+	where
+		convert(date, price_date) >= convert(date, @begin_date)
+	and
+		convert(date, price_date) <= convert(date, @end_date)
+	and
+		contract_id = @contract_id
+
+
+	update
+		#distribution
+	set
+		a.daily_log = log(b.price / a.price)
+	from
+		#distribution a,
+		#distribution b
+	where
+		a.id = b.id + 1
+
+	delete
+
+	from
+		#distribution
+	where
+		daily_log = NULL
+
+	select
+		@data_points = count(*)
+	from
+		#distribution
+
+
+	select
+		@mean = NULL,
+		@variance = NULL,
+		@daily_volatility = NULL
+
+	select
+		@mean = avg(daily_log)
+	from
+		#distribution
+
+	update
+		#distribution
+	set
+		variance_to_mean = daily_log - @mean
+
+	update
+		#distribution
+	set
+		squared = variance_to_mean * variance_to_mean
+
+	select
+		@variance = avg(squared)
+	from
+		#distribution
+
+	select
+		@daily_volatility = sqrt(@variance)
+
+	select
+		@annualized_vol = @daily_volatility * sqrt(250.0/1.0)
+	select
+		*
+	from
+		#distribution
+
+	select
+		symbol,
+		daily_volatility = @daily_volatility,
+		annualized_vol = @annualized_vol
+	from
+		contracts
+	where
+		contract_id = @forward_id
+
+	if @annualized_vol != NULL
+	begin
+		delete
+
+		from
+			forward_vols
+		where
+			forward_id = @forward_id
+		and
+			convert(date, trade_date) = convert(date, @trade_date)
+
+		select
+			@forward_vol_id = NULL
+		exec
+			j_nextkey
+				"forward_vols",
+				@forward_vol_id output
+
+		select
+			forward_vol_id = @forward_vol_id
+
+		insert into
+			forward_vols
+		values(
+			@forward_vol_id,
+			@forward_id,
+			@trade_date,
+			@days,
+			@data_points,
+			@daily_volatility,
+			@annualized_vol)
+
+		select
+			*
+		from
+			forward_vols
+		where
+			forward_vol_id = @forward_vol_id
+	end
+		
+
+	select * from #distribution /* TEST */
+
+	truncate table
+		#distribution
+
+	select
+		@contracts = count(*)
+	from
+		#best_contracts
+	where
+		contract_id > @contract_id
+end
+
+
+
+go

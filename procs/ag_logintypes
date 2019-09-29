@@ -1,0 +1,17 @@
+drop procedure
+	ag_logintypes
+go
+
+create procedure
+	ag_logintypes
+		@login varchar(50)
+as
+
+select
+	name
+from
+	login_types
+order by
+	name
+
+go

@@ -1,0 +1,46 @@
+
+if object_id("mc_tallyfxspotwrapper") != NULL
+    drop procedure
+        mc_tallyfxspotwrapper
+go
+
+
+create procedure
+	mc_tallyfxspotwrapper
+		@login char(25),
+		@symbol char(25),
+		@broker char(100),
+		@trader	char(25),
+		@strategy char(100),
+		@buysell	varchar(10),
+		@quantity numeric(30,6),
+		@price float,
+		@value_date datetime = NULL
+
+
+as
+
+if convert(char(1), lower(@buysell)) = "s"
+begin
+        select
+                @quantity = abs(@quantity) * -1
+end
+
+if convert(char(1), lower(@buysell)) = "b"
+begin
+        select
+                @quantity = abs(@quantity)
+end
+
+exec
+	mc_tallyspot
+		@login,
+		@symbol,
+		@broker,
+		@strategy,
+		@trader, 
+		@quantity,
+		@price,
+		@value_date
+
+go

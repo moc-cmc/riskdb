@@ -1,0 +1,39 @@
+use
+	risk_finotec_test
+go
+
+drop procedure
+	ag_cfdsettlements
+go
+
+create procedure
+	ag_cfdsettlements
+		@login varchar(50),
+		@value_date datetime=NUL
+as
+
+
+declare @cfd_product_type_id int
+
+select value_date = @value_date /* TEST */
+
+select
+	@cfd_product_type_id = product_type_id
+from
+	product_types
+where
+	name = "CFD"
+if @cfd_product_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "CFD Product type not found"
+	return
+end
+
+
+select * from trades where convert(date, value_date) = convert(date, @value_date)
+
+
+go
+

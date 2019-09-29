@@ -1,0 +1,33 @@
+drop procedure r_addopstask
+go
+
+create procedure
+	r_addopstask
+		@login varchar(50),
+		@name varchar(100),
+		@ops_task_type varchar(30),
+		@status varchar(20),
+		@assigned_to varchar(50)=NULL,
+		@task_date datetime=NULL
+
+as
+
+exec
+	api_addopstask
+		@login = @login,
+		@name = @name,
+		@ops_task_type = @ops_task_type,
+		@status = @status,
+		@ordering = NULL,
+		@assigned_to = @assigned_to,
+		@task_date = @task_date
+
+exec
+	r_manageopstasks
+		@login=@login,
+		@as_of_date=@task_date
+
+go
+
+
+

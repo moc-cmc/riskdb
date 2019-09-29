@@ -1,0 +1,19 @@
+
+if object_id("r_clientbuysell") != NULL
+    drop procedure
+        r_clientbuysell
+go
+
+create procedure r_clientbuysell as
+
+create table #buysell(
+	buysell	char(20))
+
+insert into #buysell values("Client Buys")
+
+
+insert into #buysell values("Client Sells")
+
+select name=buysell from #buysell
+
+go

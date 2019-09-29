@@ -1,0 +1,150 @@
+use
+	risk_buttonwood
+go
+
+drop procedure
+	esm_buttonwoodtrades
+go
+
+create procedure
+	esm_buttonwoodtrades
+		@trade_date datetime=NULL,
+		@trade_id int=NULL
+as
+
+declare @timestamp datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @processing_revals int
+
+
+if @trade_id = NULL
+	select
+		@trade_id = 0
+
+select
+	@processing_revals = count(a.trade_daily_reval_id)
+from
+	trade_daily_revals a,
+	statuses b
+where
+	a.status_id = b.status_id
+and
+	b.name = "Processing"
+
+
+if @trade_date = NULL
+	select
+		@timestamp = getdate()
+
+else
+	select
+		@timestamp = @trade_date
+
+exec
+	r_daterangefordate
+		@timestamp,
+		@begin_date output,
+		@end_date output
+
+if @trade_date = NULL
+	select
+		@trade_date = @begin_date
+
+
+create table
+	#output(
+		trade_action varchar(20),
+		trade_id int,
+		contract_id int,
+		quantity numeric(30,4),
+		price float,
+		trade_date datetime)
+
+if @processing_revals != 0
+begin
+	select
+		a.trade_action,
+		b.symbol,
+		a.quantity,
+		a.price,
+		a.trade_date
+	from
+		#output a,
+		contracts b
+	where
+		a.contract_id = b.contract_id
+
+	return
+end
+
+insert into
+	#output
+select
+	trade_action = "Received",
+	a.trade_id,
+	a.contract_id,	
+	a.quantity,
+	a.price,
+	a.trade_date
+from
+	trades a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.trade_date > @begin_date
+and
+	a.trade_date < @end_date
+and
+	a.trade_id > @trade_id
+and
+	b.symbol in("LP - CFS NY", "LP - FAROS")
+
+insert into
+	#output
+select
+	trade_action = "Sent",
+	b.trade_id,
+	b.contract_id,
+	b.quantity,
+	b.price,
+	b.trade_date
+from
+	trade_notifications a,
+	trades b,
+	statuses c,
+	external_accounts d
+where
+	a.trade_id = b.trade_id
+and
+	a.status_id = c.status_id
+and
+	b.external_account_id = d.external_account_id
+and
+	d.symbol in("LP - CFS NY", "LP - FAROS")
+and
+	b.trade_date > @begin_date
+and
+	b.trade_date < @end_date
+and
+	c.name = "Sent"
+and
+	b.trade_id > @trade_id
+	
+	
+select
+	a.trade_action,
+	a.trade_id,
+	b.symbol,
+	a.quantity,
+	a.price,
+	a.trade_date
+from
+	#output a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+
+go

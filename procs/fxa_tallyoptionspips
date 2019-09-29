@@ -1,0 +1,125 @@
+
+if object_id("fxa_tallyoptionspips") != NULL
+    drop procedure
+        fxa_tallyoptionspips
+go
+
+create procedure
+	fxa_tallyoptionspips
+		@login char(25),
+		@trader char(25),
+		@strategy char(100),
+		@broker char(100),
+		@biproduct varchar(50),
+		@quantity numeric(30,4),
+		@buysell char(5),
+		@expiration datetime,
+		@option_settledate datetime=NULL,	
+		@strike char(30),
+		@callput char(1),
+		@implied_volatility float,
+		@spot_reference float,
+		@pips_price float,
+		@total_usd_premium char(100)=NULL,
+		@premium_settledate datetime=NULL
+
+as
+
+declare @underlying char(25)
+declare @symbol char(50)
+declare @date varchar(20)
+declare @trade_price char(100)
+declare @put_call_string char(5)
+declare @contract_tv_id int
+declare @prev_business_day datetime
+declare @now datetime
+declare @day_string char(20)
+declare @conversion_rate float
+
+declare @day varchar(5)
+declare @month varchar(5)
+declare @year varchar(10)
+declare @putcall char(1)
+declare @settledate datetime
+declare @vol float
+declare @usd_premium varchar(100)
+
+/* old input arg names still used in the proc */
+
+select @putcall = @callput
+select @settledate = @option_settledate
+select @vol = @implied_volatility
+select @usd_premium = @total_usd_premium
+
+select
+        @day = convert(varchar(5), datepart(day, @expiration)),
+        @month = convert(varchar(5), datepart(month, @expiration)),
+        @year = convert(varchar(10), datepart(year, @expiration))
+
+select
+        @date = rtrim(@month) + "/" + rtrim(@day) + "/" + substring(rtrim(@year), 3, 2)
+
+/* select
+	@date = convert(char(11), @expiration, 1) */
+
+select
+	@underlying = rtrim(@biproduct) + " " + rtrim(@date)
+
+select
+	@trade_price = convert(char(30), @pips_price)
+
+if upper(@putcall) = "P"
+	select
+		@put_call_string = "P"
+if upper(@putcall) = "C"
+	select
+		@put_call_string = "C"
+if @put_call_string = NULL
+begin
+	select
+		id = -1,
+		error = "Unable to determine put call option type",
+		put_call = @putcall
+	return
+end
+		
+if convert(char(1), lower(@buysell)) = "s"
+begin
+	select
+		@quantity = abs(@quantity) * -1,
+		@usd_premium = convert(char(100), abs(convert(float, @usd_premium)))
+end
+
+if convert(char(1), lower(@buysell)) = "b"
+begin
+	select
+		@quantity = abs(@quantity),
+		@usd_premium = convert(char(100), abs(convert(float, @usd_premium)) * -1.0)
+end
+
+/* select
+	@conversion_rate = abs(convert(float, @usd_premium)) / abs(@quantity * 1000000) / @pips_price */
+
+select
+	@conversion_rate = @spot_reference
+
+exec
+	mc_tallyfundoptions
+		@login,
+		@trader,
+		@underlying,
+		@quantity,
+		@trade_price,
+		@strike,
+		@put_call_string,
+		@broker,
+		@strategy,
+		@date,
+		@usd_premium,
+		@vol,
+		@conversion_rate,
+		@settledate,
+		@premium_settledate		
+
+
+go

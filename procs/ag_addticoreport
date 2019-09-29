@@ -1,0 +1,111 @@
+create or replace procedure
+	ag_addticoreport
+		@login varchar(50),
+		@tico_report varchar(100),
+		@run_name varchar(50)
+as
+
+
+declare @tico_report_id int
+declare @run_id int
+declare @report_user_id int
+declare @status_id int
+declare @pdf_login varchar(50)
+
+select
+	@pdf_login = login
+from
+	tico_accounts
+where
+	login like "%pdf%"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		msg = "Could not find pdf login"
+	return
+end
+
+
+if @tico_report = "Daily Trading Statement"
+begin
+	exec
+		r_enabledailystatementforrun
+			@login=@login,
+			@pdf_login=@pdf_login,
+			@run_name=@run_name
+end
+
+if @tico_report = "Monthly Trading Statement"
+begin
+        exec
+                r_enablemonthlystatementforrun
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end
+
+if @tico_report = "Trading Daily Statement"
+begin
+	exec
+		r_enabletrdacctdailystatement
+			@login=@login,
+			@pdf_login=@pdf_login,
+			@run_name=@run_name
+end
+
+
+if @tico_report = "Bank Daily Statement"
+begin
+	exec
+		r_enablebankacctdailystatement
+			@login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end
+
+if @tico_report = "Entity Daily Statement"
+begin
+        exec
+                r_enablelegalentitydailystatement
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end			
+
+if @tico_report = "Trading Monthly Statement"
+begin
+        exec
+                r_enabletradingmonthlystatement
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end
+
+if @tico_report = "Bank Monthly Statement"
+begin
+        exec
+                r_enablebankingmonthlystatement
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end
+
+if @tico_report = "Entity Monthly Statement"
+begin
+        exec
+                r_enableentitymonthlystatement
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end
+
+
+
+
+exec
+	ag_ticoreportshome
+		@login = @login
+
+
+go

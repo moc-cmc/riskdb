@@ -1,0 +1,72 @@
+drop procedure tt_resolveswapsymbol
+go
+
+create procedure
+	tt_resolveswapsymbol
+		@deal_id int,
+		@near_trade_id int,
+		@far_trade_id int,
+		@client_or_market char(1)
+
+as
+
+declare @swap_symbol_id int
+declare @swap_symbol varchar(50)
+
+if @client_or_market not in("C", "M")
+begin
+	select
+		status = "Error",
+		msg = "Must provide swap symbol as either C or M"
+	return
+end
+
+/* Create and assign market swap symbol */
+exec
+	j_nextkey
+		"swap_symbols",
+		@swap_symbol_id output
+select
+	@swap_symbol = rtrim(convert(varchar(50), @deal_id)) +"."+@client_or_market
+
+insert into
+	swap_symbols
+(
+	swap_symbol_id,
+	symbol,
+	timestamp
+)
+values
+(
+	@swap_symbol_id,
+	@swap_symbol,
+	getdate()
+)
+
+/* Tie bothe legs to the swap symbol */
+insert into 
+	swap_symbol_trades
+(
+	swap_symbol_id,
+	trade_id
+)
+values
+(
+	@swap_symbol_id,
+	@near_trade_id
+)
+insert into 
+	swap_symbol_trades
+(
+	swap_symbol_id,
+	trade_id
+)
+values
+(
+	@swap_symbol_id,
+	@far_trade_id
+)
+
+
+go
+

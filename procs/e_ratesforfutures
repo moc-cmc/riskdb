@@ -1,0 +1,439 @@
+drop procedure
+	e_ratesforfutures
+go
+
+create procedure
+	e_ratesforfutures
+		@login varchar(50),
+		@session_id varchar(100)
+as
+
+
+declare @trade_date datetime
+declare @contract_id int
+declare @contracts int
+declare @value_date datetime
+declare @product_id int
+declare @currency_id int
+declare @currency_rate float
+declare @days float
+declare @minutes int
+declare @hours float
+declare @id int
+declare @ids int
+declare @spot_value_date datetime
+declare @product_rate float
+
+declare @forward_price float
+declare @spot_price float
+declare @next_val_date datetime
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"reserved",
+	"Link Here",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"product_rate",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"currency_rate",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"days",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"days",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"derived_price",
+	"Number",
+	"#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	"#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"spot_price",
+	"Number",
+	"#,##0.0000")
+
+
+select * from #meta
+
+select
+	@trade_date = convert(datetime, value)
+from
+	session_attributes
+where
+	session_id = @session_id
+and
+	name = "Trade Date"
+
+
+create table
+	#contracts(
+		id int identity,
+		term varchar(50) NULL,
+		spot_price float NULL,
+		contract_id int NULL,
+		price float NULL,
+		trade_date datetime,
+		currency_id int NULL,
+		value_date datetime NULL,
+		currency_rate float NULL,
+		days float NULL,
+		product_rate float NULL,
+		derived_price float NULL)
+
+insert into
+	#contracts(
+		contract_id,
+		term,
+		price,
+		trade_date)
+select
+	a.contract_id,
+	"Forward",
+	convert(float, b.value),
+	trade_date = @trade_date
+from
+	contracts a,
+	session_attributes b
+where
+	a.symbol = b.name
+and
+	b.session_id = @session_id
+	
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	#contracts
+where
+	contract_id > @contract_id
+
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#contracts
+	where
+		contract_id > @contract_id
+
+	select
+		@id = id
+	from
+		#contracts
+	where
+		contract_id = @contract_id
+
+	select
+		@currency_id = NULL,
+		@value_date = NULL,
+		@currency_rate = NULL
+	exec
+		r_contractcurrency
+			@contract_id,
+			@currency_id output
+
+	exec
+		r_contractproduct
+			@contract_id,
+			@product_id output
+
+	select
+		@value_date = expiration
+	from
+		future_contracts
+	where
+		contract_id = @contract_id
+
+	exec
+		r_rateasof
+			@currency_id,
+			@trade_date,
+			@value_date,
+			@currency_rate output
+	update
+		#contracts
+	set
+		currency_id = @currency_id,
+		value_date = @value_date,
+		currency_rate = @currency_rate,
+		days = @days
+	where
+		contract_id = @contract_id
+
+	if @id = 1
+		update
+			#contracts
+		set
+			term = "Spot"
+		where
+			id = @id
+
+	select
+		@contracts = count(*)
+	from
+		#contracts
+	where
+		contract_id > @contract_id
+end
+
+	
+select
+	@spot_value_date = value_date,
+	@spot_price = price
+from
+	#contracts
+where
+	term = "Spot"
+
+update
+	#contracts
+set
+	spot_price = @spot_price
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#contracts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#contracts
+	where
+		id > @id
+
+	select
+		@value_date = value_date
+	from
+		#contracts
+	where
+		id = @id
+
+	select
+		@minutes = datediff(minute, @spot_value_date, @value_date)
+	select
+		@hours = convert(float, @minutes) / 60.0
+
+	select
+		@days = @hours / 24.0
+
+	update
+		#contracts
+	set
+		days = @days
+	where
+		id = @id
+
+
+	select
+		@ids = count(*)
+	from
+		#contracts
+	where
+		id > @id
+end
+
+
+update
+	#contracts
+set
+	product_rate = currency_rate - ((360.0 / days) * log(price / spot_price))
+where
+	days != 0
+
+select
+	@product_rate = product_rate
+from
+	#contracts
+where
+	id = 2
+
+update
+	#contracts
+set
+	term = "Forward",
+	product_rate = @product_rate
+where
+	id = 1
+
+
+select
+	@contract_id = contract_id
+from
+	forwards
+where
+	product_id = @product_id
+and
+	currency_id = @currency_id
+
+
+insert into
+	#contracts(
+		term,
+		contract_id,
+		trade_date,
+		value_date)
+values(
+	"Spot",
+	@contract_id,
+	@trade_date,
+	@trade_date)
+
+select
+	@spot_value_date = @trade_date
+
+select
+	@next_val_date = value_date
+from
+	#contracts
+where
+	id = 1
+
+select
+	@minutes = datediff(minute, @spot_value_date, @next_val_date)
+select
+	@hours = convert(float, @minutes) / 60.0
+
+select
+	@days = @hours / 24.0
+
+update
+	#contracts
+set
+	days = days + @days
+
+
+update
+	#contracts
+set
+	days = 0.0,
+	currency_id = @currency_id,
+	currency_rate = 0.0,
+	product_rate = 0.0
+where
+	days = NULL
+
+
+
+select
+	@forward_price = price,
+	@currency_rate = currency_rate,
+	@product_rate = product_rate,
+	@days = days
+from
+	#contracts
+where
+	id = 1
+
+
+if @days != 0
+	select
+		@spot_price = @forward_price / exp((@currency_rate - @product_rate) * (@days / 360.0))
+
+
+update
+	#contracts
+set
+	price = @spot_price
+where
+	term = "Spot"
+
+update
+	#contracts
+set
+	spot_price = @spot_price
+update
+	#contracts
+set
+	product_rate = currency_rate - ((360.0 / days) * log(price / spot_price))
+where
+	days != 0
+
+update
+	#contracts
+set
+	derived_price = spot_price * exp((currency_rate - product_rate) * days / 360.0)
+
+
+select
+	a.symbol,
+	b.spot_price,
+	trade_date = convert(char(11), b.trade_date, 1),
+	currency = c.symbol,
+	value_date = convert(char(11), b.value_date, 1),
+	b.price,
+	b.days,
+	b.currency_rate,
+	b.product_rate,
+	b.derived_price
+from
+	contracts a,
+	#contracts b,
+	products c
+where
+	a.contract_id = b.contract_id
+and
+	b.currency_id = c.product_id
+order by
+	convert(datetime, b.value_date)
+
+	
+
+
+
+
+go

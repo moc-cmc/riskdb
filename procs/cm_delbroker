@@ -1,0 +1,77 @@
+
+if object_id("cm_delbroker") != NULL
+    drop procedure
+        cm_delbroker
+go
+
+create procedure
+	cm_delbroker
+		@login varchar(30),
+		@broker varchar(30)
+
+as
+
+declare @broker_id int
+declare @total_trades int
+declare @tico_server varchar(100)
+declare @tico_database varchar(100)
+declare @sql_string varchar(200)
+
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = @broker
+if @broker_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Broker not found",
+		broker = @broker
+	return
+end
+
+select
+	@total_trades = count(*)
+from
+	trades
+where
+	broker_id = @broker_id
+if @total_trades != 0
+begin
+	select
+		status = "Error",
+		message = "Non-zero number of trades found for this broker. Not Deleted",
+		broker = @broker
+	return
+end
+
+delete
+
+from
+	brokers
+where
+	broker_id = @broker_id
+
+
+select
+	@tico_server = tico_server,
+	@tico_database = tico_database
+from
+	funds
+
+
+select
+	@sql_string = "exec " + rtrim(@tico_database) + "..flush"
+
+exec sp_remotesql @tico_server, @sql_string
+
+
+
+exec
+	cm_brokers
+		@login
+
+go

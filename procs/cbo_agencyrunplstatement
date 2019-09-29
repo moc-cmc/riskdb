@@ -1,0 +1,60 @@
+drop procedure 
+	cbo_agencyrunplstatement
+go
+
+create procedure
+	cbo_agencyrunplstatement
+		@login varchar(30),
+		@trade_date datetime=NULL
+
+as
+
+
+declare @total_pl float
+declare @run_name varchar(50)
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Unable to determine user name"
+	return
+end
+
+select
+	@run_name = a.name
+from
+	runs a,
+	client_login_configs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+
+
+if @run_name = NULL
+begin
+	select
+		status = "Error",
+		message ="No run configured for user name"
+	return
+end
+
+
+exec
+	cbo_runplagency
+		@login,
+		@run_name,
+		@trade_date,
+		@total_pl,
+		"Y"
+
+go
+

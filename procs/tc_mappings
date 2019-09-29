@@ -1,0 +1,257 @@
+use
+	risk_makr_dev
+go
+
+drop procedure
+	tc_mappings
+go
+
+create procedure
+	tc_mappings
+		@login varchar(50),
+		@source varchar(50),
+		@workflow varchar(100),
+		@exec_id varchar(50),
+		@lookup_cpty varchar(50)=NULL,
+		@counterparty varchar(50)=NULL output,
+		@counterparty_id int=NULL output,
+		@lookup_trader varchar(50)=NULL,
+		@trader varchar(50)=NULL output,
+		@trader_id int=NULL output,
+		@lookup_account varchar(50)=NULL,
+		@external_account varchar(50)=NULL output,
+		@external_account_id int=NULL output
+as
+
+
+declare @source_id int
+declare @mapping_error_id int
+declare @workflow_id int
+declare @error_string varchar(250)
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		@error_string = "Unknown mapping source: " + rtrim(@source)
+	exec
+		j_nextkey
+			"mapping_errors",
+			@mapping_error_id
+	insert into
+		mapping_errors(
+			mapping_error_id,
+			source_id,
+			workflow_id,
+			exec_id,
+			message)
+	values(
+		@mapping_error_id,
+		@source_id,
+		@workflow_id,
+		@exec_id,
+		@error_string)
+
+	return
+end
+
+
+select
+	@workflow_id = workflow_id
+from
+	workflows
+where
+	name = @workflow
+if @workflow_id = NULL
+begin
+	select
+		@error_string = "Unknown mapping workflow: " + rtrim(@workflow)
+	exec
+		j_nextkey
+			"mapping_errors",
+			@mapping_error_id
+	insert into
+		mapping_errors(
+			mapping_error_id,
+			source_id,
+			workflow_id,
+			exec_id,
+			message)
+	values(
+		@mapping_error_id,
+		@source_id,
+		@workflow_id,
+		@exec_id,
+		@error_string)
+
+	return
+end
+
+
+
+if @lookup_cpty != NULL
+begin
+	select
+		@counterparty_id = a.counterparty_id,
+		@counterparty = a.name
+	from
+		counterparties a,
+		counterparty_symbols b
+	where
+		a.counterparty_id = b.counterparty_id
+	and
+		b.source_id = @source_id
+	and
+		b.symbol = @lookup_cpty
+	if @counterparty_id = NULL
+	begin
+		select
+			@counterparty_id = counterparty_id,
+			@counterparty = name
+		from
+			counterparties
+		where
+			name = @lookup_cpty
+		if @counterparty_id = NULL
+		begin
+		        select
+                		@error_string = "Failed counterparty mapping: " + rtrim(@lookup_cpty)
+        		exec
+                		j_nextkey
+                        		"mapping_errors",
+                        		@mapping_error_id
+        		insert into
+                		mapping_errors(
+                        		mapping_error_id,
+                        		source_id,
+                        		workflow_id,
+                        		exec_id,
+                        		message)
+        		values(
+                		@mapping_error_id,
+                		@source_id,
+                		@workflow_id,
+                		@exec_id,
+                		@error_string)
+		
+        		return
+
+		end
+	end
+end
+
+
+
+if @lookup_trader != NULL
+begin
+	select
+		@trader_id = a.trader_id,
+		@trader = a.symbol
+	from
+		traders a,
+		trader_symbols b
+	where
+		a.trader_id = b.trader_id
+	and
+		b.source_id = @source_id
+	and
+		b.symbol = @lookup_trader
+	if @trader_id = NULL
+	begin
+		select
+			@trader_id = trader_id,
+			@trader = symbol
+		from
+			traders
+		where
+			symbol = @lookup_trader
+		if @trader_id = NULL
+		begin
+		        select
+                		@error_string = "Failed trader mapping: " + rtrim(@lookup_trader)
+        		exec
+                		j_nextkey
+                        		"mapping_errors",
+                        		@mapping_error_id
+        		insert into
+                		mapping_errors(
+                        		mapping_error_id,
+                        		source_id,
+                        		workflow_id,
+                        		exec_id,
+                        		message)
+        		values(
+                		@mapping_error_id,
+                		@source_id,
+                		@workflow_id,
+                		@exec_id,
+                		@error_string)
+		
+        		return
+		end
+	end
+end
+
+
+if @lookup_account != NULL
+begin
+	select
+		@external_account_id = a.external_account_id,
+		@external_account = a.symbol
+	from
+		external_accounts a,
+		external_account_symbols b
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.source_id = @source_id
+	and
+		b.symbol = @lookup_account
+	if @external_account_id = NULL
+	begin
+		select
+			@external_account_id = external_account_id,
+			@external_account = symbol
+		from
+			external_accounts
+		where
+			symbol = @lookup_account
+		if @external_account_id = NULL
+		begin
+		        select
+                		@error_string = "Failed account mapping: " + rtrim(@lookup_account)
+        		exec
+                		j_nextkey
+                        		"mapping_errors",
+                        		@mapping_error_id
+        		insert into
+                		mapping_errors(
+                        		mapping_error_id,
+                        		source_id,
+                        		workflow_id,
+                        		exec_id,
+                        		message)
+        		values(
+                		@mapping_error_id,
+                		@source_id,
+                		@workflow_id,
+                		@exec_id,
+                		@error_string)
+		
+        		return
+		end
+	end
+end
+
+
+
+
+
+
+go

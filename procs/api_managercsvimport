@@ -1,0 +1,419 @@
+drop procedure api_managercsvimport
+go
+
+create procedure
+	api_managercsvimport
+		@login varchar(50)=NULL,
+		@identifier varchar(100)=NULL,
+		@deal_identifier varchar(100)=NULL,
+		@report_type varchar(15)=NULL,
+		@trade_type varchar(15)=NULL,
+		@trade_date varchar(25)=NULL,
+		@trading_party varchar(50)=NULL,
+		@account varchar(50)=NULL,
+		@trader varchar(50)=NULL,
+		@traded_currency varchar(10)=NULL,
+		@counter_currency varchar(10)=NULL,
+		@value_date varchar(25)=NULL,
+		@fixing_date varchar(25)=NULL,
+		@quantity varchar(25)=NULL,
+		@buy_sell varchar(15)=NULL,
+		@price varchar(25)=NULL,
+		@spot_reference varchar(25)=NULL,
+		@counter_party varchar(50)=NULL,
+		@broker varchar(25)=NULL,
+		@source varchar(50)=NULL,
+		@far_value_date varchar(25)=NULL,
+		@far_price varchar(25)=NULL,
+		@far_fixing_date varchar(25)=NULL,
+		@volatility varchar(25)=NULL,
+		@premium varchar(25)=NULL,
+		@premium_ccy varchar(25)=NULL,
+		@premium_conversion_rate varchar(25)=NULL,
+		@opt_prem_settle_date varchar(25)=NULL,
+		@opt_settle_date varchar(25)=NULL,
+		@opt_strike varchar(25)=NULL,
+		@put_call varchar(25)=NULL,
+		@opt_time_zone_loc varchar(25)=NULL,
+		@opt_time_zone_time varchar(25)=NULL,
+		@block_trade varchar(10)=NULL,
+		@allocation_template varchar(50)=NULL,
+		@pipping_schedule varchar(50)=NULL,
+		@strategy varchar(25)=NULL,
+		@exchange varchar(50)=NULL,
+		@root_symbol varchar(25)=NULL,
+		@month_code varchar(10)=NULL,
+		@year varchar(4)=NULL
+
+as
+
+
+declare @symbol varchar(10)
+
+/* Validation */
+if @login in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'login'"
+	return
+end
+if @identifier in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'identifier'"
+	return
+end
+if @deal_identifier in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'deal_identifier'"
+	return
+end
+if @report_type in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'report_type'"
+	return
+end
+if @trade_type in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'trade_type'"
+	return
+end
+if @trade_date in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'trade_date'"
+	return
+end
+if @trading_party in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'trading_party'"
+	return
+end
+/* ---Allow nulls, since the allocation template will specify the account
+if @account in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'account'"
+	return
+end
+ */
+if @trader in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'trader'"
+	return
+end
+if @traded_currency in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'traded_currency'"
+	return
+end
+if @counter_currency in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'counter_currency'"
+	return
+end
+if @value_date in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'value_date'"
+	return
+end
+if @quantity in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'quantity'"
+	return
+end
+if @buy_sell in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'buy_sell'"
+	return
+end
+if @trade_type != "Option" and @price in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'price'"
+	return
+end
+if @counter_party in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'counter_party'"
+	return
+end
+if @broker in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'broker'"
+	return
+end
+if @source in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'source'"
+	return
+end
+/* ---Allow nulls for now
+if @pipping_schedule in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'pipping schedule'"
+	return
+end
+*/
+if @strategy in(NULL, "")
+begin
+	select status="Error", msg="Must provide 'strategy'"
+	return
+end
+
+    
+/* Value Validation */
+if @report_type not in("NEW", "MODIFY", "DELETE")
+begin
+	select status="ERROR", msg="report_type must be provided as 'NEW', 'MODIFY', or 'DELETE'", you_provided=@report_type
+	return
+end
+
+if @trade_type not in("Spot", "Forward", "Swap", "Option", "Future")
+begin
+	select status="ERROR", msg="trade_type must be provided as 'Spot', 'Forward', 'Swap', 'Option', 'Future'", you_provided=@trade_type
+	return
+end
+
+if @trade_type in("Swap")
+begin
+	if @far_value_date in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'far_value_date'"
+		return
+	end
+	if @far_price in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'far_price'"
+		return
+	end
+end
+
+if @trade_type in("Option")
+begin
+	if @volatility in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'volatility'"
+		return
+	end
+	if @premium in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'premium'"
+		return
+	end
+	if @premium_ccy in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'premium_ccy'"
+		return
+	end
+	if @premium_conversion_rate in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'premium_conversion_rate'"
+		return
+	end
+	if @opt_prem_settle_date in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'opt_prem_settle_date'"
+		return
+	end
+	if @opt_settle_date in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'opt_settle_date'"
+		return
+	end
+	if @opt_strike in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'opt_strike'"
+		return
+	end
+	if @put_call in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'put_call'"
+		return
+	end
+	if @opt_time_zone_loc in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'opt_time_zone_loc'"
+		return
+	end
+	if @opt_time_zone_time in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'opt_time_zone'"
+		return
+	end
+	if @spot_reference in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'spot_reference'"
+		return
+	end
+end
+
+if @trade_type in("Future")
+begin
+	if @exchange in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'exchange'"
+		return
+	end
+	if @root_symbol in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'root_symbol'"
+		return
+	end
+	if @month_code in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'month_code'"
+		return
+	end
+	if @year in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'year'"
+		return
+	end
+
+end
+	
+
+/* DEFAULTS */
+if @block_trade in(NULL, "")
+begin
+	select @block_trade = "False"
+end
+else
+begin
+	if @allocation_template in(NULL, "")
+	begin
+		select status="Error", msg="Must provide 'allocation_template'"
+		return
+	end
+end
+
+/* Re-Assignements */
+select
+        @symbol = rtrim(@traded_currency) + rtrim(@counter_currency)
+
+if not exists(select contract_id from contracts where symbol = @symbol)
+begin
+        select
+                message = "Contract not found",
+                contract = @symbol
+        return
+end
+
+
+select 
+	login=@login,
+	identifier=@identifier,
+	deal_identifier=@deal_identifier,
+	report_type=@report_type,
+	trade_type=@trade_type,
+	trade_date=@trade_date,
+	trading_party=@trading_party,
+	account=@account,
+	trader=@trader,
+	traded_currency=@traded_currency,
+	counter_currency=@counter_currency,
+	value_date=@value_date,
+	fixing_date=@fixing_date,
+	quantity=@quantity,
+	buy_sell=@buy_sell,
+	price=@price,
+	spot_reference=@spot_reference,
+	counter_party=@counter_party,
+	broker=@broker,
+	source=@source,
+	far_value_date=@far_value_date,
+	far_price=@far_price,
+	far_fixing_date=@far_fixing_date,
+	volatility=@volatility,
+	premium=@premium,
+	premium_ccy=@premium_ccy,
+	premium_conversion_rate=@premium_conversion_rate,
+	opt_prem_settle_date=@opt_prem_settle_date,
+	opt_settle_date=@opt_settle_date,
+	opt_strike=@opt_strike,
+	put_call=@put_call,
+	opt_time_zone_loc=@opt_time_zone_loc,
+	opt_time_zone_time=@opt_time_zone_time,
+	block_trade=@block_trade,
+	allocation_template=@allocation_template,
+	pipping_schedule=@pipping_schedule,
+	strategy=@strategy,
+	exchange=@exchange,
+	root_symbol=@root_symbol,
+	month_code=@month_code,
+	year=@year
+
+
+if @trade_type = "Forward"
+begin
+
+	exec
+		api_managercsvimportforward
+			@login = @login,
+			@identifier = @identifier,
+			@deal_identifier = @deal_identifier,
+			@report_type = @report_type,
+			@trade_type = @trade_type,
+			@trade_date = @trade_date,
+			@trading_party = @trading_party,
+			@account = @account,
+			@trader = @trader,
+			@traded_currency = @traded_currency,
+			@counter_currency = @counter_currency,
+			@value_date = @value_date,
+			@fixing_date = @fixing_date,
+			@quantity = @quantity,
+			@buy_sell = @buy_sell,
+			@price = @price,
+			@spot_reference = @spot_reference,
+			@counter_party = @counter_party,
+			@broker = @broker,
+			@source = @source,
+			@far_value_date = @far_value_date,
+			@far_price = @far_price,
+			@far_fixing_date = @far_fixing_date,
+			@block_trade = @block_trade,
+			@allocation_template = @allocation_template,
+			@pipping_schedule = @pipping_schedule,
+			@strategy = @strategy
+
+end
+else if @trade_type = "Option"
+begin
+
+	exec
+		api_managercsvimportoption
+			@login = @login,
+			@identifier = @identifier,
+			@deal_identifier = @deal_identifier,
+			@report_type = @report_type,
+			@trade_type = @trade_type,
+			@trade_date = @trade_date,
+			@trading_party = @trading_party,
+			@account = @account,
+			@trader = @trader,
+			@traded_currency = @traded_currency,
+			@counter_currency = @counter_currency,
+			@value_date = @value_date,
+			@fixing_date = @fixing_date,
+			@quantity = @quantity,
+			@buy_sell = @buy_sell,
+			@underlying_spot_reference = @spot_reference,
+			@counter_party = @counter_party,
+			@broker = @broker,
+			@source = @source,
+			@volatility = @volatility,
+			@premium = @premium,
+			@premium_ccy = @premium_ccy,
+			@premium_conversion_rate = @premium_conversion_rate,
+			@opt_prem_settle_date = @opt_prem_settle_date,
+			@opt_settle_date = @opt_settle_date,
+			@opt_strike = @opt_strike,
+			@put_call = @put_call,
+			@opt_time_zone_loc = @opt_time_zone_loc,
+			@opt_time_zone_time = @opt_time_zone_time,
+			@block_trade = @block_trade,
+			@allocation_template = @allocation_template,
+			@pipping_schedule = @pipping_schedule,
+			@strategy = @strategy
+
+end
+
+
+go

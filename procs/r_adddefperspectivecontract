@@ -1,0 +1,100 @@
+
+if object_id("r_adddefperspectivecontract") != NULL
+    drop procedure
+        r_adddefperspectivecontract
+go
+
+create procedure
+	r_adddefperspectivecontract
+		@login char(30),
+		@forward_symbol char(50),
+		@perspective_contract char(50),
+		@run_name char(100)=NULL
+as
+
+
+declare @contract_id int
+declare @perspective_contract_id int
+declare @run_id int
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @forward_symbol
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding forward with symbol",
+		forward_symbol = @forward_symbol
+	return
+end
+
+
+select
+	@perspective_contract_id = contract_id
+from
+	contracts
+where
+	symbol = @perspective_contract
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding contract with symbol",
+		contract = @perspective_contract
+	return
+end
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run_name
+
+
+if @run_id = NULL
+begin
+	delete
+
+	from
+		def_perspective_contracts
+	where
+		contract_id = @contract_id
+
+	insert into
+		def_perspective_contracts
+	values(
+		@contract_id,
+		@perspective_contract_id,
+		NULL)
+end
+else
+begin
+	delete
+
+	from
+		run_perspective_contracts
+	where
+		run_id = @run_id
+	and
+		contract_id = @contract_id
+
+	insert into
+		run_perspective_contracts
+	values(
+		@run_id,
+		@contract_id,
+		@perspective_contract_id,
+		NULL)
+end
+
+
+exec
+	r_defperspectivecontracts
+		@login
+
+go

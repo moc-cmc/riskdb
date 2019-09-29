@@ -1,0 +1,482 @@
+
+if object_id("tt_sourcetradenotifications2") != NULL
+    drop procedure
+        tt_sourcetradenotifications2
+go
+
+create procedure
+    tt_sourcetradenotifications2
+        @login varchar(50),
+        @source varchar(50),
+        @trade_notification_id int = NULL,
+        @status varchar(50) = NULL,
+        @begin_date datetime = NULL,
+        @end_date datetime = NULL
+as
+
+/* 
+ * WORKAROUND
+ * 
+ * This proc, along with tt_updatetradenotifications2 and the
+ * trade_notifications2, is a workaround upgrading the risk_cantor database to
+ * trade_notifiers table since:
+ * 
+ * 1. The following procs do not use trade_notifiers: cdo_tallycantorforwardb,
+ * cn_fxpbtally, cn_manualexternaltally, cn_manualtally, cn_stptally,
+ * fxa_tallyforward, fxa_tallyspot, fxa_tallyswap, fxa_tallytrade,
+ * r_cancelswapdeal, r_editbtbspotdeal, r_editspotdeal, r_editswapdeal,
+ * tn_fixtally, tt_cognotectally,
+ * 
+ * 2. The following procs do not respect trade_notifications.source_id:
+ * cantor_newforwardtrades, cn_allspottrades, cn_newspottrades,
+ * dn_newspottrades, fxa_forwardtrades, fxa_spottrades, fxa_swaptrades,
+ * mc_newforwardtrades, mc_newspottrades
+ */
+
+declare @source_id int
+declare @status_id int
+declare @last_trade_id int
+declare @fund varchar(50)
+declare @trader varchar(50)
+declare @broker varchar(50)
+declare @remote_login varchar(50)
+declare @counterparty varchar(50)
+
+
+/*
+ * FIND @source_id from @source
+ */
+select
+    @source_id = source_id
+from
+    sources
+where
+    name = @source
+
+if @source_id = NULL
+begin
+    select
+        status = "Error",
+        message = "No source named, '" + @source + "'",
+        source = @source
+    return
+end
+
+select
+    @fund = name
+from
+    funds
+
+exec
+    r_normalizedaterange
+        @begin_date out,
+        @end_date out
+
+create table
+    #external_accounts (
+        external_account_id int
+    )
+
+if @source = "Buttonwood" and @fund = "Faros Trading"
+begin
+    insert into
+        #external_accounts
+    select
+        external_account_id
+    from
+        external_accounts
+    where
+        symbol in ("FAROSM28886", "FAROSM28888")
+        
+    select
+        @counterparty = "FAROS",
+        @trader = "FAROS",
+        @broker = "Faros"
+end
+else if @source = "Buttonwood" and @fund = "Faros Trading"
+begin
+    insert into
+        #external_accounts
+    select
+        external_account_id
+    from
+        external_accounts
+    where
+        symbol in ("FAROSM28886", "FAROSM28888")
+        
+    select
+        @counterparty = "FAROS",
+        @trader = "CFS NY",
+        @broker = "CantorFXPro"
+end
+else if @source = "Odin" and @fund = "Faros Trading"
+begin
+    insert into
+        #external_accounts
+    select
+        external_account_id
+    from
+        external_accounts
+    where
+        symbol in ("FAROSM28887")
+        
+    select
+        @counterparty = "FarosTrading",
+        @trader = "ODIN",
+        @broker = "Faros"
+end
+else
+begin
+    select
+        status = "Error",
+        message = "Unsupported source",
+        source = @source
+    return
+end
+
+/* 
+ * INSERT trade_notifications: For any trade that does not have a trade
+ * notification for this source but has one of our #external_accounts
+ *
+ * We'll use two temp table so that we don't use outer joins.
+ */
+declare @start_time datetime select @start_time = getdate()
+create table
+    #missing_notification_trades (
+        trade_id int
+    )
+
+/* FIND @last_trade_id */
+select
+    @last_trade_id = max(trade_id)
+from
+    trade_notifications2
+where
+    source_id = @source_id
+
+/* INSERT #missing_notification_trades for all trades since @last_trade_id */
+insert into
+    #missing_notification_trades
+select
+    a.trade_id
+from
+    trades a,
+    #external_accounts b
+where
+    a.external_account_id = b.external_account_id
+and
+    (
+        @last_trade_id = NULL
+    or
+        a.trade_id > @last_trade_id
+    )
+    
+/* DELETE #missing_notification_trades for any trades that have a notification*/
+delete
+    #missing_notification_trades
+from
+    #missing_notification_trades a,
+    trade_notifications2 b
+where
+    a.trade_id = b.trade_id
+
+/* INSERT trade_notifications2 for each missing trade */
+insert into
+    trade_notifications2 (
+        source_id,
+        trade_id,
+        status_id,
+        capture_date
+    )
+select
+    @source_id,
+    b.trade_id,
+    c.status_id,
+    b.trade_date
+from
+    #missing_notification_trades a,
+    trades b,
+    statuses c
+where
+    a.trade_id = b.trade_id
+and
+    c.name = "Pending"
+
+/*
+ * INSERT #notify_trades: All trades to be notified
+ */
+create table
+    #notify_trades (
+        trade_notification_id int,
+        trade_notification_status varchar(25),
+        trade_id int,
+        deal_id int,
+        
+        internal_account varchar(50),
+        external_account varchar(50),
+        counterparty varchar(50) NULL, /* not used */
+        broker varchar(50),
+        trade_date datetime,
+        contract varchar(50),
+        quantity numeric(30,4),
+        price float,
+        trader varchar(50),
+        strategy varchar(50),
+        status varchar(50),
+        
+        value_date varchar(10) NULL,
+        trade_type varchar(10) NULL,
+        fixing_date datetime NULL,
+        quoted_price float NULL,
+        trade_symbol varchar(50) NULL,
+        deal_symbol varchar(50) NULL,
+        
+        comments varchar(50) NULL
+    )
+
+insert into
+    #notify_trades (
+        trade_notification_id,
+        trade_notification_status,
+        trade_id,
+        deal_id,
+        internal_account,
+        external_account,
+        counterparty,
+        broker,
+        trade_date,
+        contract,
+        quantity,
+        price,
+        trader,
+        strategy,
+        status,
+        value_date,
+        trade_type,
+        fixing_date,
+        trade_symbol
+    )
+select
+    trade_notification_id = a.trade_notification_id,
+    trade_notification_status = aa.name,
+    trade_id = b.trade_id,
+    deal_id = b.deal_id,
+    internal_account = ba.symbol,
+    external_account = bb.symbol,
+    counterparty = bh.name,
+    broker = bc.symbol,
+    trade_date = b.trade_date,
+    contract = bd.symbol,
+    quantity = b.quantity,
+    price = b.price,
+    trader = be.symbol,
+    strategy = bf.name,
+    status = bg.name,
+    value_date = convert(varchar(10), b.value_date, 101),
+    trade_type = bi.name,
+    fixing_date = convert(varchar(10), b.fixing_date, 101),
+    b.identifier
+from
+    trade_notifications2 a,
+    statuses aa,
+    trades b,
+    internal_accounts ba,
+    external_accounts bb,
+    brokers bc,
+    contracts bd,
+    traders be,
+    strategies bf,
+    statuses bg,
+    counterparties bh,
+    trade_types bi
+where
+    a.status_id = aa.status_id
+and
+	a.trade_id = b.trade_id
+and
+    b.internal_account_id = ba.internal_account_id
+and
+    b.external_account_id = bb.external_account_id
+and
+    b.broker_id = bc.broker_id
+and
+    b.contract_id = bd.contract_id
+and
+    b.trader_id = be.trader_id
+and
+    b.strategy_id = bf.strategy_id
+and
+    b.status_id = bg.status_id
+and
+    b.counterparty_id = bh.counterparty_id
+and
+    b.trade_type_id = bi.trade_type_id
+and
+    a.source_id = @source_id
+and
+    (
+        @trade_notification_id = NULL
+    or
+        a.trade_notification_id = @trade_notification_id
+    )
+and (
+        /* Allow statuses: NULL */
+        (@status = NULL and aa.name in ("Pending", "Active", "Uncommitted"))
+    or
+        (@status = "All")
+    or
+        (@status = aa.name)
+    )
+    
+/*
+select
+    num_trades = @@rowcount, 
+    begin_date = @begin_date,
+    end_date = @end_date,
+    trade_notification_id = @trade_notification_id,
+    status = b.name
+from
+    #statuses a
+join
+    statuses b on a.status_id = b.status_id
+order by
+    b.status_id
+*/
+    
+/* ------------------------------ MARK: Refine ------------------------------ */
+
+
+/*
+ * Check to see if there are any NULLs. If so, then show the error and return.
+ */
+if exists (
+        select
+            *
+        from
+            #notify_trades
+        where
+            trade_type = NULL
+        /*
+        or
+            value_date = NULL
+        or
+            trade_symbol = NULL
+        or
+            deal_symbol = NULL  */
+)
+begin
+    /*
+     * DISPLAY: Show errors and the #notify_trades table
+     */
+    select
+        status = "Error",
+        message = "There are some rows with NULL values"
+        
+    select
+        *
+    from
+        #notify_trades
+    return
+end
+
+/*
+ * DISPLAY: Show normal output
+ */
+/* FEATURE: exec tt_tallytrade
+select
+    trade_notification_id,
+    trade_notification_status,
+    proc_name = "tt_tallytrade",
+    trade_id,
+    trade_symbol,
+    deal_id,
+    deal_symbol,
+    internal_account,
+    external_account,
+    counterparty,
+    broker,
+    trade_date,
+    contract,
+    value_date,
+    trade_type,
+    fixing_date,
+    quantity,
+    price,
+    quoted_price,
+    trader,
+    strategy,
+    status,
+    comments
+from
+    #notify_trades
+order by
+    trade_notification_id
+*/
+    
+/*
+ * DISPLAY: Show normal output
+ * FEATURE: exec fxa_tallymarkettrade
+ 
+  login
+- source
+  trade_id out
+  deal_id out
+* tally_type
+* deal_type = "Market Forward"
+* trade_type
+  internal_account
+  external_account
+* counterparty = "CFS NY"
+* quantity
+* symbol
+* value_date
+* price
+* trade_date
+* trader = "CFE FX"
+  strategy
+  status
+* broker = broker
+* identifier
+  sales_code
+* premium
+* prem_settle_date
+* pct_price
+* spot_reference
+* fixing_date
+ 
+ */
+select
+top 500
+    trade_notification_id,
+    trade_notification_status,
+    source_trade_id = trade_id,
+    trade_symbol = trade_symbol,
+    target_proc = "fxa_tallynotifiertrade",
+    trade_type = case trade_type
+        when "S" then "Spot"
+        when "F" then "Forward"
+        else trade_type
+    end,
+    deal_type = "Market Forward",
+    tally_type = case trade_type
+        when "S" then "Spot"
+        when "F" then "Forward"
+        else trade_type
+    end,
+    counterparty = @counterparty,
+        /* KLS: Always use "CFS NY" as the party external_account */ 
+    quantity = -quantity,
+    symbol = contract,
+    value_date,
+    price,
+    trade_date,
+    trader = @trader,
+    broker = @broker,
+    identifier = trade_symbol,
+    fixing_date
+from
+    #notify_trades
+order by
+    trade_id
+    
+go

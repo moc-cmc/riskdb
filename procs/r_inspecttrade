@@ -1,0 +1,156 @@
+
+if object_id("r_inspecttrade") != NULL
+    drop procedure
+        r_inspecttrade
+go
+
+create procedure
+	r_inspecttrade
+		@trade_id int
+as
+
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200),
+		arguments char(255) NULL)
+
+ 
+insert into
+	#links
+values(
+	"Column Link",
+	"edit",
+	"Edit Trade",
+	"suppressAutoexecute=YES")
+
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"mark_resid",
+	"Mark Trade Resid",
+	"suppressAutoexecute=YES")
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select
+	#links.meta_type, #links.column, #links.link, #links.arguments
+from
+	#links
+
+create table
+	#trades(
+		trade_id int,
+		date datetime,
+		symbol char(50),
+		value_date datetime NULL,
+		quantity char(30),
+		trade_price float,
+		external_account char(50),
+		internal_account char(50),
+		trader char(10),
+		broker char(30),
+		strategy char(100),
+		premium float null)
+
+
+insert into
+	#trades
+select
+	a.trade_id,
+	a.trade_date,
+	b.symbol,
+	c.value_date,
+	/* value_date = convert(char(11), c.value_date, 1), */
+	convert(char(30), convert(numeric(30,4), a.quantity)),
+	a.price,
+	external_account = d.symbol,
+	internal_account = e.symbol,
+	trader = f.symbol,
+	broker = h.symbol,
+	strategy = g.name,
+	premium = NULL
+from
+	trades a,
+	contracts b,
+	trade_value_dates c,
+	external_accounts d,
+	internal_accounts e,
+	traders f,
+	strategies g,
+	brokers h
+where
+	a.trade_id *= c.trade_id
+and
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = d.external_account_id
+and
+	a.internal_account_id = e.internal_account_id
+and
+	a.trader_id = f.trader_id
+and
+	a.strategy_id = g.strategy_id
+and
+	a.broker_id = h.broker_id
+and
+	a.trade_id = @trade_id
+
+update
+	#trades
+set
+	trade_price = 1.0 / trade_price
+where
+	symbol in(
+		select
+			c.symbol
+		from
+			contract_price_styles a,
+			price_styles b,
+			contracts c
+		where
+			a.contract_id = c.contract_id
+		and
+			a.price_style_id = b.price_style_id
+		and
+			b.name = "Inverted")
+
+update
+	#trades
+set
+	premium = a.amount
+from
+	account_transactions a,
+	account_transaction_trades b,
+	#trades c
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	b.trade_id = c.trade_id
+
+select
+	trade_id,
+	/* trade_date = convert(char(20), date, 0), */
+	trade_date = rtrim(convert(char(25), date, 1)) + " " +  convert(char(10), date, 8),
+	symbol,
+	value_date = convert(char(11), value_date, 1),
+	quantity,
+	trade_price = convert(char(30), convert(numeric(30,6), trade_price)),
+	external_account,
+	internal_account,
+	trader,
+	broker,
+	strategy,
+	premium = convert(char(30), convert(numeric(30,2), premium))
+	/* edit = "EDIT" */
+from
+	#trades
+
+	
+go

@@ -1,0 +1,173 @@
+
+drop procedure
+	r_accessgroups
+go
+
+create procedure
+	r_accessgroups
+		@login varchar(25)
+as
+
+declare @group_name varchar(50)
+declare @login_name varchar(50)
+declare @group_style varchar(250)
+declare @login_style varchar(250)
+
+select @group_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold"
+select @login_style = "background:#FFFFFF;border: 1px solid white"
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "Add User",
+        "Add to Access Group",
+        NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"Remove User",
+	"Remove from Access Group",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"group_name",
+	NULL,
+	NULL)
+
+select * from #meta
+
+create table
+	#access_groups
+		(
+			order_id int identity,
+			style varchar(250) NULL,
+			access_group varchar(50) NULL,
+			group_name   varchar(50) NULL,
+			login_name   varchar(25) NULL,
+			Add_User     varchar(12) NULL,
+			Remove_User  varchar(12) NULL
+)
+
+declare access cursor for
+
+	select 
+		name
+	from
+		access_groups
+	order by
+		name
+
+open access
+fetch access into @group_name
+
+while @@sqlstatus=0
+begin
+
+	insert into
+		#access_groups
+		(
+		 style,
+		 access_group,
+		 group_name,
+		 login_name,
+		 Add_User)
+	values
+		(@group_style,
+		 @group_name,
+		 @group_name,
+		 "",
+		 "add user")
+
+	insert into
+		#access_groups
+		(
+		 style,
+		 access_group,
+		 group_name,
+		 login_name,
+		 Remove_User)
+	select
+		@login_style,
+		"",
+		@group_name,
+		c.login,
+		"remove user"
+	from
+		access_groups a,
+		access_group_accounts b,
+		tico_accounts c,
+		tico_account_types d,
+		login_types e
+	where
+		a.access_group_id=b.access_group_id
+	and
+		b.tico_account_id=c.account_id
+	and
+		a.name=@group_name	
+	and
+		b.tico_account_id=d.tico_account_id
+	and
+		d.login_type_id=e.login_type_id
+	and
+		e.name not in ("Client","Elysium","Disabled")
+	
+	
+	fetch access into @group_name
+end
+close access
+deallocate access	
+
+
+select
+	section="Manage Access Groups",
+	style,
+	access_group,
+	group_name,
+	login_name,
+	Add_User,
+	Remove_User	
+from
+	#access_groups
+order by
+	order_id
+
+go
+
+

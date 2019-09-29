@@ -1,0 +1,147 @@
+
+if object_id("fxa_optiontrades") != NULL
+    drop procedure
+        fxa_optiontrades
+go
+
+create procedure fxa_optiontrades as
+
+create table #newoptions(
+		trade_id		int,
+		contract_id  int,
+		price_style	varchar(20) NULL)
+
+insert into
+	#newoptions
+select
+	a.trade_id,
+	a.contract_id,
+	NULL 
+from
+	trades a,
+	contracts b,
+	instruments c,
+	trade_notifications d,
+	statuses e
+where
+	a.contract_id=b.contract_id and
+	b.instrument_id=c.instrument_id and
+	c.name="Option" and
+	a.trade_id=d.trade_id and
+	d.status_id=e.status_id and
+	e.name in ("Active","Edit","Cancelled")
+group by
+	a.trade_id,
+	a.contract_id
+
+update
+	#newoptions
+set
+	price_style=a.name
+from
+	price_styles a,
+	contract_price_styles b,
+	#newoptions c
+where
+	c.contract_id=b.contract_id and
+	b.price_style_id=a.price_style_id 	
+
+update
+	#newoptions
+set
+	price_style="Standard"
+where
+	price_style=NULL	
+
+select 
+	"product_group"="FXOPT",
+	"action"="REPORT",
+	"message_type"="REGULAR",
+	"process"=n.status_symbol,
+	"trade_ref"=a.trade_id,
+	"entity"="CLIENT",
+	"portfolio"= t.name, 
+	"reporting_system"="ETG",
+	"reporter_ticket_number"=a.trade_id,
+	"trader_name"=b.symbol,
+	"counterparty"=c.name,
+	"prime_broker"="CITI",
+	"trade_date"=convert(varchar(15),a.trade_date,110),
+	"product_type"="Vanilla",
+	"putcall"=e.put_call,
+	(case when f.name='European'
+	Then "E"
+	else "A" end) as "style",
+	"underlying_product"="FX",
+	"traded_currency"=h.symbol,
+	"counter_currency"=g.symbol,
+	"traded_amount"=convert(numeric(30,2),sum(a.quantity)),
+	"settle_date"=convert(varchar(15),s.settledate,110),	
+	"strike"=e.strike,
+	"price_style"="",	
+	/* (case when o.price_style = "Standard"
+	Then rtrim(g.symbol) + "-" + rtrim(h.symbol)
+	else rtrim(h.symbol) + "-" + rtrim(g.symbol) end) as "price_style", */
+	"expiration"=convert(varchar(15),i.expiration,110),
+	"premium_currency"="USD",
+	"premium_amount"=sum(q.amount),
+	"premium_payment_date"=convert(varchar(15),q.transaction_date,110), 
+	"trade_notification_id"=m.trade_notification_id
+from
+	trades  a,
+	traders b,
+	counterparties  c,
+	option_contracts e,
+	exercise_styles f,
+	products g,
+	products h,
+	option_expirations i,
+	options k,
+	forwards l,
+	trade_notifications m,
+	status_symbols n,
+	#newoptions o,
+	account_transaction_trades p,
+	account_transactions q,
+	transaction_types r,
+	option_settledates s,
+	strategies t
+where
+	o.trade_id=a.trade_id and
+	a.trader_id=b.trader_id and
+	a.counterparty_id=c.counterparty_id and
+	o.contract_id=e.contract_id and
+	e.option_expiration_id=i.option_expiration_id and
+	e.exercise_style_id=f.exercise_style_id and	
+	i.option_id=k.option_id and
+	k.underlying_contract_id=l.contract_id and
+	l.currency_id=g.product_id and
+	l.product_id=h.product_id and 
+	a.trade_id=m.trade_id and
+	m.status_id=n.status_id and
+	a.trade_id=p.trade_id and
+	p.account_transaction_id=q.account_transaction_id and
+	q.transaction_type_id=r.transaction_type_id and
+	r.name="Option Premium" and
+	o.contract_id=s.contract_id and
+	a.strategy_id=t.strategy_id 
+group by
+	a.trade_id,
+	n.status_symbol,
+	t.name,
+	a.deal_id,
+	b.symbol,
+	c.name,
+	a.trade_date,
+	e.put_call,
+	f.name,
+	g.symbol,
+	h.symbol,
+	s.settledate,
+	e.strike,
+	/* o.price_style, */
+	i.expiration,
+	convert(varchar(15),q.transaction_date,110),
+	m.trade_notification_id
+
+go

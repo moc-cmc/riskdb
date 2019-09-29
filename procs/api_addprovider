@@ -1,0 +1,45 @@
+create or replace procedure
+	api_addprovider
+		@login varchar(50),
+		@name varchar(50)
+
+as
+
+declare @provider_id int
+
+
+select
+	@provider_id = provider_id
+from
+	providers
+where
+	name = @name
+
+if @provider_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Provider already created",
+		provider = @name
+	return
+end
+
+exec
+        j_nextkey
+                "providers",
+                @provider_id output
+
+insert into
+	providers(
+		provider_id,
+		name)
+values(
+	@provider_id,
+	@name)
+
+select
+        status = "Success",
+        msg = "Provider has been created"
+
+
+go

@@ -1,0 +1,62 @@
+drop procedure r_flaginverted
+go
+
+create procedure
+	r_flaginverted
+		@contract varchar(50)
+
+as
+
+declare @contract_id int
+declare @inv_price_style_id int
+declare @price_style_id int
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @contract
+if @contract_id = NULL
+	return
+
+select
+	@inv_price_style_id = price_style_id
+from
+	price_styles
+where
+	name = "Inverted"
+
+select
+	@price_style_id = price_style_id
+from
+	contract_price_styles
+where
+	contract_id = @contract_id
+
+if @price_style_id = @inv_price_style_id 
+	return
+
+if @price_style_id = NULL
+begin
+	insert into
+		contract_price_styles(
+			contract_id,
+			price_style_id,
+			factor,
+			min_scale,
+			max_scale
+		)
+	values(
+		@contract_id,
+		@inv_price_style_id,
+		1.0,
+		4, 
+		6
+	)
+	select
+		msg = "Added Inverted Price Style",
+		contract = @contract
+end
+
+go

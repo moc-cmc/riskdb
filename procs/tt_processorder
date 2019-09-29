@@ -1,0 +1,360 @@
+
+if object_id("tt_processorder") != NULL
+    drop procedure
+        tt_processorder
+
+go
+
+create procedure
+	tt_processorder
+		@login varchar(50),
+		@source varchar(50),
+		@order_id int output,
+		@deal_id int,
+		@order_type varchar(50),
+		@status varchar(50),
+		@trade_id int=NULL,
+		@order_quantity numeric(30,4)=NULL,
+		@order_date datetime=NULL,
+		@client_aggressor char(1)=NULL,
+		@counterparty varchar(50)=NULL,
+		@internal_account varchar(50)=NULL,
+		@external_account varchar(50)=NULL,
+		@contract varchar(50)=NULL,
+		@trader varchar(25)=NULL,
+		@strategy varchar(50)=NULL,
+		@broker varchar(50)=NULL
+as
+
+declare @source_id int
+declare @tico_account_id int
+declare @fund_id int
+declare @tally_type_id int
+declare @deal_type_id int
+declare @trade_type_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @contract_id int 
+declare @trader_id int
+declare @strategy_id int
+declare @broker_id int
+declare @status_id int
+declare @deal_status_id int
+declare @price float
+declare @premium_currency_id int
+declare @premium_transaction_type_id int
+declare @account_transaction_id int
+declare @quantity_sign float
+declare @trades int
+declare @sales_code_id int
+declare @default_sales_code_id int
+declare @client_user_id int
+declare @aggregation_style varchar(25)
+declare @order_type_id int
+declare @current_status_id int
+declare @pending_status_id int
+declare @counterparty_id int
+declare @should_process_done char(1)
+
+select
+	@order_id = order_id
+from
+	orders
+where
+	deal_id = @deal_id
+
+if @status != NULL
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = @status
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Status not found",
+			status_name = @status
+		return
+	end
+end
+
+/*
+ |  Process Order Delete
+ */
+if @status in("Deleted")
+begin
+	
+        exec
+                tt_processdoneorder
+                        @login=@login,
+                        @order_id=@order_id,
+                        @deal_id=@deal_id,
+                        @status_id=@status_id,
+                        @status=@status
+
+	select
+                @current_status_id = status_id
+        from
+                orders
+        where
+                order_id = @order_id
+
+        if @current_status_id != @status_id
+        begin
+                update
+                        orders
+                set
+                        status_id = @status_id
+                where
+                        order_id = @order_id
+                if @@rowcount != 1
+                begin
+                        select
+                                err="Error",
+                                msg="Problem updating order status",
+                                order_id = @order_id,
+                                status= @status
+                end
+        end
+
+	return
+end
+
+
+if @order_id = NULL
+begin
+	exec
+		j_nextkey 
+			"orders",
+			@order_id output
+	
+	select
+		@pending_status_id = status_id
+	from
+		statuses
+	where
+		name = "Pending"
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+                        message = "pending status not found"
+		return
+	end
+
+
+	select
+        	@order_type_id = order_type_id
+	from
+        	order_types
+	where
+        	name = @order_type
+	if @@rowcount != 1
+	begin
+        	select
+                	status = "Error",
+                	message = "order type not found",
+                	order_type = @order_type
+        	return
+	end
+
+        select
+                @trader_id = trader_id
+        from
+                traders
+        where
+                symbol = @trader
+
+        select
+                @broker_id = broker_id
+        from
+                brokers
+        where
+                symbol = @broker
+
+        select
+                @strategy_id = strategy_id
+        from
+                strategies
+        where
+                name = @strategy
+	
+	select
+		@external_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = @external_account
+
+	select
+		@internal_account_id = internal_account_id
+	from
+		internal_accounts
+	where
+		symbol = @internal_account
+
+	select
+		@contract_id = contract_id
+	from
+		contracts
+	where
+		symbol = @contract
+
+	insert into
+		orders
+	(
+		order_id,
+        	deal_id,
+        	order_type_id,
+        	quantity,
+        	status_id,
+		processing_status_id,
+		order_date,
+        	internal_account_id,
+        	external_account_id,
+        	contract_id,
+        	price,
+        	trader_id,
+        	strategy_id,
+        	broker_id
+	)
+	values(
+		@order_id,
+        	@deal_id,
+        	@order_type_id,
+        	@order_quantity ,
+        	@status_id,
+		@pending_status_id,
+		@order_date,
+        	@internal_account_id,
+        	@external_account_id,
+        	@contract_id,
+        	@price,
+        	@trader_id,
+        	@strategy_id,
+        	@broker_id
+		)
+	if @@rowcount != 1
+	begin
+		select
+			err="Error",
+			msg="Problem inserting order information"
+
+		select
+	                order_id=@order_id,
+                	deal_id=@deal_id,
+                	ord_type=@order_type,
+                	p_qty=@order_quantity,
+                	status=@status,
+			p_status=@pending_status_id,			
+                	date=@order_date,
+                	i_acct=@internal_account,
+                	e_acct=@external_account,
+                	ct=@contract,
+                	prc=@price,
+                	trdr=@trader,
+                	strt=@strategy,
+                	brkr=@broker
+	end
+	else
+	begin
+		select
+			msg="Successfully booked order",
+			order_id=@order_id,
+			ord_type=@order_type,
+			p_qty=@order_quantity,
+			status=@status
+		
+		if @trade_id != NULL
+		begin
+			insert into
+				order_trades
+			(
+				order_id,
+				trade_id
+			)
+			values(
+				@order_id,
+				@trade_id
+				)
+			if @@rowcount != 1
+			begin
+	                	select
+       		                	err="Error",
+                	        	msg="Problem inserting order_trade info"
+			end
+		end
+	end
+end
+else
+begin
+	if @trade_id != NULL
+	begin
+		insert into
+			order_trades
+		(
+			order_id,
+			trade_id
+		)
+		values(
+			@order_id,
+			@trade_id
+			)
+		if @@rowcount != 1
+		begin
+	                select
+       		                err="Error",
+                	        msg="Problem inserting order_trade info"
+		end
+	end
+
+	select
+		@current_status_id = status_id
+	from
+		orders
+	where
+		order_id = @order_id
+	
+	if @current_status_id != @status_id
+	begin
+		update
+			orders
+		set
+			status_id = @status_id
+		where
+			order_id = @order_id
+		if @@rowcount != 1
+		begin
+			select
+				err="Error",
+				msg="Problem updating order status",
+				order_id = @order_id,
+				status= @status
+		end
+	end
+
+end
+	
+if @status in("Filled", "Cancelled") or @order_type = "IOC"
+begin
+	/* Only process if its a client fill */
+	if @client_aggressor = "Y"
+	begin
+		exec
+			tt_processdoneorder
+				@login=@login,
+				@order_id=@order_id,
+				@deal_id=@deal_id,
+				@status_id=@status_id,
+				@status=@status
+	end
+end
+	
+
+
+
+	
+go

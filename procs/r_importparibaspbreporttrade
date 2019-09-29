@@ -1,0 +1,302 @@
+
+if object_id("r_importparibaspbreporttrade") != NULL
+    drop procedure
+        r_importparibaspbreporttrade
+go
+
+create procedure
+	r_importparibaspbreporttrade
+			@login varchar(50),
+			@row_index int,
+			@row_count int,
+			@trade_status varchar(15),
+			@ticket varchar(50),
+			@trade_date datetime,
+			@cdty_1 varchar(10), /*base ccy*/
+			@cdty_2 varchar(10), /*term ccy*/
+			@qty_1 numeric(30, 2),
+			@qty_2 numeric(30, 2),
+			@price float,
+			@value_date datetime,
+			@source varchar(50)=NULL,
+			@counterparty varchar(50),
+			@broker varchar(25)=NULL,
+			@rev_giveup varchar(50)=NULL,
+			@manager varchar(50)=NULL,
+			@gmt_time_stamp datetime,
+			@ecn_trade_id varchar(50)=NULL,
+			@client_reference varchar(50)=NULL,
+			@fixing_date datetime=NULL,
+			@spoke_bank varchar(50)=NULL,
+			@activity_type varchar(50)=NULL,
+			@platform_id varchar(50)=NULL,
+			@fwd_type varchar(50)=NULL,
+			@original_price float=NULL
+
+as
+
+/*---------------------------------------------------------------------,
+|   Declare all variables that will be used to call r_addreporttrade   |
+'---------------------------------------------------------------------*/
+declare @id varchar(25)		    /* 8433080 */
+declare @origin_ticket_id varchar(50)      /* "" */
+declare @link_status varchar(50)           /* "" */
+declare @master_id varchar(50)             /* "" */
+declare @lifecycle_status varchar(50)      /* Active */
+declare @matching_status varchar(50)       /* Unmatched */
+declare @approval_status varchar(50)       /* Approved */
+declare @allocation_status varchar(50)     /* Allocated */
+declare @processing_status varchar(50)     /* N/A */
+declare @matching_time varchar(50)         /* "" */
+declare @trading_party varchar(50)         /*  */
+declare @region varchar(50)		    /* "" */
+declare @counter_party varchar(50)         /*  */
+declare @direction varchar(50)             /* SELL */
+declare @product_type varchar(50)          /* Spot/Forward */
+declare @ccy1 varchar(50)                  /* EUR */
+declare @quantity1 numeric(30, 4)           /* 2500000 */
+declare @ccy2 varchar(50)                  /* USD */
+declare @quantity2 numeric(30, 4)           /* 3791972.5 */
+declare @rate float			    /* 1.516789 */
+declare @far_rate varchar(50)              /* "" */
+declare @far_value_date varchar(50)	    /* "" */
+declare @far_quantity1 varchar(50)         /* "" */
+declare @far_quantity2 varchar(50)         /* "" */
+declare @portfolio varchar(50)             /* "" */
+declare @trader varchar(50)	            /* "" */
+declare @ticket_num varchar(50)	    /* "" */
+declare @trade_type varchar(50)	    /* Regular */
+declare @creation_date varchar(50)         /* 01/22/2010 12:27:13 */
+declare @agreement_type varchar(50)	    /* PB */
+declare @harmony_status varchar(50)        /* "" */
+declare @harmony_id varchar(50)	    /* "" */
+declare @prime_broker varchar(50)          /* Primary Org */
+declare @fixing_index varchar(50)          /* "" */
+declare @calc_agent varchar(50)            /* "" */
+declare @origin_system varchar(50)         /* PB - System */
+declare @creation_party varchar(50)        /* Cantor Fitzgerald Securities */
+declare @created_by varchar(50)            /* etgbot */
+declare @notes varchar(50)                 /* "" */
+declare @execution_platform varchar(50)    /* "" */
+declare @reporter varchar(50)               /* "" */
+declare @external_report varchar(50)        /* "" */
+declare @defualt_broker_symbol varchar(50)  /* "" */
+declare @noe_activity varchar(15)            /* "" */
+
+
+/*----------- Declare non-r_addreporttrade variables -----------------*/
+declare @prime_broker_source_id int
+declare @trade_recon_report_type_id int
+
+
+
+select
+	@prime_broker = "BNP Paribas"
+
+select
+	@prime_broker_source_id = a.source_id
+from
+	sources a,
+	prime_brokers b
+where
+	a.source_id = b.source_id
+and
+	a.name = @prime_broker
+if @@rowcount != 1
+begin
+	select	
+		status = "ERROR",
+		msg = "Source 'BNP Paribas' not defined as prime broker"
+	return
+end
+
+select
+	@trade_recon_report_type_id = report_type_id
+from
+	report_types
+where
+	name = "Trade Recon"
+if @@rowcount != 1
+begin
+        select
+                status = "ERROR",
+                msg = "Problem determining 'Trade Recon' report type"
+        return
+end
+
+select
+	@external_report = a.name
+from
+	external_reports a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.source_id =  @prime_broker_source_id
+and
+	a.report_type_id = @trade_recon_report_type_id
+if @@rowcount != 1
+begin
+        select
+                status = "ERROR",
+                msg = "Problem determining 'Trade Recon' external report for prime broker",
+		prime_broker = @prime_broker
+        return
+end
+
+
+/*---------------------------------------------------------------------,
+|        Convert parameters to variables for r_addreporttrade          |
+|                                                                      |
+| variables such as @lifecycle status, @matching status and so on are  |
+| currently mapped with case when statements. This would be cleaner    |
+| if report_trades had ids and we used the status_symbols table        |
+|                                                                      |
+'---------------------------------------------------------------------*/
+select
+	@id 			= @ticket, 
+	@origin_ticket_id	= @client_reference,
+	@link_status		= "",
+	@master_id		= NULL,	
+	@lifecycle_status 	= 
+				case
+					when 
+						@trade_status in("NEW")
+					then
+						"Active"
+				end,
+	@matching_status	= "Unmatched",
+				/*case
+					when
+						1=2
+					then
+						1=1
+				end,*/
+	@approval_status	= "Approved",
+				/*case
+					when
+						1=2
+					then
+						1=1
+				end,*/
+	@allocation_status	= "Allocated",
+				/*case
+					when
+						1=2
+					then
+						1=1
+				end,*/
+	@processing_status	= "N/A",
+				/*case
+					when
+						1=2
+					then
+						1=1
+				end,*/
+	@trade_date 		= @trade_date, /* might want to use @gm_time_stamp */
+	@matching_time		= NULL,
+	@trading_party		= NULL,
+	@region			= NULL,
+	@counter_party 		= @counterparty,
+	@direction		=
+				case
+					when
+						@qty_1 > 0
+					then
+						"BUY"
+				else
+					"SELL"
+				end,
+	@product_type		= @fwd_type,
+	@ccy1			= @cdty_1,
+	@quantity1		= abs(@qty_1),
+	@ccy2			= @cdty_2,
+	@quantity2		= abs(@qty_2),	
+	@rate 			= @price,
+	@value_date		= @value_date,
+	@far_rate		= NULL,
+	@far_value_date 	= NULL,
+	@far_quantity1		= NULL,
+	@far_quantity2		= NULL,
+	@portfolio		= NULL,
+	@trader			= NULL,
+	@ticket_num		= @ticket,
+	@trade_type		= "Regular",
+	@creation_date		= @gmt_time_stamp,		
+	@agreement_type		= "PB",
+	@harmony_status		= NULL,
+	@harmony_id		= NULL,
+	@prime_broker		= @prime_broker,
+	@fixing_date		= @fixing_date,
+	@fixing_index		= NULL,
+	@calc_agent		= NULL,
+	@origin_system		= @prime_broker,
+	@creation_party		= NULL,
+	@created_by		= "ETG",
+	@notes			= NULL,
+	@execution_platform	= @platform_id,
+	@reporter		= NULL,
+	@external_report	= @external_report, /* Determined above */
+	@defualt_broker_symbol  = NULL,
+	@noe_activity 		= NULL
+
+
+
+
+/*---------------------------------------------------------------------,
+| 			Execute r_addreporttrade                       |
+'---------------------------------------------------------------------*/
+
+
+exec 
+	r_addreporttrade
+		@id, 
+		@origin_ticket_id,
+		@link_status,
+		@master_id,
+		@lifecycle_status,
+		@matching_status,
+		@approval_status,
+		@allocation_status,
+		@processing_status,
+		@trade_date,
+		@matching_time,
+		@trading_party,
+		@region,
+		@counter_party,
+		@direction,
+		@product_type,
+		@ccy1,
+		@quantity1,
+		@ccy2,
+		@quantity2,
+		@rate,
+		@value_date,
+		@far_rate,
+		@far_value_date,
+		@far_quantity1,
+		@far_quantity2,
+		@portfolio,
+		@trader,
+		@ticket_num,
+		@trade_type,
+		@creation_date,
+		@agreement_type,
+		@harmony_status,
+		@harmony_id,
+		@prime_broker,
+		@fixing_date,
+		@fixing_index,
+		@calc_agent,
+		@origin_system,
+		@creation_party,
+		@created_by,
+		@notes,
+		@execution_platform,
+		@reporter,
+		@external_report,
+		@defualt_broker_symbol,
+		@noe_activity
+
+
+go

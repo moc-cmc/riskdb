@@ -1,0 +1,568 @@
+drop procedure cres_tallycommittedtrades
+go
+
+create procedure
+	cres_tallycommittedtrades
+		@login varchar(50),
+		@counterparty varchar(50),
+		@trade_date datetime
+as
+
+
+
+declare @commit_status varchar(50)
+declare @evaluation_currency varchar(30)
+declare @spot_trades int
+declare @spot_volume float
+declare @forward_trades int
+declare @forward_volume float
+declare @forward_option_trades int
+declare @forward_option_volume float
+declare @exotic_trades int
+declare @exotic_volume float
+declare @forward_swap_trades int
+declare @forward_swap_volume float
+declare @futures_trades int
+declare @futures_volume float
+declare @futures_option_trades int
+declare @futures_option_volume float
+declare @counterparty_id int
+declare @last_committed_capture datetime
+declare @committed_capture_id int
+
+
+/* B2B tally attributes */
+declare @tally_type varchar(50)
+declare @screen_name varchar(50)
+declare @client_user varchar(50)
+declare @client_buys_sells varchar(50)
+declare @market_counterparty varchar(50)
+declare @contract_id int
+declare @dealt_currency varchar(50)
+declare @counter_currency varchar(50)
+declare @client_price float
+declare @client_val_date datetime
+declare @market_price float
+declare @market_val_date datetime
+declare @deal_id int
+declare @external_account_id int
+
+declare @commissions int
+declare @commission_id int
+declare @sales_person varchar(50)
+declare @price float
+
+
+select
+	@counterparty_id = counterparty_id
+from
+	counterparties
+where
+	name = @counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Could not find counterparty",
+		counterparty = @counterparty
+	return
+end
+
+if convert(char(11), @last_committed_capture, 1) = convert(char(11), @trade_date, 1)
+begin
+	select
+		status = "Dupe",
+		message = "AlumFX already committed for date",
+		date = @trade_date
+end
+else
+begin
+
+	exec
+		SYB0103.risk_cresco.dbo.r_crescommittedvolumefordate
+			@login,
+			@trade_date,
+			50000,
+			@commit_status output,
+			@evaluation_currency output,
+			@spot_trades output,
+			@spot_volume output,
+			@forward_trades output,
+			@forward_volume output,
+			@forward_option_trades output,
+			@forward_option_volume output,
+			@exotic_trades output,
+			@exotic_volume output,
+			@forward_swap_trades output,
+			@forward_swap_volume output,
+			@futures_trades output,
+			@futures_volume output,
+			@futures_option_trades output,
+			@futures_option_volume output
+
+
+
+	if @spot_volume != NULL and @spot_volume != 0
+	begin
+		select
+			@spot_volume = @spot_volume / 1000000.0
+		select
+			@committed_capture_id = committed_capture_id,
+			@last_committed_capture = last_committed_capture
+		from
+			committed_captures a,
+			contracts b
+		where
+			a.contract_id = b.contract_id
+		and
+			a.counterparty_id = @counterparty_id
+		and
+			b.symbol = "Spot VolumeUSD"
+			
+		if @committed_capture_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "No committed capture set up for counterparty-contract",
+				counterparty = @counterparty,
+				contract = "Spot VolumeUSD"
+		end
+
+		select
+			@tally_type = "Spot"
+		select
+			@screen_name = b.login,
+			@client_user = c.symbol,
+			@client_buys_sells = a.client_buys_sells,
+			@market_counterparty = d.name,
+			@contract_id = a.contract_id,
+			@client_price = a.client_price,
+			@client_val_date = a.client_val_date,
+			@market_price = a.market_price,
+			@market_val_date = a.market_val_date
+		from
+			committed_captures a,
+			tico_accounts b,
+			traders c,
+			counterparties d,
+			contracts e
+		where
+			a.tico_account_id = b.account_id
+		and
+			a.trader_id = c.trader_id
+		and
+			a.market_counterparty_id = d.counterparty_id
+		and
+			a.committed_capture_id = @committed_capture_id
+
+
+		select
+			@dealt_currency = a.symbol
+		from
+			products a,
+			forwards b
+		where
+			a.product_id = b.product_id
+		and
+			b.contract_id = @contract_id
+
+		select
+			@counter_currency = a.symbol
+		from
+			products a,
+			forwards b
+		where
+			a.product_id = b.currency_id
+		and
+			b.contract_id = @contract_id
+
+		select
+			@deal_id = NULL
+		exec
+			api_tallyb2bforward
+				@login = @screen_name,
+				@tally_type = @tally_type,
+				@client_user = @client_user,
+				@client_buys_sells = @client_buys_sells,
+				@counterparty = @market_counterparty,
+				@quantity = @spot_volume,
+				@dealt_currency = @dealt_currency,
+				@counter_currency = @counter_currency,
+				@client_price = @client_price,
+				@client_val_date = @client_val_date,
+				@market_price = @market_price,
+				@market_val_date = @market_val_date,
+				@deal_id = @deal_id output
+
+		update
+			trades
+		set
+			trade_date = @trade_date
+		where
+			deal_id = @deal_id
+
+		exec
+			e_tallycommissions
+				@login = @login,
+				@trade_date = @trade_date,
+				@committed_capture_id = @committed_capture_id,
+				@tally_type = @tally_type,
+				@client_buys_sells = @client_buys_sells,
+				@dealt_currency = @dealt_currency,
+				@counter_currency = @counter_currency,
+				@quantity = @spot_volume,
+				@value_date = @client_val_date
+
+	end
+
+
+	if @forward_volume != NULL and @forward_volume != 0
+	begin
+		select
+			@forward_volume = @forward_volume / 1000000.0
+		select
+			@committed_capture_id = committed_capture_id,
+			@last_committed_capture = last_committed_capture
+		from
+			committed_captures a,
+			contracts b
+		where
+			a.contract_id = b.contract_id
+		and
+			a.counterparty_id = @counterparty_id
+		and
+			b.symbol = "Forward VolumeUSD"
+			
+		if @committed_capture_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "No committed capture set up for counterparty",
+				counterparty = @counterparty
+			return
+		end
+
+		select
+			@tally_type = "Forward"
+		select
+			@screen_name = b.login,
+			@client_user = c.symbol,
+			@client_buys_sells = a.client_buys_sells,
+			@market_counterparty = d.name,
+			@contract_id = a.contract_id,
+			@client_price = a.client_price,
+			@client_val_date = a.client_val_date,
+			@market_price = a.market_price,
+			@market_val_date = a.market_val_date
+		from
+			committed_captures a,
+			tico_accounts b,
+			traders c,
+			counterparties d,
+			contracts e
+		where
+			a.tico_account_id = b.account_id
+		and
+			a.trader_id = c.trader_id
+		and
+			a.market_counterparty_id = d.counterparty_id
+		and
+			a.committed_capture_id = @committed_capture_id
+
+
+		select
+			@dealt_currency = a.symbol
+		from
+			products a,
+			forwards b
+		where
+			a.product_id = b.product_id
+		and
+			b.contract_id = @contract_id
+
+		select
+			@counter_currency = a.symbol
+		from
+			products a,
+			forwards b
+		where
+			a.product_id = b.currency_id
+		and
+			b.contract_id = @contract_id
+
+		select
+			@deal_id = NULL
+		exec
+			api_tallyb2bforward
+				@login = @screen_name,
+				@tally_type = @tally_type,
+				@client_user = @client_user,
+				@client_buys_sells = @client_buys_sells,
+				@counterparty = @market_counterparty,
+				@quantity = @forward_volume,
+				@dealt_currency = @dealt_currency,
+				@counter_currency = @counter_currency,
+				@client_price = @client_price,
+				@client_val_date = @client_val_date,
+				@market_price = @market_price,
+				@market_val_date = @market_val_date,
+				@deal_id = @deal_id output
+
+		update
+			trades
+		set
+			trade_date = @trade_date
+		where
+			deal_id = @deal_id
+
+		exec 
+			e_tallycommissions
+				@login = @login,
+				@trade_date = @trade_date,
+				@committed_capture_id = @committed_capture_id,
+				@tally_type = @tally_type,
+				@client_buys_sells = @client_buys_sells,
+				@dealt_currency = @dealt_currency,
+				@counter_currency = @counter_currency,
+				@quantity = @forward_volume,
+				@value_date = @client_val_date
+
+
+	end
+
+	if @forward_swap_volume != NULL and @forward_swap_volume != 0
+	begin
+		select
+			@forward_swap_volume = @forward_swap_volume / 1000000.0
+		select
+			@committed_capture_id = committed_capture_id,
+			@last_committed_capture = last_committed_capture
+		from
+			committed_captures a,
+			contracts b
+		where
+			a.contract_id = b.contract_id
+		and
+			a.counterparty_id = @counterparty_id
+		and
+			b.symbol = "Forward Swap VolumeUSD"
+			
+		if @committed_capture_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "No committed capture set up for counterparty",
+				counterparty = @counterparty
+			return
+		end
+
+		select
+			@tally_type = "Forward"
+		select
+			@screen_name = b.login,
+			@client_user = c.symbol,
+			@client_buys_sells = a.client_buys_sells,
+			@market_counterparty = d.name,
+			@contract_id = a.contract_id,
+			@client_price = a.client_price,
+			@client_val_date = a.client_val_date,
+			@market_price = a.market_price,
+			@market_val_date = a.market_val_date
+		from
+			committed_captures a,
+			tico_accounts b,
+			traders c,
+			counterparties d,
+			contracts e
+		where
+			a.tico_account_id = b.account_id
+		and
+			a.trader_id = c.trader_id
+		and
+			a.market_counterparty_id = d.counterparty_id
+		and
+			a.committed_capture_id = @committed_capture_id
+
+
+		select
+			@dealt_currency = a.symbol
+		from
+			products a,
+			forwards b
+		where
+			a.product_id = b.product_id
+		and
+			b.contract_id = @contract_id
+
+		select
+			@counter_currency = a.symbol
+		from
+			products a,
+			forwards b
+		where
+			a.product_id = b.currency_id
+		and
+			b.contract_id = @contract_id
+
+		select
+			@deal_id = NULL
+		exec
+			api_tallyb2bforward
+				@login = @screen_name,
+				@tally_type = @tally_type,
+				@client_user = @client_user,
+				@client_buys_sells = @client_buys_sells,
+				@counterparty = @market_counterparty,
+				@quantity = @forward_swap_volume,
+				@dealt_currency = @dealt_currency,
+				@counter_currency = @counter_currency,
+				@client_price = @client_price,
+				@client_val_date = @client_val_date,
+				@market_price = @market_price,
+				@market_val_date = @market_val_date,
+				@deal_id = @deal_id output
+
+		update
+			trades
+		set
+			trade_date = @trade_date
+		where
+			deal_id = @deal_id
+
+		exec 
+			e_tallycommissions
+				@login = @login,
+				@trade_date = @trade_date,
+				@committed_capture_id = @committed_capture_id,
+				@tally_type = @tally_type,
+				@client_buys_sells = @client_buys_sells,
+				@dealt_currency = @dealt_currency,
+				@counter_currency = @counter_currency,
+				@quantity = @forward_swap_volume,
+				@value_date = @client_val_date
+
+
+	end 
+
+	if @forward_option_volume != NULL and @forward_option_volume != 0
+	begin
+		select
+			@forward_option_volume = @forward_option_volume / 1000000.0
+		select
+			@committed_capture_id = committed_capture_id,
+			@last_committed_capture = last_committed_capture
+		from
+			committed_captures a,
+			contracts b
+		where
+			a.contract_id = b.contract_id
+		and
+			a.counterparty_id = @counterparty_id
+		and
+			b.symbol = "Option VolumeUSD"
+			
+		if @committed_capture_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "No committed capture set up for counterparty",
+				counterparty = @counterparty
+			return
+		end
+
+		select
+			@tally_type = "Option"
+		select
+			@screen_name = b.login,
+			@client_user = c.symbol,
+			@client_buys_sells = a.client_buys_sells,
+			@market_counterparty = d.name,
+			@contract_id = a.contract_id,
+			@client_price = a.client_price,
+			@client_val_date = a.client_val_date,
+			@market_price = a.market_price,
+			@market_val_date = a.market_val_date
+		from
+			committed_captures a,
+			tico_accounts b,
+			traders c,
+			counterparties d,
+			contracts e
+		where
+			a.tico_account_id = b.account_id
+		and
+			a.trader_id = c.trader_id
+		and
+			a.market_counterparty_id = d.counterparty_id
+		and
+			a.committed_capture_id = @committed_capture_id
+
+
+		select
+			@dealt_currency = a.symbol
+		from
+			products a,
+			forwards b
+		where
+			a.product_id = b.product_id
+		and
+			b.contract_id = @contract_id
+
+		select
+			@counter_currency = a.symbol
+		from
+			products a,
+			forwards b
+		where
+			a.product_id = b.currency_id
+		and
+			b.contract_id = @contract_id
+
+		select
+			@deal_id = NULL
+		exec
+			api_tallyb2bforward
+				@login = @screen_name,
+				@tally_type = @tally_type,
+				@client_user = @client_user,
+				@client_buys_sells = @client_buys_sells,
+				@counterparty = @market_counterparty,
+				@quantity = @forward_option_volume,
+				@dealt_currency = @dealt_currency,
+				@counter_currency = @counter_currency,
+				@client_price = @client_price,
+				@client_val_date = @client_val_date,
+				@market_price = @market_price,
+				@market_val_date = @market_val_date,
+				@deal_id = @deal_id output
+
+		update
+			trades
+		set
+			trade_date = @trade_date
+		where
+			deal_id = @deal_id
+
+		exec 
+			e_tallycommissions
+				@login = @login,
+				@trade_date = @trade_date,
+				@committed_capture_id = @committed_capture_id,
+				@tally_type = @tally_type,
+				@client_buys_sells = @client_buys_sells,
+				@dealt_currency = @dealt_currency,
+				@counter_currency = @counter_currency,
+				@quantity = @forward_option_volume,
+				@value_date = @client_val_date
+
+
+	end
+
+
+end
+		
+
+
+
+go
+

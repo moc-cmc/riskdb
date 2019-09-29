@@ -1,0 +1,245 @@
+drop procedure
+	r_managemarginprofile
+go
+
+create procedure	
+	r_managemarginprofile
+		@login varchar(50)
+
+as
+
+declare @is_admin varchar(1)
+declare @admin_id int
+declare @tico_account_id int
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(30),
+                action char(200) NULL,
+                value char(255) NULL
+)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL
+)
+
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_profile",
+        "Add Margin Profile",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "expand",
+        "Expand Margin Profiles",
+        NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_defaults",
+	"Edit Default Margin Values",
+	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "view_profile",
+        "View Margin Profile",
+        NULL
+)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+
+select
+	@admin_id = access_group_id
+from
+	access_groups
+where
+	name = "Admin"
+
+select
+	@is_admin = "Y"
+from
+	access_group_accounts
+where
+	tico_account_id = @tico_account_id
+and
+	access_group_id = @admin_id
+
+
+/* CHECK TO SEE IF THIS REPORT IS ENABLED */
+if @is_admin != "Y"
+begin
+        select
+                section = "Access Not Permitted",
+                message = "<b>Access Not Permitted</b>" + " must be an 'Admin' user to view this report. Please contact your internal ETG Business Relationship Manager to set you up with access"
+        return
+end
+
+
+declare @nop_type_id int
+declare @dsl_type_id int
+declare @currency_id int
+declare @margin_model_id int
+declare @margin_model varchar(50)
+declare @nop_type varchar(50)
+declare @dsl_type varchar(50)
+declare @currency varchar(10)
+declare @notice_level float
+declare @warning_level float
+declare @blocked_level float
+declare @multiplier float 
+
+
+select
+	@margin_model_id = margin_model_id,
+	@currency_id = currency_id,
+	@notice_level = notice_level,
+	@warning_level = warning_level,
+	@blocked_level = blocked_level,
+	@multiplier = multiplier
+from
+	default_margin_profile_values
+
+select
+	@margin_model = name
+from
+	margin_models
+where
+	margin_model_id = @margin_model_id
+
+select
+	@currency = symbol
+from
+	products
+where
+	product_id = @currency_id
+
+select
+	section = "Default Values",
+	add_profile = "Add Margin Profile",
+	expand = "Expand Profiles",
+        margin_model= @margin_model,
+	currency = @currency,
+	notice_level = @notice_level,
+	warning_level = @warning_level,
+	blocked_level = @blocked_level,
+	multiplier = @multiplier,
+	edit_defaults = "EDIT"
+
+create table
+	#margin_profiles(
+		margin_profile_id int,
+		name varchar(50) NULL,
+                margin_model_id int NULL,
+		margin_model varchar(50) NULL,
+		currency_id int NULL,
+		currency varchar(10) NULL,
+		ccy varchar(10) NULL,
+		notice_level float NULL,
+		warning_level float NULL,
+		blocked_level float NULL,
+		external_account_id int NULL,
+		external_account varchar(50) NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		multiplier float NULL,
+		style varchar(50) NULL)
+
+insert into
+	#margin_profiles(
+		margin_profile_id,
+                name,
+		margin_model_id,
+                currency_id,
+                notice_level,
+                warning_level,
+                blocked_level,
+		multiplier,
+		style)
+select
+	margin_profile_id,
+        name,
+	margin_model_id,
+        currency_id,
+        notice_level,
+        warning_level,
+        blocked_level,
+	multiplier,
+	style = "background:#FFFFFF;border: 1px solid white"
+from
+	margin_profiles
+
+
+update
+	#margin_profiles
+set
+	currency = b.symbol
+from
+	#margin_profiles a,
+	products b
+where
+	a.currency_id = b.product_id
+
+update
+	#margin_profiles
+set
+	margin_model = b.name
+from
+	#margin_profiles a,
+	margin_models b
+where
+	a.margin_model_id = b.margin_model_id
+
+select
+	section="Margin Profiles",
+        margin_profile = name,
+        margin_model,
+        currency,
+        notice_level,
+        warning_level,
+        blocked_level,
+	multiplier,
+	style,
+	view_profile = "VIEW"
+from
+	#margin_profiles
+order by
+	name
+	
+go

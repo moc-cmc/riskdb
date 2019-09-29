@@ -1,0 +1,296 @@
+use
+	risk_pinepoint
+go
+
+drop procedure
+	cta_accountnmuhistory
+go
+
+create procedure
+	cta_accountnmuhistory
+		@login char(30)
+
+as
+
+declare @tico_account_id int
+declare @external_account_id int
+declare @external_accounts int
+declare @margin_threshold float
+declare @trading_level float
+declare @id int
+declare @ids int
+declare @now datetime
+declare @date datetime
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Unable to determine current user"
+	return
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	a.external_account_id
+from
+	external_accounts a,
+	internal_account_users b,
+	tico_accounts c
+where
+	a.internal_account_id = b.internal_account_id
+and
+	b.account_id = c.account_id
+and
+	c.login = @login
+
+
+
+select
+	@date = min(a.trade_date)
+from
+	external_margin_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+select
+	@now = convert(datetime, convert(char(11), getdate(), 1))
+
+create table
+	#dates(
+		date datetime)
+
+while @date < @now
+begin
+	insert into
+		#dates
+	values(
+		@date)
+
+	exec
+		r_nextbusinessday
+			@date,
+			@date output
+end
+
+create table
+	#output(
+		external_account_id int,
+		date datetime,
+		margin_threshold float NULL,
+		trading_level float NULL,
+		fut_mnt_mrgn_req float NULL,
+		liquidating_val float NULL,
+		tl_me_ratio float NULL)
+
+insert into
+	#output(
+		external_account_id,
+		date)
+select
+	a.external_account_id,
+	b.date
+from
+	#external_accounts a,
+	#dates b
+
+
+create table
+	#margin_thresholds(
+		id int identity,
+		external_account_id int,
+		date datetime,
+		margin_threshold float)
+insert into
+	#margin_thresholds(
+		external_account_id,
+		date,
+		margin_threshold)
+select
+	a.external_account_id,
+	a.date,
+	a.margin_threshold
+from
+	ext_margin_thresholds a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+order by
+	a.external_account_id,
+	a.date
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#margin_thresholds
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#margin_thresholds
+	where
+		id > @id
+
+	select
+		@external_account_id = external_account_id,
+		@date = date,
+		@margin_threshold = margin_threshold
+	from
+		#margin_thresholds
+	where
+		id = @id
+
+	update
+		#output
+	set
+		margin_threshold = @margin_threshold
+	where
+		external_account_id = @external_account_id
+	and
+		date >= @date
+
+
+	select
+		@ids = count(*)
+	from
+		#margin_thresholds
+	where
+		id > @id
+end
+
+
+create table
+	#trading_levels(
+		id int identity,
+		external_account_id int,
+		date datetime,
+		trading_level float)
+insert into
+	#trading_levels(
+		external_account_id,
+		date,
+		trading_level)
+select
+	a.external_account_id,
+	a.date,
+	a.trading_level
+from
+	trading_levels a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+order by
+	a.external_account_id,
+	a.date
+
+
+select
+	@id = 0
+
+select
+	@ids = count(*)
+from
+	#trading_levels
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#trading_levels
+	where
+		id > @id
+	
+	select
+		@external_account_id = external_account_id,
+		@trading_level = trading_level,
+		@date = date
+	from
+		#trading_levels
+	where
+		id = @id
+
+
+	update
+		#output
+	set
+		trading_level = @trading_level
+	where
+		external_account_id = @external_account_id
+	and
+		date >= @date
+	
+
+	select
+		@ids = count(*)
+	from
+		#trading_levels
+	where
+		id > @id
+end
+
+
+update
+	#output
+set
+	a.liquidating_val = b.end_balance + b.option_value,
+	a.fut_mnt_mrgn_req = b.total_maint_margin
+from
+	#output a,
+	external_margin_transactions b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.date = b.trade_date
+
+update
+	#output
+set
+	tl_me_ratio = (fut_mnt_mrgn_req / (trading_level + liquidating_val)) * 100.0
+where
+	trading_level - liquidating_val != 0
+	
+delete
+
+from
+	#output
+where
+	tl_me_ratio = NULL
+or
+	trading_level = NULL
+or
+	margin_threshold = NULL
+
+
+select
+	date,
+	external_account_id,
+	net_margin_usage = tl_me_ratio,
+	margin_threshold
+from
+	#output
+order by
+	external_account_id,
+	date
+
+go

@@ -1,0 +1,396 @@
+
+drop procedure fxa_fxconnecttally
+go
+
+create procedure 
+	fxa_fxconnecttally 
+				@login varchar(50),
+				@market_deal_id varchar(50) = NULL,
+       			@market_deal_type varchar(50) = NULL,
+       			@market_status varchar(50) = NULL,
+       			@obo_bool varchar(50) = NULL,
+       			@buy_side_institution varchar(50) = NULL,
+       			@buy_side_user varchar(50) = NULL,
+       			@sell_side_institution varchar(50) = NULL,
+       			@counterparty_shortname varchar(50) = NULL,
+       			@counterparty_longname varchar(50)  = NULL,
+       			@outright_id varchar(50) = NULL,
+       			@outright_readable_id varchar(50) = NULL,
+       			@outright_side varchar(50) = NULL,
+       			@client_identifier_account varchar(50) = NULL,
+       			@client_identifier_client_id varchar(50) = NULL,
+       			@notes varchar(50) = NULL,
+       			@currency_pair_given_ccy  varchar(50) = NULL,
+       			@currency_pair_quote_pair  varchar(50) = NULL,
+       			@currency_pair_settle_ccy  varchar(50) = NULL,
+       			@given_amount numeric(30, 2) = NULL,
+       			@trade_date datetime = NULL,
+       			@value_date datetime = NULL,
+       			@indicator varchar(50) = NULL,
+       			@rate_fwdPoints float = NULL,
+       			@rate_spot float = NULL,
+       			@all_in_rate float = NULL,
+       			@settle_amount numeric(30, 2) = NULL,
+       			@status varchar(50) = NULL,
+       			@action varchar(50) = NULL,
+       			@client_rate_fwd_points float = NULL,
+       			@client_rate_spot float = NULL,
+       			@client_all_in_rate float = NULL,
+				@fixing_date datetime = NULL
+as
+
+declare		@trade_type varchar(20)
+declare		@trader varchar(50)
+declare		@buysell    varchar(5)
+declare		@dealt_currency varchar(10)
+declare		@counter_currency varchar(10)
+declare		@counterparty_account varchar(25)
+declare		@quantity   numeric(30,2)
+declare		@allin_price    float
+declare		@spot_price     float
+declare		@identifier     varchar(100)
+
+select @trade_type = @market_deal_type
+select @trader = @buy_side_institution
+select @buysell = @outright_side
+select @dealt_currency = @currency_pair_given_ccy
+select @counter_currency = @currency_pair_settle_ccy
+select @counterparty_account = @sell_side_institution
+select @quantity = @given_amount
+select @allin_price = @all_in_rate
+select @spot_price = @rate_spot
+
+declare	@tally_type	varchar(50)
+declare @deal_id	int
+declare @trade_id	int
+declare @symbol		varchar(50)
+declare @external_account	varchar(50)
+declare @contract_id int
+declare @sales_code	varchar(50)
+declare @counterparty varchar(25)
+declare @source_id 				int
+declare @trader_id 				int
+declare @tico_account_id 		int
+declare @external_account_id 	int
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name="FX Connect Tally"
+
+if(@@rowcount < 1)
+begin
+	select
+			status="Error",
+			message="Could not find source id for FX Connect Tally"
+	return
+end
+
+select
+	@trader_id = trader_id
+from
+	trader_symbols
+where
+	source_id = @source_id
+and
+	symbol = @trader
+
+if(@@rowcount = 1)
+begin
+	select
+		@trader=symbol,
+		@external_account_id=external_account_id,
+		@tico_account_id=tico_account_id
+	from
+		traders
+	where
+		trader_id=@trader_id
+
+	if(@@rowcount != 1)
+	begin
+		select
+			status="Error",
+			message="Could not get trader information for ", @buy_side_institution
+		return
+	end
+end
+else
+begin
+	select
+		@trader=symbol,
+		@external_account_id=external_account_id,
+		@tico_account_id=tico_account_id
+	from
+		traders
+	where
+		symbol = @trader
+
+	if(@@rowcount != 1)
+	begin
+		select
+			status="Error",
+			message="Could not get trader information for ", @buy_side_institution
+		return
+	end
+end
+
+select
+	@login=login
+from
+	tico_accounts
+where
+	account_id = @tico_account_id
+
+if(@@rowcount < 1)
+begin
+	select
+		status="Error",
+		message="Could not get tico account information for trader ", @buy_side_institution
+	return
+end
+
+if(@spot_price = @allin_price)
+begin
+	select
+		@tally_type="Spot"
+end
+else
+begin
+	select
+		@tally_type="Forward"
+end
+
+if convert(char(1), lower(@buysell)) = "s"
+begin
+        select
+                @quantity = abs(@quantity) * -1
+end
+
+if convert(char(1), lower(@buysell)) = "b"
+begin
+        select
+                @quantity = abs(@quantity)
+end
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
+
+select symbol = @symbol
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+
+if @@rowcount != 1
+begin
+
+        declare @evaluation_currency varchar(50)
+        declare @fund_id int
+
+        exec
+        r_defaultfundforlogin
+                @login,
+                @fund_id output
+
+        select
+        @evaluation_currency = a.symbol
+        from
+        products a,
+        funds b
+        where
+        a.product_id = b.evaluation_currency_id and
+		b.fund_id=@fund_id
+  
+        exec r_addbatchfwdsubscription
+                        @login,
+                        @symbol,
+                        @dealt_currency,
+                        @counter_currency,
+                        @evaluation_currency 
+
+        if not exists (select contract_id from contracts where symbol=@symbol)
+        begin
+                select
+                        status = "Error",
+                        message = "Contract not found",
+                        symbol=@symbol
+
+                return
+        end
+
+end
+
+if(@trade_date = NULL)
+        select @trade_date = getdate()
+
+select
+	@trade_date = dateadd(hour,-5,@trade_date)
+
+select
+	@deal_id = deal_id
+from
+	trades 
+where
+	identifier=@identifier
+
+if(@@rowcount < 1)
+begin
+	select @deal_id = NULL
+end
+
+select
+	@counterparty = a.name
+from
+	counterparties a,
+	counterparty_symbols b
+where
+	a.counterparty_id=b.counterparty_id and
+	b.source_id=@source_id and
+	b.symbol = @counterparty_account
+
+if(@@rowcount < 1)
+begin
+	select @counterparty=@counterparty_account
+end
+
+if(@trade_type="MarketRegular")
+begin
+
+	if convert(char(1), lower(@buysell)) = "s"
+	begin
+        	select
+                @quantity = abs(@quantity)
+	end
+
+	if convert(char(1), lower(@buysell)) = "b"
+	begin
+        	select
+                @quantity = abs(@quantity) * -1
+	end
+	
+	select
+        @external_account = symbol
+	from
+        external_accounts
+	where
+		external_account_id=@external_account_id
+
+	if @@rowcount = 0
+	begin
+        select
+                status = "Error",
+                message = "Could not found account for trader",
+                client_user = @trader
+        return
+	end
+
+	exec
+		fxa_tallytrade	
+				@login = @login,
+				@source = "FX Connect Tally",
+				@trade_id = @trade_id output,
+				@deal_id = @deal_id output,
+				@tally_type = @tally_type,
+				@deal_type = "Client Forward",
+				@trade_type = @tally_type,
+				@external_account = @external_account,
+				@counterparty = @counterparty,
+				@quantity = @quantity,
+				@symbol = @symbol,
+				@value_date = @value_date,
+				@price = @allin_price,
+				@trade_date = @trade_date,
+				@trader = @trader,
+				@identifier = @identifier,
+				@fixing_date = @fixing_date
+
+end
+
+if(@trade_type="MarketAlloc")
+begin
+
+	if convert(char(1), lower(@buysell)) = "s"
+	begin
+        	select
+                @quantity = abs(@quantity) * -1
+	end
+
+	if convert(char(1), lower(@buysell)) = "b"
+	begin
+        	select
+                @quantity = abs(@quantity)
+	end
+
+	select
+			@counterparty = a.name
+	from
+			counterparties a,
+			counterparty_symbols b
+	where
+			a.counterparty_id=b.counterparty_id and
+			b.source_id=@source_id and
+			b.symbol = @counterparty_account
+
+
+	if(@@rowcount < 1)
+	begin
+		select @counterparty=@counterparty_account
+	end
+	
+	select
+		@external_account = a.symbol
+	from
+		external_accounts a,
+		counterparties b
+	where
+		a.external_account_id = b.external_account_id and
+		b.name=@counterparty
+
+	if(@@rowcount != 1)
+	begin
+		select
+			status = "Error",
+			message = "Cannot determine default external_account for counterparty",
+			counterparty = @counterparty_account
+		return
+	end
+
+	select
+		@sales_code = "None"
+
+	exec
+		fxa_tallytrade	
+				@login = @login,
+				@source = "FX Connect Tally",
+				@trade_id = @trade_id output,
+				@deal_id = @deal_id output,
+				@tally_type = @tally_type,
+				@deal_type = "Market Forward",
+				@trade_type = @tally_type,
+				@external_account = @external_account,
+				@counterparty = @counterparty,
+				@quantity = @quantity,
+				@symbol = @symbol,
+				@value_date = @value_date,
+				@price = @allin_price,
+				@trade_date = @trade_date,
+				@trader = @trader,
+				@identifier = @identifier,
+				@sales_code = @sales_code,
+				@fixing_date =@fixing_date
+end
+
+exec r_inserttradenotification @trade_id
+
+select
+		deal_id=@deal_id, trade_id=@trade_id
+
+return
+
+go
+

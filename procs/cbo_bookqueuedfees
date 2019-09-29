@@ -1,0 +1,142 @@
+drop procedure
+	cbo_bookqueuedfees
+go
+
+create procedure
+	cbo_bookqueuedfees
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @tico_account_id int
+
+declare @queued_fees int
+declare @queued_fee_id int
+declare @match_status varchar(25)
+
+declare @account_transaction_id int
+declare @transaction_type_id int
+declare @external_account_id int
+declare @currency_id int
+declare @amount float
+declare @transaction_date datetime
+
+
+select
+	@transaction_date = convert(datetime, convert(date, @trade_date))
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login 
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@queued_fee_id = 0
+select
+	@queued_fees = count(*)
+from
+	queued_fees
+where
+	tico_account_id = @tico_account_id
+and
+	convert(date, transaction_date) = convert(date, @transaction_date)
+
+while @queued_fees > 0
+begin
+	select
+		@queued_fee_id = min(queued_fee_id)
+	from
+		queued_fees
+	where
+		tico_account_id = @tico_account_id
+	and
+		convert(date, transaction_date) = convert(date, @transaction_date)
+	and
+		queued_fee_id > @queued_fee_id
+
+
+
+	select
+		@match_status = match_status
+	from
+		queued_fees
+	where
+		queued_fee_id = @queued_fee_id
+
+	if @match_status = "New"
+	begin
+		select
+			@account_transaction_id = NULL,
+			@external_account_id = NULL,
+			@transaction_type_id = NULL,
+			@transaction_date = NULL,
+			@currency_id = NULL,
+			@amount = NULL
+
+		select
+			@external_account_id = external_account_id,
+			@transaction_type_id = transaction_type_id,
+			@transaction_date = transaction_date,
+			@currency_id = currency_id,
+			@amount = amount
+		from
+			queued_fees
+		where
+			queued_fee_id = @queued_fee_id
+
+		exec
+			j_nextkey
+				"account_transactions",
+				@account_transaction_id output
+
+		
+		insert into
+			account_transactions(
+				account_transaction_id,
+				entered_by,
+				external_account_id,
+				transaction_type_id,
+				transaction_date,
+				currency_id,
+				amount)
+		values(
+			@account_transaction_id,
+			@tico_account_id,
+			@external_account_id,
+			@transaction_type_id,
+			@transaction_date,
+			@currency_id,
+			@amount)
+	end
+
+	delete
+
+	from
+		queued_fees
+	where
+		queued_fee_id = @queued_fee_id
+
+
+	select
+		@queued_fees = count(*)
+	from
+		queued_fees
+	where
+		tico_account_id = @tico_account_id
+	and
+		convert(date, transaction_date) = convert(date, @transaction_date)
+	and
+		queued_fee_id > @queued_fee_id
+
+end
+
+go

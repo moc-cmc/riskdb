@@ -1,0 +1,39 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	ag_clientdepositreq
+go
+
+create procedure
+	ag_clientdepositreq
+		@login varchar(50),
+		@product varchar(50),
+		@amount float,
+		@for_date datetime,
+		@from_account varchar(50),
+		@to_account varchar(50),
+		@to_custodian varchar(50)
+as
+
+declare @ledger_request_id int
+
+
+exec
+	api_clientdepositreq
+		@login = @login,
+		@product = @product,
+		@amount = @amount,
+		@for_date = @for_date,
+		@from_account = @from_account,
+		@to_account = @to_account,
+		@to_custodian = @to_custodian,
+		@ledger_request_id = @ledger_request_id output
+
+exec
+	ag_bankclienthome
+		@login = @login
+
+
+go

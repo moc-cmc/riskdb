@@ -1,0 +1,215 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_files
+go
+
+create procedure
+	lw_files
+		@login varchar(50)
+as
+
+declare @source_id int
+declare @sources int
+declare @price_date datetime
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"next_file",
+	"Daily Update File",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"import_file",
+	"Import Debt Trades",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"file_name",
+	"File Symbols",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"init_file",
+	"Initialize Batch File",
+	NULL)
+
+select * from #meta
+
+
+select
+	init_file = "Initialize New Batch File",
+	import_file = "Import Batch File"
+
+
+create table
+	#output(
+		source_id int,
+		file_name varchar(50),
+		date_started datetime NULL,
+		next_process_date datetime NULL,
+		trade_date datetime NULL)
+
+insert into
+	#output(
+		source_id,
+		file_name)
+select
+	source_id,
+	file_name = name
+from
+	sources
+
+create table
+	#trades(
+		source_id int,
+		date_started datetime)
+
+insert into
+	#trades
+select
+	a.source_id,
+	min(b.trade_date)
+from
+	source_contracts a,
+	trades b
+where
+	a.contract_id = b.contract_id
+group by
+	a.source_id
+
+
+update
+	#output
+set
+	a.date_started = b.date_started
+from
+	#output a,
+	#trades b
+where
+	a.source_id = b.source_id
+
+create table
+	#prices(
+		source_id int,
+		price_date datetime)
+insert into
+	#prices
+select
+	a.source_id,
+	max(b.price_date)
+from
+	source_contracts a,
+	prices b
+where
+	a.contract_id = b.contract_id
+group by
+	a.source_id
+
+
+select
+	@source_id = 0
+select
+	@sources = count(*)
+from
+	#prices
+where
+	source_id > @source_id
+
+while @sources > 0
+begin
+	select
+		@source_id = min(source_id)
+	from
+		#prices
+	where
+		source_id > @source_id
+
+	select
+		@price_date = NULL
+
+	select
+		@price_date = price_date
+	from
+		#prices
+	where
+		source_id > @source_id
+
+	if @price_date != NULL
+	begin
+		exec
+			r_nextbusinessday
+				@price_date,
+				@price_date output
+
+		update
+			#prices
+		set
+			price_date = @price_date
+		where
+			source_id = @source_id
+	end
+
+
+	select
+		@sources = count(*)
+	from
+		#prices
+	where
+		source_id > @source_id
+end
+
+
+
+
+update
+	#output
+set
+	a.next_process_date = b.price_date
+from
+	#output a,
+	#prices b
+where
+	a.source_id = b.source_id
+
+
+
+select
+	file_name,
+	date_started,
+	next_process_date,
+	next_file = "Download next file",
+	trade_date = next_process_date
+from
+	#output
+
+
+go

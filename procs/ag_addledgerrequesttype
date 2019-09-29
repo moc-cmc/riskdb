@@ -1,0 +1,111 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	ag_addledgerrequesttype
+go
+
+create procedure
+	ag_addledgerrequesttype
+		@login varchar(50),
+		@name varchar(100),
+		@create_pending_status varchar(50),
+		@sweep_pending_status varchar(50),
+		@cancel_pending_status varchar(50)
+
+as
+
+declare @ledger_request_type_id int
+declare @create_pending_status_id int
+declare @sweep_pending_status_id int
+declare @cancel_pending_status_id int
+
+
+select
+	@ledger_request_type_id = ledger_request_type_id
+from
+	ledger_request_types
+where
+	name = @name
+if @ledger_request_type_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Ledger request type already exists",
+		name = @name
+	return
+end
+
+select
+	@create_pending_status_id = status_id
+from
+	statuses
+where
+	name = @create_pending_status
+if @create_pending_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Create pending status not found",
+		create_pending_status = @create_pending_status
+	return
+end
+
+select
+	@sweep_pending_status_id = status_id
+from
+	statuses
+where
+	name = @sweep_pending_status
+if @create_pending_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Sweep pending status not found",
+		sweep_pending_status = @sweep_pending_status
+	return
+end
+
+select
+	@cancel_pending_status_id = status_id
+from
+	statuses
+where
+	name = @cancel_pending_status
+if @cancel_pending_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Cancel pending status not found",
+		cancel_pending_status = @cancel_pending_status
+	return
+end
+
+
+exec
+	j_nextkey
+		"ledger_request_types",
+		@ledger_request_type_id output
+
+insert into
+	ledger_request_types(
+		ledger_request_type_id,
+		name,
+		create_pending_status_id,
+		sweep_pending_status_id,
+		cancel_pending_status_id)
+values(
+	@ledger_request_type_id,
+	@name,
+	@create_pending_status_id,
+	@sweep_pending_status_id,
+	@cancel_pending_status_id)
+
+exec
+	ag_ledgerrequesttypes
+		@login = @login
+
+
+go
+	

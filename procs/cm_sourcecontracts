@@ -1,0 +1,67 @@
+
+if object_id("cm_sourcecontracts") != NULL
+    drop procedure
+        cm_sourcecontracts
+go
+
+create procedure
+	cm_sourcecontracts
+		@login varchar(50),
+		@source varchar(50)
+as
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"new_contract_mapping",
+	"Add Contract Mapping",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+select
+	new_contract_mapping = "Create new contract mapping",
+	source = @source
+
+
+create table
+	#output(
+		contract varchar(50),
+		source varchar(50),
+		mapping varchar(100))
+
+insert into
+	#output
+select
+	contract = a.symbol,
+	source = b.name,
+	mapping = c.symbol
+from
+	contracts a,
+	sources b,
+	contract_symbols c
+where
+	a.contract_id = c.contract_id
+and
+	b.source_id = c.source_id
+and
+	b.name = @source
+
+
+	
+
+--Adaptive Server has expanded all '*' elements in the following statement
+select #output.contract, #output.source, #output.mapping from #output
+
+go

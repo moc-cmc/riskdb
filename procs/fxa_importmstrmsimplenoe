@@ -1,0 +1,692 @@
+
+if object_id("fxa_importmstrmsimplenoe") != NULL
+    drop procedure
+        fxa_importmstrmsimplenoe
+go
+
+create procedure
+	fxa_importmstrmsimplenoe
+		@id varchar(25),		  	 /* 8433080 */
+		@origin_ticket_id varchar(50)=NULL,      /* "" */
+		@link_status varchar(50)=NULL,           /* "" */
+		@master_id varchar(50)=NULL,             /* "" */
+		@lifecycle_status varchar(50),     	 /* Active */
+		@matching_status varchar(50),      	 /* Unmatched */
+		@approval_status varchar(50),      	 /* Approved */
+		@allocation_status varchar(50),    	 /* Allocated */
+		@processing_status varchar(50),    	 /* N/A */
+		@trade_date datetime,               	 /* 01/02/2010 */
+		@matching_time varchar(50)=NULL,         /* "" */
+		@trading_party varchar(50)=NULL,         /*  */
+		@region varchar(50)=NULL,		 /* "" */
+		@counter_party varchar(50)=NULL,         /*  */
+		@direction varchar(50),           	  /* SELL */
+		@product_type varchar(50),    	   	 /* Spot/Forward */
+		@ccy1 varchar(50),                  	/* EUR */
+		@quantity1 numeric(30,4),          	 /* 2,500,000 */
+		@ccy2 varchar(50) ,                 	 /* USD */
+		@quantity2 numeric(30,4),          	 /* 3,791,972.5 */
+		@rate float,			   	 /* 1.516789 */
+		@value_date varchar(50),    	   	 /* 02/15/2010 */
+		@far_rate varchar(50)=NULL,              /* "" */
+		@far_value_date varchar(50)=NULL,	 /* "" */
+		@far_quantity1 varchar(50)=NULL,         /* "" */
+		@far_quantity2 varchar(50)=NULL,         /* "" */
+		@portfolio varchar(50)=NULL,             /* "" */
+		@trader varchar(50)=NULL,	         /* "" */
+		@ticket_num varchar(50)=NULL,	    	/* "" */
+		@trade_type varchar(50)=NULL,	   	 /* Regular */
+		@creation_date varchar(50)=NULL,         /* 01/22/2010 12:27:13 */
+		@agreement_type varchar(50)=NULL,	 /* PB */
+		@harmony_status varchar(50)=NULL,        /* "" */
+		@harmony_id varchar(50)=NULL,	    	/* "" */
+		@prime_broker varchar(50)=NULL,          /* Primary Org */
+		@fixing_date varchar(50)=NULL,           /* "" */
+		@fixing_index varchar(50)=NULL,          /* "" */
+		@calc_agent varchar(50)=NULL,            /* "" */
+		@origin_system varchar(50)=NULL,         /* PB - System */
+		@creation_party varchar(50)=NULL,        /* Cantor Fitzgerald Securities */
+		@created_by varchar(50)=NULL,            /* etgbot */
+		@notes varchar(50)=NULL,                 /* "" */
+		@po_modified varchar(50)=NULL,		/* FALSE/TRUE */
+		@execution_platform varchar(50)=NULL,    /* "" */
+		@reporter varchar(50)=NULL,               /* "" */
+                @deletion_time datetime=NULL,		  /* 9/9/10 12:25 */
+                @far_fixing_date datetime=NULL           /* "" */
+
+as
+
+
+
+declare @reported_matched_status_id int
+declare @reported_unmatched_status_id int
+declare @reported_edited_status_id int
+declare @reported_deleted_status_id int
+declare @report_trade_status_id int
+
+declare @report_trade_id int
+declare @fund_report_id int
+declare @external_report varchar(50)
+declare @external_report_id int
+declare @external_report_source_id int
+
+declare @report_commit_id int
+declare @begin_date datetime
+declare @existing_rt_status_id int
+declare @customer_counterparty_id int
+declare @customer_counterparty_name varchar(50)
+declare @counterparty_name varchar(50)
+declare @external_account varchar(50)
+declare @external_account_type_id int
+declare @external_account_type varchar(25)
+declare @identifier varchar(50)
+declare @external_account_id int
+declare @counterparty_id int
+declare @contract varchar(50)
+declare @contract_id int
+declare @trade_id int
+declare @price float
+declare @contract_price_style varchar(25)
+declare @trade_type_id int
+declare @trader_id int
+declare @strategy_id int
+
+
+
+select
+	@external_report = "MS Trade Recon"
+
+select 
+	@external_report_id = external_report_id,
+	@external_report_source_id = source_id
+from
+	external_reports
+where
+	name = @external_report
+if @external_report_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Problem finding external report",
+		report = @external_report
+	return
+end
+
+select
+	@fund_report_id = fund_report_id
+from
+	fund_reports
+where
+	external_report_id = @external_report_id
+if @@rowcount != 1
+begin
+	select
+		error = "Error",
+		msg = "Problem determinig fund report from external report",
+		external_report = @external_report
+end
+
+select
+	@report_commit_id = a.report_commit_id
+from
+	report_commits a
+where
+	a.fund_report_id = @fund_report_id
+and
+	a.trade_date = @trade_date
+if @report_commit_id = NULL
+begin
+	declare @review_status_id int
+	
+	select
+		@review_status_id = status_id
+	from
+		statuses
+	where
+		name = "Review"
+	if @review_status_id = NULL
+	begin
+	        select
+       	                error = "Error",
+                        msg = "Problem finding status 'Review'"
+		return
+	end
+
+	insert into 
+		report_commits
+	(
+		fund_report_id,
+		trade_date,
+		status_id,
+		update_date
+	)
+	values
+	(
+		@fund_report_id,
+		@trade_date,
+		@review_status_id,
+		getdate()
+	)
+
+	select
+		@report_commit_id = a.report_commit_id
+	from
+		report_commits a
+	where
+		a.fund_report_id = @fund_report_id
+	and
+		a.trade_date = @trade_date
+	if @report_commit_id = NULL
+	begin
+		select
+			error = "Error", 
+			msg = "Problem determining/creating report commit"
+		return
+	end
+end
+
+
+
+
+select
+	@identifier = @id
+
+/*	MARK: Query all relevant statuses	*/
+select
+	@reported_matched_status_id = status_id
+from
+	statuses
+where
+	name = "Reported Matched"
+if @reported_matched_status_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Problem determining id for status 'Reported Matched'"
+	return
+end
+select
+	@reported_unmatched_status_id = status_id
+from
+	statuses
+where
+	name = "Reported Unmatched"
+if @reported_unmatched_status_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Problem determining id for status 'Reported Unmatched'"
+	return
+end
+select
+	@reported_edited_status_id = status_id
+from
+	statuses
+where
+	name = "Reported Edited"
+if @reported_edited_status_id = NULL
+begin
+	select
+		error = "Error",
+		 msg = "Problem determining id for status 'Reported Edited'"
+	return
+end
+select
+	@reported_deleted_status_id = status_id
+from
+	statuses
+where
+	name = "Reported Deleted"
+if @reported_deleted_status_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Problem determining id for status 'Reported Deleted'"
+	return
+end
+
+
+
+select 
+	@existing_rt_status_id = status_id,
+	@report_trade_id = report_trade_id
+from
+	report_trades	
+where
+	identifier = @identifier
+
+select
+	@customer_counterparty_id = a.counterparty_id
+from
+	fund_agency_counterparties a
+if @@rowcount != 1
+begin
+	select
+		error = "Error",
+		msg = "More than one fund agency counterparty"
+	return
+end
+
+select 
+	@customer_counterparty_name = a.name
+from
+	counterparties a
+where
+	counterparty_id = @customer_counterparty_id
+if @customer_counterparty_name = NULL
+begin
+	select 
+		error = "Error",
+		msg = "Problem determining fund as counterparty"
+	return
+end
+	
+/*
+ *	MARK: Check to see if @counterparty matches a counterparty_symbol or counterparty
+ */
+select
+	@counterparty_name = a.name,
+	@counterparty_id = a.counterparty_id,
+	@external_account_id = a.external_account_id
+from
+	counterparties a, 
+	counterparty_symbols b 
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.source_id = @external_report_source_id
+and
+	b.symbol = @counter_party
+if @counterparty_name = NULL
+begin
+	select 
+		@counterparty_name = name,
+		@counterparty_id = counterparty_id,
+		@external_account_id = external_account_id
+	from
+		counterparties
+	where
+		name = @counter_party
+	/*if @counterparty_name = NULL
+	begin
+	        select
+                	error = "Error",
+                	msg = "Problem determining counterparty",
+                	symbol = @counter_party
+	end
+	*/
+
+end
+
+/*
+ *  MARK: @counterparty did not exist as a counterparty
+ *	  Check to see if it is an external account
+ */
+if @counterparty_name = NULL
+begin
+	select
+      		@external_account = a.symbol,
+  		@external_account_id = a.external_account_id
+	from
+   		external_accounts a,
+       		external_account_symbols b
+	where
+   		a.external_account_id = b.external_account_id
+	and
+     		b.source_id = @external_report_source_id
+	and
+        	b.symbol = @counter_party
+	if @external_account = NULL
+	begin
+        	select
+               		@external_account = symbol,
+              		@external_account_id = external_account_id
+        	from
+               		external_accounts
+        	where
+               		name = @counter_party
+		if @external_account = NULL 
+		begin
+			select
+				error = "Error",
+				msg = "Problem determining counterparty or external account",
+				symbol = @counter_party
+			return
+		end
+       	end
+	select
+		@counterparty_name = a.name,
+		@counterparty_id = a.counterparty_id
+	from
+		counterparties a,
+		counterparty_symbols b
+	where
+		a.counterparty_id = b.counterparty_id
+	and
+		b.symbol = @trading_party
+	if @counterparty_name = NULL
+	begin
+		select
+			error = "Error", 
+			msg = "Problem determinging counterparty from @trading_party for client trade"
+		return
+	end
+end
+		
+select
+	id = @id,
+	counterparty = @counterparty_name,
+	external_account = @external_account
+
+		
+
+select
+	@external_account_type_id = external_account_type_id
+from
+	external_accounts
+where
+	external_account_id = @external_account_id
+if @external_account_type_id = NULL
+begin
+        select
+                error = "Error",
+                msg = "Problem determining external account type from ext account",
+		ext_id = @external_account_id
+	
+	if @external_account_id != 0
+		return
+end
+
+select
+	@external_account_type = name
+from
+	external_account_types
+where
+	external_account_type_id = @external_account_type_id
+if @external_account_type = NULL
+begin
+        select
+                error = "Error",
+                msg = "Problem determining external account type"
+        if @external_account_id = 0
+        	return
+end
+
+select
+	@contract = rtrim(@ccy1)+rtrim(@ccy2)
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @contract
+if @contract_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Contract not found",
+		contract = @contract
+	return
+end
+
+select
+	@contract_price_style = b.name
+from
+	contract_price_styles a,
+	price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	a.contract_id = @contract_id
+
+select
+	@price = @quantity2/@quantity1
+
+if @direction = "SELL"
+	select 
+		@quantity1 = @quantity1 * -1
+else if @direction = "BUY"
+	select
+		@quantity2 =  @quantity2 * -1
+else
+begin
+	select
+		error = "Error",
+		msg = "Direction not 'SELL' or 'BUY'. Not tallying report trade"
+	return
+end
+
+
+
+
+if @product_type = "Spot/Forward"
+begin
+	select
+		@trade_type = "Forward"
+	select
+		@trade_type_id = trade_type_id
+	from
+		trade_types
+	where
+		name = @trade_type
+	if @trade_type_id = NULL
+	begin	
+		select
+			error = "Error",
+			msg = "Problem finding trade type 'Forward'"
+		return
+	end
+end
+
+select
+	@trade_id = convert(int, @ticket_num)
+
+select
+	@trader_id = a.trader_id
+from
+	traders a,
+	trader_symbols b
+where
+	@trader_id = b.trader_id
+and
+	b.source_id = @external_report_source_id
+and
+	b.symbol = @trader
+if @trader_id = NULL
+begin
+	select
+		@trader_id = trader_id
+	from
+		traders
+	where
+		symbol = @trader
+end
+
+select
+	@strategy_id = strategy_id
+from
+	strategies
+where
+	name = @portfolio
+	
+
+if @lifecycle_status = "Done"
+begin
+	select
+		@report_trade_status_id = @reported_matched_status_id
+
+
+	if @existing_rt_status_id = NULL
+	begin
+		
+		if @counterparty_name = @customer_counterparty_name
+		begin
+			/* Do not add */
+                        select "counterparty_name = customer_counterparty_name"
+			return
+		end	
+		else
+		begin
+			
+			exec
+				fxa_addreporttrade
+					@report_trade_id=NULL,
+					@report_deal_id=NULL,
+					@report_commit_id=@report_commit_id,
+					@import_date=NULL, /* default to getdate() in fxa_addreporttrade */
+					@trade_type_id=@trade_type_id,
+					@trade_type=NULL,
+					@external_account_type_id=@external_account_type_id,
+					@external_account_type=NULL,
+					@external_account_id=@external_account_id,
+					@external_account=NULL,
+					@counterparty_id=@counterparty_id,
+					@counterparty=NULL,
+					@quantity=@quantity1,
+					@contract_id=@contract_id,
+					@contract=NULL,
+					@value_date=@value_date,
+					@fixing_date=@fixing_date,
+					@price=@price,
+					@trade_date=@trade_date,
+					@trader_id=@trader_id,
+					@trader=NULL ,
+					@strategy_id=@strategy_id,
+					@strategy=NULL,
+					@status_id=@report_trade_status_id,
+					@status=NULL,
+					@broker_id=NULL,
+					@broker=NULL ,
+					@identifier=@identifier,
+					@pct_price=NULL,
+					@spot_reference=@rate,
+					@reporter_identifier=@ticket_num,
+					@trade_id=@trade_id
+		end
+	end
+	else if @existing_rt_status_id = @reported_matched_status_id
+	begin
+		/* DEBUG: Show this report trade exist as matched, no need to update */
+		select 
+			"Report trade exists as matched. No need to update"
+
+		return
+	end
+	else if @existing_rt_status_id = @reported_unmatched_status_id
+	begin
+		/*	DEBUG:		*/
+		select "DEBUG: Updating report trade from unmatched to matched"	
+		
+		update
+			report_trades
+		set
+			report_commit_id=@report_commit_id,
+			import_date=getdate(),
+			trade_type_id=@trade_type_id,
+			external_account_type_id=@external_account_type_id,
+			external_account_id=@external_account_id,
+			counterparty_id=@counterparty_id,
+			quantity=@quantity1,
+			contract_id=@contract_id,
+			value_date=@value_date,
+			fixing_date=@fixing_date,
+			price=@price,
+			trade_date=@trade_date,
+			trader_id=@trader_id,
+			strategy_id=@strategy_id,
+			status_id=@report_trade_status_id,
+			broker_id=NULL,
+			identifier=@identifier,
+			pct_price=NULL,
+			spot_reference=@rate,
+			reporter_identifier=@ticket_num,
+			trade_id=@trade_id
+		where
+			report_trade_id = @report_trade_id
+		if @@rowcount = 1
+		begin
+			select
+				action = "Updated",
+				report_trade_id = @report_trade_id,
+				msg = "Status changed to Matched"
+		end
+		else
+		begin
+			select
+				error = "Error",
+				msg = "Update != 1 row. No rollback was performed. Check data",
+				report_trade_id = @report_trade_id
+		end
+	
+
+	end
+	else
+	begin
+		select 
+			warn = "Warn:",
+			msg = "Can not handle 'Done' trade. Logic not incorporated",
+			identifier = @identifier
+		return
+	end
+	
+	return
+end
+
+if @lifecycle_status = "Active"
+begin
+	select 
+		@report_trade_status_id = @reported_unmatched_status_id
+
+	exec
+		fxa_addreporttrade
+			@report_trade_id=NULL,
+			@report_deal_id=NULL,
+			@report_commit_id=@report_commit_id,
+			@import_date=NULL,
+			@trade_type_id=NULL,
+			@trade_type=@trade_type,
+			@external_account_type_id=@external_account_type_id,
+			@external_account_type=NULL,
+			@external_account_id=@external_account_id,
+			@external_account=NULL,
+			@counterparty_id=@counterparty_id,
+			@counterparty=NULL,
+			@quantity=@quantity1,
+			@contract_id=@contract_id,
+			@contract=NULL,
+			@value_date=@value_date,
+			@fixing_date=@fixing_date,
+			@price=@price,
+			@trade_date=@trade_date,
+			@trader_id=NULL,
+			@trader=@trader ,
+			@strategy_id=@strategy_id,
+			@strategy=NULL,
+			@status_id=@report_trade_status_id,
+			@status=NULL,
+			@broker_id=NULL,
+			@broker=NULL ,
+			@identifier=@identifier,
+			@pct_price=NULL,
+			@spot_reference=@rate,
+			@reporter_identifier=@ticket_num,
+			@trade_id=@trade_id
+
+
+end
+
+if @lifecycle_status in("Replaced")
+begin
+	select 
+		@report_trade_status_id = @reported_edited_status_id
+end
+
+
+if @lifecycle_status in("Bust", "Deleted")
+begin
+	select
+		@report_trade_status_id = @reported_deleted_status_id
+end
+
+go

@@ -1,0 +1,21 @@
+
+drop procedure
+	r_outboundsources	
+go
+
+create procedure
+	r_outboundsources	
+as
+
+select
+	symbol = a.name
+from
+	sources a,
+	source_types b
+where
+	a.source_type_id=b.source_type_id
+and
+	b.name="Outbound"	
+
+
+go

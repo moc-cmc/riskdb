@@ -1,0 +1,15 @@
+drop procedure
+	cbo_volumewrap
+go
+
+create procedure
+        cbo_volumewrap
+                @login char(100)
+as
+
+
+exec
+        cbo_volumerange
+                @login=@login
+
+go

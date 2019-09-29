@@ -1,0 +1,185 @@
+drop procedure api_markdailyopstask
+go
+
+create procedure
+	api_markdailyopstask
+		@login varchar(50),
+		@task_id int,
+		@mark_as varchar(50)=NULL
+
+as
+
+declare @tico_account_id int
+declare @ops_task_status_id int
+declare @task_status varchar(50)
+declare @current_status varchar(50)
+declare @update_time datetime
+declare @complete_status_id int
+declare @current_status_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+
+
+if @mark_as = "MARK COMPLETE"
+	select
+		@mark_as = "Complete"
+
+if @mark_as in(NULL, "", "UNMARK")
+	select
+		@mark_as = "Pending"
+	
+
+
+select
+	@complete_status_id = ops_task_status_id
+from
+	ops_task_statuses
+where
+	name = "Complete"
+if @complete_status_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding ops task status 'Complete'"
+	return
+end
+
+select
+	@ops_task_status_id = ops_task_status_id,
+	@task_status = name
+from
+	ops_task_statuses
+where
+	name = @mark_as
+if @ops_task_status_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding ops task status",
+		mark_as = @mark_as
+	return
+end
+
+select
+	@current_status_id = b.ops_task_status_id,
+	@current_status = b.name 
+from
+	daily_ops_tasks a,
+	ops_task_statuses b
+where
+	a.ops_task_status_id = b.ops_task_status_id
+and
+	daily_ops_task_id= @task_id
+if @current_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Can not find task",
+		task_id = @task_id
+	return
+end
+	
+select
+	@update_time = getdate()
+
+if @ops_task_status_id = @complete_status_id and @current_status != "Complete"
+begin
+	begin tran
+		update
+			daily_ops_tasks
+		set
+			ops_task_status_id = @complete_status_id,
+			user_id = @tico_account_id,
+			timestamp = @update_time
+		where
+			daily_ops_task_id= @task_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem updating task status",
+				task_id = @task_id
+			rollback
+		end
+		insert into
+			daily_ops_task_logs(
+				daily_ops_task_id,
+				ops_task_status_id,
+				user_id,
+				timestamp)
+		values(
+			@task_id,
+			@ops_task_status_id,
+			@tico_account_id,
+			@update_time
+		)
+		if @@rowcount != 1
+		begin
+                        select
+                                status = "Error",
+                                message = "Problem tracking daily ops log history",
+                                task_id = @task_id
+                        rollback
+		end
+	commit tran
+end
+
+if @current_status = "Complete"
+begin
+        begin tran
+                update
+                        daily_ops_tasks
+                set
+                        ops_task_status_id = @ops_task_status_id,
+                        user_id = NULL,
+                        timestamp = NULL
+                where
+                        daily_ops_task_id= @task_id
+                if @@rowcount != 1
+                begin
+                        select
+                                status = "Error",
+                                message = "Problem updating task status",
+                                task_id = @task_id
+                        rollback
+                end
+		insert into
+			daily_ops_task_logs(
+				daily_ops_task_id,
+				ops_task_status_id,
+				user_id,
+				timestamp)
+		values(
+			@task_id,
+			@ops_task_status_id,
+			@tico_account_id,
+			@update_time
+		)
+		if @@rowcount != 1
+		begin
+                        select
+                                status = "Error",
+                                message = "Problem tracking daily ops log history",
+                                task_id = @task_id
+                        rollback
+		end
+	commit tran
+end
+
+
+go
+

@@ -1,0 +1,94 @@
+create or replace procedure
+	api_addboaccount
+		@login varchar(50),
+		@symbol varchar(50),
+		@name varchar(150)=NULL,
+		@prime_broker varchar(50),
+		@account_type varchar(50),
+		@evaluation_ccy varchar(10)=NULL,
+		@notional_amount float=NULL,
+		@aggregation_style varchar(10)=NULL,
+		@settlement_method varchar(20)=NULL,
+		@lp_transparency char(1)=NULL,
+		@max_mtd_statement_trades int=NULL,
+		@margin_multiplier int=NULL,
+		@legal_entity varchar(150)
+
+
+
+as
+
+declare @external_account_id int
+declare @legal_entity_id int
+declare @bo_master_account_id int
+
+exec
+	api_createextaccount
+		@login = @login,
+		@symbol = @symbol,
+		@name = @name,
+		@prime_broker = @prime_broker,
+		@account_type = "Client",
+		@evaluation_ccy = @evaluation_ccy
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @symbol
+
+
+if @external_account_id != NULL
+begin
+	select
+		@legal_entity_id = legal_entity_id
+	from
+		legal_entities
+	where
+		name = @legal_entity
+	
+	if @legal_entity_id = NULL
+	begin
+		exec
+			api_addlegalentity
+				@login=@login,
+				@name=@legal_entity
+	
+		select
+			@legal_entity_id = legal_entity_id
+        	from
+                	legal_entities 
+        	where
+                	name = @legal_entity
+
+	end
+	
+	if @external_account_id != NULL and @legal_entity_id != NULL
+	begin
+		exec
+			j_nextkey
+				"bo_master_accounts",
+				@bo_master_account_id out	
+
+		insert into
+			bo_master_accounts(
+				bo_master_account_id,
+				external_account_id,
+				legal_entity_id)
+		values(
+			@bo_master_account_id,
+			@external_account_id,
+			@legal_entity_id)
+	end
+end
+
+go
+			
+		
+
+
+
+		
+		

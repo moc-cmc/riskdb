@@ -1,0 +1,15 @@
+drop procedure r_clientrisksumwrapper
+go
+
+create procedure
+	r_clientrisksumwrapper
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+exec
+	r_clientrisksum
+		@login=@login,
+		@trade_date=@trade_date
+
+go

@@ -1,0 +1,1434 @@
+
+if object_id("cbo_revaltrades") != NULL
+    drop procedure
+        cbo_revaltrades
+go
+
+create procedure
+	cbo_revaltrades
+		@login varchar(30),
+		@trade_date datetime=NULL
+                /*,
+		@source varchar(50),
+		@evaluation_currency varchar(20)=NULL,
+		@overwrite char(2)=NULL */
+as
+
+declare @source varchar(50)
+declare @evaluation_currency varchar(20)
+declare @overwrite  char(2)
+declare @fund_type varchar(50)
+
+declare @unresolvable_premiums int
+declare @evaluation_currency_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @committed_status_id int
+declare @committed_trades int
+declare @processing_trades int
+declare @processing_status_id int
+declare @source_id int
+
+declare @ids int
+declare @id int
+declare @net_position numeric(30,4)
+
+declare @trade_id int
+declare @contract_id int
+declare @inverted_contract_id int
+declare @instrument varchar(20)
+declare @value_date datetime
+declare @days float
+declare @spot_price float
+declare @forward_price float
+declare @price float
+declare @give_product_rate float
+declare @get_product_rate float
+
+declare @missing_settles int
+declare @missing_conversion_rates int
+
+declare @product_id int
+declare @products int
+declare @conversion_rate float
+
+select
+	@source = "MPT",
+	@evaluation_currency = "USD",
+	@overwrite = "Y"
+
+
+exec
+	cbo_revaltradeslinks
+		@login
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+
+if @evaluation_currency = NULL
+	select
+		@evaluation_currency = "USD"
+
+
+select
+	@evaluation_currency_id = product_id
+from
+	products
+where
+	symbol = @evaluation_currency
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Evaluation currency not found",
+		evaluation_currency = @evaluation_currency
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Source not found",
+		source = @source
+	return
+end
+
+select
+	@committed_status_id = status_id
+from
+	statuses
+where
+	name = "Committed"
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Committed status not found"
+	return
+end
+
+select
+	@processing_status_id = status_id
+from
+	statuses
+where
+	name = "Processing"
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@processing_status_id output
+
+	insert into
+		statuses
+	values(
+		@processing_status_id,
+		"Processing")
+end
+	
+select
+	@committed_trades = count(*)
+from
+	trade_daily_revals
+where
+	reval_date = @end_date
+and
+	status_id = @committed_status_id
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+if @committed_trades != 0
+begin
+	if @overwrite = "N"
+	begin
+		select
+			id = -1,
+			error = "Committed trades already exist for trade date",
+			trade_date = @end_date
+		return
+	end
+	else
+	begin
+		delete
+
+		from
+			trade_daily_revals
+		where
+			reval_date = @end_date
+		and
+			source_id = @source_id
+		and
+			evaluation_currency_id = @evaluation_currency_id
+	end
+end
+
+select
+	@processing_trades = count(*)
+from
+	trade_daily_revals
+where
+	reval_date = @end_date
+and
+	status_id = @processing_status_id
+if @processing_trades != 0
+begin
+	select
+		id = -1,
+		error = "Concurrent reval in progress for date",
+		trade_date = @end_date
+	return
+end
+
+
+/* Get the spot/forward trades */
+insert into
+	trade_daily_revals(
+		trade_id,
+		bo_trade_date,
+		source_id,
+		status_id,
+		contract_id,
+		value_date,
+		reval_date,
+		contract_qty,
+		evaluation_currency_id,
+		native_currency_id,
+		product_id,
+		notional_amount)
+select
+	a.trade_id,
+	a.trade_date,
+	source_id = @source_id,
+	status_id = @processing_status_id,
+	a.contract_id,
+	a.value_date,
+	reval_date = @end_date,
+	contract_qty = b.quantity,
+	evaluation_currency_id = @evaluation_currency_id,
+	native_currency_id = b.currency_id,
+	product_id = b.product_id,
+	notional_amount = abs(a.quantity * b.quantity)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.quantity != 0
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date <= @end_date
+
+
+/* Get any futures trades */
+insert into
+	trade_daily_revals(
+		trade_id,
+		bo_trade_date,
+		source_id,
+		status_id,
+		contract_id,
+		value_date,
+		reval_date,
+		contract_qty,
+		evaluation_currency_id,
+		notional_amount)
+select
+	a.trade_id,
+	a.trade_date,
+	source_id = @source_id,
+	status_id = @processing_status_id,
+	a.contract_id,
+	value_date = b.expiration,
+	reval_date = @end_date,
+	contract_qty = c.quantity,
+	evaluation_currency_id = @evaluation_currency_id,
+	notional_amount = abs(a.quantity * c.quantity)
+from
+	trades a,
+	future_contracts b,
+	futures c
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+and
+	a.quantity != 0
+and
+	b.expiration >= @begin_date
+and
+	a.trade_date <= @end_date
+
+/* Get any unexpired spot option trades */
+insert into
+	trade_daily_revals(
+		trade_id,
+		bo_trade_date,
+		source_id,
+		status_id,
+		contract_id,
+		value_date,
+		reval_date,
+		contract_qty,
+		evaluation_currency_id,
+		notional_amount)
+select
+	a.trade_id,
+	a.trade_date,
+	source_id = @source_id,
+	status_id = @processing_status_id,
+	a.contract_id,
+	value_date = c.expiration,
+	reval_date = @end_date,
+	contract_qty = 1,
+	evaluation_currency_id = @evaluation_currency_id,
+	abs(a.quantity) /* TEST */
+from
+        trades a,
+        option_contracts b,
+        option_expirations c,
+        contracts d,
+        instruments e
+where
+        a.contract_id = b.contract_id
+and
+        a.quantity != 0
+and
+        b.option_expiration_id = c.option_expiration_id
+and
+        c.expiration >= @begin_date
+and
+        a.trade_date <= @end_date
+and
+        a.contract_id=d.contract_id 
+and
+        d.instrument_id=e.instrument_id 
+and
+        e.name="Option"
+
+/* Get any unexpired future option trades */
+insert into
+	trade_daily_revals(
+		trade_id,
+		bo_trade_date,
+		source_id,
+		status_id,
+		contract_id,
+		value_date,
+		reval_date,
+		contract_qty,
+		evaluation_currency_id,
+		notional_amount)
+select
+	a.trade_id,
+	a.trade_date,
+	source_id = @source_id,
+	status_id = @processing_status_id,
+	a.contract_id,
+	value_date = c.expiration,
+	reval_date = @end_date,
+	contract_qty = 1,
+	evaluation_currency_id = @evaluation_currency_id,
+	notional_amount = abs(f.quantity * a.quantity)
+from
+	trades a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	future_contracts e,
+	futures f
+where
+	a.contract_id = b.contract_id
+and
+	a.quantity != 0
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+and
+	e.future_id = f.future_id
+and
+	c.expiration >= @begin_date
+and
+	a.trade_date <= @end_date
+
+
+/* Get any settled option premiums */
+insert into
+	trade_daily_revals(
+		trade_id,
+		bo_trade_date,
+		source_id,
+		status_id,
+		contract_id,
+		value_date,
+		reval_date,
+		contract_qty,
+		evaluation_currency_id)
+select
+	a.trade_id,
+	a.trade_date,
+	source_id = @source_id,
+	status_id = @processing_status_id,
+	a.contract_id,
+	value_date = c.expiration,
+	reval_date = @end_date,
+	contract_qty = 1,
+	evaluation_currency_id = e.currency_id
+from
+	trades a,
+	option_contracts b,
+	option_expirations c,
+	account_transaction_trades d,
+	account_transactions e
+where
+	a.contract_id = b.contract_id
+and
+	a.quantity != 0
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	a.trade_id = d.trade_id
+and
+	d.account_transaction_id = e.account_transaction_id
+and
+	e.transaction_date >= @begin_date
+and
+	c.expiration < @begin_date
+
+/* Get any exotic trades */
+insert into
+	trade_daily_revals(
+		trade_id,
+		bo_trade_date,
+		source_id,
+		status_id,
+		contract_id,
+		value_date,
+		reval_date,
+		contract_qty,
+		premium_ccy_id,
+		evaluation_currency_id,
+		notional_amount)
+select
+	a.trade_id,
+	a.trade_date,
+	source_id = @source_id,
+	status_id = @processing_status_id,
+	a.contract_id,
+	value_date = c.expiration,
+	reval_date = @end_date,
+	contract_qty = 1,
+	premium_ccy_id = e.currency_id,
+	evaluation_currency_id = @evaluation_currency_id,
+	abs(a.quantity) /* TEST */
+from
+	trades a,
+	exotic_contracts b,
+	option_expirations c,
+	account_transaction_trades d,
+	account_transactions e
+where
+	a.contract_id = b.contract_id
+and
+	a.quantity != 0
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	a.trade_id = d.trade_id
+and
+	d.account_transaction_id = e.account_transaction_id
+and
+	/* e.transaction_date >= @begin_date */
+	c.expiration >= @begin_date
+and
+	a.trade_date <= @end_date
+
+
+/*
+ * Remove the time part of the bo_trade date and move any trades done between
+ * 17:00 and 0:00 to the next bo_trading_date (next non weekend day)
+ */
+
+/* move any trades done after 5 pm and before midnight to the next day */
+update
+	trade_daily_revals
+set
+	bo_trade_date = dateadd(hour, 9, bo_trade_date)
+where
+	datepart(hour, bo_trade_date) >= 17
+and
+	datepart(hour, bo_trade_date) <= 23
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+and
+	reval_date = @end_date
+
+
+/* move any saturday trades to monday */
+update
+	trade_daily_revals
+set
+	bo_trade_date = dateadd(day, 2, bo_trade_date)
+where
+	datepart(weekday, bo_trade_date) = 7
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+and
+	reval_date = @end_date
+
+
+/* move any sunday trades to monday */
+update
+	trade_daily_revals
+set
+	bo_trade_date = dateadd(day, 1, bo_trade_date)
+where
+	datepart(weekday, bo_trade_date) = 1
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+and
+	reval_date = @end_date
+
+
+/* strip the time off of any bo_trade_dates */
+update
+	trade_daily_revals
+set
+	bo_trade_date = convert(datetime, convert(char(11), bo_trade_date, 1))
+where
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+and
+	reval_date = @end_date
+
+update
+	trade_daily_revals
+set
+	a.close_price = b.price
+from
+	trade_daily_revals a,
+	bo_prices b
+where
+	a.contract_id = b.contract_id
+and
+	datepart(day, a.value_date) = datepart(day, b.value_date)
+and
+	datepart(month, a.value_date) = datepart(month, b.value_date)
+and
+	datepart(year, a.value_date) = datepart(year, b.value_date)
+and
+	b.price_date = @end_date
+and
+	a.reval_date = @end_date
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+	
+
+/* Use the saved premiums if they are in same currency as the evaluation ccy */
+/* TEST update
+	trade_daily_revals
+set
+	premium = 0.0,
+	premium_ccy_id = c.currency_id,
+	premium_settle_date = NULL
+from
+	trade_daily_revals a,
+	trades b,
+	external_accounts c
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = c.external_account_id
+and
+	a.reval_date = @end_date
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+and
+	a.source_id = @source_id
+and
+	a.premium = NULL */
+
+update
+	trade_daily_revals
+set
+	premium = c.amount,
+	premium_ccy_id = c.currency_id,
+	premium_settle_date = c.transaction_date
+from
+	trade_daily_revals a,
+	account_transaction_trades b,
+	account_transactions c
+where
+	a.trade_id = b.trade_id
+and
+	b.account_transaction_id = c.account_transaction_id
+and
+	a.reval_date = @end_date
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+and
+	a.source_id = @source_id
+
+/*
+ * here eventually add support to generate a premium based on the trade price
+ * if the premium is not in the evaluatioon currency. for now, show an error
+ * if there are any non eval ccy prems
+ */
+
+/* select
+	@unresolvable_premiums = count(a.account_transaction_id)
+from
+	account_transactions a,
+	account_transaction_trades b,
+	trade_daily_revals c,
+	external_accounts d
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	b.trade_id = c.trade_id
+and
+	a.external_account_id = d.external_account_id
+and
+	c.reval_date = @end_date
+and
+	c.evaluation_currency_id = @evaluation_currency_id
+and
+	c.source_id = @source_id
+and
+	d.currency_id != @evaluation_currency_id
+if @unresolvable_premiums > 0
+begin
+	select
+		status = "Error",
+		message = "Option premiums found in unresolvable currencies"
+	return
+end */
+	
+
+create table
+	#missing_settles(
+		id int identity,
+		trade_id int,
+		contract_id int,
+		symbol varchar(50),
+		value_date datetime,
+		price_date datetime,
+		close_price float NULL)
+insert into
+	#missing_settles(
+		trade_id,
+		contract_id,
+		symbol,
+		value_date,
+		price_date,
+		close_price)
+select
+	b.trade_id,
+	b.contract_id,
+	a.symbol,
+	b.value_date,
+	b.reval_date,
+	b.close_price
+from
+	contracts a,
+	trade_daily_revals b
+where
+	a.contract_id = b.contract_id
+and
+	b.reval_date = @end_date
+and
+	b.close_price = NULL
+if @@rowcount != 0
+begin
+	select
+		@id = 0
+	select
+		@ids = count(*)
+	from
+		#missing_settles
+	where
+		id > @id
+
+	while @ids > 0
+	begin
+		select
+			@id = min(id)
+		from
+			#missing_settles
+		where
+			id > @id
+
+
+		select
+			@contract_id = contract_id,
+			@value_date = value_date,
+			@trade_id = trade_id
+		from
+			#missing_settles
+		where
+			id = @id
+
+		select
+			@inverted_contract_id = NULL
+
+		exec
+			r_invertedcontract
+				@contract_id,
+				@inverted_contract_id output
+
+		select
+			@forward_price = NULL
+
+		select
+			@forward_price = 1.0 / price
+		from
+			bo_prices
+		where
+			contract_id = @inverted_contract_id
+		and
+			price_date = @end_date
+		and
+			datepart(day, @value_date) = datepart(day, value_date)
+		and
+			datepart(month, @value_date) = datepart(month, value_date)
+		and
+			datepart(year, @value_date) = datepart(year, value_date)
+		and
+			source_id = @source_id
+
+		if @forward_price != NULL
+		begin
+			update
+				trade_daily_revals
+			set
+				close_price = @forward_price
+			where
+				reval_date = @end_date
+			and
+				contract_id = @contract_id
+			and
+				value_date = @value_date
+			and
+				source_id = @source_id
+			and
+				evaluation_currency_id = @evaluation_currency_id
+
+
+			delete
+
+			from
+				#missing_settles
+			where
+				id = @id
+		end	
+		else
+		begin
+
+			select
+				@net_position = NULL,
+				@days = NULL,
+				@spot_price = NULL,
+				@forward_price = NULL,
+				@give_product_rate = NULL,
+				@get_product_rate = NULL
+	
+			select
+				@instrument = a.name
+			from
+				instruments a,
+				contracts b
+			where
+				a.instrument_id = b.instrument_id
+			and
+				b.contract_id = @contract_id
+
+
+			if @instrument = "Forward"
+				select
+					@net_position = sum(quantity)
+				from
+					trades
+				where
+					value_date = @value_date
+				and
+					contract_id = @contract_id
+				and
+					trade_date <= @end_date
+			else
+				select
+					@net_position = sum(quantity)
+				from
+					trades
+				where
+					contract_id = @contract_id
+				and
+					trade_date <= @end_date
+
+			if @net_position = 0
+			begin
+				if @instrument = "Forward"
+				begin
+					exec
+						r_forwardpriceasof
+							@contract_id,
+							@end_date,
+							@value_date,
+							@days output,
+							@spot_price output,
+							@forward_price output,
+							@give_product_rate output,
+							@get_product_rate output
+
+					update
+						trade_daily_revals
+					set
+						close_price = @forward_price
+					where
+						reval_date = @end_date
+					and
+						contract_id = @contract_id
+					and
+						value_date = @value_date
+					and
+						source_id = @source_id
+					and
+						evaluation_currency_id = @evaluation_currency_id
+	
+	
+					delete
+	
+					from
+						#missing_settles
+					where
+						id = @id
+				end
+				else
+				begin
+					exec
+						r_priceasof
+							@contract_id,
+							@end_date,
+							@price output
+					if @price != NULL
+					begin
+						update
+							trade_daily_revals
+						set
+							close_price = @price
+						where
+							reval_date = @end_date
+						and
+							contract_id = @contract_id
+						and
+							value_date = @value_date
+						and
+							source_id = @source_id
+						and
+							evaluation_currency_id = @evaluation_currency_id
+
+						delete
+
+						from
+							#missing_settles
+						where
+							id = @id
+					end
+				end
+			end
+		end
+
+		select
+			@ids = count(*)
+		from
+			#missing_settles
+		where
+			id > @id
+	end
+
+	select
+		@missing_settles = count(*)
+	from
+		#missing_settles
+	if @missing_settles > 0
+	begin
+		select
+			message = "Missing Settle",
+			source = @source,
+			a.trade_id,
+			b.trade_date,
+			b.quantity,	
+			a.symbol,
+			a.value_date,
+			a.price_date,
+			a.close_price,
+			front_office_price = "USE FO"
+		from
+			#missing_settles a,
+			trades b
+		where
+			a.trade_id = b.trade_id
+
+		delete
+
+		from
+			trade_daily_revals
+		where
+			reval_date = @end_date
+
+		return
+	end
+end
+
+update
+	trade_daily_revals
+set
+	status_id = @committed_status_id
+where
+	reval_date = @end_date
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+
+update
+	trade_daily_revals
+set
+	a.native_value = b.quantity * a.close_price
+from
+	trade_daily_revals a,
+	trades b
+where
+	a.trade_id = b.trade_id
+and
+	a.reval_date = @end_date
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+
+/*
+ * Adjust for the futures size and set the contract native currency for futures 
+ */
+update
+	trade_daily_revals
+set
+	a.native_value = a.native_value * convert(float, c.quantity),
+	a.native_currency_id = d.currency_id,
+	a.product_id = d.product_id
+from
+	trade_daily_revals a,
+	future_contracts b,
+	futures c,
+	forwards d
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+and
+	c.forward_id = d.contract_id
+and
+	a.reval_date = @end_date
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+
+/*
+ * Adjust for futures options size and set the contract native currency 
+ * for futures options 
+ */
+update
+	trade_daily_revals
+set
+	a.native_value = a.native_value * convert(float, d.quantity) * convert(float, f.quantity),
+	a.native_currency_id = g.currency_id,
+	a.product_id = g.product_id
+from
+	trade_daily_revals a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	future_contracts e,
+	futures f,
+	forwards g
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+and
+	e.future_id = f.future_id
+and
+	f.forward_id = g.contract_id	
+and
+	a.reval_date = @end_date
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+
+/*
+ * Set the contract native currency for spot options
+ */
+update
+	trade_daily_revals
+set
+	a.native_currency_id = e.currency_id,
+	a.product_id = e.product_id
+from
+	trade_daily_revals a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	forwards e
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+and
+	a.reval_date = @end_date
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+	
+
+/*
+ * Set the contract native currency for spot exotics
+ */
+update
+	trade_daily_revals
+set
+	a.native_currency_id = e.currency_id,
+	a.product_id = e.product_id
+from
+	trade_daily_revals a,
+	exotic_contracts b,
+	option_expirations c,
+	options d,
+	forwards e
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+and
+	reval_date = @end_date
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+	
+
+/*
+ * Calculate the price change to date and the native p&l to date 
+ */
+update
+	trade_daily_revals
+set
+	a.price_change_to_date = a.close_price - b.price,
+	a.native_realized_pl_to_date = (a.close_price - b.price) * b.quantity * a.contract_qty,
+	a.native_unrealized_pl_to_date = 0.0
+from
+	trade_daily_revals a,
+	trades b
+where
+	a.trade_id = b.trade_id
+and
+	a.reval_date = @end_date
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+and
+	a.value_date <= @end_date
+
+update
+	trade_daily_revals
+set
+	a.price_change_to_date = a.close_price - b.price,
+	a.native_unrealized_pl_to_date = (a.close_price - b.price) * b.quantity * a.contract_qty,
+	a.native_realized_pl_to_date = 0.0
+from
+	trade_daily_revals a,
+	trades b
+where
+	a.trade_id = b.trade_id
+and
+	a.reval_date = @end_date
+and
+	a.source_id = @source_id
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+and
+	a.value_date >  @end_date
+
+update
+	trade_daily_revals
+set
+	native_realized_pl_to_date = 0.0
+where
+	native_realized_pl_to_date = NULL
+and
+	reval_date = @end_date
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+
+	
+
+
+/* Calculate the evaluation values converted from the native values */
+update
+	trade_daily_revals
+set
+	evaluation_value = native_value,
+	realized_pl_to_date = native_realized_pl_to_date,
+	unrealized_pl_to_date = native_unrealized_pl_to_date
+where
+	reval_date = @end_date
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = native_currency_id
+
+
+update
+	trade_daily_revals
+set
+	evaluation_notional = abs(notional_amount)
+where
+	reval_date = @end_date
+and
+	source_id = @source_id
+and
+	product_id = @evaluation_currency_id
+
+update
+	trade_daily_revals
+set
+	evaluation_premium = premium
+where
+	reval_date = @end_date
+and
+	source_id = @source_id
+and
+	evaluation_currency_id = premium_ccy_id
+
+
+create table
+	#non_native_ccys(
+		product_id int,
+		conversion_rate float NULL)
+insert into
+	#non_native_ccys(
+		product_id)
+select
+	distinct(
+		native_currency_id)
+from
+	trade_daily_revals
+where
+	source_id = @source_id
+and
+	evaluation_currency_id = @evaluation_currency_id
+and
+	reval_date = @end_date
+and
+	native_currency_id != @evaluation_currency_id
+
+insert into
+	#non_native_ccys(
+		product_id)
+select
+	distinct(product_id)
+from
+	trade_daily_revals
+where
+	source_id = @source_id
+and
+	product_id != @evaluation_currency_id
+and
+	reval_date = @end_date
+and
+	product_id not in(
+		select
+			product_id
+		from
+			#non_native_ccys)
+
+
+
+
+
+select
+	@product_id = 0
+select
+	@products = count(*)
+from
+	#non_native_ccys
+where
+	product_id > @product_id
+
+while @products > 0
+begin
+	select
+		@product_id = min(product_id)
+	from
+		#non_native_ccys
+	where
+		product_id > @product_id
+
+	select
+		@conversion_rate= NULL
+	exec
+		cbo_ccyconversionrate
+			@product_id,
+			@evaluation_currency_id,
+			@source_id,
+			@end_date,
+			@conversion_rate output
+
+
+	update
+		#non_native_ccys
+	set
+		conversion_rate = @conversion_rate
+	where
+		product_id = @product_id
+
+	update
+		trade_daily_revals
+	set
+		evaluation_value = native_value * @conversion_rate,
+		realized_pl_to_date = native_realized_pl_to_date * @conversion_rate,
+		unrealized_pl_to_date = native_unrealized_pl_to_date * @conversion_rate
+	where
+		reval_date = @end_date
+	and
+		source_id = @source_id
+	and
+		native_currency_id = @product_id
+
+	update
+		trade_daily_revals
+	set
+		evaluation_notional = notional_amount * @conversion_rate
+	where
+		product_id = @product_id
+	and
+		reval_date = @end_date
+	and
+		product_id != @evaluation_currency_id
+
+	update
+		trade_daily_revals
+	set
+		evaluation_premium = premium * @conversion_rate
+	where
+		reval_date = @end_date
+	and
+		source_id = @source_id
+	and
+		premium_ccy_id = @product_id
+
+
+	select
+		@products = count(*)
+	from
+		#non_native_ccys
+	where
+		product_id > @product_id
+end
+
+/*
+ * Check to see if any conversion rates were missing. return an error if so.
+ */
+select
+	@missing_conversion_rates = count(*)
+from
+	#non_native_ccys
+where
+	conversion_rate = NULL
+if @missing_conversion_rates != 0
+begin
+	select
+		message = "Missing Spot Conversion Rate",
+		product = a.symbol,
+		date = @end_date
+	from
+		products a,
+		#non_native_ccys b
+	where
+		a.product_id = b.product_id
+	and
+		b.conversion_rate = NULL
+
+	return
+end
+	
+
+/*
+ * Overwrite the evaluation p&l for options and exotics by using the difference
+ * between the end evaluation value and the evaluation premium. (rather than
+ * difference in trade price)
+ */
+update
+	trade_daily_revals
+set
+	a.unrealized_pl_to_date = a.evaluation_value + a.evaluation_premium
+from
+	trade_daily_revals a,
+	option_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.expiration >= @begin_date
+and
+	a.source_id = @source_id
+and
+	a.reval_date = @end_date
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+
+update
+	trade_daily_revals
+set
+	a.realized_pl_to_date = a.evaluation_value + a.evaluation_premium,
+	a.unrealized_pl_to_date = 0.0
+from
+	trade_daily_revals a,
+	option_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.expiration < @end_date
+and
+	a.source_id = @source_id
+and
+	a.reval_date = @end_date
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+
+
+
+
+/* do the same for exotics */
+update
+	trade_daily_revals
+set
+	a.realized_pl_to_date = a.evaluation_value + a.evaluation_premium
+from
+	trade_daily_revals a,
+	exotic_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.expiration < @end_date
+and
+	a.source_id = @source_id
+and
+	a.reval_date = @end_date
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+
+update
+	trade_daily_revals
+set
+	a.unrealized_pl_to_date = a.evaluation_value + a.evaluation_premium
+from
+	trade_daily_revals a,
+	exotic_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.expiration >= @begin_date
+and
+	a.source_id = @source_id
+and
+	a.reval_date = @end_date
+and
+	a.evaluation_currency_id = @evaluation_currency_id
+
+
+/* MARK: EXEC cbo_revaldeltas: Calculate the deltas and forward_id for all
+ * revals for the day */
+exec
+    cbo_revaldeltas
+        @login,
+        @end_date
+
+exec
+	cbo_synccommittedrevals
+		@login,
+		@end_date
+
+select
+	status = "Success",
+	message = "Reval Trades For Date Completed",
+	/*commit_pls_for_day = "COMMIT P&LS",*/
+	trade_date = convert(char(11), @end_date, 1)
+	
+/* exec
+	cbo_revalsforday
+		@login,
+		@end_date,
+		@source,
+		@evaluation_currency */
+
+go

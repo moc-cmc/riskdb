@@ -1,0 +1,108 @@
+drop procedure
+	r_uncommitcommissionfees
+go
+
+create procedure
+	r_uncommitcommissionfees
+		@trade_date datetime
+
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @tico_account_id int
+declare @transaction_type_fee_id int
+declare @debug char(1)
+select 
+	@debug="N"
+
+
+
+
+exec
+       r_daterangefordate
+               @trade_date,
+               @begin_date output,
+               @end_date output
+
+create table
+	#del_product_transactions
+(
+	product_transaction_id int
+)
+
+insert into
+	#del_product_transactions
+select
+	a.product_transaction_id
+from
+	product_transactions a,
+	fs_product_transactions b
+where
+	a.product_transaction_id = b.product_transaction_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date < @end_date
+
+delete 
+	product_transactions
+from
+	product_transactions a,
+	#del_product_transactions b
+where
+	a.product_transaction_id = b.product_transaction_id
+
+delete 
+	fs_product_transactions
+from
+	fs_product_transactions a,
+	#del_product_transactions b
+where
+	a.product_transaction_id = b.product_transaction_id
+
+delete 
+	account_product_trans_trades
+from
+	account_transactions a,
+        fee_transaction_types b,
+	account_product_trans_trades c
+where
+        a.transaction_type_id = b.transaction_type_id
+and
+	a.account_transaction_id = c.account_transaction_id
+and
+        a.transaction_date >= @begin_date
+and
+        a.transaction_date < @end_date
+
+delete
+	account_transactions
+from
+	account_transactions a,
+	fee_transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+        a.transaction_date >= @begin_date
+and
+        a.transaction_date < @end_date
+
+delete
+        scheduled_fee_transactions
+from
+        scheduled_fee_transactions a,
+        scheduled_fees b
+where
+        a.scheduled_fee_id = b.scheduled_fee_id
+and
+        convert(date, b.trade_date) = convert(date, @trade_date)
+
+
+delete from
+	scheduled_fees
+where
+        convert(date, trade_date) = convert(date, @trade_date)
+
+
+go

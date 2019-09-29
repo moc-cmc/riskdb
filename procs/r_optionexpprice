@@ -1,0 +1,44 @@
+
+if object_id("r_optionexpprice") != NULL
+    drop procedure
+        r_optionexpprice
+go
+ 
+create procedure
+	r_optionexpprice
+		@contract_id int,
+		@as_of_date datetime,
+		@price float output
+as
+
+declare @is_expired int
+
+select
+	@price =NULL
+
+exec
+	r_isexpired
+		@contract_id ,
+		@as_of_date ,
+		@is_expired output
+
+
+if @is_expired = 1
+begin
+	select
+		@price = price
+	from
+		prices
+	where
+		contract_id = @contract_id
+	and
+		price_date = (
+			select
+				max(price_date)
+			from
+				prices
+			where
+				contract_id = @contract_id)
+end
+
+go

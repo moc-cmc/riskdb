@@ -1,0 +1,102 @@
+
+if object_id("b_perspectivecontract") != NULL
+    drop procedure
+        b_perspectivecontract
+go
+ 
+
+create procedure
+	b_perspectivecontract
+		@run_id int,
+		@contract_id int,
+		@perspective_contract_id int output,
+		@is_inverted int output
+as
+
+
+declare @forward_id int
+declare @underlying_contract_id int
+declare @contract_product_id int
+declare @contract_currency_id int
+declare @pers_contract_product_id int
+declare @pers_contract_currency_id int
+
+select @is_inverted = 0
+
+
+select
+	@underlying_contract_id = a.underlying_contract_id
+from
+	options a,
+	option_expirations b,
+	option_contracts c
+where
+	a.option_id = b.option_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.contract_id = @contract_id
+
+if @underlying_contract_id = NULL
+	select
+		@underlying_contract_id = @contract_id
+
+
+exec
+	r_contractforward
+		@underlying_contract_id,
+		@forward_id output
+
+
+select
+	@perspective_contract_id = perspective_contract_id
+from
+	run_perspective_contracts
+where
+	run_id = @run_id
+and
+	contract_id = @forward_id
+
+if @perspective_contract_id = NULL
+	select
+		@perspective_contract_id = perspective_contract_id
+	from
+		def_perspective_contracts
+	where
+		contract_id = @forward_id
+
+if @perspective_contract_id = NULL
+	select
+		@perspective_contract_id = @underlying_contract_id
+
+
+if @perspective_contract_id != NULL
+	begin
+	exec
+		r_contractproduct @contract_id, @contract_product_id output
+	exec
+		r_contractcurrency @contract_id, @contract_currency_id output
+	exec
+		r_contractproduct @perspective_contract_id, @pers_contract_product_id output
+	exec
+		r_contractcurrency @perspective_contract_id, @pers_contract_currency_id output
+	if
+		@contract_product_id = @pers_contract_product_id 
+		and 
+		@contract_currency_id = @pers_contract_currency_id 
+
+		return 
+
+	if 
+		@contract_product_id = @pers_contract_currency_id
+		and
+		@contract_currency_id = @pers_contract_product_id
+		begin
+			select @is_inverted = 1
+			return
+		end	
+
+
+	end	
+
+go

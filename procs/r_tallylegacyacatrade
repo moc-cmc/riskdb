@@ -1,0 +1,454 @@
+drop procedure
+	r_tallylegacyacatrade
+go
+
+create procedure
+	r_tallylegacyacatrade
+		@login varchar(50)=NULL,
+		@row_index int,
+		@row_count int,
+		@ticker_number varchar(50)=NULL,
+		@trade_date varchar(50)=NULL ,
+		@clearing_broker varchar(50)=NULL,
+		@account_number varchar(50)=NULL,
+		@market_symbol varchar(50)=NULL,
+		@security_description varchar(50)=NULL,
+		@transaction_type varchar(50)=NULL,
+		@security_type varchar(50)=NULL ,
+		@buy_sell varchar(50)=NULL,
+		@put_call varchar(50)=NULL,
+		@expiration_day varchar(50)=NULL,
+		@expiration_month varchar(50)=NULL,
+		@expiration_year varchar(50)=NULL,
+		@quantity numeric(30, 8)=NULL,
+		@strike_price float=NULL ,
+		@trade_price varchar(50)=NULL,
+		@price float=NULL,
+		@currency1 varchar(50)=NULL ,
+		@ccy1_amount varchar(50)=NULL,
+		@currency2 varchar(50)=NULL,
+		@ccy2_amount varchar(50)=NULL,
+		@exchange varchar(50)=NULL,
+		@executing_broker varchar(50)=NULL,
+		@residual_cash_adjustment varchar(50)=NULL,
+		@trader varchar(50)=NULL,
+		@program varchar(50)=NULL,
+		@model varchar(50)=NULL 
+
+as
+
+declare @source varchar(30)
+declare @identifier varchar(100)
+declare @tally_type varchar(25)
+declare @deal_type varchar(25)
+declare @trade_type varchar(25)
+declare @external_account varchar(50)
+declare @symbol varchar(100)
+declare @counterparty varchar(50)
+declare @broker varchar(50)
+declare @value_date datetime
+declare @strategy varchar(50)
+declare @tally_trader varchar(50)
+declare @sales_code varchar(30)
+
+declare @external_account_id int
+declare @counterparty_id int
+declare @trader_id int
+declare @broker_id int
+declare @source_id int
+declare @deal_id int
+declare @trade_id int
+declare @strategy_id int
+
+declare @total_premium numeric(30, 8)
+declare @premium_currency varchar(15)
+declare @premium_settle datetime
+declare @pct_price float
+declare @spot_reference float
+
+declare @month_code varchar(50)
+declare @monthint int
+declare @future_contract varchar(50)
+declare @root_symbol varchar(50)
+
+
+declare @sales_code_id int
+declare @trader_lookup varchar(50)
+declare @external_account_lookup varchar(50)
+declare @counterparty_lookup varchar(50)
+declare @year varchar(10)
+declare @contract_id int
+declare @future_symbol varchar(50)
+
+
+declare @implied_volatility float
+
+
+select
+	@source = "Lochlann System",
+	@identifier = "LOC-"+rtrim(@ticker_number),
+	@counterparty_lookup = @exchange,
+	@external_account_lookup = rtrim(@clearing_broker)+" "+rtrim(@account_number),
+	@trader_lookup = @trader,
+	@strategy = @model
+
+if exists(select trade_id from trades where identifier = @identifier)
+begin
+	select 
+		status="Trade already tallied",
+		identifier = @identifier
+
+	return
+end
+
+select
+	@price = convert(float, @trade_price)
+
+	
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		error="Error",
+		msg="Problem determining source",
+		source=@source
+	return
+end
+
+select
+	@strategy_id = strategy_id
+from
+	strategies
+where
+	name = @strategy
+if @strategy_id = NULL
+begin
+	exec 
+		j_nextkey
+			"strategies",
+			@strategy_id output
+	insert into
+		strategies(
+			strategy_id,
+			name	)
+	values(
+		@strategy_id,
+		@strategy
+	)
+	
+end
+
+/*
+| Trader Lookup
+*/
+select
+	@trader_id = a.trader_id,
+	@trader = a.symbol,
+	@sales_code_id = a.sales_code_id
+from
+	traders a,
+	trader_symbols b
+where
+	a.trader_id = b.trader_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @trader_lookup
+if @trader_id = NULL
+begin
+	select
+		@trader_id = a.trader_id,
+		@trader = a.symbol,
+		@sales_code_id = a.sales_code_id
+	from
+		traders a
+	where
+		a.symbol = @trader_lookup
+	if @trader_id = NULL
+	begin
+		select
+			"error"="Error",
+			"msg" = "Problem determing trader from trader lookup",
+			trader_lookup = @trader_lookup
+		return
+	end
+end
+
+
+/*
+| Account Lookup
+*/
+select
+        @external_account_id = a.external_account_id,
+        @external_account = a.symbol
+from
+        external_accounts a,
+        external_account_symbols b
+where
+        a.external_account_id = b.external_account_id
+and
+        b.source_id = @source_id
+and
+        b.symbol = @external_account_lookup
+if @external_account_id = NULL
+begin
+        select
+                @external_account_id = a.external_account_id,
+                @external_account = a.symbol
+        from
+                external_accounts a
+        where
+                a.symbol = @external_account_lookup
+        if @external_account_id = NULL
+        begin
+                select
+                        "error"="Error",
+                        "msg" = "Problem determing external_account from lookup",
+                        ext_account_lookup = @external_account_lookup
+                return
+        end
+end
+
+
+/*
+| Counterparty Lookup
+*/
+select
+        @counterparty_id = a.counterparty_id,
+        @counterparty = a.name
+from
+        counterparties a,
+        counterparty_symbols b
+where
+        a.counterparty_id = b.counterparty_id
+and
+        b.source_id = @source_id
+and
+        b.symbol = @counterparty_lookup
+if @counterparty_id = NULL
+begin
+        select
+                @counterparty_id = a.counterparty_id,
+                @counterparty = a.name
+        from
+                counterparties a
+        where
+                a.name = @counterparty_lookup
+        if @counterparty_id = NULL
+        begin
+                select
+                        "error"="Error",
+                        "msg" = "Problem determing counterparty from counterparty lookup",
+                        counterparty_lookup = @counterparty_lookup
+		return
+        end
+end
+
+
+/*
+| Contract Determiniation
+*/
+   
+select
+	@monthint = convert(int, @expiration_month)
+
+exec
+	r_monthcode
+		@monthint,
+		@month_code output
+
+select
+	@root_symbol = @market_symbol,
+       	@month_code = rtrim(@month_code),
+       	@year = rtrim(substring(@expiration_year, 3, 4))
+
+select
+	@future_symbol = rtrim(@root_symbol)+rtrim(@month_code)+rtrim(@year)
+
+	
+select
+	@contract_id = a.contract_id,
+	@symbol = a.symbol
+from
+	contracts a,
+	contract_symbols b
+where
+	a.contract_id = b.contract_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @future_symbol
+if @contract_id = NULL
+begin
+	select
+		@contract_id = contract_id,
+		@symbol = symbol
+	from
+		contracts
+	where
+		symbol = @future_symbol
+	if @contract_id = NULL
+	begin
+		select
+			error="Error",
+			msg="Problem determining contract",
+			future_symbol=@future_symbol
+		return
+	end
+end
+		
+
+	
+
+/*
+|  Future vs Option 
+*/
+
+if @security_type = "FUTURES"
+begin
+	select
+		@tally_type = "Future",
+		@deal_type = "Market Future", 
+		@trade_type = "Future"
+
+	if @buy_sell = "Sell"
+		select
+			@quantity = @quantity * -1
+
+	select
+		@value_date = expiration
+	from
+		future_contracts
+	where
+		contract_id = @contract_id 
+
+end
+else if @security_type = "OPTION"
+begin
+        select
+                @tally_type = "Option",
+                @deal_type = "Market Option", 
+                @trade_type = "Option"
+
+	return
+
+	/* commented out for now
+
+	if @put_call in('Call')
+		select
+			@call_put = 'C'
+
+	if @put_call in('Put')
+		select
+			@call_put = 'P'
+	
+	exec
+		r_futoptioncontract
+			@biproduct,
+			@timezone,
+			@expiration,
+			@call_put,
+			@strike,
+			@option_settledate,
+			@contract_id output
+
+	select
+		@symbol = symbol
+	from
+		contracts
+	where
+		contract_id = @contract_id
+	*/
+
+end
+else
+begin
+	select
+		"error"="ERROR",
+		"msg" = "Could not determine sercurity type from @security_type",
+		"security_type" = @security_type
+	return
+end
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = @source,
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@identifier = @identifier,
+		@tally_type = @tally_type,
+		@deal_type = @deal_type,
+		@trade_type = @trade_type,
+		@external_account = @external_account,
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@counterparty = @counterparty,
+		@broker = @broker,
+		@value_date = @value_date,
+		@price = @price,
+		@strategy = @strategy,
+		@trader = @trader,
+		@trade_date = @trade_date,
+		@sales_code = @sales_code,
+		@premium = @total_premium,
+		@premium_currency = @premium_currency,
+		@prem_settle_date = @premium_settle,
+		@pct_price = @pct_price,
+		@spot_reference = @spot_reference
+
+if @trade_id != NULL
+begin
+	
+	exec 
+		r_inserttradenotification 
+			@trade_id
+	select
+		status = "Successfully Tallied Trade",
+                source = @source,
+                trade_id = @trade_id,
+                deal_id = @deal_id,
+                identifier = @identifier,
+                tally_type = @tally_type,
+                deal_type = @deal_type,
+                trade_type = @trade_type,
+                external_account = @external_account,
+                quantity = @quantity,
+                symbol = @symbol,
+                counterparty = @counterparty,
+                broker = @broker,
+                value_date = @value_date,
+                price = @price,
+                strategy = @strategy,
+                trader = @trader,
+                trade_date = @trade_date,
+                sales_code = @sales_code,
+                premium = @total_premium,
+                premium_currency = @premium_currency,
+                prem_settle_date = @premium_settle,
+                pct_price = @pct_price,
+                spot_reference = @spot_reference
+
+
+	if @security_type = "OPTION"
+	begin
+		select
+			@implied_volatility = 11.0
+		select
+			@implied_volatility = @implied_volatility / 100.00
+
+		exec
+			r_initializeoptcontract
+				@symbol,
+				@implied_volatility
+	end
+
+end
+
+
+go

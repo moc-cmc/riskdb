@@ -1,0 +1,770 @@
+drop procedure
+	ag_creditdashboard
+go
+
+create procedure
+	ag_creditdashboard
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @usd_product_id int
+declare @max_dsl float
+declare @dsl_credit_profile int
+declare @fund_id int
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @disabled_style varchar(250)
+declare @debug char(1)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Column Link",
+	"external_account",
+	"Account Credit Summary",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dsl_use",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"nop_use",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dsl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"nop",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "manage_credit_profiles",
+        "Manage Credit Profiles",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Group",
+        "section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@disabled_style = "color:#CCCCCC;background:#FFFFFF;border: 1px solid white",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+select
+	@debug = "N"
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@usd_product_id = product_id
+from
+	products
+where
+	symbol = "USD"
+	
+
+create table
+	#trades(
+		credit_profile_id int,
+		trade_id int,
+		external_account_id int,
+		quantity numeric(30,4),
+		contract_id int,
+		value_date datetime,
+		fixing_date datetime NULL,
+		price float)
+insert into
+	#trades 
+select
+	b.credit_profile_id,
+	a.trade_id,
+	a.external_account_id,
+	a.quantity,
+	a.contract_id,
+	a.value_date,
+	a.fixing_date,
+	a.price
+from
+	trades a,
+	credit_profile_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.value_date > @begin_date
+and
+	a.trade_date <= @end_date 
+and
+	a.fixing_date = NULL
+
+/* Include only NDFs that have fixing date > today */
+insert into
+	#trades 
+select
+	b.credit_profile_id,
+	a.trade_id,
+	a.external_account_id,
+	a.quantity,
+	a.contract_id,
+	a.value_date,
+	a.fixing_date,
+	a.price
+from
+	trades a,
+	credit_profile_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.value_date > @begin_date
+and
+	a.trade_date <= @end_date 
+and
+	convert(date, a.fixing_date) > convert(date, @end_date)
+
+
+insert into
+	#trades 
+select
+	b.credit_profile_id,
+	a.trade_id,
+	a.counterparty_id,
+	a.quantity,
+	a.contract_id,
+	a.value_date,
+	a.fixing_date,
+	a.price
+from
+	trades a,
+	credit_profile_counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.value_date > @begin_date
+and
+	a.trade_date <= @end_date 
+and
+	a.fixing_date = NULL
+
+
+insert into
+	#trades 
+select
+	b.credit_profile_id,
+	a.trade_id,
+	a.counterparty_id,
+	a.quantity,
+	a.contract_id,
+	a.value_date,
+	a.fixing_date,
+	a.price
+from
+	trades a,
+	credit_profile_counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.value_date > @begin_date
+and
+	a.trade_date <= @end_date 
+and
+	convert(date, a.fixing_date) > convert(date, @end_date)
+
+
+
+if @debug = "Y"
+	select debug="trades", * from #trades
+
+create table
+	#credit_profile_balances(
+		credit_profile_id int,
+		product_id int,
+		amount float,
+		currency_id int NULL,
+		equiv float NULL,
+		nop_type varchar(50) NULL,
+		incl_base_ccy varchar(5) NULL,
+		incl_longs varchar(5) NULL,
+		incl_shorts varchar(5) NULL,
+		nop float NULL)
+insert into
+	#credit_profile_balances(
+		credit_profile_id,
+		product_id,
+		amount)
+select
+	a.credit_profile_id,
+	d.product_id,
+	amount = sum(
+		case
+		when c.currency_id = d.product_id then
+			a.quantity * a.price * -1.0
+		when c.product_id = d.product_id then
+			a.quantity
+		end
+	)
+from
+	#trades a,
+	forwards c,
+	products d
+where
+	a.contract_id = c.contract_id
+and (
+		c.currency_id = d.product_id
+	or
+		c.product_id = d.product_id
+	)
+and
+	a.value_date >= convert(datetime, convert(date, dateadd(hour, 7, getdate())))
+group by
+	a.credit_profile_id, 
+	d.product_id
+
+update
+	#credit_profile_balances
+set
+	a.currency_id = b.currency_id
+from
+	#credit_profile_balances a,
+	credit_profiles b
+where
+	a.credit_profile_id = b.credit_profile_id
+
+update
+	#credit_profile_balances
+set
+	equiv = amount
+where
+	product_id = currency_id
+
+
+update
+	#credit_profile_balances
+set
+	a.equiv = a.amount * b.rate
+from
+	#credit_profile_balances a,
+	currency_rates b
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	a.product_id != a.currency_id
+
+update
+	#credit_profile_balances
+set
+	a.nop_type = c.name,
+	a.incl_base_ccy = c.incl_base_ccy,
+	a.incl_longs = c.incl_longs,
+	a.incl_shorts = c.incl_shorts
+from
+	#credit_profile_balances a,
+	credit_profiles b,
+	nop_types c
+where
+	a.credit_profile_id = b.credit_profile_id
+and
+	b.nop_type_id = c.nop_type_id
+
+update
+	#credit_profile_balances
+set
+	nop = 0.0
+
+update
+	#credit_profile_balances
+set
+	nop = NULL
+where
+	nop_type = NULL
+
+/* Net */
+update
+	#credit_profile_balances
+set
+	nop = equiv
+where
+	incl_shorts = "Y"
+and
+	incl_longs = "Y"
+and
+	incl_base_ccy = "N"
+and
+	nop_type = "Net"
+
+/* Shorts */
+update
+	#credit_profile_balances
+set
+	nop = equiv
+where
+	incl_shorts = "Y"
+and
+	incl_longs = "N"
+and
+	equiv < 0
+and
+	nop_type in("Shorts", "Aggregate Shorts")
+
+/* Longs */
+update
+	#credit_profile_balances
+set
+	nop = equiv
+where
+	incl_shorts = "N"
+and
+	incl_longs = "Y"
+and
+	equiv > 0
+and
+	nop_type in("Longs", "Aggregate Longs")
+
+
+update
+	#credit_profile_balances
+set
+	nop = 0.0
+where
+	incl_base_ccy = "N"
+and
+	product_id = currency_id
+
+
+
+
+/* MARKR */
+if @debug = "Y"
+	select "#credit_profile_balances", * from #credit_profile_balances 
+
+/*select
+	credit_profile_id,
+	sum(nop)
+from
+	#credit_profile_balances
+group by
+	credit_profile_id*/
+
+create table
+	#credit_profile_nops(
+		credit_profile_id int,
+		nop float NULL)
+insert into
+	#credit_profile_nops
+select
+	credit_profile_id = credit_profile_id,
+	nop = abs(sum(nop))
+from
+	#credit_profile_balances
+group by
+	credit_profile_id
+
+
+create table
+	#credit_profile_ladders(
+		credit_profile_id int,
+		product_id int,
+		value_date datetime,
+		amount float NULL)
+insert into
+	#credit_profile_ladders
+select
+	a.credit_profile_id,
+	d.product_id,
+	a.value_date,
+	amount = sum(
+		case
+		when c.currency_id = d.product_id then
+			a.quantity * a.price * -1.0
+		when c.product_id = d.product_id then
+			a.quantity
+		end
+	)
+from
+	#trades a,
+	forwards c,
+	products d
+where
+	a.contract_id = c.contract_id
+and (
+		c.currency_id = d.product_id
+	or
+		c.product_id = d.product_id
+	)
+and
+	a.value_date >= convert(datetime, convert(date, dateadd(hour, 7, getdate())))
+and (
+        a.fixing_date >= convert(datetime, convert(date, dateadd(hour, 7, getdate())))
+ or
+        a.fixing_date = NULL
+        )
+group by
+	a.credit_profile_id,
+	d.product_id,
+	a.value_date
+
+create table
+	#credit_profile_dsls(
+		credit_profile_id int,
+		value_date datetime NULL,
+		dsl float NULL)
+insert into
+	#credit_profile_dsls
+select
+	b.credit_profile_id,
+	c.value_date,
+	dsl = sum(abs(case 
+		when
+			ba.dsl_type_id = NULL
+		then
+			NULL
+		when
+			ba.incl_base_ccy = "N"
+		and
+			b.currency_id = c.product_id
+		then 
+  			0
+		when
+			ba.incl_shorts = "Y" /* Net */
+		and
+			ba.incl_longs = "Y"
+		and
+			ba.incl_base_ccy = "N"
+		and
+			c.product_id != @usd_product_id
+		then
+			c.amount * d.rate
+		when
+			ba.incl_longs = "Y"  /* Longs */
+		and
+			ba.incl_shorts = "N"
+		and
+			 ba.incl_base_ccy = "Y"
+		and 
+			c.amount > 0
+		then
+			c.amount * d.rate
+		when
+			ba.incl_longs = "N"  /* Shorts */
+                and
+                        ba.incl_shorts = "Y"
+                and
+                         ba.incl_base_ccy = "Y"
+                and 
+                        c.amount < 0
+                then
+                        c.amount * d.rate
+		else
+			0
+	end))
+from
+	credit_profiles b
+	left outer join
+		dsl_types ba
+	on
+		b.dsl_type_id = ba.dsl_type_id
+	left outer join
+		#credit_profile_ladders c
+	on
+		b.credit_profile_id = c.credit_profile_id
+	join currency_rates d
+	on
+		c.product_id = d.product_id
+	and
+		b.currency_id = d.currency_id
+group by
+	b.credit_profile_id,
+	c.value_date
+
+create table
+	#max_dsls(
+		credit_profile_id int,
+		dsl float NULL,
+		value_date datetime NULL)
+
+declare dsl_cursor cursor for
+	select
+		credit_profile_id
+	from
+		#credit_profile_dsls
+	group by
+		credit_profile_id
+open dsl_cursor
+fetch dsl_cursor into @dsl_credit_profile
+
+while @@sqlstatus = 0
+begin
+	select
+		@max_dsl = NULL
+
+	select
+		@max_dsl = max(dsl)
+	from
+		#credit_profile_dsls
+	where
+		credit_profile_id = @dsl_credit_profile
+
+	insert into
+		#max_dsls
+	select
+		@dsl_credit_profile,
+		@max_dsl,
+		NULL
+	update
+		#max_dsls
+	set
+		a.value_date = b.value_date
+	from
+		#max_dsls a,
+		#credit_profile_dsls b
+	where
+		b.dsl = @max_dsl
+	
+	fetch dsl_cursor into @dsl_credit_profile
+end
+
+close dsl_cursor
+deallocate dsl_cursor
+				
+		
+create table
+	#credit(
+		style varchar(200) NULL,
+		credit_profile_id int,
+		name varchar(50) NULL,
+		status varchar(50) NULL,
+		nop float NULL,
+		nop_type varchar(50) NULL,
+		nop_limit float NULL,
+		nop_use float NULL,
+		dsl float NULL,
+		value_date datetime NULL,
+		dsl_type varchar(50) NULL,
+		dsl_limit float NULL,
+		dsl_use float NULL,
+		notice_level float NULL,
+		warning_level float NULL,
+		blocked_level float NULL)
+insert into
+	#credit(
+		credit_profile_id,
+		name)
+select
+	credit_profile_id,
+	name
+from
+	credit_profiles
+
+update
+	#credit
+set
+	style = @style
+
+update
+	#credit
+set
+	a.nop_limit = b.nop_limit,
+	a.nop_type = c.name,
+	a.dsl_limit = b.dsl_limit,
+	a.dsl_type = d.name,
+	a.notice_level = b.notice_level,
+	a.warning_level = b.warning_level,
+	a.blocked_level = b.blocked_level
+from
+	#credit a,
+	credit_profiles b,
+	nop_types c,
+	dsl_types d
+where
+	a.credit_profile_id = b.credit_profile_id
+and
+	b.nop_type_id = c.nop_type_id
+and
+	b.dsl_type_id = d.dsl_type_id
+
+
+update
+	#credit
+set
+	a.nop = b.nop
+from
+	#credit a,
+	#credit_profile_nops b
+where
+	a.credit_profile_id = b.credit_profile_id
+
+update
+        #credit
+set
+        a.dsl = b.dsl
+from
+        #credit a,
+        #max_dsls b
+where
+        a.credit_profile_id = b.credit_profile_id
+
+update
+        #credit
+set
+        a.value_date = b.value_date
+from
+        #credit a,
+        #max_dsls b
+where
+        a.credit_profile_id = b.credit_profile_id
+and
+        a.dsl = b.dsl
+
+
+update
+	#credit
+set
+	nop_use = nop / nop_limit
+where
+	nop_limit != 0
+
+update
+	#credit
+set
+	dsl_use = dsl / dsl_limit
+where
+	dsl_limit != 0
+
+update
+	#credit
+set
+	style = @style,
+	status = "Notice"
+where
+	nop_use > notice_level
+or
+	dsl_use > notice_level
+
+update
+	#credit
+set
+	style = @style,
+	status = "Warning"
+where
+	nop_use > warning_level
+or
+	dsl_use > warning_level
+
+update
+	#credit
+set
+	style = @style,
+	status = "Blocked"
+where
+	nop_use > blocked_level
+or
+	dsl_use > blocked_level
+
+select
+	section = "Utilization",
+	style,
+	credit_profile = name,
+	nop_type,
+	nop,
+	nop_limit = case
+		when
+			nop_limit != NULL then rtrim(convert(varchar(30), nop_limit / 1000000.0)) + "mm"
+		else
+			NULL
+		end,
+	nop_use,
+	dsl_type,
+	dsl,
+	value_date = case
+		when
+			value_date != NULL
+		then
+			convert(char(11), value_date, 1)
+		else
+			NULL
+		end,
+	dsl_limit = case
+		when
+			dsl_limit != NULL then rtrim(convert(varchar(30), dsl_limit / 1000000.0)) + "mm"
+		else
+			NULL
+		end,
+	dsl_use
+from
+	#credit
+order by
+	credit_profile
+
+go

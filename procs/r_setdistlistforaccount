@@ -1,0 +1,170 @@
+drop procedure	
+	r_setdistlistforaccount
+go
+
+create procedure
+	r_setdistlistforaccount
+		@login varchar(50),
+		@external_account varchar(50),
+		@dist_list varchar(50)
+
+as
+
+
+
+declare @tico_account_id int
+declare @external_account_id int
+declare @dist_list_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = -1,
+		error = "Problem deterimining login"
+	return
+end
+
+select
+        @external_account_id = external_account_id
+from
+        external_accounts
+where
+        symbol = @external_account
+if @@rowcount != 1
+begin
+        select
+                status = -1,
+                error = "Problem deterimining external_account",
+                external_account = @external_account
+        return
+end
+
+if upper(@dist_list) = 'NONE'
+begin
+	begin tran
+		update 
+			client_transfer_details
+		set
+			dist_list_id = NULL
+		where 
+			external_account_id = @external_account_id
+		if @@rowcount > 1
+		begin
+			select
+				error = "Error",
+				msg = "Update of more than one client transfer detail when setting dist list to 'None'"
+			rollback tran
+			return
+		end
+	commit tran
+	select
+        	id = 1,
+        	message = "Successfully removed distribution list for external account",
+        	external_account = @external_account
+
+	return
+
+	exec
+       	 	r_manageclientnotifications
+                 	       @login
+
+end
+
+select
+        @dist_list_id = dist_list_id
+from
+        dist_lists
+where
+        name = @dist_list
+if @@rowcount != 1
+begin
+        select
+                status = -1,
+                error = "Problem deterimining dist_list",
+                dist_list = @dist_list
+        return
+end
+
+
+
+
+
+if exists(select external_account_id from client_transfer_details where external_account_id = @external_account_id)
+begin
+	begin tran
+		update
+			client_transfer_details
+		set
+			dist_list_id = @dist_list_id
+		where
+			external_account_id = @external_account_id
+		if @@rowcount != 1 
+		begin
+			select
+				id = -1,
+				error = "Problem setting distribution list for account",
+				external_account = @external_account
+			rollback
+			return
+		end
+	
+	commit tran
+end
+else
+begin
+	insert into
+		client_transfer_details
+	(
+		external_account_id,
+		protocol_credential_id,
+		dist_list_id
+	)
+	values(
+		@external_account_id,
+		NULL,
+		@dist_list_id
+	)
+end
+
+create table
+    #meta (
+        meta_type char(50),
+        name char(50) NULL,
+        action char(100) NULL,
+        value char(200) NULL
+    )
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"details",
+	"Dist List Details",
+	NULL
+)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+	
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+select
+	id = 1,
+	message = "Successfully set distribution list for external account",
+	external_account = @external_account,
+	dist_list = @dist_list,
+	details = "VIEW LIST DETAILS"
+
+
+exec
+	r_manageclientnotifications
+			@login
+
+
+go
+

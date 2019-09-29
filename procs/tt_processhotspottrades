@@ -1,0 +1,842 @@
+drop procedure tt_processhotspottrades
+go
+
+create procedure
+	tt_processhotspottrades
+		@trade_link varchar(50)
+
+as
+
+declare @status varchar(25)
+declare @committed_status_id int
+declare @dont_tally_salescode_id int
+
+declare @trade_type varchar(25)
+declare @trade_type_id int
+declare @tally_type varchar(25)
+declare @deal_type varchar(25)
+declare @deal_id int
+declare @deal_exec_symbol varchar(100)
+declare @deal_type_id int
+declare @deal_status_id int
+declare @inverted char(1)
+declare @broker varchar(25)
+declare @mkt_trade_id int
+declare @mkt_trade_identifier varchar(100)
+declare @mkt_trader_login varchar(50)
+declare @mkt_external_account varchar(25)
+declare @mkt_external_account_id int
+declare @mkt_external_account_type varchar(25)
+declare @mkt_cpty_ext_acct_id int
+declare @mkt_aggregation_style_id int
+declare @mkt_aggregation_style varchar(25)
+declare @mkt_counterparty varchar(25)
+declare @mkt_counterparty_id int
+declare @mkt_trader varchar(25)
+declare @mkt_trader_id int
+declare @mkt_qty1 numeric(30, 4)
+declare @mkt_price float
+declare @mkt_quoted_price float
+
+declare @cli_trade_id int
+declare @cli_trade_identifier varchar(100)
+declare @cli_trader_login varchar(50)
+declare @cli_external_account varchar(25)
+declare @cli_external_account_id int
+declare @cli_external_account_type varchar(25)
+declare @cli_cpty_ext_acct_id int
+declare @cli_aggregation_style_id int
+declare @cli_aggregation_style varchar(25)
+declare @cli_counterparty varchar(25)
+declare @cli_counterparty_id int
+declare @cli_trader varchar(25)
+declare @cli_trader_id int
+declare @cli_qty1 numeric(30, 4)
+declare @cli_price float
+declare @cli_quoted_price float
+
+declare @spread_trade_id int
+declare @lookup_trade_identifier varchar(100)
+declare @lookup_trader_login varchar(50)
+declare @lookup_external_account varchar(25)
+declare @lookup_external_account_id int
+declare @lookup_external_account_type varchar(25)
+declare @lookup_cpty_ext_acct_id int
+declare @lookup_aggregation_style_id int
+declare @lookup_aggregation_style varchar(25)
+declare @lookup_counterparty varchar(25)
+declare @lookup_counterparty_id int
+declare @lookup_trader_id int
+declare @lookup_qty1 numeric(30, 4)
+declare @lookup_price float
+declare @lookup_quoted_price float
+
+
+declare @mkt_lookup_cpty varchar(50)
+declare @mkt_lookup_trader varchar(50)
+declare @cli_lookup_cpty varchar(50)
+declare @cli_lookup_trader varchar(50)
+declare @lookup_cpty varchar(50)
+declare @lookup_trader varchar(50)
+
+
+declare @cli_tallied int
+declare @mkt_tallied int
+declare @spread_tallied int
+
+declare @clientormarket varchar(1)
+declare @default_login varchar(50)
+declare @trade_count int
+declare @source varchar(50)
+declare @symbol varchar(50)
+declare @trade_date datetime
+declare @value_date datetime
+declare @cli_side varchar(10)
+declare @mkt_side varchar(10)
+
+declare @trigger_symbol varchar(50)
+declare @cl_create char(1)
+declare @lp_create char(1)
+declare @mkt_deal_id int
+declare @cli_deal_id int
+declare @source_id int
+
+select
+	@source = "Hotspot"
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		error="ERROR",
+		msg = "Source not found",
+		source = @source
+	return
+end
+	
+
+select
+	@trade_count = count(*)
+from
+	hotspot_queue
+where
+	trade_link = @trade_link
+
+
+/*
+** Check to see if all 3 spread trades have been tallied **
+*/
+
+if @trade_count != 3
+begin
+        select
+                msg = "Order Not Completed"
+end
+
+
+/*
+** If all 3 are tallied, tally client and bank spread trade **
+*/
+
+
+if @trade_count = 3
+begin
+	select
+		msg = "Order Complete"
+
+
+	create table
+		#client_trades(
+	                hotspot_queued_trade_id int,
+      	 	        login          varchar(25),
+                        source         varchar(25),
+       	                tally_type     varchar(25),
+               	        deal_type      varchar(50),
+               	        trade_type     varchar(25),
+       	                external_account varchar(50),
+       	                counterparty   varchar(50),
+       	                quantity       numeric(30,6),
+       	                symbol         varchar(50),
+       	                value_date     datetime,
+       	                price          float,
+       	                trade_date     datetime,
+       	                trader         varchar(25),
+       	                broker         varchar(50),
+	                identifier     varchar(100),
+       	                spot_reference float,
+			market_or_client varchar(1),
+			deal_exec_symbol varchar(50)
+			)
+
+        create table
+                #market_trades(
+                        hotspot_queued_trade_id int,
+                        login          varchar(25),
+                        source         varchar(25),
+                        tally_type     varchar(25),
+                        deal_type      varchar(50),
+                        trade_type     varchar(25),
+                        external_account varchar(50),
+                        counterparty   varchar(50),
+                        quantity       numeric(30,6),
+                        symbol         varchar(50),
+                        value_date     datetime,
+                        price          float,
+                        trade_date     datetime,
+                        trader         varchar(25),
+                        broker         varchar(50),
+                        identifier     varchar(100),
+                        spot_reference float,
+                        market_or_client varchar(1),
+			deal_exec_symbol varchar(50)
+                        )
+
+
+	insert into
+		#client_trades
+	select
+		a.hotspot_queued_trade_id int,
+                a.login,
+                a.source,
+                a.tally_type,
+                a.deal_type, 
+                a.trade_type,
+                a.external_account,
+                a.counterparty,
+                a.quantity,
+                a.symbol,
+                a.value_date,    
+                a.price,      
+                a.trade_date,
+                a.trader,
+                a.broker,
+                a.identifier,
+                a.spot_reference,
+                a.market_or_client,
+		a.deal_exec_symbol
+	from
+		hotspot_queued_trades a,
+		hotspot_queue b
+	where
+		a.hotspot_queued_trade_id = b.hotspot_queued_trade_id
+	and
+		b.trade_link = @trade_link
+	and
+		a.market_or_client = "C"
+
+	
+	insert into
+                #market_trades
+        select
+                a.hotspot_queued_trade_id int,
+                a.login,
+                a.source,
+                a.tally_type,
+                a.deal_type,
+                a.trade_type,
+                a.external_account,
+                a.counterparty,
+                a.quantity,
+                a.symbol,
+                a.value_date,
+                a.price, 
+                a.trade_date,
+                a.trader,
+                a.broker,
+                a.identifier,
+                a.spot_reference,
+                a.market_or_client,
+		a.deal_exec_symbol
+        from
+                hotspot_queued_trades a,
+                hotspot_queue b,
+		#client_trades c
+        where
+                a.hotspot_queued_trade_id = b.hotspot_queued_trade_id
+        and
+                b.trade_link = @trade_link
+        and
+                a.market_or_client = "M"
+	and
+		a.price != c.price
+
+	select
+                 @cli_trader_login=login,
+                 @source = source,
+                 @tally_type = tally_type,
+                 @deal_type = deal_type,
+                 @trade_type = trade_type,
+                 @cli_external_account = external_account,
+                 @cli_counterparty = counterparty,
+                 @cli_qty1 = quantity,
+                 @symbol = symbol,
+                 @value_date = value_date,
+                 @cli_price = price,
+                 @trade_date = trade_date,
+                 @cli_trader = trader,
+                 @broker = broker,
+                 @cli_trade_identifier = identifier,
+                 @cli_quoted_price = spot_reference,
+		 @deal_exec_symbol = deal_exec_symbol
+        from
+                #client_trades
+
+
+	select
+                 @mkt_trader_login=login,
+                 @source = source,
+                 @tally_type = tally_type,
+                 @deal_type = deal_type,
+                 @trade_type = trade_type,
+                 @mkt_external_account = external_account,
+                 @mkt_counterparty = counterparty,
+                 @mkt_qty1 = quantity,
+                 @symbol = symbol,
+                 @value_date = value_date,
+                 @mkt_price = price,
+                 @trade_date = trade_date,
+                 @mkt_trader = trader,
+                 @broker = broker,
+                 @mkt_trade_identifier = identifier,
+                 @mkt_quoted_price = spot_reference
+        from
+                #market_trades
+
+
+	
+	/*
+	* Check For exisiting deal otherwise create new one *
+	*/
+
+
+	select
+		@cli_deal_id = deal_id
+	from
+		deal_exec_symbols
+	where
+		symbol = @deal_exec_symbol
+	
+	
+	if @cli_deal_id = NULL
+	begin
+		
+		select
+			@deal_status_id = status_id
+		from
+			statuses
+		where
+			name = "User Review"
+		if @deal_status_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "No status found named, 'User Review'"
+			return
+		end
+		select
+			@deal_type_id = deal_type_id
+		from
+			deal_types
+		where
+			name = @deal_type
+		if @deal_type_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "No deal type found for @deal_type",
+				deal_type = @deal_type
+			return	
+		end
+	
+		exec
+			j_nextkey
+				"deals",
+				@cli_deal_id output
+	
+		insert into
+			deals(
+				deal_id,   
+				deal_type_id,
+				timestamp,  
+				status_id  
+		 		)      
+			values( 
+				@cli_deal_id,
+				@deal_type_id,
+				getdate(),
+				@deal_status_id
+				)
+    	
+    	insert into
+			deal_exec_symbols
+		values(
+			@cli_deal_id,
+			@deal_exec_symbol
+    			)
+	end
+	else
+	begin
+		select
+			msg = "Appending to existing deal"
+	end
+
+ 	/*
+  	* CHECK to see if this requires a manufactured B2B
+  	*/
+	select 
+		@cl_create = cl_create,
+		@lp_create = lp_create
+	from 
+		ticket_creation_values 
+	where 
+		trigger_symbol = @cli_trader
+	and
+	 	source_id = @source_id
+	if @@rowcount != 0
+	begin
+        	select
+                	@trigger_symbol = @cli_trader
+	end
+
+
+			
+	if @cli_trade_id = NULL
+	begin
+		if lower(@cli_external_account) like "%unallocated"
+		begin
+			select
+				@status = "Unallocated"
+		end
+
+		exec
+			fxa_tallytrade
+				@login = @cli_trader_login,
+				@source = @source,
+				@trade_id = @cli_trade_id out,
+				@deal_id = @cli_deal_id out,
+				@tally_type = @tally_type,
+				@deal_type = @deal_type,
+				@trade_type = @trade_type,
+				@external_account = @cli_external_account,
+				@counterparty = @cli_counterparty,
+				@quantity = @cli_qty1,
+				@symbol = @symbol,
+				@value_date = @value_date,
+				@price = @cli_price,
+				@trade_date = @trade_date,
+				@trader = @cli_trader,
+				@broker = @broker,
+				@identifier = @cli_trade_identifier,
+				@spot_reference = @cli_quoted_price,
+				@status = @status
+	
+		if @cli_trade_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "Failed to tally trade"
+			return
+		end
+
+	
+		insert into
+			trade_quoted_prices (	trade_id,
+						price)
+			values(
+				@cli_trade_id,
+				@cli_quoted_price
+				)
+	
+		exec
+			r_inserttradenotification
+						@cli_trade_id
+		select
+			@cli_tallied = 1
+
+
+	end
+	
+	if @mkt_trade_id = NULL
+	begin
+	        if @cl_create != "Y" and @lp_create != "Y"
+                begin
+			select
+				@mkt_deal_id = @cli_deal_id
+		end
+                else
+                begin
+                        select 
+				@deal_exec_symbol = rtrim(@deal_exec_symbol)+".i"
+
+        		select
+                		@mkt_deal_id = deal_id
+        		from
+                		deal_exec_symbols
+        		where
+                		symbol = @deal_exec_symbol
+		
+		
+        		if @mkt_deal_id = NULL
+        		begin
+		
+                		select
+                        		@deal_status_id = status_id
+                		from
+                        		statuses
+                		where
+                        		name = "User Review"
+                		if @deal_status_id = NULL
+                		begin
+                        		select
+                                		status = "Error",
+                                		message = "No status found named, 'User Review'"
+                        		return
+                		end
+                		select
+                        		@deal_type_id = deal_type_id
+                		from
+                        		deal_types
+                		where
+                        		name = @deal_type
+                		if @deal_type_id = NULL
+                		begin
+                        		select
+                                		status = "Error",
+                                		message = "No deal type found for @deal_type",
+                                		deal_type = @deal_type
+                        		return 
+                		end
+		
+                		exec
+                        		j_nextkey
+                                		"deals",
+                                		@mkt_deal_id output
+		
+                		insert into
+                        		deals(
+                                		deal_id,  
+                                		deal_type_id,
+                                		timestamp, 
+                                		status_id 
+                                		)     
+                        		values(
+                                		@mkt_deal_id,
+                                		@deal_type_id,
+                                		getdate(),
+                                		@deal_status_id
+                                		)
+		
+        		insert into
+                        		deal_exec_symbols
+                		values(
+                        		@mkt_deal_id,
+                        		@deal_exec_symbol
+                        		)
+        		end
+        		else
+        		begin
+                		select
+                        		msg = "Appending to existing market deal"
+        		end
+                end
+
+
+		exec
+        		fxa_tallytrade
+                		@login = @mkt_trader_login,
+                		@source = @source,
+                		@trade_id = @mkt_trade_id out,
+                		@deal_id = @mkt_deal_id out,
+                		@tally_type = @tally_type,
+                		@deal_type = @deal_type,
+                		@trade_type = @trade_type,
+                		@external_account = @mkt_external_account,
+                		@counterparty = @mkt_counterparty,
+                		@quantity = @mkt_qty1,
+                		@symbol = @symbol,
+                		@value_date = @value_date,
+                		@price = @mkt_price,
+                		@trade_date = @trade_date,
+                		@trader = @mkt_trader,
+                		@broker = @broker,
+                		@identifier = @mkt_trade_identifier,
+                		@spot_reference = @mkt_quoted_price
+				
+		
+		if @mkt_trade_id = NULL
+		begin
+        		select
+                		status = "Error",
+                		message = "Failed to tally trade"
+        		return
+		end
+		
+		insert into
+        		trade_quoted_prices (   trade_id,
+                                		price)
+        		values(
+                		@mkt_trade_id,
+                		@mkt_quoted_price
+                		)
+		
+		exec
+        		r_inserttradenotification
+                                		@mkt_trade_id
+		select
+			@mkt_tallied = 1
+	end
+
+
+
+	if @cl_create = "Y" or @lp_create = "Y"
+	begin
+		if @cl_create = "Y"
+		begin
+			declare @t2_cl_ext_account varchar(50)
+			declare @t2_cl_trader varchar(50)
+			declare @t2_cl_counterparty varchar(50)
+			declare @t2_cl_trade_id int
+			declare @t2_cl_identifier varchar(100)
+			declare @t2_cl_quantity numeric(30, 4)
+			declare @t2_cl_inv_qty char(1)
+				
+			select
+				@t2_cl_ext_account = cl_ext_account,
+				@t2_cl_trader = cl_trader,
+				@t2_cl_counterparty = cl_counterparty,
+				@t2_cl_inv_qty = cl_inv_qty
+			from
+				ticket_creation_values
+			where
+		        	trigger_symbol = @trigger_symbol
+	
+			select
+				@t2_cl_identifier = rtrim(@cli_trade_identifier)+".t2cl_autob2b",
+                        	@t2_cl_quantity = @cli_qty1
+	
+			
+			if @t2_cl_inv_qty = "Y"
+			begin
+				select
+					@t2_cl_quantity = -@cli_qty1
+			end
+	
+                        exec
+                                fxa_tallytrade
+                                        @login = @cli_trader_login,
+                                        @source = @source,
+                                        @trade_id = @t2_cl_trade_id out,
+                                        @deal_id = @mkt_deal_id out,
+                                        @tally_type = @tally_type,
+                                        @deal_type = @deal_type,
+                                        @trade_type = @trade_type,
+                                        @external_account = @t2_cl_ext_account,
+                                        @counterparty = @t2_cl_counterparty,
+                                        @quantity = @t2_cl_quantity,
+                                        @symbol = @symbol,
+                                        @value_date = @value_date,
+                                        @price = @cli_price,
+                                        @trade_date = @trade_date,
+                                        @trader = @t2_cl_trader,
+                                        @broker = @broker,
+                                        @identifier = @t2_cl_identifier,
+                                        @spot_reference = @cli_quoted_price
+
+	
+			if @t2_cl_trade_id = NULL
+			begin
+    				select
+        				status = "Error",
+        				message = "Failed to tally trade"
+    				return
+			end
+	
+	
+			exec
+    				r_inserttradenotification
+        				@t2_cl_trade_id
+	
+    			select
+        			status = "Tallied",
+        			message = "Trade successfully tallied",
+        			trade_id = @t2_cl_trade_id,
+        			deal_id = @mkt_deal_id,
+        			account = @t2_cl_ext_account,
+        			symbol = @symbol,
+        			quantity = @t2_cl_quantity,
+        			price = @cli_price,
+        			val_date = @value_date
+ 	
+			
+	
+		end
+		if @lp_create = "Y"
+		begin
+	        	declare @t2_lp_ext_account varchar(50)
+                	declare @t2_lp_trader varchar(50)
+                	declare @t2_lp_counterparty varchar(50)
+                	declare @t2_lp_trade_id int
+                	declare @t2_lp_identifier varchar(100)
+                	declare @t2_lp_quantity numeric(30, 4)
+			declare @t2_lp_inv_qty char(1)
+	
+                	select
+                        	@t2_lp_ext_account = lp_ext_account,
+                        	@t2_lp_trader = lp_trader,
+                        	@t2_lp_counterparty = lp_counterparty,
+				@t2_lp_inv_qty = lp_inv_qty
+                	from
+                        	ticket_creation_values
+                	where
+                        	trigger_symbol = @trigger_symbol
+	
+                	select
+                        	@t2_lp_identifier = rtrim(@cli_trade_identifier)+".t2lp_autob2b",
+				@t2_lp_quantity = @cli_qty1
+	
+                	if @t2_lp_inv_qty = "Y"
+                	begin
+                        	select
+                                	@t2_lp_quantity = -@cli_qty1
+                	end
+			
+	
+                	exec
+                        	fxa_tallytrade
+                                	@login = @cli_trader_login,
+                                	@source = @source,
+                                	@trade_id = @t2_lp_trade_id out,
+                                	@deal_id = @cli_deal_id out,
+                                	@tally_type = @tally_type,
+                                	@deal_type = @deal_type,
+                                	@trade_type = @trade_type,
+                                	@external_account = @t2_lp_ext_account,
+                                	@counterparty = @t2_lp_counterparty,
+                                	@quantity = @t2_lp_quantity,
+                                	@symbol = @symbol,
+                                	@value_date = @value_date,
+                                	@price = @cli_price,
+                                	@trade_date = @trade_date,
+                                	@trader = @t2_lp_trader,
+                                	@broker = @broker,
+                                	@identifier = @t2_lp_identifier,
+                                	@spot_reference = @cli_quoted_price
+
+	
+                	if @t2_lp_trade_id = NULL
+                	begin
+                        	select
+                                	status = "Error",
+                                	message = "Failed to tally trade"
+                        	return
+                	end
+	
+	
+                	exec
+                        	r_inserttradenotification
+                                	@t2_lp_trade_id
+	
+                	select
+                        	status = "Tallied",
+                        	message = "Trade successfully tallied",
+                        	trade_id = @t2_lp_trade_id,
+                        	deal_id = @cli_deal_id,
+                        	account = @t2_lp_ext_account,
+                        	symbol = @symbol,
+                        	quantity = @t2_lp_quantity,
+                        	price = @cli_price,
+                        	val_date = @value_date
+	
+		end
+	end
+
+	/*
+	** Delete from hotspot_queue and hotspot_queued_trades **
+	*/
+
+	begin
+		
+		delete from
+			hotspot_queued_trades
+		where
+			hotspot_queued_trade_id in(
+					select
+						hotspot_queued_trade_id
+					from
+						hotspot_queue
+					where
+						trade_link = @trade_link)
+	
+		delete from
+			hotspot_queue
+		where
+			trade_link = @trade_link
+	end
+end	
+
+
+/*
+ * AUTOCOMMIT
+ *
+ * If there is a client trade in this deal and the account type is set for
+ * Autocommit, then push through this deal automatically.
+ */
+if @deal_id != NULL and @cli_trade_id != NULL and @cli_aggregation_style = "Autocommit"
+begin
+
+    update
+        deals
+    set
+        status_id = @committed_status_id
+    where
+        deal_id = @deal_id
+    if @@rowcount != 1
+    begin
+        select
+            status = "Error",
+            message = "Failed to autocommit deal, " + convert(varchar(10), @committed_status_id) + ", for external account, '" + @cli_external_account + "', an aggregation style, '" + @cli_aggregation_style + "'"
+    end
+end
+/*
+else
+begin
+    select
+        message = "No autocommitted",
+        deal_id = @deal_id,
+        trade_id = @cli_trade_id,
+        aggregation_style = @cli_aggregation_style
+end
+*/
+
+if @cli_tallied != NULL
+select
+        status = "Tallied",
+        message = "Trade successfully tallied",
+        trade_id = @cli_trade_id,
+        deal_id = @cli_deal_id,
+        account = @cli_external_account,
+        cpty = @cli_counterparty,
+        symbol = @symbol,
+        quantity = @cli_qty1,
+        price = @cli_price,
+        val_date = @value_date
+
+if @mkt_tallied != NULL
+select
+        status = "Tallied",
+        message = "Trade successfully tallied",
+        trade_id = @mkt_trade_id,
+        deal_id = @mkt_deal_id,
+        account = @mkt_external_account,
+        cpty = @mkt_counterparty,
+        symbol = @symbol,
+        quantity = @mkt_qty1,
+        price = @mkt_price,
+        val_date = @value_date
+
+
+go

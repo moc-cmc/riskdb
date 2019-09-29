@@ -1,0 +1,86 @@
+
+if object_id("r_futureoptionvolinputs") != NULL
+    drop procedure
+        r_futureoptionvolinputs
+go
+create procedure
+	r_futureoptionvolinputs
+		@contract_id int,
+		@as_of_date datetime
+as
+
+declare @underlying_price float
+declare @rate_date datetime
+declare @expiration datetime
+declare @option_price float
+declare @hours int
+declare @days float
+declare @interest_rate float
+declare @carry_cost float
+declare @currency_id int
+declare @currency_rate float
+declare @underlying_contract_id int
+declare @is_committable int
+declare @pl_price_type_id int
+
+
+
+select
+	@underlying_contract_id = a.underlying_contract_id,
+	@expiration = b.expiration
+from
+	options a,
+	option_expirations b,
+	option_contracts c
+where
+	a.option_id = b.option_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.contract_id = @contract_id
+
+exec
+	f_priceasof
+		@underlying_contract_id,
+		@as_of_date,
+		@underlying_price output,
+                @pl_price_type_id output,
+                @is_committable output
+
+exec
+	f_priceasof
+		@contract_id,
+		@as_of_date,
+		@option_price output,
+                @pl_price_type_id output,
+                @is_committable output
+
+exec
+	r_contractcurrency
+		@contract_id,
+		@currency_id output
+
+
+exec
+	r_rateasof
+		@currency_id,
+		@as_of_date,
+		@expiration,
+		@currency_rate output
+
+select
+	@hours = datediff(hour, @as_of_date, @expiration)
+select
+	@days = convert(float, @hours) / 24.0
+
+
+select
+	underlying_price = @underlying_price,
+	vol_estimate = .2,
+	days = @days,
+	interest_rate = @currency_rate,
+	carry_cost = 0,
+	days_in_year = 360,
+	option_price = @option_price
+
+go

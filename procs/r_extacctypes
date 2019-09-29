@@ -1,0 +1,26 @@
+drop procedure
+	r_extacctypes
+go
+
+create procedure
+	r_extacctypes
+		@login varchar(50)
+
+as
+
+create table
+	#types(
+		name varchar(50))
+
+insert into #types values("Regular")
+
+insert into #types values("Counterparty")
+
+insert into #types values("Client")
+
+insert into #types values("Internal")
+
+
+select name from #types order by name ASC
+
+go

@@ -1,0 +1,25 @@
+create or replace procedure
+        wrap_settlefosubtrades
+                @login varchar(100),
+                @legal_entity varchar(100),
+                @fo_sub_account varchar(100),
+                @trade_date datetime=NULL
+
+as
+
+
+
+exec
+	bn_settlefosubtrades
+		@login=@login,
+		@legal_entity=@legal_entity,
+		@fo_sub_account=@fo_sub_account,
+		@trade_date=@trade_date
+
+exec
+        bn_bomastersettlement
+                @login=@login,
+                @legal_entity=@legal_entity,
+                @trade_date=@trade_date
+
+go

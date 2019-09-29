@@ -1,0 +1,27 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	r_custodialaccounts
+go
+
+create procedure
+	r_custodialaccounts
+		@login varchar(50)
+as
+
+
+select
+	a.symbol
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.name = "Custody"
+order by
+	a.symbol
+
+go

@@ -1,0 +1,76 @@
+
+if object_id("sp_processes") != NULL
+    drop procedure
+        sp_processes
+go
+
+create procedure
+	sp_processes
+        @db_name varchar(25) = NULL
+as
+
+/*
+if @db_name = NULL
+    select
+        @db_name = db_name()
+ */
+select
+    me = case when spid = @@spid then "->" else "  " end,
+    spid,
+    "blk'd" = case
+        when blocked != 0 then
+            convert(varchar(5), blocked)
+        else
+            ""
+    end,
+    db = convert(varchar(20), db_name(dbid)),
+    hostname = case
+        when hostname != NULL then
+            convert(varchar(22), hostname)
+        else
+            ""
+    end,
+    ipaddr = case
+        when ipaddr != NULL then
+            convert(varchar(15), ipaddr)
+        else
+            ""
+    end,
+    program = case
+        when program_name != NULL then
+            convert(varchar(15), program_name)
+        else
+            ""
+    end,
+    status,
+    cmd = convert(varchar(16), cmd),
+    'proc' = case
+        when id != 0 then
+            convert(varchar(25), object_name(id) + ":" + convert(varchar(10), linenum))
+        else
+            ""
+    end,
+    since = case
+        when datediff(minute, loggedindatetime, getdate()) < 2 then
+            convert(varchar(6), datediff(second, loggedindatetime, getdate())) + " sec"
+        when datediff(hour, loggedindatetime, getdate()) < 2 then
+            convert(varchar(6), datediff(minute, loggedindatetime, getdate())) + " min"
+        when datediff(day, loggedindatetime, getdate()) < 2 then
+            convert(varchar(6), datediff(hour, loggedindatetime, getdate())) + " hrs"
+        else 
+            convert(varchar(6), datediff(day, loggedindatetime, getdate())) + " days"
+    end,
+    cpu
+from
+    master..sysprocesses
+where
+    (
+        @db_name = NULL
+    or
+        db_name(dbid) = @db_name
+    )
+order by
+    dbid,
+    spid
+
+go

@@ -1,0 +1,13 @@
+create or replace procedure
+	bn_approvalhome
+		@login varchar(50)
+
+as
+
+
+exec
+	ag_approvalhome
+		@login
+
+
+go

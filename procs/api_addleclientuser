@@ -1,0 +1,383 @@
+create or replace procedure 
+	api_addleclientuser
+		@login varchar(100),
+		@legal_entity varchar(150),
+		@first_name varchar(50)=NULL,
+		@last_name varchar(50)=NULL,
+		@email varchar(100)=NULL,
+		@phone varchar(50)=NULL,
+		@bo_access char(3)=NULL,
+		@bo_readonly char(3)=NULL,
+		@fo_access char(3)=NULL,
+		@fo_readonly char(3)=NULL,
+		@fo_trader_name varchar(50)=NULL,
+		@mfa_type varchar(50)=NULL,
+		@user_name_output varchar(50)=NULL output
+
+
+as
+
+declare @legal_entity_id int
+declare @tico_account_id int
+declare @user_password varchar(25)
+declare @user_pool_id int
+declare @user_pool varchar(100)
+declare @cognito_user_id int
+declare @default_bo_master_account varchar(50)
+declare @default_bo_master_account_id int
+declare @trader_id int
+declare @client_tico_account_id int
+declare @valid_phone char(1)
+declare @mfa_type_id int
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+
+/* 
+ * Error checking. Allowing NULL on non-NULL frields to provide better error reporting
+ * -------------------------------------------------------------------------------------*/ 
+if @first_name = NULL
+begin
+	select
+		status = "Error",
+		message = "Must provide first name"
+	return
+end
+
+if @last_name = NULL
+begin
+	select
+		status = "Error",
+		message = "Must provide last name"
+	return
+end
+if @email = NULL
+begin
+	select
+		status = "Error",
+		message = "Must provide email"
+	return
+end
+if @phone = NULL
+begin
+	select
+		status = "Error",
+		message = "Must provide phone nummber"
+	return
+end
+
+
+
+
+if @bo_access not in("Yes", "No", NULL, "")
+begin
+	select
+		status = "Error",
+		message = "If specifying bo access must specify 'Yes' or 'No'. Leaving empty will set no permissions."
+	return
+end
+if @bo_access not in("Yes", "No", NULL, "")
+begin
+	select
+		status = "Error",
+		message = "If specifying bo access must specify 'Yes' or 'No'. Leaving empty will set no permissions."
+	return
+end
+if @bo_access not in("Yes", "No", NULL, "")
+begin
+	select
+		status = "Error",
+		message = "If specifying bo access must specify 'Yes' or 'No'. Leaving empty will set no permissions."
+	return
+end
+if @bo_access not in("Yes", "No", NULL, "")
+begin
+	select
+		status = "Error",
+		message = "If specifying bo access must specify 'Yes' or 'No'. Leaving empty will set no permissions."
+	return
+end
+
+/* email must contain @ symbol and must not start or end with an @ symbol */
+if charindex('@', @email) in(0, 1, len(@email))
+begin
+	select
+		status = "Error",
+		message = "Invalid email. Specify valid email address."
+	return
+end
+
+/* phone must start with a plus sign, have no spaces or dashes, parens or  dashes  and be contain at least 11 consecutive numbers
+ * this does not cover cases where user adds letters at end but trusting they wont do that, it just wont create the login downstream
+ * if they do. This is to catch common formatting errors only */
+if
+	@phone like "+[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]%" and
+	charindex(' ', @phone) = 0 and
+	charindex('-', @phone) = 0 and
+	charindex('(', @phone) = 0 and
+	charindex(')', @phone) = 0 and
+	charindex('.', @phone) = 0
+begin
+	select
+		@valid_phone = "Y"
+end
+
+if @valid_phone != "Y"
+begin
+	select
+		status = "Error",
+		message = "Invalid phone number. Must have no spaces dashes parenthesis or periods. Must start with plus sign and country code. Must be at least 11 numbers long"
+	return
+end
+
+
+
+
+/* 
+ * Proc Logic
+ * -------------------------------------------------------------------------------------*/ 
+select
+	@legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @legal_entity
+if @legal_entity_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding legal entity provided"
+	return	
+end
+
+/* Choose any bo master to add thee user to for the trader external account if necessary */
+select
+	@default_bo_master_account_id = max(a.bo_master_account_id)
+from	
+	bo_master_accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.legal_entity_id = @legal_entity_id
+
+if @default_bo_master_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Must create a bo master account for legal entity before login creation"
+	return
+end
+
+select
+	@default_bo_master_account = b.symbol
+from
+	bo_master_accounts a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+and
+        a.legal_entity_id = @legal_entity_id
+and
+	a.bo_master_account_id = @default_bo_master_account_id
+if @default_bo_master_account = NULL
+begin
+	select
+		statuts = "Error",
+		message = "Problem finding default bo master account"
+	return
+end
+
+
+select
+	@user_pool_id = default_user_pool_id
+from
+	cognito_settings
+if @user_pool_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Must configure a default user pool in cognito settings"
+	return
+end
+
+select
+	@user_pool = name
+from
+	cognito_user_pools
+where
+	cognito_user_pool_id = @user_pool_id
+if @user_pool = NULL
+begin
+	select
+		status = "Error",
+		message = "Could not find user pool from the default settings",
+		user_pool = @user_pool
+	return
+end
+
+if @mfa_type = NULL
+begin
+	select
+		@mfa_type = "SMS"
+end
+
+select
+	@mfa_type_id = mfa_type_id
+from
+	mfa_types
+where
+	name = @mfa_type
+if @mfa_type_id = NULL
+begin
+	select
+		status = "Error", 
+		message = "Could not find mfa type from provided",
+		mfa_type = @mfa_type
+	return
+end 
+
+
+if convert(char(1), @fo_access) = "Y"  and @fo_trader_name = NULL
+begin
+	select
+		status = "Error",
+		message = "Must provide a trader name if Fo Access is Yes"
+	return
+end
+
+if convert(char(1), @fo_access) != "Y"  and @fo_trader_name != NULL
+begin
+        select
+                status = "Error",
+                message = "Fo Access must be set to Yes when providing a trader name"
+        return
+end
+
+
+
+/* Checks have been done -- create the login now */
+
+exec
+	r_genrandompassword
+		@pass_length=12,
+		@new_pass=@user_password output
+
+
+exec
+	api_createloginuser
+		@login = @login,
+		@first_name = @first_name,
+		@last_name = @last_name,
+		@email = @email,
+		@user_password = @user_password,
+		@login_type = "Client",
+		@user_name_output = @user_name_output output,
+		@tico_access = "N"
+
+select
+	@client_tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @user_name_output
+if @client_tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Should have found new login but could not.",
+		user_name_output = @user_name_output
+	return
+end
+
+exec
+	api_addlegalentityuser
+		@login=@login,
+		@legal_entity = @legal_entity,
+		@user_name = @user_name_output
+
+exec
+	api_enableuserforcognitopool
+		@login = @login,
+		@mfa_login = @user_name_output,
+		@mfa_phone_number = @phone,
+		@user_pool = @user_pool,
+		@mfa_type = @mfa_type
+
+select
+	@cognito_user_id = cognito_user_id
+from
+	cognito_users
+where
+	tico_account_id = @client_tico_account_id
+if @cognito_user_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding Cognito user. Login created but cancelleding progress"
+end
+
+
+if @bo_access = "Yes"
+begin
+	exec
+		api_addaccessgroupforlogin
+			@login=@login,
+			@login_name = @user_name_output,
+			@access_group = "Client Back Office"
+end
+
+if @bo_readonly = "Yes"
+begin
+	exec
+		api_addaccessgroupforlogin
+			@login=@login,
+			@login_name = @user_name_output,
+			@access_group = "Client Back Office Read Only"
+end
+
+if @fo_access = "Yes"
+begin
+	exec
+		api_addaccessgroupforlogin
+			@login=@login,
+			@login_name = @user_name_output,
+			@access_group = "Client Front Office"
+end
+
+if @fo_readonly = "Yes"
+begin
+	exec
+		api_addaccessgroupforlogin
+			@login=@login,
+			@login_name = @user_name_output,
+			@access_group = "Client Front Office Read Only"
+end
+
+if @fo_trader_name != NULL
+begin
+	exec
+		api_addusertrader
+			@login=@login,
+			@trader = @fo_trader_name,
+			@user_name = @user_name_output,
+			@external_account = @default_bo_master_account,
+			@sales_code = NULL,
+			@trader_id = @trader_id output
+end
+
+
+
+go

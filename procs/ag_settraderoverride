@@ -1,0 +1,74 @@
+
+drop procedure
+	ag_settraderoverride
+go
+
+create procedure
+	ag_settraderoverride
+		@login varchar(50),
+		@trader varchar(50),
+		@symbol varchar(50),
+		@spread numeric(30,10)
+as
+
+declare @trader_id int
+declare @contract_id int
+
+select
+	@trader_id = trader_id
+from
+	traders
+where
+	symbol = @trader
+if @trader_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Trader not found",
+		trader = @trader
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+update
+	trader_spread_overrides
+set
+	pip_spread = @spread
+where
+	contract_id = @contract_id
+and
+	trader_id = @trader_id
+if @@rowcount = 0
+begin
+	insert into
+		trader_spread_overrides(
+			trader_id,
+			contract_id,
+			pip_spread)
+	values(
+		@trader_id,
+		@contract_id,
+		@spread)
+end
+
+exec
+	ag_traderoverrides
+		@login = @login,
+		@trader = @trader
+
+
+go

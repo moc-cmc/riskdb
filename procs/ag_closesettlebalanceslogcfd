@@ -1,0 +1,483 @@
+drop procedure ag_closesettlebalanceslogcfd
+go
+
+create procedure
+	ag_closesettlebalanceslogcfd
+		@login varchar(50),
+		@settle_date datetime
+as
+
+declare @cfd_transaction_type_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"undo_conversion",
+	"Undo Settlement Conversions CFD",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"convert_settlements",
+	"Convert Account Settlements CFD",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"conversion_rate",
+	"Number",
+	"#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"converted_amount",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@cfd_transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "CFD Settlement"
+if @cfd_transaction_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "CFD Settlement transaction type not found"
+	return
+end
+
+create table
+	#balances(
+		id int identity,
+		style varchar(200) NULL,
+		account_transaction_id int,
+		external_account_id int,
+		transaction_type_id int,
+		transaction_date datetime,
+		product_id int,
+		amount float,
+		currency_id int NULL,	
+		conversion_rate float NULL,
+		converted_amount float NULL)
+insert into
+	#balances(
+		style,
+		account_transaction_id,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		product_id,
+		amount,
+		currency_id)
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	a.account_transaction_id,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	a.amount,
+	b.evaluation_currency_id
+from
+	account_transactions a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_type_id = @cfd_transaction_type_id
+and
+	convert(date, a.transaction_date) = convert(date, @settle_date)
+
+
+update
+	#balances
+set
+	conversion_rate = 1.0
+where
+	product_id = currency_id
+
+update
+	#balances
+set
+	a.conversion_rate = c.price
+from
+	#balances a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, a.transaction_date)
+
+update
+	#balances
+set
+	a.conversion_rate = 1.0 / c.price
+from
+	#balances a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, a.transaction_date)
+and
+	a.conversion_rate = NULL
+
+update
+	#balances
+set
+	converted_amount = amount * conversion_rate
+	
+create table
+	#net_settlements(
+		external_account_id int,
+		/* external_account_type_id int, */
+		currency_id int,
+		converted_amount float NULL,
+		convert_settlements varchar(50) NULL)
+insert into
+	#net_settlements(
+		external_account_id,
+		currency_id,
+		converted_amount)
+select
+	external_account_id,
+	currency_id,
+	sum(converted_amount)
+from
+	#balances
+group by
+	external_account_id,
+	currency_id
+
+update
+	#net_settlements
+set
+	convert_settlements = "Convert Settlements"
+
+/* update
+	#net_settlements
+set
+	a.external_account_type_id = b.external_account_type_id,
+	a.convert_settlements = "Convert Settlements"
+from
+	#net_settlements a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+and
+	c.name = "Client" */
+
+create table
+	#closed_balances(
+		id int identity,
+		style varchar(200) NULL,
+		sb_id int,
+		account_transaction_id int,
+		external_account_id int,
+		transaction_date datetime,
+		product_id int,
+		amount float,
+		converted_amount float,
+		conversion_rate float)
+insert into
+	#closed_balances(
+		style,
+		sb_id,
+		account_transaction_id,
+		external_account_id,
+		transaction_date,
+		product_id,
+		amount,
+		converted_amount,
+		conversion_rate)
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	sb_id,
+	account_transaction_id,
+	external_account_id,
+	transaction_date,
+	product_id,
+	amount,
+	converted_amount,
+	conversion_rate
+from
+	cfd_settlement_balances
+where
+	convert(date, transaction_date) = convert(date, @settle_date)
+	
+
+create table
+        #net_closed(
+                external_account_id int,
+                currency_id int NULL,
+                converted_amount float,
+                undo_conversion varchar(50) NULL)
+insert into
+        #net_closed(
+                external_account_id,
+                converted_amount)
+select
+        external_account_id,
+        sum(converted_amount)
+from
+        #closed_balances
+group by
+        external_account_id
+update
+	#net_closed
+set
+	a.currency_id = b.evaluation_currency_id
+from
+	#net_closed a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+        #net_closed
+set
+        a.undo_conversion = "Undo Conversion"
+from
+        #net_closed a,
+        external_accounts b,
+        external_account_types c
+where
+        a.external_account_id = b.external_account_id
+and
+        b.external_account_type_id = c.external_account_type_id
+and
+        c.name = "Client"
+
+update
+	#net_settlements
+set
+	a.convert_settlements = NULL
+from
+	#net_settlements a,
+	#net_closed b
+where
+	a.external_account_id = b.external_account_id
+
+select
+	section = "Net Settled Balances CFD",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = b.symbol,
+	currency = c.symbol,
+	converted_amount= convert(numeric(30,2), a.converted_amount),
+	a.convert_settlements,
+	settle_date = @settle_date
+from
+	#net_settlements a,
+	external_accounts b,
+	products c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.currency_id = c.product_id
+order by
+	b.symbol,
+	c.symbol	
+
+select
+	section = "Net Converted Balances CFD",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = b.symbol,
+	currency = c.symbol,
+	converted_amount= convert(numeric(30,2), a.converted_amount),
+	a.undo_conversion,
+	settle_date = @settle_date
+from
+	#net_closed a,
+	external_accounts b,
+	products c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.currency_id = c.product_id
+order by
+	b.symbol,
+	c.symbol
+
+select
+	section = "Settled Balances CFD",
+	a.style,
+	a.account_transaction_id,
+	account = b.symbol,
+	transaction_type = c.name,
+	date = convert(varchar(11), a.transaction_date),
+	currency = d.symbol,
+	a.amount,
+	account_currency = e.symbol,
+	a.conversion_rate,
+	a.converted_amount
+from
+	#balances a,
+	external_accounts b,
+	transaction_types c,
+	products d,
+	products e
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_type_id = c.transaction_type_id
+and
+	a.product_id = d.product_id
+and
+	a.currency_id = e.product_id
+order by
+	b.symbol,
+	d.symbol
+
+select
+	section = "Closed Balances CFD",
+	a.style,
+	/* a.sb_id, */
+	a.account_transaction_id,
+	account = c.symbol,
+	a.transaction_date,
+	currency = b.symbol,
+	a.amount,
+	a.converted_amount,
+	a.conversion_rate
+from
+	#closed_balances a,
+	products b,
+	external_accounts c
+where
+	a.product_id = b.product_id
+and
+	a.external_account_id = c.external_account_id
+order by
+	c.symbol,
+	b.symbol
+
+create table
+        #transaction_logs(
+                settled_by varchar(50),
+                external_account varchar(50),
+                status varchar(50),
+                currency varchar(50),
+                amount float,
+                settle_date datetime,
+                timestamp datetime,
+                section varchar(50),
+                style varchar(50))
+
+
+
+insert into
+        #transaction_logs
+select
+
+        settled_by = b.login,
+        account = c.symbol,
+        status = d.name,
+        product = e.symbol,
+        a.amount,
+        a.settle_date,
+        timestamp = a.timestamp,
+        section = "Settlement Audit Log",
+        style = "background:#FFFFFF;border: 1px solid white"
+
+from
+        transaction_logs a,
+        tico_accounts b,
+        external_accounts c,
+        statuses d,
+        products e
+where
+        a.settled_by = b.account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.status_id = d.status_id
+and
+        a.currency_id = e.product_id
+and
+	d.name in("Convert Settlement", "Undo Conversion")
+and
+        a.settle_date = @settle_date
+order by
+        a.timestamp DESC
+
+select
+        settled_by,
+        external_account,
+        status,
+        currency,
+        amount,
+        date = convert(varchar(11), settle_date, 1),
+        timestamp,
+        section,
+        style
+from
+        #transaction_logs
+order by
+        timestamp DESC
+
+go

@@ -1,0 +1,172 @@
+use risk_edgewater
+go
+
+drop procedure
+	r_operations
+go
+
+create procedure
+	r_operations
+		@login varchar(50)
+as
+
+declare @fund_id int
+declare @fund_type varchar(50)
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund_type = a.name
+from
+	fund_types a,
+	funds b
+where
+	a.fund_type_id = b.fund_type_id
+and
+	b.fund_id = @fund_id
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"import_futures_trades",
+	"Import Amarok Trades",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"import_back_office",
+	"Import FC Stone FX",
+	NULL,
+	NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"op_link",
+	"Operations Link",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"risk_class_runs",
+	"Risk Class Runs",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"flattening_runs",
+	"Flattening Runs",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+
+create table
+	#output(
+		op_task varchar(255),
+		op_link varchar(100))
+
+if @fund_type != "FX Spot"
+begin
+	insert into
+		#output
+	values(
+		"View Option Model Parameters",
+		"Options")
+ 
+
+	insert into
+		#output
+	values(
+		"Run Expiration Tool",
+		"Expirations")
+end
+
+insert into
+	#output
+values(
+	"Edit Current Prices",
+	"Current Prices")
+
+insert into
+	#output
+values(
+ 
+	"Volume Runs",
+	"Volume")
+
+insert into
+	#output
+values(
+	"Edit Settle Prices",
+	"Settles")
+
+insert into
+	#output
+values(
+	"Perspective Contracts",
+	"Edit Perspective Contracts")
+
+
+insert into
+	#output
+values(
+	"Assign Trades",
+	"Assign Trades")
+
+
+insert into
+	#output
+values(
+	"Manage Client Notifications",
+	"Manage Client Notifications"
+	)
+
+insert into
+	#output
+values(
+	"Risk Classes",
+	"Risk Classes"
+	)
+
+insert into
+	#output
+values(
+	"Flattening Runs",
+	"Flattening Runs"
+	)
+
+select
+	op_task,
+	op_link
+from
+	#output
+
+
+
+go

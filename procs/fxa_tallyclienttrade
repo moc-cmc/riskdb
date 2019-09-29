@@ -1,0 +1,47 @@
+
+if object_id("fxa_tallyclienttrade") != NULL
+    drop procedure
+        fxa_tallyclienttrade
+go
+
+create procedure
+	fxa_tallyclienttrade
+		@login varchar(50),
+		@tally_type varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@quantity numeric(30,4),
+		@price float,
+		@value_date datetime
+
+as
+
+declare @deal_id int
+declare @trade_id int
+
+exec api_tallyclienttrade
+		@login = @login,
+		@tally_type = @tally_type,
+		@client_user = @client_user,
+		@client_buys_sells = @client_buys_sells,
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@quantity = @quantity,
+		@price = @price,
+		@value_date = @value_date,
+		@deal_id = @deal_id output,
+		@trade_id = @trade_id output,
+		@fixing_date = NULL
+
+exec
+	r_inserttradenotification @trade_id
+		
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+go

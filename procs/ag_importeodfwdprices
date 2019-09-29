@@ -1,0 +1,282 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_importeodfwdprices
+go
+
+create procedure
+	ag_importeodfwdprices
+		@login varchar(50),
+		@statement_date varchar(50)=NULL,
+		@pair varchar(50)=NULL,
+		@value_date varchar(50)=NULL,
+		@price varchar(50)=NULL,
+		@row_count int,
+		@row_index int
+
+as
+
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+
+declare @status_id int
+declare @source_id int
+declare @contract_id int
+declare @inverted_contract_id int
+declare @price_date datetime
+declare @val_date datetime
+declare @forward_price float
+declare @inverted_price float
+declare @bo_price_id int
+declare @inverted_price_id int
+declare @price_style varchar(50)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_contracts",
+	"Edit Pip Spread Contracts",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	"#,##0.0000000;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Active status not found"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "MPT"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "MPT Source not found"
+	return
+end
+
+select
+	@forward_price = convert(float, @price)
+select
+	@inverted_price = 1.0 / @forward_price
+
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @pair
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Pair not found",
+		pair = @pair
+	return
+end
+
+
+exec
+	r_invertedcontract
+		@contract_id = @contract_id,
+		@inverted_contract_id = @inverted_contract_id output
+
+select
+	@price_date = convert(datetime, convert(date, @statement_date))
+
+select
+	@price_date = dateadd(hour, 17, @price_date)
+
+
+select
+	@val_date = convert(datetime, convert(date, @value_date))
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	b.contract_id = @contract_id
+if @price_style = "Inverted"
+begin
+	select
+		@forward_price = 1.0 / @forward_price,
+		@inverted_price = 1.0 / @inverted_price
+end
+
+update
+	bo_prices
+set
+	price = @forward_price
+where
+	contract_id = @contract_id
+and
+	convert(date, price_date) = convert(date, @statement_date)
+and
+	convert(date, value_date) = convert(date, @val_date)
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"bo_prices",
+			@bo_price_id output
+
+	insert into
+		bo_prices(
+			bo_price_id,
+			status_id,
+			contract_id,
+			price_date,
+			value_date,
+			source_id,
+			price)
+	values(
+		@bo_price_id,
+		@status_id,
+		@contract_id,
+		@price_date,
+		@val_date,
+		@source_id,
+		@forward_price)
+end
+
+
+			
+if @inverted_contract_id != NULL
+begin
+	update
+		bo_prices
+	set
+		price = @inverted_price
+	where
+		contract_id = @inverted_contract_id
+	and
+		convert(date, price_date) = convert(date, @statement_date)
+	and
+		convert(date, value_date) = convert(date, @val_date)
+	if @@rowcount = 0
+	begin
+		exec
+			j_nextkey
+				"bo_prices",
+				@inverted_price_id output
+	
+		insert into
+			bo_prices(
+				bo_price_id,
+				status_id,
+				contract_id,
+				price_date,
+				value_date,
+				source_id,
+				price)
+		values(
+			@inverted_price_id,
+			@status_id,
+			@inverted_contract_id,
+			@price_date,
+			@val_date,
+			@source_id,
+			@inverted_price)
+	end
+end
+
+
+if @row_count = @row_index + 1
+begin
+	select
+		section = "BO Prices for " + convert(varchar(11), @price_date),
+		style = @style,
+		b.symbol,
+		a.price_date,
+		a.value_date,
+		a.price
+	from
+		bo_prices a,
+		contracts b
+	where
+		a.contract_id = b.contract_id
+	and
+		convert(date, a.price_date) = convert(date, @price_date)
+	order by
+		b.symbol,
+		a.value_date
+end
+
+
+go

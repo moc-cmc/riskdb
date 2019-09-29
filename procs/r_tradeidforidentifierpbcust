@@ -1,0 +1,50 @@
+drop procedure
+	r_tradeidforidentifierpbcust
+go
+
+create procedure
+	r_tradeidforidentifierpbcust
+		@trade_identifier varchar(100)
+
+as 
+
+declare @trade_id int
+declare @client_trade_id int
+declare @booking_id int
+
+select
+	@trade_id = trade_id
+from
+	trades
+where
+	identifier = @trade_identifier 
+
+if @trade_id = NULL
+begin
+	return
+end
+
+select
+	@booking_id = booking_id
+from
+	trade_bookings
+where
+	trade_id = @trade_id
+
+select 
+	@client_trade_id = trade_id
+from
+	trade_bookings
+where
+	booking_id = @booking_id
+and
+	trade_id != @trade_id
+
+select
+	trade_id = @trade_id,
+	client_trade_id = @client_trade_id
+
+go
+
+
+

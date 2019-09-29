@@ -1,0 +1,28 @@
+
+if object_id("r_ackmessagereceipt") != NULL
+    drop procedure
+        r_ackmessagereceipt
+go
+
+create procedure
+    r_ackmessagereceipt
+        @login varchar(50),
+        @message_receipt_id int,
+        @status varchar(25)
+as
+
+/* MARK: UPDATE message_receipts: Update the message receipt */
+update
+    message_receipts
+set
+    status_id = b.status_id,
+    status_date = getdate()
+from
+    message_receipts a,
+    statuses b
+where
+    a.message_receipt_id = @message_receipt_id
+and
+    b.name = @status
+
+go

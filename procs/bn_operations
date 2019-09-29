@@ -1,0 +1,15 @@
+create or replace procedure
+	bn_operations
+		@login varchar(50),
+		@trade_date datetime=NULL
+
+as
+
+
+exec
+	cbo_operations
+		@login=@login,
+		@trade_date = @trade_date
+
+
+go

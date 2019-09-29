@@ -1,0 +1,1968 @@
+use risk_sales
+go
+
+drop procedure r_optionexpsfordate
+go
+
+create procedure
+	r_optionexpsfordate
+		@login varchar(50),
+		@run_name varchar(50),
+		@expiration datetime,
+		@timezone varchar(50)=NULL
+as
+
+declare @run_id int
+declare @underlying_contract_id int
+declare @underlying_contracts int
+declare @current_price float
+declare @tick_size float
+declare @min_strike float
+declare @max_strike float
+declare @round int
+declare @contract_id int
+declare @contracts int
+declare @price float
+declare @timezone_id int
+declare @determined_date datetime
+declare @auto_create_batch char(1)
+declare @grid_section varchar(100)
+declare @working_section varchar(100)
+
+
+if @timezone=NULL
+begin
+	select
+		@timezone = "New York 10:00"
+end
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"strike",
+	"Number",
+	"#,##0.0000")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "long_calls",
+        "Number",
+        "#,##0")
+
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"expiration",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"run_name",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"underlying_contract",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "timezone",
+        NULL,
+        NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"refresh_all",
+	"Refresh All Expiration Prices",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"refresh",
+	"Fetch Live Expiration Price",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_price",
+	"Set Run Expiration Price",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL) 
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "run_expirations",
+        "Prepare Option Expiries",
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"action",
+	"Prepare Option Expiries",
+	NULL
+)
+
+
+
+/*
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "ordering_trade_id",
+        NULL,
+        NULL)*/
+
+
+
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Run name not found",
+		run_name = @run_name
+	return
+end
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+select
+	@timezone_id = timezone_id
+from
+	timezones
+where
+	timezone = @timezone
+if @timezone_id = NULL
+begin
+	select
+		err="Error",
+		msg="Problem determining timezone",
+		timezone=@timezone
+	return
+end
+
+create table
+	#option_contracts(
+		contract_id int,
+		option_expiration_id int,
+		exercise_style_id int,
+		strike float,
+		put_call char(2),
+		underlying_contract_id int,
+		itm_otm char(3),
+		option_settle_date datetime NULL)
+insert into
+	#option_contracts
+select
+	a.contract_id,
+	a.option_expiration_id,
+	a.exercise_style_id,
+	a.strike,
+	a.put_call,
+	c.underlying_contract_id,
+	"OTM",
+	NULL
+from
+	option_contracts a,
+	option_expirations b,
+	options c
+where
+	a.option_expiration_id = b.option_expiration_id
+and
+	convert(date, b.expiration) = convert(date, @expiration)
+and
+	b.timezone_id = @timezone_id
+and	
+	b.option_id = c.option_id
+
+update 
+	#option_contracts
+set
+	option_settle_date = a.settledate
+from
+	option_settledates a,
+	#option_contracts b
+where
+	a.contract_id = b.contract_id
+
+
+
+/*
+ |  Collect & Query details about expiring option trades
+ */ 
+
+create table
+	#option_trades(
+		trade_id int,
+		deal_id int,
+		trade_type_id int,
+		trade_type varchar(50) NULL,
+		deal_type_id int NULL,
+		deal_type varchar(50) NULL,
+		internal_account_id int,
+		internal_account varchar(50) NULL,
+		external_account_id int,
+		external_account varchar(50) NULL,
+		external_account_type_id int NULL,
+		external_account_type varchar(50) NULL,
+		trader_id int,
+		trader varchar(50) NULL,
+		counterparty_id int,
+		counterparty varchar(50) NULL,
+		broker_id int,
+		broker varchar(50) NULL,
+		contract_id int,
+		contract varchar(50) NULL,
+		opt_underlying_contract_id int NULL,
+		underlying varchar(50) NULL,
+		opt_contract_strike float NULL,
+		opt_settle_date datetime NULL,
+		itm_otm char(3) NULL,
+		trade_date datetime,
+		value_date varchar(15) NULL,
+		fixing_date varchar(15) NULL,
+		quantity numeric(30, 2),
+		db_price float,
+		spot_reference float NULL,
+		sales_code_id int,
+		sales_code varchar(50) NULL,
+		strategy_id int,
+		strategy varchar(50) NULL,
+		identifier varchar(100) NULL,
+		trade_status_id int,
+		trade_status varchar(50) NULL,
+		)
+
+create nonclustered index 
+	tmp_tid
+on
+	#option_trades(trade_id)
+
+insert into
+	#option_trades
+(
+	trade_id,
+	deal_id,
+	trade_type_id,
+	internal_account_id,
+	external_account_id,
+	trader_id,
+	counterparty_id,
+	contract_id,
+	broker_id,
+	quantity,
+	trade_date,
+	value_date,
+	fixing_date,
+	db_price,
+	spot_reference,
+	sales_code_id,
+	strategy_id,
+	identifier,
+	trade_status_id,
+        opt_underlying_contract_id,
+        opt_contract_strike,
+	opt_settle_date
+)
+select 
+	trade_id = a.trade_id,
+	deal_id = a.deal_id,
+	trade_type_id = a.trade_type_id,
+	internal_account_id = a.internal_account_id,
+	external_account_id = a.external_account_id,
+	trader_id = a.trader_id,
+	counterparty_id = a.counterparty_id,
+	contract_id = a.contract_id,
+	broker_id = a.broker_id,
+	quantity = a.quantity,
+	trade_date = a.trade_date,
+	value_date = convert(varchar(12), a.value_date, 112),
+	fixing_date = convert(varchar(12), a.fixing_date, 112),
+	db_price = a.price,
+	spot_reference = a.spot_reference,
+	sales_code_id = a.sales_code_id,
+	strategy_id = a.strategy_id,
+	identifier = a.identifier,
+	trade_status_id = a.status_id,
+	opt_underlying_contract_id = b.underlying_contract_id,
+	opt_contract_strike = b.strike,
+	opt_settle_date = b.option_settle_date
+from
+	trades a,
+        #option_contracts b,
+        #external_accounts c,
+        #internal_accounts d,
+        #traders e,
+        #strategies f,
+        #brokers g,
+        #counterparties h
+where
+        a.contract_id = b.contract_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.internal_account_id = d.internal_account_id
+and
+        a.trader_id = e.trader_id
+and
+        a.strategy_id = f.strategy_id
+and
+        a.broker_id = g.broker_id
+and
+        a.counterparty_id = h.counterparty_id
+
+
+/* Query contracts */
+update
+	#option_trades
+set
+	contract = b.symbol
+from
+	#option_trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+        #option_trades
+set
+        underlying = b.symbol
+from
+        #option_trades a,
+        contracts b
+where
+        a.opt_underlying_contract_id = b.contract_id
+
+
+/*  Query trade_types */
+update
+	#option_trades
+set
+	trade_type = b.name
+from
+	#option_trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+/* Query internal_accounts */
+update
+	#option_trades
+set
+	internal_account = b.symbol
+from
+	#option_trades a,
+	internal_accounts b
+where
+	a.internal_account_id = b.internal_account_id
+
+
+/*  Query external_accounts */
+update 
+        #option_trades
+set
+        external_account = b.symbol,
+	external_account_type_id = b.external_account_type_id
+from
+        #option_trades a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+
+update
+	#option_trades 
+set
+	external_account_type = b.name
+from
+	#option_trades a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+
+/* Query traders */
+update
+	#option_trades
+set
+	trader = b.symbol
+from
+        #option_trades a,
+        traders b
+where
+        a.trader_id = b.trader_id
+
+/* Query counterparties */
+update
+	#option_trades
+set
+	counterparty = b.name
+from
+	#option_trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+
+/* Query brokers */
+update
+	#option_trades
+set
+	broker = b.symbol
+from
+	#option_trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+/* Query strategies */
+update 
+	#option_trades
+set
+	strategy = b.name
+from
+	#option_trades a,
+	strategies b
+where
+	a.strategy_id = b.strategy_id
+
+update
+        #option_trades
+set
+	trade_status = b.name
+from
+        #option_trades a,
+        statuses b
+where
+        a.trade_status_id = b.status_id
+
+
+
+
+
+
+create table
+	#net_positions(
+		contract_id int,
+		underlying_contract_id int NULL,
+		quantity numeric(30,4),
+		put_call varchar(1) NULL,
+		strike numeric(30,4) NULL,
+		delta float NULL)
+insert into
+	#net_positions(
+		contract_id,
+		quantity)
+select
+	a.contract_id,
+	sum(a.quantity)
+from
+	#option_trades a
+group by
+	a.contract_id
+
+update
+	#net_positions
+set
+	a.underlying_contract_id = b.underlying_contract_id,
+	a.put_call = b.put_call,
+	a.strike = b.strike
+from
+	#net_positions a,
+	#option_contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#net_positions
+set
+	delta = 0.0
+
+create table
+	#longs(
+		underlying_contract_id int,
+		strike float,
+		call_quantity numeric(30,4) NULL,
+		put_quantity numeric(30,4) NULL)
+insert into
+	#longs
+(
+        underlying_contract_id,
+	strike,
+        call_quantity
+)
+select
+	underlying_contract_id,
+	strike,
+	sum(quantity)
+from
+	#net_positions
+where
+	quantity > 0
+and
+	put_call = "C"
+group by
+	underlying_contract_id,
+	strike
+
+update 
+	#longs
+set
+	put_quantity = sum(a.quantity)
+from
+	#net_positions a,
+	#longs b
+where
+	a.underlying_contract_id = b.underlying_contract_id 
+and
+	a.strike = b.strike
+and
+        quantity > 0
+and
+        put_call = "P"
+
+insert into
+        #longs
+(
+	underlying_contract_id,
+	strike,
+	put_quantity
+)
+select
+        underlying_contract_id,
+	strike,
+        sum(quantity)
+from
+        #net_positions
+where
+        quantity > 0
+and
+        put_call = "P"
+and
+	strike not in(select strike from #longs)
+group by
+        underlying_contract_id,
+	strike
+
+create table
+        #shorts(
+                underlying_contract_id int,
+		strike float, 
+                call_quantity numeric(30,4) NULL,
+                put_quantity numeric(30,4) NULL)
+insert into
+        #shorts
+(
+        underlying_contract_id,
+	strike,
+        call_quantity
+)
+select
+        underlying_contract_id,
+	strike,
+        sum(quantity)
+from
+        #net_positions
+where
+        quantity < 0
+and
+        put_call = "C"
+group by
+        underlying_contract_id,
+	strike
+
+update
+	#shorts
+set
+        put_quantity = sum(a.quantity)
+from
+        #net_positions a,
+        #shorts b
+where
+        a.underlying_contract_id = b.underlying_contract_id 
+and
+        a.strike = b.strike
+and
+        quantity < 0
+and
+        put_call = "P"
+
+
+insert into
+        #shorts
+(
+        underlying_contract_id,
+	strike,
+        put_quantity
+)
+select
+        underlying_contract_id,
+	strike,
+        sum(quantity)
+from
+        #net_positions
+where
+        quantity < 0
+and
+        put_call = "P"
+and
+        strike not in(select strike from #shorts)
+
+group by
+        underlying_contract_id,
+	strike
+
+
+
+
+create table
+	#run_expiration_prices(
+		run_id int NULL,
+		run_name varchar(50) NULL,
+		expiration datetime NULL,
+		expiration_date datetime NULL,
+		contract_id int,
+		price float NULL,
+		current_price float NULL,
+		delta float NULL,
+		set_price varchar(50) NULL,
+		refresh varchar(50) NULL
+		)
+insert into
+	#run_expiration_prices(
+		contract_id)
+select
+	distinct(b.underlying_contract_id)
+from
+	#net_positions a,
+	#option_contracts b
+where
+	a.contract_id = b.contract_id
+	
+update
+	#run_expiration_prices
+set
+	a.current_price = b.price
+from
+	#run_expiration_prices a,
+	current_prices b
+where
+	a.contract_id = b.contract_id
+
+update
+	#run_expiration_prices
+set
+	run_id = @run_id,
+	run_name = @run_name,
+	expiration_date = @expiration,
+	expiration = @expiration,
+	set_price = "SET",
+	refresh = "REFRESH"
+
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	#run_expiration_prices
+where
+	contract_id > @contract_id
+
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#run_expiration_prices
+	where
+		contract_id > @contract_id
+
+	select
+		@price = NULL
+
+	select
+		@price = price
+	from
+		run_expiration_prices
+	where
+		run_id = @run_id
+	and
+		contract_id = @contract_id
+	and
+		expiration = @expiration
+	if @price = NULL
+	begin
+		select
+			@price = price
+		from
+			current_prices
+		where
+			contract_id = @contract_id
+		if @price != NULL
+			insert into
+				run_expiration_prices
+			values(
+				@run_id,
+				@expiration,
+				@contract_id,
+				@price)
+	end
+
+	/* Mark ITM Calls */
+	update
+		#option_contracts
+	set
+		itm_otm = "ITM"
+	from
+                #option_contracts b,
+		option_expirations c,
+		options d
+	where
+		b.option_expiration_id = c.option_expiration_id
+	and
+		c.option_id = d.option_id
+	and
+		b.put_call = "C"
+	and
+		b.strike < @price
+	and
+		d.underlying_contract_id = @contract_id
+
+	/* Mark ITM Calls at 100 delta */
+	update
+		#net_positions
+	set
+		a.delta = a.quantity
+	from	
+		#net_positions a,
+		#option_contracts b
+        where
+                a.contract_id = b.contract_id
+	and
+		b.put_call = "C"
+	and
+		b.itm_otm="ITM"
+	/*
+	update
+		#net_positions
+	set
+		a.delta = a.quantity 
+	from
+		#net_positions a,
+                #option_contracts b, /* was actual table, now temp table */
+	where
+		a.contract_id = b.contract_id
+	and
+		b.option_expiration_id = c.option_expiration_id
+	and
+		c.option_id = d.option_id
+	and
+		a.put_call = "C"
+	and
+		a.strike < @price
+	and
+		d.underlying_contract_id = @contract_id*/
+
+
+
+	/* Mark ITM Puts at -100 delta */
+        update
+                #option_contracts
+        set
+                itm_otm = "ITM"
+        from
+                #option_contracts b,
+                option_expirations c,
+                options d
+        where
+                b.option_expiration_id = c.option_expiration_id
+        and
+                c.option_id = d.option_id
+        and
+                b.put_call = "P"
+        and
+                b.strike > @price
+        and
+                d.underlying_contract_id = @contract_id
+
+        /* Mark ITM Puts at 100 delta */
+        update
+                #net_positions
+        set
+                a.delta = a.quantity * -1.0
+        from    
+                #net_positions a,
+                #option_contracts b
+        where
+                a.contract_id = b.contract_id
+	and
+                b.put_call = "P"
+        and
+                b.itm_otm="ITM"
+
+
+
+	select
+		@contracts = count(*)
+	from
+		#run_expiration_prices
+	where
+		contract_id > @contract_id
+end
+
+update 
+	#option_trades
+set
+	a.itm_otm = b.itm_otm
+from
+	#option_trades a,
+	#option_contracts b
+where
+	a.contract_id = b.contract_id
+
+
+create table
+	#net_deltas(
+		contract_id int,
+		delta float)
+insert into
+	#net_deltas
+select
+	c.underlying_contract_id,
+	sum(a.delta)
+from
+	#net_positions a,
+	#option_contracts c
+where
+	a.contract_id = c.contract_id
+group by
+	c.underlying_contract_id
+
+update
+	#run_expiration_prices
+set
+	a.delta = b.delta
+from
+	#run_expiration_prices a,
+	#net_deltas b
+where
+	a.contract_id = b.contract_id
+
+
+update
+	#run_expiration_prices
+set
+	a.price = b.price
+from
+	#run_expiration_prices a,
+	run_expiration_prices b
+where
+	a.run_id = b.run_id
+and
+	a.contract_id = b.contract_id
+and
+	a.expiration = b.expiration
+
+/*if @batch_id=NULL
+begin	
+	if convert(char(8), @expiration, 112)+' 1700' = convert(char(8), getdate(), 112)+ ' 1700'
+	begin
+		select 
+			@auto_create_batch = 'Y'
+	end
+end*/
+select
+	refresh_all = "Refresh all expiration prices",
+	run_name = @run_name,
+	expiration = @expiration,
+	timezone=@timezone,
+	run_expirations = "PREPARE ALL EXERCISE TRADES"
+
+select
+	section = "Expiration Prices For " + convert(char(11), @expiration, 1) +" "+ rtrim(@timezone),
+	underlying = a.symbol,
+	underlying_contract = a.symbol,
+	run_name = @run_name,
+	expiration = @expiration,
+	b.price,
+	b.current_price,
+	price_diff = b.current_price - b.price,
+	implied_net_option_delta = b.delta,
+	b.set_price,
+	b.refresh,
+	run_expirations="PREPARE "+rtrim(a.symbol)+" EXERCISES"
+from
+	contracts a,
+	#run_expiration_prices b
+where
+	a.contract_id = b.contract_id
+order by
+	a.symbol
+
+
+
+create table
+	#strike_ranges(
+		underlying_contract_id int,
+		min_strike float NULL,
+		max_strike float NULL,
+		tick_size float NULL,
+		current_price float NULL,
+		round int NULL)
+
+insert into
+	#strike_ranges(
+		underlying_contract_id,
+		min_strike,
+		max_strike)
+select
+	b.underlying_contract_id,
+	min(b.strike),
+	max(b.strike)
+from
+	#net_positions a,
+	#option_contracts b
+where
+	a.contract_id = b.contract_id
+group by
+	b.underlying_contract_id
+
+update
+	#strike_ranges
+set
+	a.tick_size = b.tick_size
+from
+	#strike_ranges a,
+	options b
+where
+	a.underlying_contract_id = b.underlying_contract_id
+
+update
+	#strike_ranges
+set
+	a.current_price = b.price
+from
+	#strike_ranges a,
+	current_prices b
+where
+	a.underlying_contract_id = b.contract_id
+
+/* override if there's a manually set exp price */
+update
+	#strike_ranges
+set
+	a.current_price = b.price
+from
+	#strike_ranges a,
+	run_expiration_prices b
+where
+	a.underlying_contract_id = b.contract_id
+and
+	b.run_id = @run_id
+and
+	convert(date, b.expiration) = convert(date, @expiration)
+
+create table
+	#strikes(
+		underlying_contract_id int,
+		strike float)
+
+create table
+	#unique_strikes(
+		strike float)
+
+select
+	@underlying_contract_id = 0
+select
+	@underlying_contracts = count(*)
+from
+	#strike_ranges
+where
+	underlying_contract_id > @underlying_contract_id
+
+while @underlying_contracts > 0
+begin
+	select
+		@underlying_contract_id = min(underlying_contract_id)
+	from
+		#strike_ranges
+	where
+		underlying_contract_id > @underlying_contract_id
+
+	select
+		@min_strike = NULL,
+		@max_strike = NULL,
+		@tick_size = NULL,
+		@current_price = NULL
+
+	select
+		@tick_size = tick_size,
+		@current_price = current_price
+	from
+		#strike_ranges
+	where
+		underlying_contract_id = @underlying_contract_id
+
+
+	if @tick_size = .0001
+		select
+			@round = 4
+	if @tick_size = .01
+		select
+			@round = 2
+
+	select
+		@current_price = round(@current_price, @round)
+
+	update
+		#strike_ranges
+	set
+		round = @round
+	where
+		underlying_contract_id = @underlying_contract_id
+
+	if @min_strike = NULL
+		select
+			@min_strike = @current_price - (@tick_size * 10.0)
+	if @max_strike = NULL
+		select
+			@max_strike = @current_price + (@tick_size * 10.0)
+	
+	while @min_strike <= @max_strike
+	begin
+		insert into
+			#strikes
+		values(
+			@underlying_contract_id,
+			@min_strike)
+		select
+			@min_strike = @min_strike + @tick_size
+	end
+
+	truncate table
+		#unique_strikes
+
+	insert into
+		#unique_strikes
+	select
+		distinct(b.strike)
+	from
+		#net_positions a,
+		#option_contracts b
+	where
+		a.contract_id = b.contract_id
+	and
+		b.underlying_contract_id = @underlying_contract_id
+
+
+	insert into
+		#strikes
+	select
+		underlying_contract_id = @underlying_contract_id,
+		strike
+	from
+		#unique_strikes
+	where
+		strike not in(
+			select
+				strike
+			from
+				#strikes
+			where
+				underlying_contract_id = @underlying_contract_id)
+
+	select
+		@underlying_contracts = count(underlying_contract_id)
+	from
+		#strike_ranges
+	where
+		underlying_contract_id > @underlying_contract_id
+
+end
+
+create table
+	#grid(
+		id int identity,
+		ordering int NULL,
+		section varchar(100) NULL,
+		style varchar(250) NULL,
+		underlying_contract_id int,
+		underlying varchar(50) NULL,
+		underlying_contract varchar(50)	NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		call_contract_id int NULL,
+		long_calls numeric(30,4) NULL,
+		short_calls numeric(30,4) NULL,
+		net_calls numeric(30,4) NULL,
+		strike float,
+		put_contract_id int NULL,
+		long_puts numeric(30,4) NULL,
+		short_puts numeric(30,4) NULL,
+		net_puts numeric(30,4) NULL,
+		current_price float NULL,
+		disp_long_calls varchar(50) NULL,
+		disp_short_calls varchar(50) NULL,
+		disp_net_calls varchar(50) NULL,
+		disp_long_puts varchar(50) NULL,
+		disp_short_puts varchar(50) NULL,
+		disp_net_puts varchar(50) NULL)
+
+insert into 
+        #grid(
+                section,
+                style,
+                underlying_contract_id,
+                underlying_contract,
+                counterparty_id,
+                counterparty,
+                long_calls,
+                short_calls,
+                net_calls,
+                strike,
+                long_puts,
+                short_puts,
+                net_puts)
+select
+        section=b.symbol,
+        style = "background:#FFFFFF;border: 1px solid white",
+        a.underlying_contract_id,
+        b.symbol,
+        NULL,
+        NULL,
+        long_calls = 0.0,
+        short_calls = 0.0,
+        net_calls = 0.0,
+        a.strike,
+        long_puts = 0.0,
+        short_puts = 0.0,
+        net_puts = 0.0
+from
+	#strikes a,
+        contracts b
+where
+	a.underlying_contract_id = b.contract_id
+order by 
+        underlying_contract_id,
+        strike
+
+
+/*
+update 
+	#grid
+set
+	counterparty_id = a.counterparty_id
+from
+	#net_positions a,
+	#grid b
+where
+	a.strike = b.strike
+*/
+
+
+
+update
+	#grid
+set
+	ordering = id * 100
+		
+/* DEBUG
+select * from #longs order by underlying_contract_id, strike
+select * from #shorts order by underlying_contract_id, strike
+*/
+
+update
+	#grid
+set
+	a.long_calls = b.call_quantity,
+        a.long_puts = b.put_quantity
+from
+	#grid a,
+	#longs b
+where
+	a.underlying_contract_id = b.underlying_contract_id
+and
+        a.strike = b.strike
+
+
+update
+	#grid
+set
+	a.short_calls = b.call_quantity,
+        a.short_puts = b.put_quantity
+from
+	#grid a,
+	#shorts b
+where
+	a.underlying_contract_id = b.underlying_contract_id
+and
+        a.strike = b.strike
+
+
+/*
+update
+        #grid
+set
+        a.long_puts = b.put_quantity
+from
+        #grid a,
+        #longs b
+where
+	a.underlying_contract_id = b.underlying_contract_id
+and
+        a.strike = b.strike
+
+
+update
+        #grid
+set
+        a.short_puts = b.put_quantity
+from
+        #grid a,
+        #shorts b
+where
+	a.underlying_contract_id = b.underlying_contract_id
+and
+        a.strike = b.strike
+*/
+
+
+
+/*select * from #grid order by underlying_contract_id, strike*/
+update 
+	#grid
+set
+	long_calls = 0.0
+where
+	long_calls = NULL
+update 
+        #grid
+set
+        short_calls = 0.0
+where
+        short_calls = NULL
+
+update
+        #grid
+set
+        long_puts = 0.0
+where
+        long_puts = NULL
+update
+        #grid
+set
+        short_puts = 0.0
+where
+        short_puts = NULL
+
+
+
+
+
+update
+	#grid
+set
+	net_calls = long_calls + short_calls
+
+update
+	#grid
+set
+	net_puts = long_puts + short_puts
+
+update
+        #grid
+set
+        a.counterparty = b.name
+from
+        #grid a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+
+update
+	#grid
+set
+	a.style = "background:#CCFFCC;border: 1px solid white",
+	a.current_price = b.current_price
+from
+	#grid a,
+	#strike_ranges b
+where
+	a.underlying_contract_id = b.underlying_contract_id
+and
+	round(a.strike, b.round) = round(b.current_price, b.round)
+
+
+
+
+update
+	#grid
+set
+	disp_long_calls = convert(varchar(50), round(long_calls, 0)),
+	disp_short_calls = convert(varchar(50), round(short_calls, 0)),
+	disp_net_calls = convert(varchar(50), round(net_calls,0)),
+	disp_long_puts = convert(varchar(50), round(long_puts,0)),
+	disp_short_puts = convert(varchar(50), round(short_puts,0)),
+	disp_net_puts = convert(varchar(50), round(net_puts,0))
+update
+        #grid
+set
+	/*
+	a.disp_long_calls = '<span style="color:gray">'+rtrim(a.disp_long_calls)+'</span>',
+	a.disp_short_calls = '<span style="color:gray">'+rtrim(a.disp_short_calls)+'</span>',
+	a.disp_net_calls = '<span style="color:gray">'+rtrim(a.disp_net_calls)+'</span>'
+	*/
+	a.disp_long_calls = "",
+	a.disp_short_calls = "",
+	a.disp_net_calls = ""
+from
+	#grid a,
+	#strike_ranges b
+where
+	a.underlying_contract_id = b.underlying_contract_id
+and
+	round(a.strike, b.round) > round(b.current_price, b.round)
+and
+	a.short_calls = 0
+and
+	a.long_calls = 0
+
+
+update
+        #grid
+set
+        /*
+        a.disp_long_puts = '<span style="color:gray">'+rtrim(a.disp_long_puts)+'</span>',
+        a.disp_short_puts = '<span style="color:gray">'+rtrim(a.disp_short_puts)+'</span>',
+        a.disp_net_puts = '<span style="color:gray">'+rtrim(a.disp_net_puts)+'</span>'
+        */
+        a.disp_long_puts = "",
+        a.disp_short_puts = "",
+        a.disp_net_puts = ""
+from
+        #grid a,
+        #strike_ranges b
+where
+        a.underlying_contract_id = b.underlying_contract_id
+and
+        round(a.strike, b.round) < round(b.current_price, b.round)
+and
+        a.short_puts = 0
+and
+        a.long_puts = 0
+
+
+
+
+create table
+	#distinct_grid
+(
+	section varchar(50),
+	underlying_contract_id int
+)
+
+insert into 
+	#distinct_grid
+select
+	section,
+	underlying_contract_id
+from
+	#grid
+group by
+	section,
+	underlying_contract_id
+/*
+create table
+	#batch_trades
+(
+		batch_id int,
+		batch_trade_id int,
+		batch_deal_id int,
+		option_trade_id int,
+		contract_id int,
+		trade_type_id int,
+		trade_date datetime,
+		value_date datetime,
+		quantity numeric(30,4),
+		trade_price float,
+		trader_id int,
+		broker_id int,
+		external_account_id int,
+		counterparty_id int,
+		sales_code_id int
+)
+*/
+
+create table
+	#expiry_output
+(
+	section varchar(50),
+	style varchar(100) NULL,
+	trade_type_ordering int NULL,
+	trade_type varchar(25),
+	ordering_trade_id int NULL,
+	option_trade_id int NULL,
+	option_contract_id int NULL,
+	option_contract varchar(100) NULL,
+	option_trade_date datetime NULL,
+	itm_otm char(3) NULL,
+	contract_id int NULL,
+	contract varchar(50) NULL,
+	trade_id int NULL,
+	quantity numeric(30, 4) NULL,
+	price float NULL,
+	value_date datetime NULL,
+	counterparty_id int NULL,
+	counterparty varchar(50) NULL,
+	exercise_assign varchar(25) NULL,
+	percentage varchar(10) NULL,
+	edit_percentage varchar(10) NULL,
+	prepare_exercise varchar(10) NULL,
+	action varchar(25) NULL
+)
+
+	
+
+
+/* 
+ |  Begin Exercise Logic & Output
+ */
+declare 
+	section_cursor 
+cursor for
+	select
+		distinct(section)
+	from
+		#grid
+	order by
+		section
+
+open section_cursor
+fetch section_cursor into @grid_section
+
+while @@sqlstatus = 0
+begin
+/*
+	if @auto_create_batch = "Y"
+	begin
+		exec
+			j_nextkey
+				"batches",
+				@batch_id output
+	end
+*/
+
+	
+	/*if @batch_id = NULL
+	begin*/
+	
+		insert into
+			#expiry_output
+			(
+				section,
+				style,
+				trade_type_ordering,
+				trade_type,
+				counterparty_id,
+				/*option_contract_id,*/
+				contract_id,
+				contract,
+				quantity,
+				value_date
+			)
+		select
+			@grid_section,
+			style = "background:rgb(233,241,245);border: 1px solid white",
+			trade_type_ordering=100,
+			trade_type="Counterparty Aggregate",
+                	a.counterparty_id,
+                	/*a.contract_id,*/
+			a.opt_underlying_contract_id,
+			a.underlying,
+                	sum(a.quantity),
+                	a.value_date
+		from
+			#option_trades a,
+			#distinct_grid b
+		where
+			a.opt_underlying_contract_id = b.underlying_contract_id
+		and
+			b.section=@grid_section
+		group by
+			section,
+			a.counterparty_id,
+                        /*a.contract_id,*/
+                        a.opt_underlying_contract_id,
+                        a.value_date
+		order by
+			a.counterparty_id
+	
+		insert into 
+	                        #expiry_output
+                        (
+                                section,
+				style,
+				trade_type_ordering,
+                                trade_type,
+                                counterparty_id,
+				option_contract_id,
+				option_contract,
+				itm_otm,
+                                contract_id,
+				contract,
+				option_trade_id,
+                                quantity,
+                                value_date,
+				counterparty,
+				option_trade_date
+                        )
+		select
+			@grid_section,
+			style = "color:gray;background:#FFFFFF;border: 1px solid white",
+			trade_type_ordering=1,
+			trade_type="Original Trade",
+			a.counterparty_id,
+			a.contract_id,
+			a.contract,
+			a.itm_otm,
+			a.contract_id,
+			a.underlying,
+			a.trade_id,
+			a.quantity,
+			a.value_date,
+			a.counterparty,
+			a.trade_date
+		from
+			#option_trades a,
+			#distinct_grid b
+		where
+			b.section= @grid_section
+		and
+			a.opt_underlying_contract_id = b.underlying_contract_id
+
+                insert into
+                                #expiry_output
+                        (
+                                section,
+				style,
+				trade_type_ordering,
+                                trade_type,
+                                counterparty_id,
+                                option_contract_id,
+                                contract_id,
+                                option_trade_id,
+                                quantity,
+				price,
+                                value_date,
+                                counterparty
+				
+                        )
+                select
+                        @grid_section,
+			style = "color:gray;background:#FFFFFF;border: 1px solid white",
+			trade_type_ordering=20,
+                        trade_type="Option Close Out",
+                        a.counterparty_id,
+                        a.contract_id,
+                        a.contract_id,
+                        a.trade_id,
+                        a.quantity * -1.0,
+			0.00,
+                        a.value_date,
+                        a.counterparty
+                from
+                        #option_trades a,
+                        #expiry_output b
+                where
+                        b.section= @grid_section
+                and
+                        a.trade_id = b.option_trade_id
+		and
+			b.trade_type = "Original Trade"
+
+
+                insert into
+                                #expiry_output
+                        (
+                                section,
+				style,
+				trade_type_ordering,
+                                trade_type,
+                                counterparty_id,
+				option_contract_id,
+				option_contract,
+				option_trade_date,
+                                contract_id,
+				contract,
+                                option_trade_id,
+                                quantity,
+                                price,
+                                value_date,
+                                counterparty,
+				exercise_assign,
+				percentage,
+				edit_percentage,
+				action
+                        )
+                select
+                        @grid_section,
+			 style="background:#faedee;border: 1px solid white", /* Pinkish */
+			/*style="background:background:rgb(233,241,245);border: 1px solid white", /* tico */*/
+			trade_type_ordering=30,
+                        trade_type="Option Exercise",
+                        a.counterparty_id,
+                        a.contract_id,
+			a.contract,
+			a.trade_date,
+			a.opt_underlying_contract_id,
+			a.underlying,
+                        a.trade_id,
+                        a.quantity,
+                        a.opt_contract_strike,
+                        a.opt_settle_date,
+                        a.counterparty,
+			"",
+			"100%",
+			"EDIT",
+			"EXERCISE"
+                from
+                        #option_trades a,
+                        #expiry_output b
+                where
+                        b.section= @grid_section
+                and
+                        a.trade_id = b.option_trade_id
+                and
+                        b.trade_type = "Original Trade"
+		and
+			a.itm_otm = "ITM"
+
+
+
+                update
+                        #expiry_output
+                set
+			trade_type = "Option Assignment",
+                        exercise_assign = "<i>waiting </i>",
+                        percentage = "100%",
+			edit_percentage = "",
+			action=""
+                where   
+                        section=@grid_section
+                and
+                        trade_type = "Option Exercise"
+                and
+                        quantity < 0
+
+
+                insert into
+                        #expiry_output
+                        (
+                                section,
+                                style,
+                                trade_type_ordering,
+                                trade_type,
+                                contract,
+                                quantity,
+				counterparty
+                        )
+                select
+                        @grid_section,
+                        style = "background:rgb(233,241,245);border: 1px solid white",  /* Standard Tico Blue */
+                        /* style = "background:#71a8d7;border: 1px solid white", /* Blue */ */
+                        trade_type_ordering=100,
+                        trade_type="Net Counterparty Delta",
+                        a.contract,
+                        sum(a.quantity),
+			a.counterparty
+                from
+			#expiry_output a
+                where
+                        a.section=@grid_section
+		and
+			a.trade_type in("Option Exercise", "Option Assignment")
+                group by
+                        section,
+			style,
+			a.contract,
+			a.counterparty
+
+
+		insert into
+			#expiry_output
+			(
+				section,
+				style,
+				trade_type_ordering,
+				trade_type,
+				contract,
+				quantity,
+				action
+			)
+		select
+			@grid_section,
+			/*style = "color:#FFFFFF;background:#000099;border: 1px solid white",*/
+			style = "background:#FFFFFF;border: 1px solid white",
+			/*style="background:background:rgb(233,241,245);border: 1px solid white", /* tico */*/
+			trade_type_ordering = 0,
+			trade_type = "Net "+upper(rtrim(a.contract))+ " Delta",
+			a.contract,
+			sum(a.quantity),
+			"PREPARE "+upper(rtrim(a.contract))+ " EXERCISES"
+		from
+                        #expiry_output a
+                where
+                        a.section=@grid_section
+                and
+			 a.trade_type in("Option Exercise", "Option Assignment")
+		group by
+			section,
+			style,
+			contract
+
+		
+		
+	fetch section_cursor into @grid_section
+end
+
+close section_cursor
+deallocate section_cursor
+
+
+select
+        style,
+        trade_type,
+        /*original=option_trade_id,
+        original_option_contract=option_contract,
+	original_option_trade_date=convert(char(8), option_trade_date, 112),
+        itm_otm,*/
+        contract,
+        quantity,
+        price,
+        value_date=convert(char(12), value_date),
+        counterparty,
+        status=exercise_assign,
+        percentage,
+	action
+from
+        #expiry_output
+where
+        /*trade_type not in("Option Close Out", "Net Counterparty Delta", "Counterparty Aggregate", "Original Trade")*/
+	trade_type in("Option Exercise", "Option Assignment")
+and
+        (itm_otm = "ITM" or itm_otm = NULL)
+order by
+	contract,
+        counterparty,
+        option_trade_id,
+        trade_type_ordering,
+        option_contract_id
+
+select
+        section,
+        style,
+        run_name = @run_name,
+        expiration = @expiration,
+        counterparty,
+        current_price,
+        long_calls=disp_long_calls,
+        short_calls=disp_short_calls,
+        net_calls=disp_net_calls,
+        strike,
+        net_puts=disp_net_puts,
+        short_puts=disp_short_puts,
+        long_puts=disp_long_puts
+from
+        #grid
+order by
+        underlying_contract,
+        strike
+
+
+
+	
+go

@@ -1,0 +1,50 @@
+
+if object_id("r_modelinputsforcontract") != NULL
+    drop procedure
+        r_modelinputsforcontract
+go
+
+create procedure
+	r_modelinputsforcontract
+		@contract_id int
+as
+
+declare @underlying_contract_id int
+declare @instrument char(100)
+
+
+select
+	@underlying_contract_id = c.underlying_contract_id
+from
+	option_contracts a,
+	option_expirations b,
+	options c
+where
+	a.contract_id = @contract_id
+and
+	a.option_expiration_id = b.option_expiration_id
+and
+	b.option_id = c.option_id
+
+select
+	@instrument = a.name
+from
+	instruments a,
+	contracts b
+where
+	a.instrument_id = b.instrument_id
+and
+	b.contract_id = @underlying_contract_id
+
+if @instrument = "Forward"
+	exec
+		r_modelinputsforforward
+			@contract_id
+
+if @instrument = "Future"
+	exec
+		r_modelinputsforfuture
+			@contract_id
+
+
+go

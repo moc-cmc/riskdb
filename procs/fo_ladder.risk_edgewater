@@ -1,0 +1,1878 @@
+create or replace procedure
+	fo_ladder
+		@login varchar(50),
+		@run_name varchar(50),
+		@as_of_date datetime=NULL,
+		@include_starting_positions char(10)=NULL,
+		@currency varchar(50)=NULL
+as
+
+
+declare @run_id int
+declare @tico_account_id int
+declare @trades_begin datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @resid_style varchar(250)
+declare @total_equiv float
+declare @contract_id int
+declare @contracts int
+declare @price float
+declare @product_id int
+declare @display_product_id int
+declare @currency_id int
+declare @product_rate float
+declare @currency_rate float
+declare @value_date datetime
+declare @value_dates int
+declare @balances int
+declare @timestamp datetime
+declare @derived_timestamp datetime
+declare @derived_rate float
+declare @product_style varchar(50)
+declare @currency_style varchar(50)
+declare @toggle_string varchar(200)
+declare @incl varchar(10)
+declare @original_as_of_date datetime
+declare @original_incl varchar(10)
+declare @total_prem_equiv float
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"as_of_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"include_starting_positions",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"run_name",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"balance",
+	"Run Ladder Views",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"include_positions",
+	"Run Ladder Views",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"rate",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"market_rate",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"counter_amt",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dealt_amt",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"premium",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ccy2_pl",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"bal",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ccy1_amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ccy2_amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@resid_style = "background:#E3E1E2;border: 1px solid white;font-weight:bold"
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@original_incl = @include_starting_positions
+
+if @include_starting_positions = NULL
+	select
+		@include_starting_positions = "N"
+
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @run_name
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+select
+	@original_as_of_date = @as_of_date
+
+if @as_of_date = NULL
+	select
+		@as_of_date = getdate()
+exec
+	r_daterangefordate
+		@as_of_date,
+		@begin_date output,
+		@end_date output
+
+
+if lower(convert(char(1), @include_starting_positions)) = "n"
+begin
+	select
+		@trades_begin = @begin_date,
+		@toggle_string = "Include Starting Positions",
+		@incl = "YES"
+end
+else
+begin
+	select
+		@trades_begin = min(trade_date)
+	from
+		trades
+	where
+		value_date >= @begin_date
+	select
+		@toggle_string = "Exclude Starting Positions",
+		@incl = "NO"
+end
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+create table
+	#trades(
+		trade_id int,
+		trade_date datetime,
+		external_account_id int NULL,
+		trader_id int NULL,
+		counterparty_id int NULL,
+		broker_id int NULL,
+		contract_id int,
+		value_date datetime,
+		product_id int,
+		product_qty float,
+		currency_id int,
+		currency_qty float,
+		price_style varchar(50) NULL,
+		display_contract_id int NULL,
+		display_product_qty float NULL,
+		display_currency_qty float NULL,
+		rate float NULL,
+		product_equiv float NULL,
+		currency_equiv float NULL,
+		status_id int)
+
+create table
+	#option_trades(
+		trade_id int)
+insert into
+	#option_trades
+select
+	a.trade_id
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g,
+	option_contracts h
+where
+	a.contract_id = h.contract_id
+and
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id= f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date >= @trades_begin
+and
+	a.trade_date < @end_date
+
+
+insert into
+	#trades(
+		trade_id,
+		trade_date,
+		external_account_id,
+		trader_id,
+		counterparty_id,
+		broker_id,
+		contract_id,
+		value_date,
+		product_id,
+		product_qty,
+		currency_id,
+		currency_qty,
+		rate,
+		status_id)
+select
+	a.trade_id,
+	a.trade_date,
+	a.external_account_id,
+	a.trader_id,
+	a.counterparty_id,
+	a.broker_id,
+	a.contract_id,
+	a.value_date,
+	h.product_id,
+	a.quantity,
+	h.currency_id,
+	a.quantity * a.price * -1.0,
+	a.price,
+	a.status_id
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g,
+	forwards h
+where
+	a.contract_id = h.contract_id
+and
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id= f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date >= @trades_begin
+and
+	a.trade_date < @end_date
+
+update
+	#trades
+set
+	price_style = "Standard",
+	display_contract_id = contract_id
+
+update
+	#trades
+set
+	a.price_style = c.name
+from
+	#trades a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+
+update
+	#trades
+set
+	a.display_contract_id = b.contract_id
+from
+	#trades a,
+	forwards b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	a.price_style = "Inverted"
+
+update
+	#trades
+set
+	display_product_qty = product_qty,
+	display_currency_qty = currency_qty
+where
+	price_style = "Standard"
+
+update
+	#trades
+set
+	display_product_qty = currency_qty,
+	display_currency_qty = product_qty
+where
+	price_style = "Inverted"
+
+create table
+	#products(
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#products
+select
+	product_id,
+	value_date,
+	sum(product_qty)
+from
+	#trades
+group by
+	product_id,
+	value_date
+
+insert into
+	#products
+select
+	currency_id,
+	value_date,
+	sum(currency_qty)
+from
+	#trades
+group by
+	currency_id,
+	value_date
+
+create table
+	#premiums(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		value_date datetime NULL,
+		premium float NULL,
+		currency_id int NULL,
+		equiv float NULL,
+		market_rate float NULL
+		)
+insert into
+	#premiums(
+		product_id,
+		value_date,
+		premium)
+select
+	a.currency_id,
+	convert(datetime, convert(date, a.transaction_date)),
+	sum(a.amount)
+from
+	account_transactions a,
+	account_transaction_trades b,
+	#option_trades c
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	b.trade_id = c.trade_id
+and
+	a.transaction_date >= @begin_date
+group by
+	a.currency_id,
+	convert(datetime, convert(date, a.transaction_date))
+order by
+	convert(datetime, convert(date, a.transaction_date))
+
+update
+	#premiums
+set
+	a.product = b.symbol
+from
+	#premiums a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#premiums
+set
+	currency_id = @evaluation_currency_id,
+	style = @style
+
+
+create table
+	#balances(
+		product_id int,
+		balance float NULL,
+		value_date datetime NULL,
+		currency_id int NULL,
+		market_rate float NULL,
+		equiv float NULL)
+
+insert into
+	#balances(
+		product_id,
+		value_date,
+		balance)
+select
+	product_id,
+	value_date,
+	sum(balance)
+from
+	#products
+group by
+	product_id,
+	value_date
+
+delete
+
+from
+	#balances
+where
+	balance = 0.0
+
+update
+	#balances
+set
+	currency_id = @evaluation_currency_id
+
+update
+	#balances
+set
+	equiv = balance,
+	market_rate = 1.0
+where
+	product_id = currency_id
+
+
+create table
+	#rates(
+		contract_id int NULL,
+		price_style varchar(50) NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		rate float NULL,
+		display_rate float NULL,
+		timestamp datetime NULL,
+		derived_timestamp datetime NULL)
+insert into
+	#rates(
+		product_id)
+select
+	distinct(a.product_id)
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+and
+	b.name = "Currency"
+
+update
+	#rates
+set
+	currency_id = @evaluation_currency_id,
+	price_style = "Standard"
+
+
+update
+	#rates
+set
+	a.contract_id = b.contract_id
+from
+	#rates a,
+	forwards b
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+
+update
+	#rates
+set
+	rate = 1.0,
+	timestamp = getdate()
+where
+	product_id = currency_id
+
+update
+	#rates
+set
+	a.rate = c.price,
+	a.timestamp = c.price_date
+from
+	#rates a,
+	forwards b,
+	prices c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+
+update
+	#rates
+set
+	a.rate = 1.0 / c.price,
+	a.timestamp = c.price_date
+from
+	#rates a,
+	forwards b,
+	prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.rate = NULL
+
+update
+	#rates
+set
+	a.rate = c.price,
+	a.timestamp = c.timestamp
+from
+	#rates a,
+	forwards b,
+	current_prices c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+update
+	#rates
+set
+	a.rate = 1.0 / c.price,
+	a.timestamp = c.timestamp
+from
+	#rates a,
+	forwards b,
+	current_prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+update
+	#rates
+set
+	a.price_style = c.name
+from
+	#rates a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+
+update
+	#rates
+set
+	display_rate = rate
+
+update
+	#rates
+set
+	display_rate = 1.0 / rate
+where
+	price_style = "Inverted"
+
+create table
+	#contracts(
+		contract_id int,
+		product_id int NULL,
+		currency_id int NULL)
+insert into
+	#contracts(
+		contract_id)
+select
+	distinct(display_contract_id)
+from
+	#trades
+
+update
+	#contracts
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#contracts a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+delete
+
+from
+	#contracts
+where
+	product_id = @evaluation_currency_id
+
+delete
+
+from
+	#contracts
+where
+	currency_id = @evaluation_currency_id
+
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	#contracts
+where
+	contract_id > @contract_id
+
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#contracts
+	where
+		contract_id > @contract_id
+
+	select
+		@product_id = NULL,
+		@currency_id = NULL,
+		@product_rate = NULL,
+		@currency_rate = NULL,
+		@timestamp = NULL,
+		@derived_timestamp = NULL,
+		@product_style = NULL,
+		@currency_style = NULL,
+		@derived_rate = NULL
+
+	select
+		@product_id = product_id,
+		@currency_id = currency_id
+	from
+		#contracts
+	where
+		contract_id = @contract_id
+
+	select
+		@product_rate = display_rate,
+		@timestamp = timestamp,
+		@product_style = price_style
+	from
+		#rates
+	where
+		product_id = @product_id
+	and
+		currency_id = @evaluation_currency_id
+
+	select
+		@currency_rate = display_rate,
+		@derived_timestamp = timestamp,
+		@currency_style = price_style
+	from
+		#rates
+	where
+		product_id = @currency_id
+	and
+		currency_id = @evaluation_currency_id
+
+	if @product_style = @currency_style
+	begin
+		select
+			@derived_rate = round(@product_rate, 5) / round(@currency_rate, 5)
+	end
+	if @product_style != @currency_style
+	begin
+		select
+			@derived_rate = round(@product_rate, 5) * round(, @currency_rate, 5)
+	end
+
+	insert into
+		#rates(
+			contract_id,
+			product_id,
+			currency_id,
+			rate,
+			timestamp,
+			derived_timestamp)
+	values(
+		@contract_id,
+		@product_id,
+		@currency_id,
+		@derived_rate,
+		@timestamp,
+		@derived_timestamp)
+		
+	select
+		@contracts = count(*)
+	from
+		#contracts
+	where
+		contract_id > @contract_id
+end
+		
+update
+	#rates
+set
+	display_rate = rate 
+
+update
+	#rates
+set
+	a.display_rate = 1.0 / a.rate,
+	a.price_style = "Inverted"
+from
+	#rates a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+
+update
+	#trades
+set
+	product_equiv = product_qty
+where
+	product_id = @evaluation_currency_id
+update
+	#trades
+set
+	currency_equiv = currency_qty
+where
+	currency_id = @evaluation_currency_id
+
+
+update
+	#trades
+set
+	a.product_equiv = a.product_qty * b.rate
+from
+	#trades a,
+	#rates b
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+update
+	#trades
+set
+	a.currency_equiv = a.currency_qty * b.rate
+from
+	#trades a,
+	#rates b
+where
+	a.currency_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+
+
+
+
+update
+	#balances
+set
+	a.equiv = a.balance * b.rate
+from
+	#balances a,
+	#rates b
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+update
+	#premiums
+set
+	a.equiv = a.premium * b.rate,
+	a.market_rate = b.display_rate
+from
+	#premiums a,
+	#rates b
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+select
+	@total_prem_equiv = NULL
+select
+	@total_prem_equiv = sum(equiv)
+from
+	#premiums
+
+if @total_prem_equiv != NULL
+insert into
+	#premiums(
+		style,
+		product,
+		equiv)
+values(
+	@total_style,
+	"Total",
+	@total_prem_equiv)
+
+create table
+	#net_prems(
+		product_id int,
+		premium float,
+		equiv float)
+insert into
+	#net_prems
+select
+	product_id,
+	sum(premium),
+	sum(equiv)
+from
+	#premiums
+where
+	product_id != NULL
+group by
+	product_id
+
+create table
+	#total_balances(
+		id int identity,
+		ordering int,
+		style varchar(250) NULL,
+		product_id int NULL,
+		balance float NULL,
+		premium float NULL,
+		total float NULL,
+		currency varchar(50) NULL,
+		market_rate float NULL,
+		display_market_rate float NULL,
+		equiv float NULL)
+insert into
+	#total_balances(
+		ordering,
+		product_id,
+		balance)
+select
+	2,
+	product_id,
+	sum(balance)
+from
+	#balances
+group by
+	product_id
+
+insert into
+	#total_balances(
+		ordering,
+		product_id,
+		premium)
+select
+	2,
+	product_id,
+	premium
+from
+	#net_prems
+where
+	product_id not in(
+		select
+			product_id
+		from
+			#balances)
+
+
+update
+	#total_balances
+set
+	balance = 0.0
+where
+	balance = NULL
+
+update
+	#total_balances
+set
+	premium = 0.0
+where
+	premium = NULL
+
+update
+	#total_balances
+set
+	a.premium = b.premium
+from
+	#total_balances a,
+	#net_prems b
+where
+	a.product_id = b.product_id
+
+update
+	#total_balances
+set
+	total = balance + premium
+
+update
+	#total_balances
+set
+	a.market_rate = b.rate,
+	a.display_market_rate = b.display_rate,
+	a.equiv = a.total * b.rate
+from
+	#total_balances a,
+	#rates b
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+
+update
+	#total_balances
+set
+	a.currency = b.symbol
+from
+	#total_balances a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#total_balances
+set
+	style = @style
+
+select
+	@total_equiv = NULL
+select
+	@total_equiv = sum(equiv)
+from
+	#total_balances
+
+insert into
+	#total_balances(
+		ordering,
+		style,
+		currency,
+		equiv)
+values(
+	3,
+	@total_style,
+	"Total",
+	@total_equiv)
+/* End of Position Ladder construction */
+
+/* Product balance trades construction */
+select
+	@display_product_id = product_id
+from
+	products
+where
+	symbol = @currency
+
+update
+	#total_balances
+set
+	style = @selected_style
+where
+	product_id = @display_product_id
+
+create table
+	#product_trades(
+		id int identity,
+		style varchar(250) NULL,
+		trade_id varchar(50) NULL,
+		trade_date datetime NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		value_date datetime NULL,
+		trader_id int NULL,
+		trader varchar(50) NULL,
+		product_id int NULL,
+		dealt_ccy varchar(50) NULL,
+		dealt_amt float NULL,
+		dealt_equiv float NULL,
+		currency_id int NULL,
+		counter_ccy varchar(50) NULL,
+		counter_amt float NULL,
+		counter_equiv float NULL,
+		rate float NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		broker_id int NULL,
+		platform varchar(50) NULL,
+		amount float NULL,
+		status_id int NULL)
+
+insert into
+	#product_trades(
+		trade_id,
+		trade_date,
+		external_account_id,
+		value_date,
+		trader_id,
+		counterparty_id,
+		broker_id,
+		product_id,
+		dealt_amt,
+		dealt_equiv,
+		currency_id, 
+		counter_amt,
+		counter_equiv,
+		rate,
+		status_id)
+select
+	convert(varchar(50), trade_id),
+	trade_date,
+	external_account_id,
+	value_date,
+	trader_id,
+	counterparty_id,
+	broker_id,
+	product_id,
+	product_qty,
+	product_equiv,
+	currency_id,
+	currency_qty,
+	currency_equiv,
+	rate,
+	status_id
+from
+	#trades
+where
+	product_id = @display_product_id
+or
+	currency_id = @display_product_id
+order by
+	trade_date
+	
+update
+	#product_trades
+set
+	amount = dealt_equiv
+where
+	product_id = @display_product_id
+
+update
+	#product_trades
+set
+	amount = counter_equiv
+where
+	currency_id = @display_product_id
+
+update
+	#product_trades
+set
+	a.account = b.symbol
+from
+	#product_trades a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#product_trades
+set
+	a.trader = b.symbol
+from
+	#product_trades a,
+	traders b
+where
+	a.trader_id = b.trader_id
+
+update
+	#product_trades
+set
+	a.platform = b.symbol
+from
+	#product_trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+update
+	#product_trades
+set
+	a.counterparty = b.name
+from
+	#product_trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+	
+update
+	#product_trades
+set
+	dealt_ccy = b.symbol
+from
+	#product_trades a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#product_trades
+set
+	counter_ccy = b.symbol
+from
+	#product_trades a,
+	products b
+where
+	a.currency_id = b.product_id
+
+update
+	#product_trades
+set
+	style = @style
+		
+update
+	#product_trades
+set
+	a.style = @resid_style
+from
+	#product_trades a,
+	statuses b
+where
+	a.status_id = b.status_id
+and
+	b.name = "Resid"
+
+select
+	@total_equiv = NULL
+select
+	@total_equiv = sum(amount)
+from
+	#product_trades
+
+if @total_equiv != NULL
+insert into
+	#product_trades(
+		style,
+		trade_id,
+		amount)
+values(
+	@total_style,
+	"Total",
+	@total_equiv)
+
+
+/* Pair Ladder construction */
+create table
+	#pair_ladder(
+		id int identity,
+		ordering int,
+		style varchar(250) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		product_qty float NULL,
+		product_equiv float NULL,
+		currency_qty float NULL,
+		currency_equiv float NULL,
+		market_rate float NULL,
+		native_pl float NULL,
+		equiv float NULL)
+insert into
+	#pair_ladder(
+		ordering,
+		contract_id,
+		product_qty,
+		currency_qty)
+select
+	1,
+	display_contract_id,
+	sum(display_product_qty),
+	sum(display_currency_qty)
+from
+	#trades
+group by
+	display_contract_id
+
+update
+	#pair_ladder
+set
+	style = @style
+
+update
+	#pair_ladder
+set
+	a.symbol = b.symbol
+from
+	#pair_ladder a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#pair_ladder
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#pair_ladder a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#pair_ladder
+set
+	a.product = b.symbol
+from
+	#pair_ladder a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#pair_ladder
+set
+	a.currency = b.symbol
+from
+	#pair_ladder a,
+	products b
+where
+	a.currency_id = b.product_id
+update
+	#pair_ladder
+set
+	a.product_equiv = a.product_qty * b.rate
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+update
+	#pair_ladder
+set
+	a.currency_equiv = a.currency_qty * b.rate
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.currency_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+update
+	#pair_ladder
+set
+	equiv = product_equiv + currency_equiv
+
+
+update
+	#pair_ladder
+set
+	a.market_rate = b.rate
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.contract_id = b.contract_id 
+
+update
+	#pair_ladder
+set
+	a.market_rate = 1.0 / b.rate
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	a.market_rate = NULL
+
+update
+	#pair_ladder
+set
+	native_pl = currency_qty - (product_qty * market_rate * -1.0)
+
+select
+	@total_equiv = NULL
+select
+	@total_equiv = sum(equiv)
+from
+	#pair_ladder
+
+insert into
+	#pair_ladder(
+		ordering,
+		style,
+		product,
+		equiv)
+values(
+	2,
+	@total_style,
+	"Total",
+	@total_equiv)
+
+/* End pair ladder construction */
+
+/* Forward ladder construction */
+create table
+	#forward_ladder(
+		id int identity,
+		style varchar(250) NULL,
+		date datetime NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		value_date datetime NULL,
+		balance float NULL,
+		ccy varchar(50) NULL,
+		equiv float NULL)
+
+create table
+	#value_dates(
+		value_date datetime)
+insert into
+	#value_dates
+select
+	distinct(value_date)
+from
+	#trades
+
+
+select
+	@value_date = dateadd(year, -1, min(value_date))
+from
+	#value_dates
+
+select
+	@value_dates = count(*)
+from
+	#value_dates
+where
+	value_date > @value_date
+
+while @value_dates > 0
+begin
+	select
+		@value_date = min(value_date)
+	from
+		#value_dates
+	where
+		value_date > @value_date
+
+	select
+		@balances = NULL
+	select
+		@balances = count(*)
+	from
+		#balances
+	where
+		value_date = @value_date
+	if @balances = NULL
+		select
+			@balances = 0
+
+	if @balances > 0
+	begin
+		insert into
+			#forward_ladder(
+				style,
+				product)
+		values(
+			@style,
+			convert(varchar(11), @value_date))
+	
+		insert into
+			#forward_ladder(
+				style,
+				/* product, MARKR */
+				product_id,
+				value_date,
+				balance,
+				ccy,
+				equiv)
+		select
+			style = @style,
+			/* MARKR b.symbol, */
+			a.product_id,
+			a.value_date,
+			a.balance,
+			b.symbol,
+			a.equiv
+		from
+			#balances a,
+			products b
+		where
+			a.product_id = b.product_id
+		and
+			a.value_date = @value_date
+		order by
+			b.symbol
+
+		select
+			@total_equiv = NULL
+		select
+			@total_equiv = sum(equiv)
+		from
+			#forward_ladder
+		where
+			value_date = @value_date
+
+		insert into
+			#forward_ladder(
+				style,
+				product,
+				equiv)
+		values(
+			@subtotal_style,
+			convert(varchar(11), @value_date) + " Total",
+			@total_equiv)
+	end
+
+
+	select
+		@value_dates = count(*)
+	from
+		#value_dates
+	where
+		value_date > @value_date
+end
+
+select
+	@total_equiv = NULL
+select
+	@total_equiv = sum(equiv)
+from
+	#forward_ladder
+where
+	balance != NULL
+
+insert into
+	#forward_ladder(
+		style,
+		product,
+		equiv)
+values(
+	@total_style,
+	"Total",
+	@total_equiv)
+
+
+
+select
+	style = @style,
+	include_positions = @toggle_string,
+	include_starting_positions = @incl,
+	run_name = @run_name,
+	as_of_date = @original_as_of_date,
+	positions_as_of = @as_of_date
+
+/* select
+	style = @style,
+	refresh_ladder = "Refresh",
+	include_starting_positions = @original_incl,
+	run_name = @run_name,
+	as_of_date = @original_as_of_date */
+	
+
+select
+	section = "Position Ladder",
+	run_name = @run_name,
+	as_of_date = @original_as_of_date,
+	include_starting_positions = @original_incl,
+	style,
+	currency,
+	balance,
+	premium,
+	total,
+	market_rate = display_market_rate,
+	equiv
+from
+	#total_balances
+order by
+	ordering,
+	currency,
+	id
+
+select
+	section = rtrim(@currency) + " Trades",
+	style,
+	trade_id,
+	trade_date = convert(varchar(11), trade_date),
+	account,
+	dealt_ccy,
+	dealt_amt,
+	counter_ccy,
+	counter_amt,
+	value_date = convert(varchar(11), value_date),
+	rate,
+	counterparty,
+	platform,
+	equiv = amount
+from
+	#product_trades
+order by
+	id
+
+select
+	section = "Pair Ladder",
+	style,
+	symbol,
+	ccy1 = product,
+	ccy1_amount = product_qty,
+	ccy2 = currency,
+	ccy2_amount = currency_qty,
+	market_rate,
+	ccy2_pl = native_pl,
+	equiv
+from
+	#pair_ladder
+order by
+	ordering,
+	symbol,
+	id
+		
+select
+	section = "Forward Ladder",
+	style,
+	currency =  product,
+	bal = balance,
+	ccy,
+	equiv
+from
+	#forward_ladder
+order by
+	id
+
+/* select
+	section = "Prices",
+	style = @style,
+	b.symbol,
+	a.rate,
+	a.timestamp,
+	a.derived_timestamp
+from
+	#rates a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+order by
+	b.symbol */
+
+select
+	section = "Option Premiums",
+	style,
+	product,
+	value_date,
+	premium,
+	equiv,
+	market_rate
+from
+	#premiums
+order by
+	id
+
+
+go 
+

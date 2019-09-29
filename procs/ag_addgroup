@@ -1,0 +1,87 @@
+drop procedure
+	ag_addgroup
+go
+
+create procedure
+	ag_addgroup
+		@login varchar(50),
+		@group_name varchar(100),
+		@login_type varchar(100),
+		@activity_status varchar(100)
+as
+
+declare @group_id int
+declare @login_type_id int
+declare @activity_status_id int
+
+select
+	@group_id = group_id
+from
+	groups
+where
+	name = @group_name
+if @group_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Group name already exists",
+		group_name = @group_name
+	return
+end
+
+
+select
+	@login_type_id = login_type_id
+from
+	login_types
+where
+	name = @login_type
+if @login_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Login type not found",
+		login_type = @login_type
+	return
+end
+
+select
+	@activity_status_id = activity_status_id
+from
+	activity_statuses
+where
+	name = @activity_status
+if @activity_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Activity status not found",
+		activity_status = @activity_status
+	return
+end
+
+exec
+	j_nextkey
+		"groups",
+		@group_id output
+
+insert into
+	groups(
+		group_id,
+		name,
+		login_type_id,
+		activity_status_id)
+values(
+	@group_id,
+	@group_name,
+	@login_type_id,
+	@activity_status_id)
+
+exec
+	ag_groupshome
+		@login = @login,
+		@group = @group_name
+
+
+go
+	

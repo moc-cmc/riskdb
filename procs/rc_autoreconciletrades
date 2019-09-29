@@ -1,0 +1,1149 @@
+
+if object_id("rc_autoreconciletrades") != NULL
+    drop procedure
+        rc_autoreconciletrades
+go
+
+create procedure
+    rc_autoreconciletrades
+        @login varchar(50),
+        @fund varchar(50) = NULL,
+        @prime_broker varchar(50) = NULL,
+        @begin_date datetime = NULL,
+        @end_date datetime = NULL,
+        @options varchar(100) = NULL
+as
+
+declare @matched_status_id int
+declare @mismatched_status_id int
+declare @review_status_id int
+
+declare @user_id int
+declare @fund_id int
+declare @prime_broker_id int
+declare @ext_trade_count int
+declare @int_trade_count int
+declare @known_match_count int
+declare @new_match_count int
+
+/*
+ * 1. LOOKUP background information
+ * 2. LOOKUP #external_accounts
+ * 3. FIND #ext_trades: external trades from report_trades table
+ * 4. FIND #int_trades: internal trades from trades table
+ * 5. FIND #known_matches: the known matches from trade_matches
+ * 6. DELETE #ext_trades: that have #known_matches
+ * 7. DELETE #int_trades: that have #known_matches
+ * 8. FIND #byid_matches: for internal and external trades by trade_id
+ * 9. UPDATE #byid_matches: calculate match strength for accounts
+ * 10. UPDATE #byid_matches: calculate match strength for contracts and prices
+ * 11. UPDATE #byid_matches: calculate statuses based on match_strength
+ * 12. INSERT trade_matches: from new matches
+ */
+
+create table
+    #messages (
+        id int identity,
+        subject varchar(25),
+        message varchar(75)
+    )
+
+/*+---------------------------------------------------------------------------* 
+ |                      1. LOOKUP background information                      | 
+ *----------------------------------------------------------------------------*/
+
+/*
+ * LOOKUP @matched_status_id, @mismatched_status_id, @review_status_id
+ */
+select
+    @matched_status_id = status_id
+from
+    statuses
+where
+    name = "Matched"
+
+select
+    @mismatched_status_id = status_id
+from
+    statuses
+where
+    name = "Mismatched"
+
+select
+    @review_status_id = status_id
+from
+    statuses
+where
+    name = "Review"
+
+if @matched_status_id = NULL or @mismatched_status_id = NULL or @review_status_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Couldn't find statuses: Matched, Mismatched and/or Review"
+    return
+end
+ 
+/*
+ * LOOKUP @user_id
+ */
+
+select
+    @user_id = account_id
+from
+    tico_accounts
+where
+    login = @login
+
+if @user_id = NULL
+begin
+    select
+        status = "Error",
+        message = "No such login, '" + @login + "'"
+    return
+end
+
+/*
+ * RESOLVE @fund_id
+ */
+if @fund != NULL
+begin
+
+    select
+        @fund_id = fund_id
+    from
+        funds
+    where
+        name = @fund
+    
+    if @fund_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "No such fund, '" + @fund + "'"
+        return
+    end
+    
+    /* DIAGNOSTICS */ insert into
+        #messages
+    select
+        subject = "Fund",
+        message = "Using fund, '" + @fund + "' (" + convert(varchar(10), @fund_id) + ")"
+    
+end
+else
+begin
+    /* Look up the default fund */
+    exec
+        r_defaultfundforlogin
+            @login,
+            @fund_id out
+    
+    if @fund_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "The user, '" + @login + "', does not have a default fund"
+        return
+    end
+    
+    select
+        @fund = name
+    from
+        funds
+    where
+        fund_id = @fund_id
+    
+    /* DIAGNOSTICS */ insert into
+        #messages
+    select
+        subject = "Fund",
+        message = "Using default fund for user, '" + @login + "', named '" + @fund + "' (" + convert(varchar(10), @fund_id) + ")"
+    
+end
+
+/*
+ * RESOLVE @prime_broker_id
+ */
+if @prime_broker != NULL
+begin
+
+    select
+        @prime_broker_id = a.prime_broker_id
+    from
+        prime_brokers a,
+        sources b
+    where
+        a.source_id = b.source_id
+    and
+        b.name = @prime_broker
+    
+    if @prime_broker_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "No such prime broker, '" + @prime_broker + "'"
+        return
+    end
+    
+    /* DIAGNOSTICS */ insert into
+        #messages
+    select
+        subject = "Prime Broker",
+        message = "Using prime broker, '" + @prime_broker + "' (" + convert(varchar(10), @prime_broker_id) + ")"
+    
+end
+else
+begin
+    /* Look up the default prime broker */
+    select distinct
+        @prime_broker_id = d.prime_broker_id,
+        @prime_broker = da.name
+    from
+        fund_external_accounts a,
+        external_accounts b, /* join to ensure external_account exists */
+        external_account_prime_brokers c,
+        prime_brokers d,
+        sources da
+    where
+        a.external_account_id = b.external_account_id
+    and
+        b.external_account_id = c.external_account_id
+    and
+        c.prime_broker_id = d.prime_broker_id
+    and
+        d.source_id = da.source_id
+    and
+        a.fund_id = @fund_id
+        
+    if @@rowcount > 1
+    begin
+        select
+            status = "Error",
+            message = "The fund, '" + @fund + "', has more than one prime broker (actually, " + convert(varchar(10), @@rowcount) + "). Please specify the prime broker"
+        return
+    end
+    else if @@rowcount = 0
+    begin
+        select
+            status = "Error",
+            message = "The fund, '" + @fund + "', has no prime brokers"
+        return
+    end
+    
+    /* DIAGNOSTICS */ insert into
+        #messages
+    select
+        subject = "Fund",
+        message = "Using default prime broker for fund, '" + @fund + "', named '" + @prime_broker + "' (" + convert(varchar(10), @prime_broker_id) + ")"
+    
+end
+
+/*
+ * RESOLVE @begin_date and @end_date: Default to the current date range.
+ */
+exec
+    r_normalizedaterange
+        @begin_date out,
+        @end_date out
+
+/* DIAGNOSTICS */ insert into
+    #messages
+select
+    subject = "Date Range",
+    messages = "Using date range, " + convert(varchar(20), @begin_date, 16) + " - " + convert(varchar(20), @end_date, 16)
+
+/*+---------------------------------------------------------------------------* 
+ |                        2. LOOKUP #external_accounts                        | 
+ *----------------------------------------------------------------------------*/
+/* 
+ * Find all of the external_accounts that we'll use to qualify trades and
+ * report_trades.
+ */
+
+create table
+    #external_accounts (
+        external_account_id int,
+        symbol varchar(50)
+    )
+
+insert into
+    #external_accounts (
+        external_account_id,
+        symbol
+    )
+select
+    b.external_account_id,
+    b.symbol
+from
+    fund_external_accounts a,
+    external_accounts b, /* join to ensure external_account exists */
+    external_account_prime_brokers c
+where
+    a.external_account_id = b.external_account_id
+and
+    b.external_account_id = c.external_account_id
+and
+    a.fund_id = @fund_id
+and
+    c.prime_broker_id = @prime_broker_id
+
+if @@rowcount = 0
+begin
+    select
+        status = "Error",
+        message = "No external accounts for fund, '" + @fund + "', with prime broker, '" + @prime_broker + "'"
+    return
+end
+
+/* DIAGNOSTICS */ insert into
+    #messages
+select
+    subject = "External Account",
+    messages = "Using external account: '" + symbol + "' (" +convert(varchar(10), external_account_id) + ")"
+from
+    #external_accounts
+
+
+
+/*+---------------------------------------------------------------------------* 
+ |       3. FIND #ext_trades: external trades from report_trades table        | 
+ *----------------------------------------------------------------------------*/
+
+create table
+    #ext_trades (
+        report_trade_id int,
+        inv_contract_id int NULL,
+        inv_price float NULL,
+        inv_quantity float NULL
+    )
+
+insert into
+    #ext_trades (
+        report_trade_id
+    )
+select
+    a.report_trade_id
+from
+    report_trades a,
+    #external_accounts b
+where
+    a.external_account_id = b.external_account_id
+and
+    a.trade_date >= @begin_date
+and
+    a.trade_date < @end_date
+
+select
+    @ext_trade_count = @@rowcount
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "External Trades",
+    messages = "Found " + convert(varchar(10), @ext_trade_count) + " external trade(s)"
+
+/* 
+ * UPDATE #ext_trades: Annotate the inverted contract for currency forwards. We
+ * will use this to optionally match inverted prices.
+ */
+update
+    #ext_trades
+set
+    inv_contract_id = da.contract_id,
+    inv_price = 1 / b.price,
+    inv_quantity = b.quantity / b.price
+from
+    #ext_trades a,
+    report_trades b,
+    contracts c,
+        forwards ca,
+            products caa,
+                product_types caaa,
+            products cab,
+                product_types caba,
+    contracts d,
+        forwards da
+where
+    a.report_trade_id = b.report_trade_id
+and
+    b.contract_id = c.contract_id
+        and
+            c.contract_id = ca.contract_id
+                and
+                    ca.product_id = caa.product_id
+                        and
+                            caa.product_type_id = caaa.product_type_id
+                and
+                    ca.currency_id = cab.product_id
+                        and
+                            cab.product_type_id = caba.product_type_id
+and
+    d.contract_id = da.contract_id
+and (
+        da.product_id = ca.currency_id
+    and
+        da.currency_id = ca.product_id
+    )
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Inverted Contracts",
+    messages = "Found " + convert(varchar(10), @@rowcount) + " external trade(s) with invertable contracts"
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Inverted Contracts",
+    messages = convert(varchar(10), a.report_trade_id) + ": c: " + rtrim(ba.symbol) + " => " + rtrim(aa.symbol) + ", px: " + convert(varchar(30), convert(numeric(30,6), b.price)) + ": " + convert(varchar(30), convert(numeric(30,6), a.inv_price)) + ", qt: " + convert(varchar(30), convert(numeric(30,0), b.quantity)) + " => " + convert(varchar(30), convert(numeric(30,0), a.inv_quantity))
+from
+    #ext_trades a,
+    contracts aa,
+    report_trades b,
+    contracts ba
+where
+    a.inv_contract_id = aa.contract_id
+and
+    a.report_trade_id = b.report_trade_id
+and
+    b.contract_id = ba.contract_id
+order by
+    a.report_trade_id
+
+
+/*+---------------------------------------------------------------------------* 
+ |           4. FIND #int_trades: internal trades from trades table           | 
+ *----------------------------------------------------------------------------*/
+
+create table
+    #int_trades (
+        trade_id int
+    )
+
+insert into
+    #int_trades (
+        trade_id
+    )
+select
+    a.trade_id
+from
+    trades a,
+    #external_accounts b
+where
+    a.external_account_id = b.external_account_id
+and
+    a.trade_date >= @begin_date
+and
+    a.trade_date < @end_date
+
+select
+    @int_trade_count = @@rowcount
+
+/* DIAGNOSTICS */ insert into
+    #messages
+select
+    subject = "Internal Trades",
+    messages = "Found " + convert(varchar(10), @int_trade_count) + " internal trade(s)"
+
+    
+/*+---------------------------------------------------------------------------* 
+ |        5. FIND #known_matches: the known matches from trade_matches        | 
+ *----------------------------------------------------------------------------*/
+
+create table
+    #known_matches (
+        report_trade_id int,
+        trade_id int
+    )
+
+insert into
+    #known_matches (
+        report_trade_id,
+        trade_id
+    )
+select
+    a.report_trade_id,
+    a.trade_id
+from
+    trade_matches a,
+    #ext_trades b,
+    #int_trades c
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+
+select
+    @known_match_count = @@rowcount
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Known Matches",
+    messages = "Found " + convert(varchar(10), @known_match_count) + " known match(es)"
+
+
+/*+---------------------------------------------------------------------------* 
+ |              6. DELETE #ext_trades: that have #known_matches               | 
+ *----------------------------------------------------------------------------*/
+
+delete
+    #ext_trades
+from
+    #ext_trades a,
+    #known_matches b
+where
+    a.report_trade_id = b.report_trade_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "External Trades",
+    messages = "Trimmed " + convert(varchar(10), @@rowcount) + " external trade(s) known to be matched"
+
+
+/*+---------------------------------------------------------------------------* 
+ |              7. DELETE #int_trades: that have #known_matches               | 
+ *----------------------------------------------------------------------------*/
+
+delete
+    #int_trades
+from
+    #int_trades a,
+    #known_matches b
+where
+    a.trade_id = b.trade_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Internal Trades",
+    messages = "Trimmed " + convert(varchar(10), @@rowcount) + " internal trade(s) known to be matched"
+
+
+/*+---------------------------------------------------------------------------* 
+ |     8. FIND #byid_matches: for internal and external trades by trade_id     | 
+ *----------------------------------------------------------------------------*/
+ 
+create table
+    #byid_matches (
+        report_commit_id int,
+        report_trade_id int,
+        trade_id int,
+        match_strength float default 0,
+        marks varchar(250) default "",
+        status_id int default NULL NULL
+    )
+
+insert into
+    #byid_matches (
+        report_commit_id,
+        report_trade_id,
+        trade_id,
+        match_strength
+    )
+select
+    aa.report_commit_id,
+    a.report_trade_id,
+    b.trade_id,
+    match_strength = 1.0
+from
+    #ext_trades a,
+    report_trades aa,
+    #int_trades b,
+    trades ba
+where
+    a.report_trade_id = aa.report_trade_id
+and
+    b.trade_id = ba.trade_id
+and
+    aa.trade_id = ba.trade_id
+
+select
+    @new_match_count = @@rowcount
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "New Matches",
+    messages = "Found " + convert(varchar(10), @new_match_count) + " new matches"
+
+/*+---------------------------------------------------------------------------* 
+ |       9. UPDATE #byid_matches: calculate match strength for accounts        | 
+ *----------------------------------------------------------------------------*/
+ 
+/* 
+ * external_account_id
+ * 
+ * If report_trades.external_account_id is specified but is different than
+ * trades.external_account_id, then this is a big problem. Reduce match strength
+ * by 50%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength - 0.5,
+    marks = a.marks + "ea "
+from
+    #byid_matches a,
+    report_trades b,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    b.external_account_id != NULL
+and
+    b.external_account_id != c.external_account_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match external account"
+
+/* 
+ * external_account_type_id
+ * 
+ * If report_trades.external_account_type_id is different than
+ * trades.external_accounts.external_account_type_id, then this is a big
+ * problem. Reduce match strength by 25%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength - 0.25,
+    marks = a.marks + "eat "
+from
+    #byid_matches a,
+    report_trades b,
+    trades c,
+    external_accounts ca
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    c.external_account_id = ca.external_account_id
+and
+    b.external_account_type_id != ca.external_account_type_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match external account type"
+
+/* 
+ * counterparty_id
+ * 
+ * If report_trades.counterparty_id is different than trades.counterparty_id,
+ * then this is a big problem. Reduce match strength by 50%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength - 0.5,
+    marks = a.marks + "cp "
+from
+    #byid_matches a,
+    report_trades b,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    b.counterparty_id != c.counterparty_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match counterparty"
+
+/* 
+ * trader_id
+ * 
+ * If report_trades.trader_id is specified but is different than
+ * trades.trader_id, then this is a big problem. Reduce match strength
+ * by 25%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength - 0.25,
+    marks = a.marks + "tr "
+from
+    #byid_matches a,
+    report_trades b,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    b.trader_id != NULL
+and
+    b.trader_id != c.trader_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match trader"
+
+/* 
+ * strategy_id
+ * 
+ * If report_trades.external_account_id is specified but is different than
+ * trades.external_account_id, then this is a minor problem. Reduce match
+ * strength by 5%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength - 0.05,
+    marks = a.marks + "sg "
+from
+    #byid_matches a,
+    report_trades b,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    b.strategy_id != NULL
+and
+    b.strategy_id != c.strategy_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match strategy"
+
+/* 
+ * broker_id
+ * 
+ * If report_trades.broker_id is specified but is different than
+ * trades.broker_id, then this is a big problem. Reduce match strength
+ * by 25%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength - 0.25,
+    marks = a.marks + "br "
+from
+    #byid_matches a,
+    report_trades b,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    b.broker_id != NULL
+and
+    b.broker_id != c.broker_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match broker"
+
+/*+---------------------------------------------------------------------------* 
+ | 10. UPDATE #byid_matches: calculate match strength for contracts and prices | 
+ *----------------------------------------------------------------------------*/
+
+/* 
+ * contract_id
+ * 
+ * If report_trades.contract_id is different than trades.contract_id, then this
+ * is a big problem. Reduce match strength by 50%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength - 0.5,
+    marks = a.marks + "c "
+from
+    #byid_matches a,
+    report_trades b,
+    #ext_trades ba,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+        and
+            b.report_trade_id = ba.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    b.contract_id != c.contract_id
+and
+    ba.inv_contract_id != c.contract_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match contract"
+
+/* 
+ * value_date
+ * 
+ * If report_trades.value_date is different than trades.value_date, then this
+ * is a big problem. Reduce match strength by 25%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength - 0.25,
+    marks = a.marks + "vd "
+from
+    #byid_matches a,
+    report_trades b,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    b.value_date != c.value_date
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match value date"
+
+/* 
+ * non-inverted price
+ * 
+ * If report_trades.contract_id = trades.contract_id and report_trades.price is
+ * not trades.price, then this is a minor problem. Reduce match strength by
+ * abs(ext_px - int_px) / int_px * 5e3
+ *
+ * Example: ext_px = 1.61073, int_px = 1.61069 => -12.4%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength
+         - (abs(b.price - c.price) / c.price) * 5e3,
+    /* PRICE DEBUGGING
+    marks = a.marks + "px(" + convert(varchar(30), convert(numeric(30,6), b.price)) + "!=" + convert(varchar(30), convert(numeric(30,6), c.price)) + "=" + convert(varchar(30), abs(b.price - c.price)) + ") " */
+    marks = a.marks + "px "
+from
+    #byid_matches a,
+    report_trades b,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    b.contract_id = c.contract_id
+and
+    abs(b.price - c.price) / c.price * 1e7 /* 1/1000th pip */ > 1
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match non-inverted price"
+
+/* 
+ * inverted price
+ * 
+ * If report_trades.contract_id = trades.contract_id and report_trades.price is
+ * not trades.price, then this is a minor problem. Reduce match strength by
+ * abs(ext_px - int_px) / int_px * 5e3
+ *
+ * Example: ext_px = 1.61073, int_px = 1.61069 => -12.4%
+ */
+update
+    #byid_matches
+set
+    match_strength = a.match_strength
+         - (abs(ba.inv_price - c.price) / c.price) * 5e3,
+    /* PRICE DEBUGGING
+    marks = a.marks + "ivpx(" + convert(varchar(30), convert(numeric(30,6), ba.inv_price)) + "!=" + convert(varchar(30), convert(numeric(30,6), c.price)) + "=" + convert(varchar(30), abs(ba.inv_price - c.price)) + ") " */
+    marks = a.marks + "ivpx "
+from
+    #byid_matches a,
+    report_trades b,
+    #ext_trades ba,
+    trades c
+where
+    a.report_trade_id = b.report_trade_id
+        and
+            b.report_trade_id = ba.report_trade_id
+and
+    a.trade_id = c.trade_id
+and
+    ba.inv_contract_id = c.contract_id
+and
+    abs(ba.inv_price - c.price) / c.price * 1e7 /* 1/1000th pip */ > 1
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Match Strength",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " don't match inverted price"
+
+
+/*+---------------------------------------------------------------------------* 
+ |    11. UPDATE #byid_matches: calculate statuses based on match_strength     | 
+ *----------------------------------------------------------------------------*/
+
+/*
+ * UPDATE #byid_matches: for matched: match_strength > 99.999%
+ */
+update
+    #byid_matches
+set
+    status_id = @matched_status_id
+where
+    match_strength >= 0.99999
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "New Matches",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " are matched"
+
+/*
+ * UPDATE #byid_matches: for mismatched: match_strength >= 75%
+ */
+update
+    #byid_matches
+set
+    status_id = @mismatched_status_id
+where
+    match_strength >= 0.75
+and
+    match_strength < 0.99999
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "New Matches",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " are mismatched"
+
+/*
+ * UPDATE #byid_matches: for review: match_strength < 75%
+ */
+update
+    #byid_matches
+set
+    status_id = @review_status_id
+where
+    match_strength < 0.75
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "New Matches",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " have no match"
+
+
+
+/*+---------------------------------------------------------------------------* 
+ |                 12. INSERT trade_matches: from new matches                 | 
+ *----------------------------------------------------------------------------*/
+ 
+insert into
+    trade_matches (
+        report_commit_id,
+        trade_id,
+        report_trade_id,
+        match_strength,
+        status_id
+    )
+select
+    report_commit_id,
+    trade_id,
+    report_trade_id,
+    match_strength,
+    status_id
+from
+    #byid_matches
+where
+    status_id != NULL
+and
+    status_id != @review_status_id
+order by 
+    report_commit_id,
+    report_trade_id
+    
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Trade Matches",
+    messages = convert(varchar(10), @@rowcount) + " of " + convert(varchar(10), @new_match_count) + " new trade_matches created"
+    
+
+/*+---------------------------------------------------------------------------* 
+ |       13. TRIM #ext_trades, #int_trades known to have #byid_matches        | 
+ *----------------------------------------------------------------------------*/
+
+delete
+    #ext_trades
+from
+    #ext_trades a,
+    #byid_matches b
+where
+    a.report_trade_id = b.report_trade_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "External Trades",
+    messages = "Trimmed " + convert(varchar(10), @@rowcount) + " external trade(s) with new matches"
+
+
+
+create table
+    #delete_matches (
+        id int identity,
+        trade_id int
+    )
+
+insert
+    #delete_matches
+select
+    trade_id
+from
+    #trade_matches
+order by
+    trade_id,
+    match_strength desc
+
+delete
+    #delete_matches
+from
+    #delete_matches a,
+    #delete_matches b
+where
+    a.id = b.id + 1
+
+
+
+
+delete
+    #int_trades
+from
+    #int_trades a,
+    #byid_matches b
+where
+    a.trade_id = b.trade_id
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "Internal Trades",
+    messages = "Trimmed " + convert(varchar(10), @@rowcount) + " internal trade(s) with new matches"
+
+
+ 
+/*+---------------------------------------------------------------------------* 
+ |                 13. INSERT trade_matches: from new matches                 | 
+ *----------------------------------------------------------------------------*/
+ 
+create table
+    #bydetails_matches (
+        report_commit_id int,
+        report_trade_id int,
+        trade_id int,
+        match_strength float default 0,
+        marks varchar(250) default "",
+        status_id int default NULL NULL
+    )
+
+insert into
+    #byid_matches (
+        report_commit_id,
+        report_trade_id,
+        trade_id,
+        match_strength
+    )
+select
+    aa.report_commit_id,
+    a.report_trade_id,
+    b.trade_id,
+    match_strength = 1.0
+from
+    #ext_trades a,
+    report_trades aa,
+    #int_trades b,
+    trades ba
+where
+    a.report_trade_id = aa.report_trade_id
+and
+    b.trade_id = ba.trade_id
+and
+    aa.external_account_id = ba.external_account_id
+and
+    aa.counterparty_id = ba.counterparty_id
+and
+    aa.trader_id = ba.trader_id
+and (
+        aa.strategy_id = ba.strategy_id
+    or
+        aa.strategy_id = NULL
+    )
+and
+    aa.broker_id = ba.broker_id
+and (
+        aa.contract_id = ba.contract_id
+    or
+        a.inv_contract_id = ba.contract_id
+    )
+and
+    aa.value_date = ba.value_date
+and
+    aa.external_account_id = ba.external_account_id
+and
+    aa.external_account_id = ba.external_account_id
+and
+    aa.external_account_id = ba.external_account_id
+
+select
+    @new_match_count = @@rowcount
+
+/* DIAGNOSTICS */ insert into 
+    #messages
+select
+    subject = "New Matches",
+    messages = "Found " + convert(varchar(10), @new_match_count) + " new matches"
+
+    
+
+select
+    report_commit_id,
+    report_trade_id,
+    trade_id ,
+    match_strength,
+	marks = convert(varchar(50), marks),
+	status_id
+from
+    #byid_matches
+
+/*+---------------------------------------------------------------------------* 
+ |                             Report Diagnostics                             | 
+ *----------------------------------------------------------------------------*/
+
+select
+    *
+from
+    #messages
+order by
+    id
+
+go

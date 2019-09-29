@@ -1,0 +1,100 @@
+
+if object_id("r_dollarvalue") != NULL
+    drop procedure
+        r_dollarvalue
+go
+ 
+create procedure
+	r_dollarvalue
+		@amount float,
+		@contract_id int,
+		@as_of datetime,
+		@dollar_value float output,
+		@currency_product_id int output
+as
+
+declare @forward_id int
+declare @usd_product_id int
+declare @forward_price float
+
+exec
+	r_contractcurrency
+		@contract_id,
+		@currency_product_id output
+
+select
+	@usd_product_id = product_id
+from
+	products
+where
+	symbol = "USD"
+if @@rowcount != 1
+	raiserror 999999 "USD currency missing!"
+
+if @currency_product_id = @usd_product_id
+begin
+	select
+		@dollar_value = @amount
+	return
+end
+
+select
+	@forward_id = contract_id
+from
+	forwards
+where
+	currency_id = @usd_product_id
+and
+	product_id = @currency_product_id
+
+
+select
+	@forward_price = NULL
+
+select
+	@forward_price = price
+from
+	current_prices
+where
+	contract_id = @forward_id
+if @forward_price = NULL
+begin
+	select
+		@forward_id = contract_id
+	from
+		forwards
+	where
+		currency_id = @currency_product_id
+	and
+		product_id = @usd_product_id
+	select
+		@forward_price = 1.0 / price
+	from
+		current_prices
+	where
+		contract_id = @forward_id
+end 
+if @forward_price = NULL
+begin
+	exec
+		r_priceasof
+			@forward_id,
+			@as_of,
+			@forward_price output
+
+	if @forward_price != NULL
+		insert into
+			current_prices
+		values(
+			@forward_id,
+			@forward_price,
+			getdate())
+end
+
+
+select
+	@dollar_value = NULL
+select
+	@dollar_value = @amount * @forward_price
+
+go

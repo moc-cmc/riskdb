@@ -1,0 +1,294 @@
+use
+	risk_elad2
+go
+
+drop procedure
+	r_options
+go
+
+create procedure
+	r_options
+as
+
+declare @contracts int
+declare @contract_id int
+declare @underlying_contract_id int
+declare @net_pos float
+declare @net_delta float
+declare @net_gamma float
+declare @net_theta float
+declare @net_tau float
+declare @exotic_net_delta float
+declare @multiplier float
+declare @price float
+declare @current_date datetime
+declare @error_style varchar(250)
+declare @expired_style varchar(250)
+declare @style varchar(250)
+
+declare @ids int
+declare @id int
+declare @settle_date datetime
+
+ 
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"not_currency",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"import_vols",
+	"Import Trade Date Vols",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"vols_for_date",
+	"Option Vols For Date",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"refresh",
+	"Option Model Info",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"vol",
+	"Set Current Vol",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"expire",
+	"Expire Option",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"vol",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"interest_rate",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"tv",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"days",
+	"Number",
+	 "#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"underlying_price",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"tau",
+	"Number",
+	 "#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"theta",
+	"Number",
+	 "#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"gamma",
+	"Number",
+	 "#,##0.0000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"delta",
+	"Number",
+	 "#,##0.0000")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@expired_style = "background:#FBF836;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white"
+
+
+create table
+	#options(
+		id int identity,
+		style varchar(250) NULL, 
+		contract_id int,
+		symbol varchar(50) NULL,
+		tv float NULL,
+		delta float NULL,
+		gamma float NULL,
+		theta float NULL,
+		tau float NULL,
+		underlying_price float NULL,
+		vol float NULL,
+		days float NULL,
+		interest_rate float NULL,
+		carry_cost float NULL,
+		timestamp datetime NULL,
+		expire varchar(50) NULL)
+insert into
+	#options(
+		style,
+		contract_id,
+		symbol)
+select
+	style = @style,
+	a.contract_id,
+	b.symbol
+from
+	current_contract_tvs a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+order by
+	b.symbol
+
+
+update
+	#options
+set
+	a.tv = b.tv,
+	a.delta = b.delta,
+	a.gamma = b.gamma,
+	a.theta = b.theta,
+	a.tau = b.tau,
+	a.underlying_price = b.underlying_price,
+	a.vol = b.volatility,
+	a.days = b.days,
+	a.interest_rate = b.interest_rate,
+	a.carry_cost = b.carry_cost,
+	a.timestamp = b.timestamp
+from
+	#options a,
+	current_contract_tvs b
+where
+	a.contract_id = b.contract_id
+
+update
+	#options
+set
+	style = @error_style
+where
+	tv = NULL
+
+update
+	#options
+set
+	style = @expired_style,
+	expire = "Expire"
+from
+	#options a,
+	option_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.expiration < getdate()
+
+select
+	section = "Admin",
+	style = @style,
+	refresh = "Refresh",
+	vols_for_date = "Vols For Trade Date",
+	import_vols = "Import Trade Date Vols"
+
+select
+	section = "Options",
+	style,
+	symbol,
+	tv,
+	delta,
+	gamma,
+	theta,
+	tau,
+	underlying_price,
+	vol,
+	days,
+	interest_rate,
+	carry_cost,
+	expire
+from
+	#options
+order by
+	id
+
+
+go

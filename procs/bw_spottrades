@@ -1,0 +1,293 @@
+use 
+	risk_wfund
+go
+
+drop procedure
+	bw_spottrades
+go
+
+create procedure
+	bw_spottrades
+		@login varchar(50),
+		@account varchar(50)=NULL,
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+as
+
+declare @external_account_id int
+declare @claimant_name varchar(50)
+declare @control_number varchar(50)
+declare @claim_number varchar(50)
+declare @prime_broker varchar(50)
+declare @source_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "Class Action Claim"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Class Action Claim source not found"
+	return
+end
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+
+
+select
+	@claimant_name = name,
+	@claim_number = claim_number,
+	@control_number = control_number,
+	@prime_broker = "Morgan Stanley"
+from
+	claims
+where
+	external_account_id = @external_account_id
+
+if @claimant_name = NULL
+begin
+	select
+		status = "Error",
+		message = "Claimint name not found for account",
+		account = @account
+	return
+end
+
+create table
+	#contracts(
+		contract_id int,
+		symbol varchar(50))
+insert into
+	#contracts(
+		contract_id,
+		symbol)
+select
+	a.contract_id,
+	a.symbol
+from
+	contracts a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		trade_date datetime,
+		external_account_id int NULL,
+		quantity numeric(30,4) NULL,
+		contract_id int NULL,
+		product_id int NULL,
+		base_currency varchar(50) NULL,
+		currency_id int NULL,
+		quoted_currency varchar(50) NULL,
+		trade_rate float NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		buy_sell varchar(5) NULL,
+		value_date datetime NULL,
+		is_defendant varchar(2) NULL,
+		venue varchar(20) NULL)
+insert into
+	#trades(
+		trade_id,
+		deal_id,
+		trade_date,
+		external_account_id,
+		quantity,
+		value_date,
+		contract_id,
+		trade_rate,
+		counterparty_id)
+select
+	a.trade_id,
+	a.deal_id,
+	a.trade_date,
+	a.external_account_id,
+	a.quantity,
+	a.value_date,
+	a.contract_id,
+	trade_rate = a.price,
+	a.counterparty_id
+from
+	trades a,
+	#contracts b,
+	strategies c,
+	counterparties d
+where
+	a.external_account_id = @external_account_id
+and
+	a.contract_id = b.contract_id
+and
+	a.strategy_id = c.strategy_id
+and
+	a.counterparty_id = d.counterparty_id
+and
+	c.name != "Currency Rollover"
+and
+	d.name not in("INT", "INDO", "BPB", "SYN")
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date <= @end_date
+and
+	abs(a.quantity) > 0.0
+order by
+	a.trade_date
+
+
+
+update
+	#trades
+set
+	a.counterparty = b.name
+from
+	#trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+
+update
+	#trades
+set
+	a.counterparty = b.symbol,
+	a.is_defendant = "Y"
+from
+	#trades a,
+	counterparty_symbols b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.source_id = @source_id
+
+update
+	#trades
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.base_currency = b.symbol
+from
+	#trades a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#trades
+set
+	a.quoted_currency = b.symbol
+from
+	#trades a,
+	products b
+where
+	a.currency_id = b.product_id
+
+delete
+
+from
+	#trades
+where
+	quantity = 0.0
+
+update
+	#trades
+set
+	buy_sell = "BUY"
+where
+	quantity > 0
+update
+	#trades
+set
+	buy_sell = "SELL"
+where
+	quantity < 0
+
+update
+	#trades
+set
+	venue = " "
+
+update
+	#trades
+set
+	venue =  counterparty
+where
+	counterparty in("Cantor", "FAROS", "NewEdge", "HotSpot", "CURRENEX", "EBSBW")
+
+update
+	#trades
+set
+	counterparty = " "
+where
+	counterparty in("Cantor", "FAROS", "NewEdge", "HotSpot", "CURRENEX", "EBSBW")
+
+update
+	#trades
+set
+	a.trade_rate = 1.0 / a.trade_rate
+from
+	#trades a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+
+select
+	name = @claimant_name,
+	counterparty,
+	bank_location = " ",
+	claimant_id = @claim_number,
+	venue,
+	prime_broker = @prime_broker,
+	transaction_id = " ",
+	fx_transaction_type = "spot",
+	trade_date,
+	trade_timestamp = trade_date,
+	time_zone = "US/Eastern",
+	trade_rate,
+	base_currency,
+	quoted_currency,
+	buy_sell,
+	base_amount = abs(quantity),
+	contra_amount = " ",
+	value_date
+from
+	#trades
+order by
+	trade_date
+
+
+
+	
+
+
+	
+	
+go

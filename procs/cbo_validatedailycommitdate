@@ -1,0 +1,210 @@
+
+drop procedure 
+	cbo_validatedailycommitdate
+go
+
+create procedure cbo_validatedailycommitdate
+			@trade_date datetime
+as
+
+create table
+    #messages
+(
+    id int identity,
+        status varchar(10),
+    	message varchar(100)
+)
+
+declare @msg_date varchar(12)
+declare @msg_trade_count varchar(7)
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+select @msg_date = convert(varchar(12), @trade_date)
+
+declare @trades_committed int
+
+create table #committed_trades (
+                        trade_id int)
+
+insert into
+	#committed_trades
+select
+	trade_id
+from
+	committed_daily_revals
+where
+	convert(date, reval_date) = convert(date, @trade_date)
+and
+        convert(date, reval_date) = convert(date, bo_trade_date)
+
+select
+	@trades_committed = @@rowcount
+
+create index tdi on #committed_trades (trade_id)
+
+select
+	@msg_trade_count = rtrim(convert(varchar(10), @trades_committed))
+
+if (@trades_committed < 1)
+begin
+
+	insert into
+		#messages
+	values
+		("Error", "No trades committed for trade_date " + @msg_date)
+end
+else
+begin
+	
+	insert into
+		#messages
+	values
+		("OK", @msg_trade_count + " Trades committed for trade_date " + @msg_date)
+
+end
+
+declare @date_is_committed varchar(1)
+
+select
+	@date_is_committed = "N"
+
+select 
+	@date_is_committed="Y"
+from
+	daily_commits
+where
+	convert(date, commit_date) = convert(date, @trade_date)
+
+if @date_is_committed = "N"
+begin
+	insert into 
+		#messages
+	values
+		("OK", "Trade date not committed in daily_commits table " + @msg_date)
+
+end
+else
+begin
+	insert into
+		#messages
+	values
+		("OK", "daily_commits table has commit record for trade date " + @msg_date) 
+end
+ 
+declare @begin_date datetime
+declare @end_date datetime
+
+exec r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output	
+
+declare @tradecount  int
+declare @commitcount int
+
+select
+	@tradecount = count(*) 
+from
+	trades 
+where
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+
+if(@trades_committed = @tradecount)
+begin
+	if(@tradecount > 1)
+	begin
+		insert into
+			#messages
+		values
+			("OK", "All trades for tradedate have been committed " +  @msg_date)
+	end
+	else
+	begin
+		insert into
+			#messages
+		values
+			("Error", "No trades entered or committed for trade date " + @msg_date)
+
+	end
+end
+else
+begin
+	
+	select
+		@msg_trade_count = rtrim(convert(varchar(7), @tradecount - @trades_committed))
+	
+	insert into 
+		#messages
+	values
+		("Error", @msg_trade_count + " trades missing revals for trade_date " + @msg_date)	
+	
+end
+
+select * from #meta
+
+select
+	section="Statuses",
+	status,
+	message
+from
+	#messages
+	
+select
+	section="Uuncommited Trades",
+	trade_id,
+	deal_id,
+	external_account=b.symbol,
+	counterparty=c.name,
+	quantity,
+	price,
+	contract=d.symbol,
+	value_date=convert(varchar(12), value_date, 110),
+	trade_date=convert(varchar(12), trade_date, 110),
+	identifier
+from
+	trades a,
+	external_accounts b,
+	counterparties c,
+	contracts d 
+where
+       	trade_date >= @begin_date
+and
+       	trade_date < @end_date
+and	
+	a.external_account_id=b.external_account_id
+and
+	a.counterparty_id=c.counterparty_id
+and
+	a.contract_id=d.contract_id
+and
+	trade_id not in (
+		select
+			trade_id
+		from 
+			#committed_trades)
+
+go
+

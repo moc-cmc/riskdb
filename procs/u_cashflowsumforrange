@@ -1,0 +1,900 @@
+use
+	risk_elviro
+go
+
+drop procedure
+	u_cashflowsumforrange
+go
+
+create procedure
+	u_cashflowsumforrange
+		@login varchar(50),
+		@run_name varchar(50),
+		@begin_date datetime,
+		@end_date datetime,
+		@evaluation_currency_id int output,
+		@option_prem_credit_equiv float output,
+		@option_prem_debit_equiv float output,
+		@settled_fx_equiv float output,
+		@fees_equiv float output,
+		@begin_fx_equiv float output,
+		@end_fx_equiv float output,
+		@fx_pl_equiv float output
+
+as
+
+
+declare @fund_id int
+declare @run_id int
+
+declare @original_begin_date datetime
+declare @original_end_date datetime
+
+declare @b_date datetime
+declare @e_date datetime
+
+declare @prem_equiv float
+declare @settled_balance float
+
+declare @id int
+declare @ids int
+declare @product_id int
+declare @prod varchar(50)
+
+
+select
+	@original_begin_date = @begin_date,
+	@original_end_date = @end_date
+
+if @original_begin_date = NULL and @original_end_date = NULL
+begin
+	select
+		@begin_date = max(price_date)
+	from
+		prices
+
+	select
+		@begin_date = convert(datetime, convert(date, @begin_date)),
+		@end_date = convert(datetime, convert(date, @begin_date))
+end
+
+if @original_begin_date != NULL and @original_end_date = NULL
+begin
+	select
+		@begin_date = convert(datetime, convert(date, @begin_date)),
+		@end_date = convert(datetime, convert(date, @begin_date))
+end
+
+if @original_begin_date = NULL and @original_end_date != NULL
+begin
+	select
+		@begin_date = convert(datetime, convert(date, @end_date)),
+		@end_date = convert(datetime, convert(date, @end_date))
+
+end
+
+
+if @original_begin_date != NULL and @original_end_date != NULL
+begin
+	select
+		@begin_date = convert(datetime, convert(date, @begin_date)),
+		@end_date = convert(datetime, convert(date, @end_date))
+
+end
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+
+
+exec
+	r_daterangefordate
+		@begin_date,
+		@b_date output,
+		@e_date output
+
+select
+	@begin_date = @b_date
+
+select
+	@b_date = NULL,
+	@e_date = NULL
+
+exec
+	r_daterangefordate
+		@end_date,
+		@b_date output,
+		@e_date output
+
+select
+	@end_date = @e_date
+
+
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	a.name = @run_name
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+/********/
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+
+/********/
+
+
+create table
+	#trades(
+		id int identity,
+		trade_id int NULL,
+		bo_trade_date datetime NULL,
+		trade_date datetime NULL,
+		external_account_id int NULL,
+		instrument varchar(50) NULL,
+		contract_id int NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		product_qty float NULL,
+		currency_qty float NULL,
+		value_date datetime NULL,
+		price float NULL,
+		begin_product_equiv float NULL,
+		begin_currency_equiv float NULL,
+		end_product_equiv float NULL,
+		end_currency_equiv float NULL)
+
+
+insert into
+	#trades(
+		trade_id,
+		bo_trade_date,
+		trade_date,
+		external_account_id,
+		contract_id,
+		product_qty,
+		currency_qty,
+		value_date,
+		price)
+select
+	a.trade_id,
+	a.trade_date,
+	a.trade_date,
+	a.external_account_id,
+	a.contract_id,
+	a.quantity,
+	a.quantity * a.price * -1.0,
+	a.value_date,
+	a.price
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts d,
+	#traders e,
+	#strategies f,
+	#brokers g,
+	#counterparties h
+where
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = d.internal_account_id
+and
+	a.trader_id = e.trader_id
+and
+	a.strategy_id = f.strategy_id
+and
+	a.broker_id = g.broker_id
+and
+	a.counterparty_id = h.counterparty_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+update
+	#trades
+set
+	a.instrument = c.name
+from
+	#trades a,
+	contracts b,
+	instruments c
+where
+	a.contract_id = b.contract_id
+and
+	b.instrument_id = c.instrument_id
+
+
+update
+	#trades
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	bo_trade_date = convert(datetime, convert(date, dateadd(day, 1, trade_date)))
+where
+	datepart(hour, trade_date) >= 17
+
+update
+	#trades
+set
+	bo_trade_date = dateadd(day, 1, bo_trade_date)
+where
+	datename(weekday, bo_trade_date) = "Saturday"
+
+update
+	#trades
+set
+	bo_trade_date = dateadd(day, 1, bo_trade_date)
+where
+	datename(weekday, bo_trade_date) = "Sunday"
+
+
+create table
+	#conversion_rates(
+		product_id int,
+		begin_date datetime,
+		end_date datetime,
+		begin_rate float NULL,	
+		end_rate float NULL)
+
+insert into
+	#conversion_rates(
+		product_id,
+		begin_date,
+		end_date)
+select
+	a.product_id,
+	begin_date = @begin_date,
+	end_date = @end_date
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+and
+	b.name = "Currency"
+
+update
+	#conversion_rates
+set
+	begin_rate = 1.0,
+	end_rate = 1.0
+where
+	product_id = @evaluation_currency_id
+
+/*********************** begin rates ************************/
+update
+	#conversion_rates
+set
+	begin_rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = a.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @begin_date)
+and
+	a.begin_rate = NULL
+
+update
+	#conversion_rates
+set
+	begin_rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @begin_date)
+and
+	a.begin_rate = NULL
+/*********************** begin rates ************************/
+
+/*********************** end rates ************************/
+update
+	#conversion_rates
+set
+	end_rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = a.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.end_rate = NULL
+
+update
+	#conversion_rates
+set
+	end_rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.end_rate = NULL
+/*********************** end rates ************************/
+
+
+update
+	#trades
+set
+	a.begin_product_equiv  = a.product_qty * b.begin_rate,
+	a.end_product_equiv = a.product_qty * b.end_rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+update
+	#trades
+set
+	a.begin_currency_equiv = a.currency_qty * b.begin_rate,
+	a.end_currency_equiv = a.currency_qty * b.end_rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+update
+	#trades
+set
+	begin_product_equiv = 0.0,
+	begin_currency_equiv = 0.0
+where
+	convert(datetime, convert(date, @begin_date)) < trade_date
+	
+
+
+create table
+	#begin_positions(
+		product_id int,
+		value_date datetime,
+		balance float NULL,
+		equiv float NULL)
+insert into
+	#begin_positions(
+		product_id,
+		value_date,
+		balance,
+		equiv)
+select
+	product_id,
+	value_date,
+	sum(product_qty),
+	sum(begin_product_equiv)
+from
+	#trades
+where
+	instrument = "Forward"
+and
+	trade_date < @begin_date
+group by
+	product_id,
+	value_date
+
+
+insert into
+	#begin_positions(
+		product_id,
+		value_date,
+		balance,
+		equiv)
+select
+	currency_id,
+	value_date,
+	sum(currency_qty),
+	sum(begin_currency_equiv)
+from
+	#trades
+where
+	instrument = "Forward"
+and
+	trade_date < @begin_date
+group by
+	currency_id,
+	value_date
+
+create table
+	#begin_nets(
+		product_id int,
+		value_date datetime,
+		balance float NULL,
+		equiv float NULL) 
+insert into
+	#begin_nets(
+		product_id,
+		value_date,
+		balance,
+		equiv)
+select
+	product_id,
+	value_date,
+	sum(balance),
+	sum(equiv)
+from
+	#begin_positions
+group by
+	product_id,
+	value_date
+
+select
+	@begin_fx_equiv = sum(equiv)
+from
+	#begin_nets
+if @begin_fx_equiv = NULL
+	select
+		@begin_fx_equiv = 0.0
+
+create table
+	#end_positions(
+		product_id int,
+		value_date datetime,
+		balance float NULL,
+		equiv float NULL)
+insert into
+	#end_positions(
+		product_id,
+		value_date,
+		balance,
+		equiv)
+select
+	product_id,
+	value_date,
+	sum(product_qty),
+	sum(end_product_equiv)
+from
+	#trades
+where
+	instrument = "Forward"
+group by
+	product_id,
+	value_date
+
+
+insert into
+	#end_positions(
+		product_id,
+		value_date,
+		balance,
+		equiv)
+select
+	currency_id,
+	value_date,
+	sum(currency_qty),
+	sum(end_currency_equiv)
+from
+	#trades
+where
+	instrument = "Forward"
+group by
+	currency_id,
+	value_date
+
+create table
+	#end_nets(
+		product_id int,
+		value_date datetime,
+		balance float NULL,
+		equiv float NULL)
+insert into
+	#end_nets(
+		product_id,
+		value_date,
+		balance,
+		equiv)
+select
+	product_id,
+	value_date,
+	sum(balance),
+	sum(equiv)
+from
+	#end_positions
+group by
+	product_id,
+	value_date
+
+select
+	@settled_fx_equiv = sum(equiv)
+from
+	#end_nets
+where
+	value_date <= @end_date 
+if @settled_fx_equiv = NULL
+	select
+		@settled_fx_equiv = 0.0
+
+select
+	@end_fx_equiv = sum(equiv)
+from
+	#end_nets
+where
+	value_date > @end_date /* MARKR review this */
+if @end_fx_equiv = NULL
+	select
+		@end_fx_equiv = 0.0
+
+select
+	@fx_pl_equiv = @end_fx_equiv - @begin_fx_equiv
+
+create table
+	#account_transactions(
+		account_transaction_id int,
+		entered_by int,
+		external_account_id int,
+		transaction_type_id int,
+		transaction_type varchar(50) NULL,
+		symbol varchar(100) NULL,
+		transaction_date datetime,
+		currency_id int,
+		amount float,
+		equiv float NULL)
+
+insert into
+	#account_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_type,
+		transaction_date,
+		currency_id,
+		amount)
+select
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	b.name,
+	a.transaction_date,
+	a.currency_id,
+	a.amount
+from
+	account_transactions a,
+	transaction_types b,
+	#external_accounts c
+where
+	a.external_account_id = c.external_account_id
+and
+	a.transaction_type_id = b.transaction_type_id
+and
+	b.name = "Commission"
+and
+	convert(date, a.transaction_date) > convert(date, @begin_date)
+and
+	convert(date, a.transaction_date) <= convert(date, @end_date)
+
+
+insert into
+	#account_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount)
+select
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	a.amount
+from
+	account_transactions a,
+	account_transaction_trades b,
+	#trades c
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	b.trade_id = c.trade_id
+and 
+	c.trade_date >= @begin_date
+and
+	c.trade_date < @end_date 
+
+update
+	#account_transactions
+set
+	a.transaction_type = b.name
+from
+	#account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+
+update
+	#account_transactions
+set
+	transaction_type = "Premium Collected"
+where
+	transaction_type = "Option Premium"
+and
+	amount > 0.0
+
+update
+	#account_transactions
+set
+	transaction_type = "Premium Paid"
+where
+	transaction_type = "Option Premium"
+and
+	amount < 0.0
+
+
+update
+	#account_transactions 
+set
+	a.equiv = a.amount * b.end_rate
+from
+	#account_transactions a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+update
+	#account_transactions
+set
+	a.symbol = d.symbol
+from
+	#account_transactions a,
+	account_transaction_trades b,
+	trades c,
+	contracts d
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	b.trade_id = c.trade_id
+and
+	c.contract_id = d.contract_id
+
+select
+	@fees_equiv = sum(a.equiv)
+from
+	#account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	b.name = "Commission"
+if @fees_equiv = NULL
+	select
+		@fees_equiv = 0.0
+	
+create table
+	#option_prems(
+		transaction_type varchar(50),
+		product_id int NULL,
+		value_date datetime NULL,
+		amount numeric(30,4) NULL,
+		equiv numeric(30,4) NULL)
+insert into
+	#option_prems(
+		transaction_type,
+		product_id,
+		value_date,
+		amount,
+		equiv)
+select
+	transaction_type,
+	currency_id,
+	convert(datetime, convert(date, transaction_date)),
+	sum(amount),
+	sum(equiv)
+from
+	#account_transactions
+where
+	transaction_type in("Premium Collected", "Premium Paid")
+group by
+	transaction_type,
+	currency_id,
+	convert(datetime, convert(date, transaction_date))
+
+select
+	@option_prem_credit_equiv = sum(equiv)
+from
+	#option_prems
+where
+	transaction_type = "Premium Collected"
+if @option_prem_credit_equiv = NULL
+	select
+		@option_prem_credit_equiv = 0.0
+
+select
+	@option_prem_debit_equiv = sum(equiv)
+from
+	#option_prems
+where
+	transaction_type = "Premium Paid"
+if @option_prem_debit_equiv = NULL
+	select
+		@option_prem_debit_equiv = 0.0
+
+
+
+
+
+
+go

@@ -1,0 +1,15 @@
+drop procedure
+	r_statementswrap
+go
+
+create procedure
+	r_statementswrap
+                @login varchar(50)
+as
+
+
+exec
+        r_clientstatement
+                @login
+
+go

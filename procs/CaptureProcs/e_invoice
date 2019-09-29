@@ -1,0 +1,821 @@
+use
+	risk_home
+go
+
+drop procedure
+	e_invoice
+go
+
+create procedure
+	e_invoice
+		@login varchar(50),
+		@account varchar(50),
+		@statement_date datetime=NULL,
+		@billing_cutoff datetime=NULL
+as
+
+declare @style varchar(200)
+declare @account_symbol varchar(100)
+declare @external_account_id int
+declare @invoiced_begin float
+declare @begin_balance float
+declare @begin_date datetime
+declare @end_date datetime
+declare @statement_string varchar(200)
+declare @total float
+declare @invoiced_total float
+declare @due varchar(200)
+declare @previous_due varchar(200)
+declare @due_date datetime
+declare @id int
+declare @ids int
+declare @balance float
+/* declare @statement_date datetime */
+declare @previous_statement datetime
+declare @transaction_type_id int
+declare @statement_number int
+declare @title_string varchar(200)
+declare @max_date datetime
+declare @today datetime
+declare @as_of_date datetime
+declare @total_payments float
+declare @total_due numeric(30,2)
+declare @payment_transaction_type_id int 
+declare @total_new_charges float
+declare @total_new_credits float
+declare @invoice_total float
+declare @period_string varchar(50)
+
+select
+	@statement_date = "11/1/16",
+	@billing_cutoff = "10/1/16"
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+
+/*
+insert into
+	#meta
+values(
+	"Column Style",
+	"date",
+	NULL,
+	"font-size:150%")
+
+insert into
+	#meta
+values(
+	"Column Style",
+	"amount",
+	NULL,
+	"font-size:150%") 
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "amount",
+        "Number",
+        "'" + CHAR(36) + "' #,##0.00") /* This is how to make a dollar sign */
+insert into
+	#meta
+values(
+	"Column Style",
+	"title",
+	NULL,
+	"font-size:150%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_due",
+	"Number",
+	"#,##0.00")
+ */
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"value",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_new_charges",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_payments",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"previous_balance",
+	"Number",
+	"#,##0.00")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"credits",
+	"Number",
+	"'" + CHAR(36) + "' #,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total",
+	"Number",
+	"'" + CHAR(36) + "' #,##0.00") /* This is how to make a dollar sign */
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"charges",
+	"Number",
+	"'" + CHAR(36) + "' #,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_statement",
+	"Tally Statement Date",
+	NULL)
+  
+select * from #meta
+
+select
+	@today = getdate()
+
+create table
+	#warnings(
+		section varchar(200),
+		style varchar(250) NULL,
+		warning varchar(250),
+		current_amount float NULL,
+		invoiced_amount float NULL)
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Statement Date"
+if @transaction_type_id= NULL
+begin
+	select
+		status = "Error",
+		message = "Statement Date transaction type not found"
+	return
+end
+
+select
+	@payment_transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Payment"
+		
+select
+	@period_string = convert(varchar(11), @billing_cutoff) + " - "  + convert(varchar(11), dateadd(day, -1, @statement_date))
+select
+	@statement_number = account_transaction_id
+from
+	account_transactions
+where
+	external_account_id = @external_account_id
+and
+	transaction_type_id = @transaction_type_id
+and
+	convert(date, transaction_date) = convert(date,  @statement_date)
+
+select
+	@due_date = due_date
+from
+	statement_due_dates
+where
+	account_transaction_id = @statement_number
+
+
+
+create table
+	#payment_instructions(
+		name varchar(250) NULL)
+insert into
+	#payment_instructions
+values(
+	"WIRE TRANSFER INSTRUCTIONS")
+
+insert into
+	#payment_instructions
+values(
+	"PLEASE NOTE INVOICE NUMBER ON WIRES")
+
+insert into
+	#payment_instructions
+values("Bank of America Acct name: Elysium Technology LLC")
+
+insert into
+	#payment_instructions
+values(
+	"ABA: 026009593")
+
+insert into
+	#payment_instructions
+values(
+ 	"Acct. Number: 394001552276")
+
+insert into
+	#payment_instructions
+values(
+	"Swift Code (International): BOFAUS3N")
+
+insert into
+	#payment_instructions
+values(
+	"---")
+
+insert into
+	#payment_instructions
+values(
+	"POSTAL SERVICE / FEDEX INSTRUCTIONS")
+
+
+insert into
+	#payment_instructions
+values(
+	"PLEASE NOTE INVOICE NUMBER ON CHECKS")
+
+insert into
+	#payment_instructions
+values(
+	"Send to: Andrew Siciliano")
+
+insert into
+	#payment_instructions
+values(
+	"Elysium Technology Group")
+
+insert into
+	#payment_instructions
+values(
+	"38 Parsonage Road Greenwich CT 06830")
+
+select
+	@begin_balance = convert(numeric(30,2), sum(amount))
+from
+	account_transactions
+where
+	external_account_id = @external_account_id
+and
+	transaction_date < @billing_cutoff
+
+
+select
+	@statement_string = "Account Activity"
+
+create table
+	#statement(
+		id int identity,
+		section varchar(50),
+		style varchar(200),
+		transaction_id int NULL,
+		transaction_type_id int NULL,
+		activity varchar(100),
+		date datetime NULL,
+		amount float NULL,
+		payments float NULL,
+		charges float NULL,
+		credits float NULL,
+		balance float NULL,
+		due varchar(200) NULL)
+
+
+if @begin_balance < 0
+	select
+		@style = "background:#fff;color:#FF0000;border: 1px solid white" /* ,
+		@previous_due = "Past Due" */
+else
+	select
+		@style = "background:#fff;border: none"
+insert into
+	#statement(
+		section,
+		style,
+		activity,
+		amount,
+		balance,
+		due)
+values(
+	@statement_string,
+	@style,
+	"Previous Balance",
+	@begin_balance,
+	@begin_balance,
+	@previous_due)
+
+	
+insert into
+	#statement(
+		section,
+		style,
+		transaction_id,
+		transaction_type_id,
+		activity,
+		date,
+		amount,
+		balance)
+select
+	section = @statement_string,
+	style = "background:#fff;border: none", /* 0px solid white", */
+	transaction_id = a.account_transaction_id,
+	a.transaction_type_id,
+	activity = b.name, 
+	date = a.transaction_date,
+	a.amount,
+	a.amount
+from
+	account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.transaction_date >= @billing_cutoff
+and
+	a.transaction_type_id != @transaction_type_id
+and
+	a.transaction_date < getdate() /* MARKR */
+and
+	a.transaction_type_id = @payment_transaction_type_id
+order by
+	a.transaction_date
+
+select
+	@total_payments = sum(amount)
+from
+	#statement
+where
+	transaction_type_id = @payment_transaction_type_id
+if @total_payments = NULL
+	select
+		@total_payments = 0.0
+
+insert into
+	#statement(
+		section,
+		style,
+		activity)
+values(
+	@statement_string,
+	"font-weight:bold;border-top:2px solid #999;margin-bottom:10px;color:#963;background:#fff",
+	"New Activity (" + @period_string + ")")
+
+
+
+insert into
+	#statement(
+		section,
+		style,
+		transaction_id,
+		transaction_type_id,
+		activity,
+		/* date, */
+		amount)
+select
+	section = @statement_string,
+	style = "background:#fff;border: none", /* 0px solid white", */
+	transaction_id = a.account_transaction_id,
+	a.transaction_type_id,
+	activity = b.name,
+	/* date = a.transaction_date, */
+	a.amount
+from
+	account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.transaction_date >= @billing_cutoff
+and
+	a.transaction_type_id != @transaction_type_id
+and
+	a.transaction_date < @statement_date
+and
+	a.transaction_type_id != @payment_transaction_type_id
+order by
+	a.transaction_date
+
+
+select
+	@total_new_charges = sum(amount)
+from
+	#statement
+where
+	transaction_id != NULL
+and
+	transaction_type_id != @payment_transaction_type_id
+and
+	amount < 0.0
+if @total_new_charges = NULL
+	select
+		@total_new_charges = 0.0
+
+
+select
+	@total_new_credits = sum(amount)
+from
+	#statement
+where
+	transaction_id != NULL
+and
+	transaction_type_id != @payment_transaction_type_id
+and
+	amount >= 0.0
+if @total_new_credits = NULL
+	select
+		@total_new_credits = 0.0
+
+
+select
+	@total = sum(amount)
+from
+	#statement
+if @total = NULL
+	select
+		@total = 0.0
+
+
+/* 
+if convert(numeric(30,2), @total) != convert(numeric(30,2), @invoiced_total)
+begin
+	insert into
+		#warnings
+	values(
+		"Warning",
+		"background:#fff;border: none", /* 0px solid white", */
+		"Total does not match invoiced total",
+		@total,
+		@invoiced_total)
+end */
+
+update
+	#statement
+set
+	/* charges = abs(amount) */
+	charges = amount
+where
+	amount <= 0 
+and
+	transaction_type_id != @payment_transaction_type_id
+
+update
+	#statement
+set
+	credits = amount
+where
+	amount > 0
+and
+	transaction_type_id != @payment_transaction_type_id
+
+update
+	#statement
+set
+	payments = amount
+where
+	transaction_type_id = @payment_transaction_type_id
+
+
+if @total < 0
+begin
+	select
+		@due = "Due " + convert(varchar(11), @due_date, 1)
+end
+if @total >= 0
+begin
+	select
+		@due = "Credit - No Payment Due"
+end
+
+update
+	#statement
+set
+	activity = "Payment - Thank you!"
+where
+	activity = "Payment"
+	
+/* select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#statement
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#statement
+	where
+		id > @id
+	select
+		@balance = sum(amount)
+	from
+		#statement
+	where
+		id <= @id
+
+	update
+		#statement
+	set
+		balance = @balance
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#statement
+	where
+		id > @id
+end */
+
+update
+	#statement
+set
+	credits = NULL,
+	charges = NULL
+where
+	id = 1
+
+insert into
+	#statement(
+		section,
+		style,
+		activity,
+		credits,
+		charges,
+		balance,
+		due)
+values(
+	@statement_string,
+	"font-weight:bold;border-bottom:2px solid #999;margin-bottom:10px;color:#963;background:#fff",
+	"<b>Total New Activity</b>",
+	@total_new_credits,
+	@total_new_charges,
+	@total_new_credits + @total_new_charges,
+	@due)
+
+select
+	@total_due = convert(numeric(30,2), sum(balance))
+from
+	#statement
+where
+	balance != NULL
+
+insert into
+	#statement(
+		section,
+		style,
+		activity,
+		balance)
+values(
+	@statement_string,
+	"background:#fff;border: none", /* 0px solid white", */
+	"Total Outstanding",
+	@total_due)
+
+
+/* Flip all balances to show client's perspective */
+update
+	#statement
+set
+	/* credits = credits * -1.0,
+	charges = charges * -1.0,
+	balance = balance * -1.0 */
+	credits = abs(credits),
+	charges = abs(charges),
+	balance = abs(balance)
+  
+create table
+	#header(
+		title varchar(100),
+		value varchar(100) NULL,
+    style varchar(100) NULL)
+
+insert into
+	#header(
+    title,
+    value,
+    style)
+values(
+	"<b>Invoice</b>",
+  "&nbsp;" + convert(varchar(15), @statement_number),
+  "font-size:18px")
+
+insert into
+	#header(
+    title,
+    value)
+values(
+	"<b>Bill Date</b>",
+	convert(varchar(11), @statement_date))
+
+insert into
+	#header(
+    title,
+    value)
+values(
+	"<b>Activity Period</b>",
+	"(" + @period_string + ")")
+	
+select
+	@invoice_total = @total_new_charges + @total_new_credits
+insert into
+	#header(
+    title,
+    value)
+values(
+	"<b>Invoice Amount</b>",
+	convert(varchar(30), abs(@invoice_total)))
+	
+insert into
+	#header(
+    title,
+    value)
+values(
+	"<b>Payment Due</b>",
+	convert(varchar(11), @due_date))
+
+
+if @begin_balance < 0.0
+begin
+	insert into
+		#header(
+      title,
+      value)
+	values(
+		"<b>Past Due Amount</b>",
+		convert(varchar(30), convert(numeric(30,2), (abs(@begin_balance + @total_payments)))))
+end
+
+if @begin_balance > 0.0
+begin
+	insert into
+		#header(
+      title,
+      value)
+	values(
+		"<b>Account Credit</b>",
+		convert(varchar(30), @begin_balance))
+end
+
+insert into
+	#header(
+    title,
+    value)
+values(
+	"<b>Total Due</b>",
+	convert(varchar(30), abs(@total_due)))
+
+select
+	title,
+	value,
+  style
+from
+	#header
+
+select
+	section = "Bill To",
+	style = "background:#fff;border: none", /* 0px solid white", */
+	a.name
+from
+	ext_account_contacts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @account
+
+select
+	section = "Send Payment To",
+	style = "background:#fff;border: 1px solid white",
+	name
+from
+	#payment_instructions
+
+select
+	section,	
+	style,
+	transaction_id,
+	activity,
+	date = convert(varchar(22), date, 1),
+	payments,
+	credits, 
+	charges,
+	total = balance,
+	note = due
+from
+	#statement
+order by
+	id
+
+select * from #warnings
+
+select
+	@account_symbol = a.symbol
+from
+	external_account_symbols a,
+	sources b
+where
+	a.external_account_id = @external_account_id
+and
+	a.source_id = b.source_id
+and
+	b.name = "Ops Database"
+
+/*
+
+if @account_symbol != NULL
+	exec
+		SYB0108.ops.dbo.e_opstasksforrange
+			@login,
+			@account_symbol,
+			@billing_cutoff,
+			@statement_date
+*/
+
+select
+  "_" = "<script>jQuery('.OutputTable:eq(0)').css({borderCollapse:'collapse',float:'right',width:400}); jQuery('.OutputTable:eq(0) th').hide(); jQuery('.OutputTable:eq(0) td').css({fontSize:13,height:'25px',lineHeight:'25px',borderBottom:'1px solid #ccc'});jQuery('.OutputTable td').css({border:'none',background:'#fff'}); jQuery('.OutputTable:eq(0) td:last-child').css({textAlign:'right'});jQuery('.OutputTable:eq(0)').parent().after('<hr style=""clear:right"">')</script>",
+  "" = "<script>jQuery('.OutputTable:eq(1)').parent().css({clear:'both',float:'left',width:300}); jQuery('.OutputTable:eq(1) th').hide(); jQuery('.OutputTable:eq(2)').parent().css({marginLeft:320,paddingTop:15}); jQuery('.OutputTable:eq(2) th').hide();</script>",
+  "__" = '<style type="text/css">@media print{#mainHeader{display:none}} #main:before{content:url(/ETG-250.png);position:"absolute"}</style>'
+
+go

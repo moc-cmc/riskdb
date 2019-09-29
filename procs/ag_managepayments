@@ -1,0 +1,564 @@
+
+drop procedure
+	ag_managepayments
+go
+
+create procedure
+	ag_managepayments
+		@login varchar(50),
+		@value_date datetime=NULL,
+		@account varchar(50)=NULL,
+		@product varchar(50)=NULL
+as
+
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @expected_type_id int
+declare @external_account_id int
+declare @product_id int
+declare @cash_balance float
+declare @pending_payments float
+declare @net_balance float
+
+declare @id int
+declare @ids int
+
+declare @fund_id int
+declare @payments_account_id int
+declare @payments_account varchar(50)
+declare @payments_pb_id int
+
+declare @selected_account_id int
+declare @selected_product_id int
+declare @total_pending float 
+
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"old_value_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_payment",
+	"Confirm Payment",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pending_payments",
+	"Manage Payments",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"pending_payments",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"cash_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+
+select
+	@selected_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+
+select
+	@selected_product_id = product_id
+from
+	products
+where
+	symbol = @product
+
+select
+	@payments_account_id = payments_ext_account_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@payments_account = symbol
+from
+	external_accounts
+where
+	external_account_id = @payments_account_id
+
+select
+	@payments_pb_id = prime_broker_id
+from
+	external_account_prime_brokers
+where
+	external_account_id = @payments_account_id
+
+
+if @value_date = NULL
+	select
+		@value_date = getdate()
+
+select
+	@expected_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Expected Payment"
+
+create table
+	#account_nets(
+		id int identity,
+		external_account_id int,
+		product_id int,
+		amount float)
+insert into
+	#account_nets(
+		external_account_id,
+		product_id,
+		amount)
+select
+	external_account_id,
+	currency_id,
+	sum(amount)
+from
+	account_transactions
+where
+	convert(date, transaction_date) < dateadd(day, 1, convert(date, @value_date))
+group by
+	external_account_id,
+	currency_id
+	
+
+create table
+	#balances(
+		id int identity,
+		external_account_id int,
+		product_id int,
+		transaction_type_id int,
+		amount numeric(30,4))
+insert into
+	#balances(
+		external_account_id,
+		product_id,
+		transaction_type_id,
+		amount)
+select
+	external_account_id,
+	currency_id,
+	transaction_type_id,
+	sum(amount)
+from
+	account_transactions
+where
+	convert(date, transaction_date) < dateadd(day, 1, convert(date, @value_date))
+group by
+	external_account_id,
+	currency_id,
+	transaction_type_id
+
+create table
+	#balance_summary(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		product_id int NULL NULL,
+		product varchar(50) NULL,
+		name varchar(100) NULL,
+		cash_balance float NULL,
+		pending_payments float NULL,
+		net_balance float NULL)
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#account_nets
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#account_nets
+	where
+		id > @id
+
+	select
+		@external_account_id = NULL,
+		@product_id = NULL,
+		@cash_balance = NULL,
+		@pending_payments = NULL,
+		@net_balance = NULL
+
+	select
+		@external_account_id = external_account_id,
+		@product_id = product_id
+	from
+		#account_nets
+	where
+		id = @id
+
+	select
+		@cash_balance = sum(amount)
+	from
+		#balances
+	where
+		transaction_type_id != @expected_type_id
+	and
+		product_id = @product_id
+	and
+		external_account_id = @external_account_id
+	if @cash_balance = NULL
+		select
+			@cash_balance = 0.0
+
+	select
+		@pending_payments = sum(amount)
+	from
+		#balances
+	where
+		transaction_type_id = @expected_type_id
+	and
+		product_id = @product_id
+	and
+		external_account_id = @external_account_id
+	if @pending_payments = NULL
+		select
+			@pending_payments = 0.0
+
+	select
+		@net_balance = @cash_balance + @pending_payments
+
+	insert into
+		#balance_summary(
+			style,
+			external_account_id,
+			product_id,
+			cash_balance,
+			pending_payments,
+			net_balance)
+	values(
+		@style,
+		@external_account_id,
+		@product_id,
+		@cash_balance,
+		@pending_payments,
+		@net_balance)
+
+
+	select
+		@ids = count(*)
+	from
+		#account_nets
+	where
+		id > @id
+end
+
+
+update
+	#balance_summary
+set
+	a.product = b.symbol,
+	a.name = b.name
+from
+	#balance_summary a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#balance_summary
+set
+	a.account = b.symbol
+from
+	#balance_summary a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+create table
+	#pending_payments(
+		id int identity,
+		style varchar(250) NULL,
+		payment_request_id varchar(50) NULL,
+		submitted_by varchar(50) NULL,
+		payer_account_id int NULL,
+		payer varchar(50) NULL,
+		payer_pb varchar(50) NULL,
+		payee_account_id int NULL,
+		payee varchar(50) NULL,
+		payee_pb varchar(50) NULL,
+		account_transaction_id int NULL,
+		transaction_date datetime NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		amount numeric(30,4) NULL,
+		product varchar(5) NULL,
+		type varchar(50) NULL,
+		confirm_payment varchar(50) NULL)
+		
+insert into
+	#pending_payments(
+		style,
+		payment_request_id,
+		submitted_by,
+		payer_account_id,
+		payer,
+		payee_account_id,
+		payee,
+		account_transaction_id,
+		transaction_date,
+		external_account_id,
+		amount,
+		product,
+		type,
+		confirm_payment)
+select
+	style = @style,
+	convert(varchar(50), a.payment_request_id),
+	b.login,
+	c.external_account_id,
+	c.symbol,
+	d.external_account_id,
+	d.symbol,
+	f.account_transaction_id,
+	f.transaction_date,
+	f.external_account_id,
+	f.amount,
+	h.symbol,
+	g.name,
+	confirm_payment = "Confirm Payment"
+from
+	payment_requests a,
+	tico_accounts b,
+	external_accounts c,
+	external_accounts d,
+	payment_request_transactions e,
+	account_transactions f,
+	transaction_types g,
+	products h
+where
+	a.submitted_by = b.account_id
+and
+	a.payer_account_id = c.external_account_id
+and
+	a.payee_account_id = d.external_account_id
+and
+	a.payment_request_id = e.payment_request_id
+and
+	e.account_transaction_id = f.account_transaction_id
+and
+	f.transaction_type_id = g.transaction_type_id
+and
+	f.currency_id = h.product_id
+and
+	h.product_id = @selected_product_id
+and
+	g.transaction_type_id = @expected_type_id
+
+update
+	#pending_payments
+set
+	a.payer_pb = d.name
+from
+	#pending_payments a,
+	external_account_prime_brokers b,
+	prime_brokers c,
+	sources d
+where	
+	a.payer_account_id = b.external_account_id
+and
+	b.prime_broker_id = c.prime_broker_id
+and
+	c.source_id = d.source_id
+
+update
+	#pending_payments
+set
+	a.payee_pb = d.name
+from
+	#pending_payments a,
+	external_account_prime_brokers b,
+	prime_brokers c,
+	sources d
+where	
+	a.payee_account_id = b.external_account_id
+and
+	b.prime_broker_id = c.prime_broker_id
+and
+	c.source_id = d.source_id
+
+update
+	#pending_payments
+set
+	account = b.symbol
+from
+	#pending_payments a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+select
+	@total_pending = sum(amount)
+from
+	#pending_payments
+if @total_pending != NULL
+begin
+	insert into
+		#pending_payments(
+			style,
+			payment_request_id,
+			amount)
+	values(
+		@total_style,
+		"Total",
+		@total_pending)
+end
+
+update
+	#balance_summary
+set
+	style = @selected_style
+where
+	product_id = @selected_product_id
+and
+	external_account_id = @selected_account_id
+
+select
+	section = "Payments Account",
+	style,
+	account,
+	name,
+	cash_balance,
+	pending_payments,
+	net_balance,
+	product
+from
+	#balance_summary
+where
+	external_account_id = @payments_account_id
+order by
+	account,
+	product
+	
+select
+	section = rtrim(@product) + " Pending Payments",
+	style,
+	payment_request_id,
+	submitted_by,
+	/* payer = payer_pb,
+	payee = payee_pb, */
+	account_transaction_id,
+	account,
+	transaction_date,
+	amount,
+	product,
+	type,
+	confirm_payment
+from
+	#pending_payments
+
+select
+	section = "Accounts",
+	style,
+	account,
+	name,
+	cash_balance,
+	pending = pending_payments,
+	net_balance,
+	product
+from
+	#balance_summary
+where
+	external_account_id != @payments_account_id
+order by
+	account,
+	product
+	
+
+
+
+
+go

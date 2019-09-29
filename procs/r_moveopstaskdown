@@ -1,0 +1,36 @@
+drop procedure r_moveopstaskdown
+go
+
+create procedure
+	r_moveopstaskdown
+		@login varchar(50),
+		@task_id int,
+		@as_of_date datetime=NULL
+
+
+as
+
+declare @status varchar(50)
+if @as_of_date = NULL
+begin
+	select
+		@as_of_date = convert(date, getdate())
+end	
+
+exec
+	r_moveopstask
+		@login=@login,
+		@ops_task_id = @task_id,
+		@direction = "DOWN",
+		@status = @status output
+
+if @status = "success"
+begin
+	exec
+		r_manageopstasks
+			@login = @login,
+			@as_of_date = @as_of_date
+end
+
+go
+

@@ -1,0 +1,54 @@
+drop procedure cbo_deletefxsettlementsfordate
+go
+
+create procedure 
+	cbo_deletefxsettlementsfordate
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @fee_commission_bro_id int
+declare @fee_break_transaction_id int
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#transaction_types
+(
+	transaction_type_id int,
+	name varchar(100)
+)
+insert into
+	#transaction_types
+select
+	transaction_type_id,
+	name
+from
+	transaction_types
+where
+	name in("FX Settlement")
+
+
+delete
+	account_transactions
+from
+	account_transactions a,
+	#transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.transaction_date = @end_date
+
+
+
+
+go

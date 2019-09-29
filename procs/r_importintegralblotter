@@ -1,0 +1,209 @@
+use
+	risk_cresco
+go
+
+drop procedure
+	r_importintegralblotter
+go
+
+create procedure
+	r_importintegralblotter
+		@login varchar(50),
+		@status varchar(100)=NULL,
+		@order_id varchar(100)=NULL,
+		@trade_id varchar(100)=NULL,
+		@type varchar(100)=NULL,
+		@workflow varchar(100)=NULL,
+		@trade_date varchar(100)=NULL,
+		@value_date varchar(100)=NULL,
+		@fixing_date varchar(100)=NULL,
+		@tenor varchar(100)=NULL,
+		@exectime varchar(100)=NULL,
+		@mkr_tkr varchar(100)=NULL,
+		@buy_sell varchar(100)=NULL,
+		@ccy_pair varchar(100)=NULL,
+		@dealt varchar(100)=NULL,
+		@rate varchar(100)=NULL,
+		@spot_rate varchar(100)=NULL,
+		@fwd_points varchar(100)=NULL,
+		@base_amt varchar(100)=NULL,
+		@term_amt varchar(100)=NULL,
+		@usd_rate varchar(100)=NULL,
+		@usd_amt varchar(100)=NULL,
+		@org varchar(100)=NULL,
+		@account varchar(100)=NULL,
+		@cpty varchar(100)=NULL,
+		@cpty_account varchar(100)=NULL,
+		@dealer varchar(100)=NULL,
+		@covered_trade_id varchar(100)=NULL,
+		@taker_ref_id varchar(100)=NULL,
+		@maker_ref_id varchar(100)=NULL,
+		@prime_broker varchar(100)=NULL,
+		@pb_account varchar(100)=NULL,
+		@sd_account varchar(100)=NULL,
+		@sd_user varchar(100)=NULL,
+		@stream varchar(100)=NULL,
+		@virtual_server varchar(100)=NULL,
+		@trd_comment varchar(100)=NULL
+as
+
+declare @trader varchar(50)
+declare @symbol varchar(50)
+declare @trader_id int
+declare @product varchar(25)
+declare @pair varchar(25)
+declare @sym1 varchar(25)
+declare @sym2 varchar(25)
+declare @source_id int
+declare @tally_type varchar(50)
+declare @trader_login varchar(50)
+declare @client_trade_id int
+declare @market_trade_id int
+declare @deal_id int
+declare @val_date datetime
+declare @traded_date datetime
+declare @quantity numeric(30,2)
+declare @market_quantity numeric(30,2)
+declare @price float
+declare @client_identifier varchar(100)
+declare @market_identifier varchar(100)
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "Integral"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Integral source not found"
+	return
+end
+
+select
+	@client_identifier = rtrim(@trade_id) + ".c",
+	@client_identifier = rtrim(@trade_id) + ".m"
+
+select
+	@price = convert(float, @term_amt) / convert(float, @base_amt),
+	@quantity = convert(numeric(30,2), @base_amt)
+
+select
+	@market_quantity = @quantity * -1.0
+
+select
+	@val_date = convert(datetime, @value_date),
+	@traded_date = convert(datetime, @trade_date)
+
+select
+	@tally_type = "Spot"
+
+select
+	@trader_id = trader_id
+from
+	trader_symbols
+where
+	source_id = @source_id
+and
+	symbol = rtrim(@org) + "-" + rtrim(@dealer)
+if @trader_id = NULL
+begin
+	select
+		@trader_id = trader_id
+	from
+		traders
+	where
+		symbol = rtrim(@org) + "-" + rtrim(@dealer)
+	if @trader_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Trader not found",
+			trader = rtrim(@org) + "-" + rtrim(@dealer)
+		return
+	end
+end
+
+select
+	@trader_login = a.login,
+	@trader = b.symbol
+from
+	tico_accounts a,
+	traders b
+where
+	a.account_id = b.tico_account_id
+and
+	b.trader_id = @trader_id
+
+
+exec
+        u_fieldsfromslashseparator
+                @ccy_pair,
+                @sym1 output,
+                @sym2 output
+
+if rtrim(@dealt) = rtrim(@sym1)
+	select
+		@symbol = rtrim(@sym1) + rtrim(@sym2)
+if rtrim(@dealt) = rtrim(@sym2)
+	select
+		@symbol = rtrim(@sym2) + rtrim(@sym1)
+
+/* select
+	login = @trader_login,
+	source = "Integral",
+	trade_id = @client_trade_id,
+	deal_id = @deal_id,
+	tally_type = @tally_type,
+	deal_type = "Client Forward",
+	trade_type = @tally_type,
+	trader = @trader,
+	value_date = @val_date,
+	trade_date = @traded_date,
+	price = @price,
+	quantity = @quantity,
+	symbol = @symbol
+*/
+
+exec
+	fxa_tallytrade
+		@login = @trader_login,
+		@source = "Integral",
+		@trade_id = @market_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@client_identifier = @market_identifier,
+		@deal_type = "Market Forward",
+		@trade_type = @tally_type,
+		@trader = @trader,
+		@value_date = @val_date,
+		@trade_date = @traded_date,
+		@price = @price,
+		@broker = "Integral",
+		@quantity = @market_quantity,
+		@symbol = @symbol 
+
+exec
+	fxa_tallytrade
+		@login = @trader_login,
+		@source = "Integral",
+		@trade_id = @client_trade_id output,
+		@deal_id = @deal_id,
+		@tally_type = @tally_type,
+		@client_identifier = @client_identifier,
+		@deal_type = "Client Forward",
+		@trade_type = @tally_type,
+		@trader = @trader,
+		@value_date = @val_date,
+		@trade_date = @traded_date,
+		@price = @price,
+		@broker = "Integral",
+		@quantity = @quantity,
+		@symbol = @symbol 
+
+		
+	
+
+go

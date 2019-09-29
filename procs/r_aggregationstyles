@@ -1,0 +1,18 @@
+
+if object_id("r_aggregationstyles") != NULL
+    drop procedure
+        r_aggregationstyles
+go
+
+create procedure
+	r_aggregationstyles
+
+as
+
+select
+	name
+from
+	aggregation_styles
+
+
+go

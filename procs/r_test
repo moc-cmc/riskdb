@@ -1,0 +1,10 @@
+drop proceure r_test
+go
+
+create procedure r_test
+as
+
+select "test"
+
+go
+

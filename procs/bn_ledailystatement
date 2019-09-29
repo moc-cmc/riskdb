@@ -1,0 +1,36 @@
+create or replace procedure
+	bn_ledailystatement
+                @login varchar(50),
+                @legal_entity varchar(255),
+		@trade_date datetime = NULL
+
+as
+
+
+declare @begin_date datetime
+declare @end_date datetime
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+	
+select
+	@begin_date = convert(date, @begin_date),
+	@end_date = convert(date, @end_date)	
+
+exec
+	ag_legalentitystatement
+		@login = @login,
+		@legal_entity = @legal_entity,
+		@begin_date = @end_date,
+		@end_date = @end_date	
+
+go

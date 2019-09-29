@@ -1,0 +1,22 @@
+
+if object_id("r_valdatefutures") != NULL
+    drop procedure
+        r_valdatefutures
+go
+
+create procedure
+	r_valdatefutures
+as
+
+select
+	a.name
+from
+	futures a,
+	future_types b
+where
+	a.future_type_id = b.future_type_id
+and
+	b.name = "Val Date"
+
+
+go

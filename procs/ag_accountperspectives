@@ -1,0 +1,120 @@
+use
+	risk_edgewater
+go
+
+drop procedure
+	ag_accountperspectives
+go
+
+create procedure
+	ag_accountperspectives
+		@login varchar(50)
+as
+
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"change_perspective",
+	"Change Account Perspective",
+	NULL) 
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@subtotal_style = "background:#DADEE8;border: 1px solid white;font-weight:bold",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+create table
+	#accounts(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int,
+		account varchar(50),
+		perspective varchar(20) NULL,
+		change_perspective varchar(50) NULL)
+insert into
+	#accounts(
+		style,
+		external_account_id,
+		account)
+select
+	style = @style,
+	external_account_id,
+	symbol
+from
+	external_accounts
+order by
+	symbol
+
+update
+	#accounts
+set
+	perspective = "Native"
+
+update
+	#accounts
+set
+	a.perspective = "Reversed",
+	a.style = @subtotal_style
+from
+	#accounts a,
+	reverse_persective_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+	
+update
+	#accounts
+set
+	change_perspective = "Change Perspective"
+
+select
+	section = "Accounts",
+	style,
+	account,
+	perspective,
+	change_perspective
+from
+	#accounts
+order by
+	id
+
+go

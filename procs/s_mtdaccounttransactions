@@ -1,0 +1,40 @@
+
+if object_id("s_mtdaccounttransactions") != NULL
+    drop procedure
+        s_mtdaccounttransactions
+go
+
+create procedure
+	s_mtdaccounttransactions
+		@external_account char(50)
+as
+
+declare @month char(2)
+declare @year char(4)
+declare @day char(2)
+declare @datestring char(11)
+declare @begin_date datetime
+declare @end_date datetime
+
+select
+	@day = "01",
+	@month = convert(char(2), datepart(month, getdate())),
+	@year = convert(char(4), datepart(year, getdate()))
+
+
+select
+	@datestring = @month + "/" + @day + "/" + @year
+
+select
+	@begin_date = convert(datetime, @datestring),
+	@end_date = getdate()
+
+exec
+        s_accounttransactions
+                @external_account,
+                @begin_date,
+                @end_date
+
+
+
+go

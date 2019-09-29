@@ -1,0 +1,202 @@
+drop procedure
+	r_sellquotedoption
+go
+
+create procedure
+	r_sellquotedoption
+		@login varchar(50),
+		@bid_quantity numeric(30,2),
+		@biproduct varchar(50),
+		@expiration_date datetime,
+		@strike_price numeric(30,6),
+		@call_put varchar(10),
+		@spot_ref float,
+		@bid float
+
+
+
+as
+
+declare @counterparty varchar(50)
+declare @counterparty_id int
+declare @counterparties int
+declare @client_buys_sells varchar(25)
+declare	@timezone varchar(25)
+declare @option_settlement datetime
+declare @implied_volatility float
+declare @client_price float
+declare @client_format varchar(10)
+declare @client_total_premium float
+declare @client_premium_currency varchar(25) 
+declare @client_premium_settle datetime 
+declare @market_price float
+declare @market_format varchar(10)
+declare @market_total_premium float
+declare @market_premium_currency varchar(25)
+declare @market_premium_settle datetime
+
+
+select
+	@client_buys_sells = "Client Sells",
+	@client_format = "Pips",
+	@client_price = @bid,
+	@timezone = "New York 10:00"
+select
+	@market_price = @client_price + .0001
+	
+exec
+	r_nextbusinessday
+		@expiration_date,
+		@option_settlement output
+
+exec
+	r_nextbusinessday
+		@option_settlement,
+		@option_settlement output
+
+
+declare @now datetime
+
+select 	
+	@now = getdate()
+
+exec 
+	r_nextbusinessday 
+		@now,
+		@client_premium_settle output
+
+exec 
+        r_nextbusinessday 
+		@client_premium_settle,
+		@client_premium_settle output
+
+select
+	@client_premium_currency = substring(@biproduct, 4, 6)
+
+select
+	@market_premium_settle = @client_premium_settle,
+	@market_premium_currency = @client_premium_currency,
+	@market_format = @client_format
+
+select
+	@client_total_premium = (abs(@bid_quantity) * @client_price),
+	@market_total_premium = (abs(@bid_quantity) * @market_price)
+
+create table
+	#counterparties(
+		counterparty_id int identity,
+		name varchar(50))
+insert into
+	#counterparties(
+		name)
+select
+	name
+from
+	counterparties
+where
+	counterparty_id not in(select counterparty_id from fund_agency_counterparties)
+
+/* dont book into an internal account */
+delete from 
+	#counterparties 
+where 
+	name like "%nterna%"
+
+select
+	@counterparties = count(*)
+from
+
+ 	#counterparties
+
+select
+	@counterparty_id = convert(int, rand() * @counterparties)
+
+select
+	@counterparty = name
+from
+	#counterparties
+where
+	counterparty_id = @counterparty_id
+
+if @counterparty = NULL
+	select
+		@counterparty = "UBS"
+
+declare @account_id int
+declare @trader_id int
+declare @client_user varchar(50)
+
+select
+        @account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+select
+        @trader_id = trader_id
+from
+        default_tally_accounts
+where
+        tico_account_id = @account_id
+
+select
+        @client_user = symbol
+from
+        traders
+where
+        trader_id = @trader_id
+
+
+select
+                login = @login,
+                client_user = @client_user,
+                client_buys_sells  = @client_buys_sells,
+                counterparty = @counterparty,
+                quantity = @bid_quantity,
+                biproduct = @biproduct,
+                timezone = @timezone,
+                expiration = @expiration_date,
+                option_settlement = @option_settlement,
+                strike = @strike_price,
+                call_put=@call_put,
+                implied_volatility = 11,
+                spot_reference = @spot_ref,
+                client_price = @client_price,
+                client_format = @client_format,
+                client_total_premium = @client_total_premium,
+                client_premium_currency = @client_premium_currency,
+                client_premium_settle = @client_premium_settle,
+                market_price  = @market_price,
+                market_format = @market_format,
+                market_total_premium = @market_total_premium,
+                market_premium_currency = @market_premium_currency,
+                market_premium_settle= @market_premium_settle
+
+exec
+	fxa_tallyb2boption
+		@login = @login,
+		@client_user = @client_user,
+		@client_buys_sells  = @client_buys_sells,
+		@counterparty = @counterparty,
+		@quantity = @bid_quantity,
+		@biproduct = @biproduct,
+		@timezone = @timezone,
+		@expiration = @expiration_date,
+		@option_settlement = @option_settlement,
+		@strike = @strike_price,
+		@call_put=@call_put,
+		@implied_volatility = 11,
+		@spot_reference = @spot_ref,
+		@client_price = @client_price,
+		@client_format = @client_format,
+		@client_total_premium = @client_total_premium,
+		@client_premium_currency = @client_premium_currency,
+		@client_premium_settle = @client_premium_settle,
+		@market_price  = @market_price,
+		@market_format = @market_format,
+		@market_total_premium = @market_total_premium,
+		@market_premium_currency = @market_premium_currency,
+		@market_premium_settle= @market_premium_settle
+
+go
+

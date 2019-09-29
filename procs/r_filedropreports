@@ -1,0 +1,14 @@
+create or replace procedure
+	r_filedropreports
+		@login varchar(50)
+
+as
+
+select
+	name
+from
+	filedrop_reports
+order by 
+	name
+
+go

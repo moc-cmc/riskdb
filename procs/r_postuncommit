@@ -1,0 +1,44 @@
+drop procedure r_postuncommit
+go
+
+create procedure
+	r_postuncommit
+		@trade_date datetime 
+
+as
+
+declare @login varchar(50)
+
+select
+	@login = "finotecops"
+
+exec
+        cbo_deletefeesfordate
+                @login,
+                @trade_date
+/*exec
+        cbo_deletefxsettlementsfordate
+                @login,
+                @trade_date*/
+
+exec
+	r_uncommitcommissionfees
+		@trade_date
+
+exec
+	ag_uncommitmargins
+		@login,
+		@trade_date
+
+exec
+	ag_uncommitvolumes
+		@login,
+		@trade_date
+
+
+	
+/*exec
+	r_uncommitfxsettlements
+		@trade_date*/
+
+go		

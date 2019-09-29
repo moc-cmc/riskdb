@@ -1,0 +1,74 @@
+
+drop procedure
+	cbo_savesettlementfees
+go
+
+create procedure
+	cbo_savesettlementfees
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+declare @fee_schedules int
+declare @fee_schedule_id int
+declare @fee_schedule varchar(200)
+
+
+select
+	@fee_schedule_id = 0
+select
+	@fee_schedules = count(a.fee_schedule_id)
+from
+	fee_schedules a,
+	fee_schedule_types b
+where
+	a.fee_schedule_type_id = b.fee_schedule_type_id 
+and
+	b.name = "Settlement Volume"
+and
+	a.fee_schedule_id > @fee_schedule_id
+
+while @fee_schedules > 0
+begin
+	select
+		@fee_schedule_id = min(a.fee_schedule_id)
+	from
+		fee_schedules a,
+		fee_schedule_types b
+	where
+		a.fee_schedule_type_id = b.fee_schedule_type_id 
+	and
+		b.name = "Settlement Volume"
+	and
+		a.fee_schedule_id > @fee_schedule_id
+	select
+		@fee_schedule = NULL
+
+	select
+		@fee_schedule = name
+	from
+		fee_schedules
+	where
+		fee_schedule_id = @fee_schedule_id
+
+	exec
+		ag_settlementfees
+			@login = @login,
+			@fee_schedule = @fee_schedule,
+			@trade_date = @trade_date
+
+	select
+		@fee_schedules = count(a.fee_schedule_id)
+	from
+		fee_schedules a,
+		fee_schedule_types b
+	where
+		a.fee_schedule_type_id = b.fee_schedule_type_id 
+	and
+		b.name = "Settlement Volume"
+	and
+		a.fee_schedule_id > @fee_schedule_id
+end
+
+go

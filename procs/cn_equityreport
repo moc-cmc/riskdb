@@ -1,0 +1,562 @@
+drop procedure
+	cn_equityreport
+go
+
+create procedure
+	cn_equityreport
+		@login varchar(50),
+		@run_name varchar(50)=NULL,
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+
+as
+
+declare @is_valid char(1)
+declare @prev_day datetime
+declare @id int 
+declare @ids int
+declare @total_eq_return float
+declare @begin_option_value float
+declare @total_lv_return float
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"margin_pct",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"avg_margin_use",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"avg_margin_pct",
+	"Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_eq_return",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_lv_return",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"daily_lv_return",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"daily_eq_return",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"column_name",
+	"Proc Title",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"change_equity",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"change_lv",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"end_lv",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"begin_lv",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"end_equity",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"begin_equity",
+	"Number",
+	"#,##0.00")
+
+
+select * from #meta
+
+select
+    graphs = '<div style="width:100%"><div id="graphs" style="height:200px;background:#fff;margin:0 -4px;"></div></div>'
+select
+    graphs = '<div style="width:100%"><div id="graphs2" style="height:200px;background:#fff;margin:0 -4px;"></div></div>'
+
+if @run_name = NULL
+	select
+		@run_name = name
+	from
+		funds
+
+exec
+	x_validateborun
+		@login,
+		@run_name,
+		@is_valid output
+
+if @is_valid != "Y"
+begin
+	select
+		status = "Error",
+		message = "Run is not a valid back office run",
+		run_name = @run_name
+	return
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	a.external_account_id
+from
+	run_external_accounts a,
+	runs b
+where
+	a.run_id = b.run_id
+and
+	b.name = @run_name
+if @@rowcount = 0
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+
+if @begin_date = NULL
+	select
+		@begin_date = max(trade_date)
+	from
+		external_margin_transactions
+
+
+if @end_date = NULL
+	select
+		@end_date = @begin_date
+
+create table
+	#report(
+		external_account_id int,
+		begin_date datetime,
+		end_date datetime,
+		source_id int NULL,
+		begin_equity float NULL,
+		begin_lv float NULL,
+		current_equity float NULL,
+		current_lv float NULL,
+		initial_margin float NULL)
+
+
+insert into
+	#report(
+		external_account_id,
+		source_id,
+		begin_date,
+		end_date)
+select
+	a.external_account_id,
+	a.source_id,
+	min(a.trade_date),
+	max(a.trade_date)
+from
+	external_margin_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date <= @end_date
+group by
+	a.external_account_id,
+	a.source_id
+
+
+update
+	#report
+set
+	a.begin_equity = b.begin_balance,
+	a.initial_margin = b.initial_margin,
+	a.begin_lv = b.begin_balance + b.option_value
+from
+	#report a,
+	external_margin_transactions b
+where
+	a.external_account_id = b.external_account_id
+and
+	convert(date, a.begin_date) = convert(date, b.trade_date)
+
+
+/* update
+	#report
+set
+	a.begin_lv = b.INPV + begin_equity
+from
+	#report a,
+	crossland_cash_file b
+where
+	a.external_account_id = b.external_account_id
+and
+	convert(date, a.begin_date) = convert(date, b.trade_date) */
+
+
+update
+	#report
+set
+	a.current_equity = b.end_balance,
+	a.current_lv = b.end_balance + b.option_value
+from
+	#report a,
+	external_margin_transactions b
+where
+	a.external_account_id = b.external_account_id
+and
+	convert(date, a.end_date) = convert(date, b.trade_date)
+
+
+select
+	section = "Accounts Summary Report For " + rtrim(@run_name),
+	account = b.symbol,
+	fcm = c.name,
+	a.begin_equity,
+	a.begin_lv,
+	a.current_equity,
+	a.current_lv,
+	a.initial_margin
+from
+	#report a,
+	external_accounts b,
+	sources c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.source_id = c.source_id
+order by
+	b.symbol
+
+
+create table
+	#returns(
+		id int identity,
+		trade_date datetime,
+		initial_margin float NULL,
+		margin_pct float NULL,
+		cash_activity float NULL,
+		begin_option_value float NULL,
+		end_option_value float NULL,
+		begin_equity float NULL,
+		begin_lv float NULL,
+		end_equity float NULL,
+		end_lv float NULL,
+		change_equity float NULL,
+		change_lv float NULL,
+		daily_eq_return float NULL,
+		total_eq_return float NULL,
+		daily_lv_return float NULL,
+		total_lv_return float NULL)
+
+
+exec
+	r_prevbusinessday
+		@begin_date,
+		@prev_day output
+
+insert into
+	#returns(
+		trade_date,
+		initial_margin,
+		cash_activity,
+		end_option_value,
+		begin_equity,
+		end_equity,
+		end_lv)
+select
+	a.trade_date,
+	sum(a.initial_margin),
+	sum(a.cash_activity),
+	sum(a.option_value),
+	sum(a.begin_balance),
+	sum(a.end_balance),
+	sum(a.end_balance + a.option_value)
+from
+	external_margin_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.trade_date >= @prev_day
+and
+	a.trade_date <= @end_date
+group by
+	a.trade_date
+order by
+	a.trade_date
+
+	
+update
+	#returns
+set
+	change_equity = end_equity - begin_equity - cash_activity
+
+update
+	#returns
+set
+	a.begin_option_value = b.end_option_value
+from
+	#returns a,
+	#returns b
+where
+	a.id = b.id + 1
+
+update
+	#returns
+set
+	begin_lv = begin_equity + begin_option_value
+
+
+update
+	#returns
+set
+	begin_lv = begin_equity
+where
+	begin_lv = NULL
+and
+	id <= 2
+
+update
+	#returns
+set
+	margin_pct = initial_margin / begin_lv
+where
+	begin_lv != 0
+
+update
+	#returns
+set
+	change_lv = end_lv - begin_lv - cash_activity
+
+update
+	#returns
+set
+	daily_eq_return = change_equity / begin_equity
+where
+	begin_equity != 0
+
+update
+	#returns
+set
+	daily_lv_return = change_lv / begin_lv
+where
+	begin_lv != 0
+
+update
+	#returns
+set
+	daily_eq_return = 0.0,
+	total_eq_return = 0.0,
+	daily_lv_return = 0.0,
+	total_lv_return = 0.0
+where
+	id = 1
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#returns
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#returns
+	where
+		id > @id
+
+	select
+		@total_eq_return = sum(daily_eq_return),
+		@total_lv_return = sum(daily_lv_return)
+	from
+		#returns
+	where
+		id <= @id
+
+	update
+		#returns
+	set
+		total_eq_return = @total_eq_return,
+		total_lv_return = @total_lv_return
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#returns
+	where
+		id > @id
+end
+
+delete
+
+from
+	#returns
+where
+	id = 1
+
+select
+	section = "Cumulative Daily Returns",
+	trade_date,
+	begin_equity,
+	cash_activity,
+	end_equity,
+	change_equity,
+	daily_eq_return,
+	total_eq_return,
+	begin_lv,
+	end_lv,
+	change_lv,
+	daily_lv_return,
+	total_lv_return,
+	margin_pct,
+	net_options = end_option_value
+from
+	#returns
+order by
+	convert(datetime, trade_date)
+
+
+create table
+	#monthly(
+		first_day datetime,
+		month varchar(20),
+		year varchar(10),
+		total_eq_return float,
+		total_lv_return float,
+		avg_margin_use float,
+		avg_margin_pct float)
+insert into
+	#monthly
+select
+	first_day = min(trade_date),
+	month = datename(month, trade_date),
+	year = datename(year, trade_date),
+	total_eq_return = sum(daily_eq_return),
+	total_lv_return = sum(daily_lv_return),
+	avg_margin_use = avg(initial_margin),
+	avg_margin_pct = avg(margin_pct)
+from
+	#returns
+group by
+	datename(month, trade_date),
+	datename(year, trade_date)
+
+select
+	section = "Cumulative Monthly Returns",
+	month,
+	year,
+	total_eq_return,
+	total_lv_return,
+	avg_margin_use,
+	avg_margin_pct
+from
+	#monthly
+order by
+	first_day
+
+
+select
+    '<script type="text/javascript">jQuery("#graphs").chart(jQuery(".OutputTable").eq(3), { xaxis:{type:"date"}, series:[{x1:0,y1:11}], bind:{rowStart:2}})</script>'
+select
+    '<script type="text/javascript">jQuery("#graphs2").chart(jQuery(".OutputTable").eq(3), { xaxis:{type:"date"}, series:[{x1:0,y1:12}], bind:{rowStart:2}})</script>'
+
+
+go

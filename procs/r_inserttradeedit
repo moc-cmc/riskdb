@@ -1,0 +1,141 @@
+drop procedure r_inserttradeedit
+go
+
+create procedure 
+	r_inserttradeedit 
+		@trade_id int 
+
+as
+
+declare @deal_id int
+declare @user_id int
+declare @trade_type_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @counterparty_id int
+declare @quantity numeric(30,4)
+declare @contract_id int
+declare @value_date datetime
+declare @fixing_date datetime
+declare @price float
+declare @trade_date datetime
+declare @trader_id int
+declare @strategy_id int
+declare @status_id int
+declare @broker_id int
+declare @sales_code_id int
+declare @identifier varchar(100)
+declare @pct_price numeric(30,6)
+declare @spot_reference float 
+declare @timestamp datetime
+declare @mid_mark float
+declare @premium_amount numeric(30,6) 
+declare @premium_ccy_id int 
+declare @premium_date datetime 
+
+select
+        @deal_id = a.deal_id,
+        @user_id = a.user_id,
+        @trade_type_id = a.trade_type_id,
+        @internal_account_id = a.internal_account_id,
+        @external_account_id = a.external_account_id,
+        @counterparty_id = a.counterparty_id,
+        @quantity = a.quantity,
+        @contract_id = a.contract_id,
+        @value_date = a.value_date,
+        @fixing_date = a.fixing_date,
+        @price = a.price,
+        @trade_date = a.trade_date,
+        @trader_id = a.trader_id,
+        @strategy_id = a.strategy_id,
+        @status_id = a.status_id,
+        @broker_id = a.broker_id,
+        @sales_code_id = a.sales_code_id,
+        @identifier = a.identifier,
+        @pct_price = a.pct_price,
+        @spot_reference = a.spot_reference,
+        @timestamp = getdate()
+from
+        trades a
+where
+        a.trade_id=@trade_id
+
+select	
+	@mid_mark = a.mid_mark
+from
+	trade_attributes a
+where
+	a.trade_id = @trade_id
+
+select
+	@premium_amount = b.amount,
+	@premium_ccy_id = b.currency_id,
+	@premium_date = b.transaction_date
+from
+	account_transaction_trades a,
+	account_transactions b
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	a.trade_id = @trade_id
+
+insert into
+        trade_edits
+        (
+                trade_id,
+                deal_id,
+                user_id,
+                trade_type_id,
+                internal_account_id,
+                external_account_id,
+                counterparty_id,
+                quantity,
+                contract_id,
+                value_date,
+                fixing_date,
+                price,
+                trade_date,
+                trader_id,
+                strategy_id,
+                status_id,
+                broker_id,
+                sales_code_id,
+                identifier,
+                pct_price,
+                spot_reference,
+                timestamp,
+		mid_mark,
+		premium_amount,
+		premium_ccy_id,
+		premium_date)
+values(
+        @trade_id,
+        @deal_id,
+        @user_id,
+        @trade_type_id,
+        @internal_account_id,
+        @external_account_id,
+        @counterparty_id,
+        @quantity,
+        @contract_id,
+        @value_date,
+        @fixing_date,
+        @price,
+        @trade_date,
+        @trader_id,
+        @strategy_id,
+        @status_id,
+        @broker_id,
+        @sales_code_id,
+        @identifier,
+        @pct_price,
+        @spot_reference,
+	@timestamp,
+	@mid_mark,
+	@premium_amount,
+	@premium_ccy_id,
+	@premium_date
+)
+
+
+go

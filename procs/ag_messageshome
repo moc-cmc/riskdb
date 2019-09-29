@@ -1,0 +1,300 @@
+drop procedure
+	ag_messageshome
+go
+
+create procedure
+	ag_messageshome
+		@login varchar(50),
+		@channel varchar(100)
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+
+declare @channel_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"mc_desktop",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"send_message",
+	"Send Channel Message",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"action",
+	"Configure Group Channel",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"manage_groups",
+	"Groups Home",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_channel",
+	"Add Channel",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_status",
+	"Set Channel Status",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"channel",
+	"Messages Home",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_panel",
+	"Add MC Panel",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_desktop",
+	"Add MC Desktop",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"override_price",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"parity_value",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+select
+	@channel_id = channel_id
+from
+	channels
+where
+	name = @channel
+
+create table
+	#channel_groups(
+		id int identity,
+		style varchar(250) NULL,
+		channel_id int NULL,
+		channel varchar(100) NULL,
+		group_id int NULL,
+		group_name varchar(100) NULL,
+		included varchar(10) NULL,
+		action varchar(100) NULL)
+		
+insert into
+	#channel_groups(
+		style,
+		channel_id,
+		channel,
+		group_id,
+		group_name)
+select
+	style = @style,
+	channel_id = @channel_id,
+	channel = @channel,
+	group_id,
+	name
+from
+	groups
+order by
+	name
+
+update
+	#channel_groups
+set
+	action = "Add"
+
+update
+	#channel_groups
+set
+	a.included = "Yes",
+	a.action = "Remove"
+from
+	#channel_groups a,
+	group_channels b
+where
+	a.channel_id = b.channel_id
+and
+	a.group_id = b.group_id
+	
+select
+	style = @style,
+	add_channel = "Add Channel",
+	manage_groups = "Manage Groups",
+	send_message = "Send Message"
+
+create table
+	#channels(
+		id int identity,
+		style varchar(250) NULL,
+		channel varchar(100) NULL,
+		item_relation_id int NULL,
+		item_id int NULL,
+		activity_status varchar(100) NULL,
+		set_status varchar(25) NULL)
+insert into
+	#channels(
+		style,
+		channel,
+		item_relation_id,
+		item_id,
+		activity_status,
+		set_status)
+select
+	style = @style,
+	channel = a.name,
+	a.item_relation_id,
+	a.item_id,
+	activity_status = b.name,
+	set_status = "Set Status"
+from
+	channels a,
+	activity_statuses b
+where
+	a.activity_status_id = b.activity_status_id
+order by
+	a.name
+
+update
+	#channels
+set
+	style = @selected_style
+where
+	channel = @channel
+
+select
+	section = "Channels",
+	style,
+	channel,
+	item_relation_id,
+	item_id,
+	activity_status,
+	set_status
+from
+	#channels
+order by
+	id
+
+select
+	section = rtrim(@channel) + " Groups",
+	style,
+	channel_name = channel,
+	group_name,
+	included,
+	action
+from
+	#channel_groups
+where
+	channel_id != NULL
+order by
+	id
+	
+set rowcount 20
+select
+	section = rtrim(@channel) + " Recent Messages",
+	style = @style,
+	a.message_id,
+	author = b.login,
+	a.message_date,
+	message_type = c.name,
+	a.subject,
+	a.content,
+	priority = e.name,
+	activity_status = d.name	
+from
+	messages a,
+	tico_accounts b,
+	message_types c,
+	activity_statuses d,
+	priorities e
+where
+	a.author_user_id = b.account_id
+and
+	a.message_type_id = c.message_type_id
+and
+	a.activity_status_id = d.activity_status_id
+and
+	a.priority_id = e.priority_id
+and
+	a.channel_id = @channel_id
+order by
+	a.message_date desc
+set rowcount 0
+	
+	
+
+go

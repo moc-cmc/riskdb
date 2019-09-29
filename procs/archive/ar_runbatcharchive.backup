@@ -1,0 +1,333 @@
+drop procedure ar_runbatcharchive
+go
+
+create procedure
+	ar_runbatcharchive
+		
+
+as
+
+declare @archive_date date
+declare @archive_date_id int
+declare @archive_batch_id int
+declare @archive_date_status_id int
+
+declare @pending_status_id int
+declare @failed_status_id int
+declare @in_progress_status_id int
+declare @complete_status_id int
+declare @failed_exists char(1)
+
+declare @archive_trade_count int
+declare @archive_tn_count int
+declare @deleted_trade_count int
+declare @deleted_tn_count int
+
+declare @first_batch_for_date int
+
+select
+	@archive_date = min(a.archive_date)
+from
+	archive_dates a,
+	archive_date_statuses b
+where
+	a.archive_date_status_id = b.archive_date_status_id
+and
+	b.name in("Pending", "In Progress")
+
+select
+	@failed_exists = "Y"
+from
+        archive_dates a,
+        archive_date_statuses b
+where
+        a.archive_date_status_id = b.archive_date_status_id
+and
+        b.name = "Failed"
+if @failed_exists = "Y"
+begin
+	select
+		status = "Error",
+		message = "An archive failed, no longer continuing until the failure is resolved."
+	return
+end
+
+	
+
+if @archive_date = NULL
+begin
+	select
+		status = "OK",
+		message = "Nothing to be archived"
+	return
+end
+
+select
+	@archive_date_id = archive_date_id,
+	@archive_date_status_id = archive_date_status_id
+from
+	archive_dates
+where
+	archive_date = @archive_date
+
+
+
+/**/
+select
+	@pending_status_id = archive_date_status_id
+from
+	archive_date_statuses
+where
+	name = "Pending"
+
+select
+	@failed_status_id = archive_date_status_id
+from
+	archive_date_statuses
+where
+	name = "Failed"
+
+select
+	@in_progress_status_id = archive_date_status_id
+from
+	archive_date_statuses
+where
+	name = "In Progress"
+
+select
+	@complete_status_id = archive_date_status_id
+from
+	archive_date_statuses
+where
+	name = "Complete"
+/**/
+
+exec
+	j_nextkey
+		"archive_batches",
+		@archive_batch_id output
+
+insert into
+	archive_batches(
+		archive_batch_id,
+		archive_date_id,
+		start_date)
+values(
+	@archive_batch_id,
+	@archive_date_id,
+	getdate()
+)
+	
+
+/* 
+ * This proc uses `select top` but does not use an order by so we 
+ * are not archiving trades in order. We only do select top xxxx
+ * so that we have no issues with the tran log
+ */
+
+create table
+	#trades(
+		trade_id int
+)
+insert into
+	#trades
+select top 500
+       a.trade_id
+from
+       trades a
+where
+       a.value_date <= @archive_date
+
+/* Use transaction to manage deletes of trades*/
+begin tran
+
+insert into
+	archive_trades(
+		archive_batch_id,
+		trade_id,
+		deal_id,
+		user_id,
+		trade_type_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		contract_id,
+		value_date,
+		fixing_date,
+		price,
+		trade_date,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		sales_code_id,
+		identifier,
+		pct_price,
+		spot_reference)
+select 
+	@archive_batch_id,
+	a.trade_id,
+	a.deal_id,
+	a.user_id,
+	a.trade_type_id,
+	a.internal_account_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.quantity,
+	a.contract_id,
+	a.value_date,
+	a.fixing_date,
+	a.price,
+	a.trade_date,
+	a.trader_id,
+	a.strategy_id,
+	a.status_id,
+	a.broker_id,
+	a.sales_code_id,
+	a.identifier,
+	a.pct_price,
+	a.spot_reference
+from
+	trades a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+select
+	@archive_trade_count = @@rowcount
+
+delete
+	trades
+from
+	trades a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+select
+	@deleted_trade_count = @@rowcount
+
+if @archive_trade_count != @deleted_trade_count
+begin
+	select
+		status = "Error",
+		message = "Archive trade count and delete trade count did not match",
+		archive_trade_count = @archive_trade_count,
+		deleted_trade_count = @deleted_trade_count
+	rollback tran
+
+        update
+                archive_dates
+        set
+                archive_date_status_id = @failed_status_id,
+                end_date = getdate()
+        where
+                archive_date_id = @archive_date_id
+	return
+end
+
+commit tran /* commit on trades */
+
+/* Use transaction to manage deletes of trade_notifications */
+begin tran
+
+insert into
+	archive_trade_notifications(
+		archive_batch_id,
+		trade_notification_id,
+		source_id,
+		trade_id,
+		status_id,
+		capture_date,
+		notify_date,
+		error)
+select
+	@archive_batch_id,
+	a.trade_notification_id,
+	a.source_id,
+	a.trade_id,
+	a.status_id,
+	a.capture_date,
+	a.notify_date,
+	a.error
+from
+	trade_notifications a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+
+select
+	@archive_tn_count = @@rowcount
+
+
+delete
+	trade_notifications 
+from
+	trade_notifications a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+
+select
+	@deleted_tn_count = @@rowcount
+
+
+if @archive_tn_count != @deleted_tn_count
+begin
+        select
+                status = "Error",
+                message = "Archive trade notification count and delete trade notification count did not match",
+                archive_tn_count = @archive_tn_count,
+                deleted_tn_count = @deleted_tn_count
+
+	rollback tran
+
+        update
+                archive_dates
+        set
+                archive_date_status_id = @failed_status_id,
+                end_date = getdate()
+        where
+                archive_date_id = @archive_date_id
+        return
+end
+	
+commit tran /* for trade_notifications */
+
+/* Done Archiving */
+
+select
+	@first_batch_for_date = count(*)
+from
+	archive_batches
+where
+	archive_date_id = @archive_date_id
+
+if @first_batch_for_date = 1
+begin
+	update
+		archive_dates
+	set
+		archive_date_status_id = @in_progress_status_id
+	where
+		archive_date_id = @archive_date_id
+end
+
+update
+	archive_batches
+set
+	end_date = getdate()
+where
+	archive_batch_id = @archive_batch_id
+
+if @archive_trade_count = 0 /* we there was nothing left to archive, and so we are done with the date */
+begin
+	update 
+		archive_dates
+	set
+		archive_date_status_id = @complete_status_id,
+		end_date = getdate()
+	where
+		archive_date_id = @archive_date_id
+end
+
+go

@@ -1,0 +1,66 @@
+drop procedure
+	r_editreportingdomain
+go
+
+create procedure
+	r_editreportingdomain
+		@login varchar(50),
+		@account varchar(50),
+		@reporting_type varchar(100)
+as
+
+
+declare @external_account_id int
+declare @reporting_domain_id int
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account Not Found",
+		account = @account
+	return
+end
+
+select
+	@reporting_domain_id = reporting_domain_id
+from
+	reporting_domains
+where
+	name = @reporting_type
+if @reporting_domain_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account type not found",
+		account_type = @reporting_type
+	return
+end
+
+delete
+
+from
+	account_reporting_domains
+where
+	external_account_id = @external_account_id
+
+insert into
+	account_reporting_domains(
+		external_account_id,
+		reporting_domain_id)
+values(
+	@external_account_id,
+	@reporting_domain_id)
+
+exec
+	ag_bodashboard
+		@login=@login
+
+
+go

@@ -1,0 +1,76 @@
+
+if object_id("r_dealisuniform") != NULL
+    drop procedure
+        r_dealisuniform
+go
+ 
+create procedure
+	r_dealisuniform
+		@deal_id int,
+		@is_uniform int output
+as
+
+declare @trade_id int
+declare @contract_id int
+declare @price float
+declare @non_uniform_trades int
+declare @value_dates int
+
+
+select
+	@trade_id = min(trade_id)
+from
+	trades
+where
+	deal_id = @deal_id
+
+
+select
+	@contract_id = contract_id,
+	@price = price
+from
+	trades
+where
+	trade_id = @trade_id
+
+select
+	@non_uniform_trades = count(*)
+from
+	trades
+where
+	deal_id = @deal_id
+and
+	price != @price
+and
+	contract_id != @contract_id	
+
+if @non_uniform_trades > 0
+begin
+	select
+		@is_uniform = 0
+	return
+end
+
+select
+	@value_dates = count(distinct(value_date))
+from
+	trade_value_dates
+where
+	trade_id in(
+		select
+			trade_id
+		from
+			trades
+		where
+			deal_id = @deal_id)
+if @value_dates > 1
+begin
+	select
+		@is_uniform = 0
+	return
+end
+
+select
+	@is_uniform = 1
+
+go

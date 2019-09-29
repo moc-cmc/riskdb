@@ -1,0 +1,169 @@
+
+if object_id("r_addsettle") != NULL
+    drop procedure
+        r_addsettle
+go
+
+create procedure
+	r_addsettle
+		@symbol char(50),
+		@price_date datetime,
+		@price float
+as
+
+declare @price_id int
+declare @close_price_type_id int
+declare @contract_id int
+declare @status_id int
+declare @instrument char(100)
+
+select
+	@price_date = convert(char(2), datepart(month, @price_date)) + "/" +
+			convert(char(2), datepart(day, @price_date)) + "/" +
+			convert(char(4), datepart(year, @price_date))
+
+select
+	@price_date = dateadd(hour, 17, @price_date)
+
+
+exec
+	j_status
+		"Uncommitted",
+		@status_id output
+if @status_id = NULL
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@status_id output
+
+	insert into
+		statuses
+	values(
+		@status_id,
+		"Uncommitted")
+end
+
+select
+	@contract_id = a.contract_id,
+	@instrument = b.name
+from
+	contracts a,
+	instruments b
+where
+	a.symbol = @symbol
+and
+	a.instrument_id = b.instrument_id
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding contract with symbol",	
+		sybmol = @symbol
+	return
+end
+
+select
+	@close_price_type_id = price_type_id
+from
+	price_types
+where
+	name = "Close"
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding the Close price type"
+	return
+end
+
+if @instrument != "Option" and @instrument != "Exotic"
+begin
+	if @price_date > dateadd(minute, 180, getdate())
+	begin
+		select
+			id = -1,
+			error = "Settle price date is too far in the future"
+		return
+	end
+end
+
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "prices"
+	select
+		@price_id = last_id
+	from
+		keys
+	where
+		relation = "prices"
+commit tran
+
+begin tran
+	insert into
+		prices
+	values(
+		@price_id,
+		@status_id,
+		@contract_id,
+		@price_date,
+		@close_price_type_id,
+		@price)
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem adding price"
+		rollback tran
+		return
+	end
+
+	if @instrument = "Forward" or @instrument = "Future" or @instrument = "Option"
+	begin
+		delete
+
+		from
+			theos_queue
+		where
+			price_id = @price_id
+		insert into
+			theos_queue
+		values(
+			@price_id)
+	end
+
+commit tran
+
+/* if @instrument != "Option"
+begin
+	exec
+		r_settleunderlyingsoptions
+			@contract_id,
+			@price_date
+
+	exec
+		r_settleunderlyingexotics
+			@contract_id,
+			@price_date
+end */
+
+if @instrument = "Exotic"
+begin
+	update
+		current_prices
+	set
+		price = @price
+	where
+		contract_id = @contract_id
+end		
+
+select
+	id = 0,
+	msg = "Successfully added settle"
+
+go

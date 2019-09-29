@@ -1,0 +1,567 @@
+drop procedure r_validatecptyaccount
+go
+
+create procedure
+	r_validatecptyaccount
+		@login varchar(50),
+		@account varchar(50),
+		@statement_date datetime=NULL
+as
+
+declare @fund_id int
+declare @external_account_id int
+declare @currency_id int
+declare @total float
+declare @weekday int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"currency",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"close_settlements",
+	"Close Settle Balances",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ledger",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_trades",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"resids",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"rolls",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"trades",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@external_account_id = a.external_account_id,
+	@currency_id = a.evaluation_currency_id
+from
+	external_accounts a,
+	fund_external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.fund_id = @fund_id
+and
+	a.symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+if @statement_date = NULL
+	select
+		@statement_date = getdate()
+select
+	@statement_date = convert(datetime, convert(date, @statement_date))
+
+select
+	@weekday = datepart(weekday, @statement_date)
+
+if @weekday = 7
+	select
+		@statement_date = dateadd(day, 2, @statement_date)
+if @weekday = 1
+	select
+		@statement_date = dateadd(day, 1, @statement_date)
+
+
+/* Reverse the sign to client perspective */
+
+create table
+	#positions(
+		product_id int,
+		value_date datetime,
+		trader_id int,
+		quantity numeric(30,4))
+insert into
+	#positions
+select
+	b.product_id,
+	a.value_date,
+	a.trader_id,
+	sum(a.quantity)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = @external_account_id
+group by
+	b.product_id,
+	a.value_date,
+	a.trader_id
+
+insert into
+	#positions
+select
+	b.currency_id,
+	a.value_date,
+	a.trader_id,
+	sum(a.quantity * a.price * -1.0)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = @external_account_id
+group by
+	b.currency_id,
+	a.value_date,
+	a.trader_id
+
+
+create table
+	#raw_balances(
+		product_id int,
+		value_date datetime,
+		quantity numeric(30,4))
+insert into
+	#raw_balances
+select
+	a.product_id,
+	a.value_date,
+	sum(a.quantity)
+from
+	#positions a,
+	fund_roll_traders b
+where
+	a.trader_id != b.roll_trader_id
+group by
+	a.product_id,
+	a.value_date
+
+create table
+	#net_adjustments(
+		date datetime,
+		equiv float)
+insert into
+	#net_adjustments
+select
+	convert(date, transaction_date),
+	sum(converted_amount)
+from
+	settlement_balances
+where
+	external_account_id = @external_account_id
+and
+	product_id != @currency_id
+group by
+	convert(date, transaction_date)
+
+
+create table
+	#roll_balances(
+		product_id int,
+		value_date datetime,
+		quantity numeric(30,4))
+insert into
+	#roll_balances
+select
+	a.product_id,
+	a.value_date,
+	sum(a.quantity)
+from
+	#positions a,
+	fund_roll_traders b
+where
+	a.trader_id = b.roll_trader_id
+group by
+	a.product_id,
+	a.value_date
+
+
+create table
+	#ledgers(
+		transaction_date datetime,
+		product_id int,
+		amount numeric(30,4))
+insert into
+	#ledgers
+select
+	convert(date, a.transaction_date),
+	a.currency_id,
+	sum(a.amount)
+from
+	account_transactions a,
+	transaction_types b	
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.external_account_id = @external_account_id
+and
+	b.name = "FX Settlement"
+group by
+	convert(date, a.transaction_date),
+	a.currency_id
+
+
+
+create table
+	#products(
+		product_id int)
+insert into
+	#products
+select
+	distinct(product_id)
+from
+	#raw_balances
+
+insert into
+	#products
+select
+	distinct(product_id)
+from
+	#roll_balances
+where
+	product_id not in(
+		select
+			product_id
+		from
+			#products)
+
+insert into
+	#products
+select
+	distinct(product_id)
+from
+	#ledgers
+where
+	product_id not in(
+		select
+			product_id
+		from
+			#products)
+
+create table
+	#dates(
+		date datetime)
+insert into
+	#dates
+select
+	distinct(value_date)
+from
+	#raw_balances
+
+insert into
+	#dates
+select
+	distinct(value_date)
+from
+	#raw_balances
+where
+	value_date not in(
+		select
+			date
+		from
+			#dates)
+insert into
+	#dates
+select
+	distinct(transaction_date)
+from
+	#ledgers
+where
+	transaction_date not in(
+		select
+			date
+		from
+			#dates)
+
+create table
+	#output(
+		style varchar(200) NULL,
+		date datetime,
+		product_id int,
+		fo_settlement float NULL,
+		fo_roll_settlement float NULL,
+		net_fo float NULL,
+		fo_equiv float NULL,
+		converted float NULL,
+		bo_settlement float NULL,
+		bo_equiv float NULL,
+		discrep float NULL)
+
+
+insert into
+	#output(
+		date,
+		product_id)
+select
+	a.date,
+	b.product_id
+from
+	#dates a,
+	#products b
+
+update
+	#output
+set
+	style = "background:#D2D2FC;border: 1px solid white",
+	fo_settlement = 0.0,
+	fo_roll_settlement = 0.0,
+	bo_settlement = 0.0,
+	converted = 0.0,
+	discrep = 0.0
+
+update
+	#output
+set
+	style = "background:#FFFFFF;border: 1px solid white"
+where
+	convert(date, date) = convert(date, @statement_date)
+
+update
+	#output
+set
+	style = "background:#FCFCD2;border: 1px solid white"
+where
+	date > @statement_date
+	
+update
+	#output
+set
+	a.fo_settlement = b.quantity
+from
+	#output a,
+	#raw_balances b
+where
+	a.product_id = b.product_id
+and
+	convert(date, a.date) = convert(date, b.value_date)
+
+
+update
+	#output
+set
+	a.converted = b.amount
+from
+	#output a,
+	settlement_balances b
+where
+	a.product_id = b.product_id
+and
+	convert(date, a.date) = convert(date, b.transaction_date)
+and
+	b.external_account_id = @external_account_id
+and
+	a.product_id != @currency_id
+
+update
+	#output
+set
+	a.converted = b.equiv 
+from
+	#output a,
+	#net_adjustments b
+where
+	convert(date, a.date) = convert(date, b.date)
+and
+	a.product_id = @currency_id
+
+
+update
+	#output
+set
+	a.fo_roll_settlement = b.quantity
+from
+	#output a,
+	#roll_balances b
+where
+	a.product_id = b.product_id
+and
+	convert(date, a.date) = convert(date, b.value_date)
+
+update
+	#output
+set
+	a.bo_settlement = b.amount
+from
+	#output a,
+	#ledgers b
+where
+	a.product_id = b.product_id
+and
+	convert(date, a.date) = convert(date, b.transaction_date)
+
+
+update
+	#output
+set
+	net_fo = fo_settlement + fo_roll_settlement - converted
+where
+	product_id != @currency_id
+
+update
+	#output
+set
+	net_fo = fo_settlement + fo_roll_settlement + converted
+where
+	product_id = @currency_id
+
+
+
+
+update
+	#output
+set
+	discrep = bo_settlement - net_fo
+
+update
+	#output
+set
+	style = "background:#FAD4D8;border: 1px solid white"
+where
+	abs(discrep) > .01
+and
+	convert(date, date) <= @statement_date
+
+update
+	#output
+set
+	a.fo_equiv = a.net_fo * c.price
+from
+	#output a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, a.date) = convert(date, c.price_date)
+
+
+update
+	#output
+set
+	a.fo_equiv = a.net_fo * (1.0 / c.price)
+from
+	#output a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = @currency_id
+and
+	b.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, a.date) = convert(date, c.price_date)
+and
+	a.fo_equiv = NULL
+
+
+
+
+select
+	section = "Settlements",
+	a.style,
+	a.date,
+	product = b.symbol,
+	trades = a.fo_settlement,
+	rolls = a.fo_roll_settlement,
+	resids = a.converted,
+	net_trades = a.net_fo,
+	ledger = a.bo_settlement
+from
+	#output a,
+	products b
+where
+	a.product_id = b.product_id
+order by
+	a.date,
+	b.symbol
+
+
+
+
+go

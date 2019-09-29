@@ -1,0 +1,130 @@
+drop procedure cbo_viewcommitstatus
+go
+
+create procedure
+	cbo_viewcommitstatus
+		@login varchar(50)
+
+as
+
+declare @last_commit_date datetime
+declare @today datetime
+declare @yesterday datetime
+declare @commit_status varchar(200)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "refresh",
+        "Manage Commits",
+        NULL)
+
+select
+	@today = getdate()
+declare @dummy_date datetime 
+
+exec
+	r_daterangefordate
+		@today,
+		@yesterday output,
+		@dummy_date output
+
+
+select 
+	@last_commit_date = max(commit_date) 
+from 
+	daily_commits a, 
+	commit_statuses b 
+where 
+	a.commit_status_id = b.commit_status_id 
+and 
+	b.name = "Commit Complete"
+
+select
+	@commit_status = "<b><font color='00CC00'>Data Committed to Date</font></b>"
+
+if  convert(date, @yesterday) != convert(date, @last_commit_date)
+	select
+		@commit_status = "<b><font color='FF0000'>Data Not Committed to Date</font></b>"
+
+/*select last_commit_date = @last_commit_date, yesterday = @yesterday*/
+select * from #meta
+
+select
+	section = "Commit Status",
+	msg = "Data has been committed through <b>"+convert(varchar(11), convert(date, @last_commit_date), 100)+"</b>",
+	commit_status = @commit_status,
+	refresh = "REFRESH",
+	style = "background:#FFFFFF;border: 1px solid white"
+
+/*select
+	section = "Commit P&L"*/
+
+exec 
+	cbo_managecommitrequests 
+		@login=@login
+
+
+/* move into cbo_managecommitrequests */
+/* ----
+delete from #meta
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+
+select * from #meta
+
+select
+	section = "Historical Commit Statuses",
+	style = "background:#FFFFFF;border: 1px solid white",
+	commit_date = a.commit_date,
+	commit_status = b.name
+from
+	daily_commits a,
+	commit_statuses b
+where
+	a.commit_status_id=b.commit_status_id
+order by
+	a.commit_date desc
+----*/
+
+go
+

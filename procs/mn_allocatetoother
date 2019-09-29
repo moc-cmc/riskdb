@@ -1,0 +1,232 @@
+drop procedure
+	mn_allocatetoother
+go
+
+create procedure
+	mn_allocatetoother
+		@login varchar(50),
+		@deal_id int,
+		@run_name varchar(50)
+
+as
+
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "use_allocation",
+        "Other Allocation Deal",
+        NULL)
+
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "id",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "run_name",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "deal_id",
+        NULL,
+        NULL)
+
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "commit_deal",
+        "Commit Allocated Deal",
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "uncommit_deal",
+        "Uncommit Allocated Deal",
+        NULL)
+
+
+select * from #meta
+
+
+/*
+* Allocation Info for Active Versions*
+*/
+
+create table
+        #allocations(
+                id int identity,
+                section varchar(100) NULL,
+		style varchar(50) NULL,
+                master_allocation_id int NULL,
+		master_allocation_name varchar(50) NULL,
+                deployment_date datetime NULL,
+		version int NULL,
+                account varchar(50) NULL,
+                allocation_mode varchar(50) NULL,
+                status varchar(50) NULL,
+                allocation float NULL,
+		ma_version_id int NULL,
+		use_allocation varchar(50) NULL)
+insert into
+        #allocations(
+                section,
+		style,
+                master_allocation_id,
+		master_allocation_name,
+                deployment_date,
+		version,
+                account,
+                allocation_mode,
+		ma_version_id,
+		use_allocation)
+
+select
+        section = "Allocation Templates",
+	style = "background:#FFFFCC;border: 1px solid white",
+        a.master_allocation_id,
+	a.name,
+        deployment_date = b.deployment_date,
+	version = b.version,
+        account = c.symbol,
+        allocation_mode = d.name,
+	b.ma_version_id,
+	use_allocation = "Use Allocation Template"
+from
+        master_allocations a,
+	ma_versions b,
+	external_accounts c,
+        allocation_modes d
+where
+	a.master_allocation_id = b.master_allocation_id
+and
+        a.external_account_id = c.external_account_id
+and
+        b.allocation_mode_id = d.allocation_mode_id
+
+create table
+	#allocation_amounts(
+		master_allocation_id int,
+		allocation float)
+insert into
+	#allocation_amounts
+select
+	a.master_allocation_id,
+	allocation = 1 - sum(f.allocation)
+from
+	master_allocations a,
+        ma_versions b,
+        external_accounts c,
+        allocation_modes d,
+        sub_accounts f
+where
+        a.master_allocation_id = b.master_allocation_id
+and
+        a.external_account_id = c.external_account_id
+and
+        b.allocation_mode_id = d.allocation_mode_id
+and
+        b.ma_version_id = f.ma_version_id
+group by
+	b.ma_version_id
+
+update
+	#allocations
+set
+	a.allocation = b.allocation
+from
+	#allocations a,
+	#allocation_amounts b
+where
+	a.master_allocation_id = b.master_allocation_id
+
+
+insert into
+        #allocations(
+                section,
+		style,
+		master_allocation_id,
+                account,
+                allocation,
+		ma_version_id)
+select
+        section = "Allocation Templates",
+	style = "background:#FFFFFF;border: 1px solid white",
+	d.master_allocation_id,
+        b.symbol,
+        a.allocation,
+	a.ma_version_id
+from
+        sub_accounts a,
+        external_accounts b,
+        #allocations c,
+	ma_versions d
+where
+        a.external_account_id = b.external_account_id
+and
+	a.ma_version_id = c.ma_version_id
+and
+	a.ma_version_id = d.ma_version_id
+	
+
+select
+        section,
+	style,
+	ma_version_id,
+	run_name = @run_name,
+	deal_id = @deal_id,
+	master_allocation_name,
+	version,
+        deployment_date = convert(varchar(20),deployment_date),
+        account,
+        allocation,
+        allocation_mode,
+	use_allocation
+from
+        #allocations
+order by
+	ma_version_id,
+        id
+
+
+go

@@ -1,0 +1,44 @@
+drop procedure
+	r_removetradefrombatch
+go
+
+create procedure
+	r_removetradefrombatch
+		@queued_trade_id int,
+		@batch_id int
+as
+
+begin tran
+	delete
+
+	from
+		queued_trades
+	where
+		batch_id = @batch_id
+	and
+		queued_trade_id = @queued_trade_id
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem finding trade in batch",
+			queued_trade_id = @queued_trade_id,
+			batch_id = @batch_id
+		rollback tran
+		return
+	end
+commit tran
+
+
+select
+	id = 0,
+	msg = "Successfully removed trade from batch",
+	queued_trade_id = @queued_trade_id,
+	batch_id = @batch_id
+
+
+exec
+	r_tradesforbatch
+		@batch_id
+
+go	

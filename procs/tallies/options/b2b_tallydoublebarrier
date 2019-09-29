@@ -1,0 +1,75 @@
+use
+	risk_makr_dev
+go
+
+drop procedure
+	b2b_tallydoublebarrier
+go
+
+create procedure
+	b2b_tallydoublebarrier
+		@login varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@counterparty varchar(50),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@put_call varchar(10),
+		@quantity numeric(30,4),
+		@notional_currency varchar(25),
+		@spot_ref numeric(30,8),
+		@strike numeric(30,8),
+		@barrier_direction varchar(25),
+		@lower_barrier numeric(30,8),
+		@upper_barrier numeric(30,8),
+		@exercise_style varchar(25),
+		@expiration datetime,
+		@option_settledate datetime,
+		@timezone varchar(50),
+		@client_premium numeric(30,8),
+		@market_premium numeric(30,8),
+		@premium_ccy varchar(25),
+		@premium_settledate datetime,
+		@fixing_source varchar(50)=NULL,
+		@trade_note varchar(200)=NULL
+as
+
+declare @deal_id int
+
+exec
+	api_b2bdoublebarrier
+		@login = @login,
+		@deal_id = @deal_id output,
+		@counterparty = @counterparty,
+		@client_user = @client_user,
+		@client_buys_sells = @client_buys_sells,
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@put_call = @put_call,
+		@quantity = @quantity,
+		@notional_currency = @notional_currency,
+		@spot_ref = @spot_ref,
+		@strike = @strike,
+		@barrier_direction = @barrier_direction,
+		@lower_barrier = @lower_barrier,
+		@upper_barrier = @upper_barrier,
+		@exercise_style = @exercise_style,
+		@expiration = @expiration,
+		@option_settledate = @option_settledate,
+		@timezone = @timezone,
+		@client_premium = @client_premium,
+		@market_premium = @market_premium,
+		@premium_ccy = @premium_ccy,
+		@premium_settledate = @premium_settledate,
+		@fixing_source = @fixing_source,
+		@trade_note = @trade_note
+
+
+exec
+	r_inspectdealtrades
+		@login = @login,
+		@deal_id = @deal_id
+
+
+
+go

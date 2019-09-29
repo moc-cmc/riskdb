@@ -1,0 +1,318 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_auditwireallocs
+go
+
+create procedure
+	ag_auditwireallocs
+		@login varchar(50),
+		@value_date datetime
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @pb_wire_signoffs int
+declare @pb_wire_signoff_id int
+declare @signoff_amount numeric(30,4)
+declare @allocation_total numeric(30,4)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"preview_fees",
+	"Pips Spread Fee Recon",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_pip_spread",
+	"Set Account Pip Spread Template",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_overrides",
+	"Edit Account Pip Spread Override",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_contracts",
+	"Edit Pip Spread Contracts",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_pip_spread",
+	"Add Pip Spread",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_clients",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		identifier int NULL,
+		pb_wire_signoff_id int NULL,
+		tico_account_id int NULL,
+		login varchar(50) NULL,
+		wire_net_account_id int NULL,
+		net_account varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		confirmation_type_id int NULL,
+		confirmation_type varchar(100) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		value_date datetime NULL,
+		amount numeric(30,4) NULL)
+
+create table
+	#pb_wire_signoffs(
+		pb_wire_signoff_id int)
+insert into
+	#pb_wire_signoffs(
+		pb_wire_signoff_id)
+select
+	pb_wire_signoff_id
+from
+	pb_wire_signoffs
+where
+	convert(date, value_date) = convert(date, @value_date)
+
+select
+	@pb_wire_signoff_id = 0
+select
+	@pb_wire_signoffs = count(*)
+from
+	#pb_wire_signoffs
+where
+	pb_wire_signoff_id > @pb_wire_signoff_id
+
+while @pb_wire_signoffs > 0
+begin
+	select
+		@pb_wire_signoff_id = min(pb_wire_signoff_id)
+	from
+		#pb_wire_signoffs
+	where
+		pb_wire_signoff_id > @pb_wire_signoff_id
+
+
+	insert into
+		#output(
+			style,
+			identifier,
+			pb_wire_signoff_id,
+			tico_account_id,
+			external_account_id,
+			account,
+			confirmation_type_id,
+			confirmation_type,
+			product_id,
+			product,
+			value_date,
+			amount)
+	select
+		style = @client_style,
+		a.pb_wire_signoff_id,
+		a.pb_wire_signoff_id,
+		a.tico_account_id,
+		a.external_account_id,
+		b.symbol,
+		a.confirmation_type_id,
+		c.name,
+		a.product_id,
+		d.symbol,
+		a.value_date,
+		a.amount	
+	from
+		pb_wire_signoffs a,
+		external_accounts b,
+		confirmation_types c,
+		products d
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.confirmation_type_id = c.confirmation_type_id
+	and
+		a.product_id = d.product_id
+	and
+		a.pb_wire_signoff_id = @pb_wire_signoff_id
+	
+
+	insert into
+		#output(
+			style,
+			pb_wire_signoff_id,
+			external_account_id,
+			account,
+			confirmation_type_id,
+			confirmation_type,
+			amount)
+	select
+		style = @style,
+		a.pb_wire_signoff_id,
+		a.external_account_id,
+		b.symbol,
+		a.confirmation_type_id,
+		c.name,
+		a.amount
+	from
+		wire_allocations a,
+		external_accounts b,
+		confirmation_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.confirmation_type_id = c.confirmation_type_id
+	and
+		a.pb_wire_signoff_id = @pb_wire_signoff_id
+
+
+	update
+		#output
+	set
+		wire_net_account_id = external_account_id
+
+	update
+		#output
+	set
+		a.wire_net_account_id = b.wire_net_account_id
+	from
+		#output a,
+		wire_net_accounts b
+	where
+		a.external_account_id = b.external_account_id
+
+
+	update
+		#output
+	set
+		a.net_account = b.symbol
+	from
+		#output a,
+		external_accounts b
+	where
+		a.wire_net_account_id = b.external_account_id
+
+	select
+		@signoff_amount = NULL,
+		@allocation_total = NULL
+
+	select
+		@signoff_amount = amount
+	from
+		pb_wire_signoffs 
+	where
+		pb_wire_signoff_id = @pb_wire_signoff_id
+
+	select
+		@allocation_total = sum(amount)
+	from
+		wire_allocations
+	where
+		pb_wire_signoff_id = @pb_wire_signoff_id
+
+	if @signoff_amount != @allocation_total
+		update
+			#output
+		set
+			style = @error_style
+		where
+			pb_wire_signoff_id = @pb_wire_signoff_id
+
+	select
+		@pb_wire_signoffs = count(*)
+	from
+		#pb_wire_signoffs
+	where
+		pb_wire_signoff_id > @pb_wire_signoff_id
+
+end
+
+select
+	style,
+	identifier,
+	account,
+	net_account,
+	confirmation_type,
+	product,
+	value_date,
+	amount
+from
+	#output
+order by
+	id
+
+
+
+
+go

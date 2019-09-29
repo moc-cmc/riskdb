@@ -1,0 +1,264 @@
+use
+	risk_admis
+go
+
+
+drop procedure
+	ag_confirmedsignoffs
+go
+
+create procedure
+	ag_confirmedsignoffs
+		@login varchar(50),
+		@value_date datetime=NULL
+as
+
+
+declare @fund_id int
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"value_date",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "process_all",
+        "Process All Val Date Wires",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "process_wire",
+        "Process Wire",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "confirm_settlements",
+        "Confirm Settlements",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "export_jpm_access_csv",
+        "Export JPM Access Upload File",
+        NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+if @value_date = NULL
+begin
+	select
+		@value_date = convert(datetime, convert(date, getdate()))
+
+	exec
+		r_nextbusinessday
+			@value_date,
+			@value_date output
+end
+	
+create table
+	#output(
+		id int identity,
+		pb_wire_signoff_id int NULL,
+		tico_account_id int NULL,
+		confirmed_by varchar(30) NULL,
+		timestamp datetime NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		wire_source_id int NULL,
+		wire_source varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		val_date datetime NULL,
+		amount numeric(30,4) NULL,
+		status_id int NULL,
+		status varchar(50) NULL,
+		export_date datetime NULL,
+		export_status varchar(25) NULL ,
+		process_wire varchar(50) NULL)
+insert into
+	#output(
+		pb_wire_signoff_id,
+		tico_account_id,
+		confirmed_by,
+		timestamp,
+		external_account_id,
+		account,
+		wire_source_id,
+		product_id,
+		product,
+		val_date,
+		amount,
+		status_id,
+		status)
+select
+	a.pb_wire_signoff_id,
+	a.tico_account_id,
+	confirmed_by = b.login,
+	a.timestamp,
+	a.external_account_id,
+	c.symbol,
+	c.wire_source_id,
+	a.product_id,
+	d.symbol,
+	a.value_date,
+	a.amount,
+	a.status_id,
+	e.name
+from
+	pb_wire_signoffs a,
+	tico_accounts b,
+	external_accounts c,
+	products d,
+	statuses e
+where
+	a.tico_account_id = b.account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.product_id = d.product_id
+and
+	a.status_id = e.status_id
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+order by
+	a.timestamp
+
+update
+	#output
+set
+	process_wire = "Process"
+where
+	status = "Pending"
+
+update 
+	#output
+set
+	wire_source = b.name
+from
+	#output a,
+	sources b
+where
+	a.wire_source_id = b.source_id
+
+update 
+	#output
+set
+	export_status = "Exported",
+	export_date = b.export_date
+from
+	#output a,
+	source_wire_exports b
+where
+	a.pb_wire_signoff_id = b.pb_wire_signoff_id
+and
+	a.wire_source_id = b.source_id
+
+	
+select
+	section = "Operations",
+        style=@style,
+        confirm_settlements="< Back to Confirm Settlements Sheet",
+        value_date=@value_date,
+	process_all = "Process All Pending Wires",
+	export_jpm_access_csv="Export JPM Access Upload CSV"
+
+select
+	section = "Confirmed Wires",
+	pb_wire_signoff_id,
+	val_date,
+	confirmed_by,
+	confirmed_at=timestamp,
+	account,
+	product,
+	amount,
+	status,
+	wire_source,
+	export_date,
+	export_status,
+	process_wire,
+	style=@style
+from
+	#output
+order by
+	timestamp DESC
+
+
+go

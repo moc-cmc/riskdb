@@ -1,0 +1,20 @@
+
+if object_id("r_buysell") != NULL
+    drop procedure
+        r_buysell
+go
+
+create procedure
+	r_buysell
+as
+
+select name = "Sell" 
+
+into 
+	#buysell
+
+insert into #buysell values("Buy")
+
+select name from #buysell order by name
+
+go

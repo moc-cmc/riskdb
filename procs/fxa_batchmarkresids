@@ -1,0 +1,523 @@
+drop procedure fxa_batchmarkresids
+go
+		
+create procedure
+	fxa_batchmarkresids
+                @login varchar(30),
+		@run_name varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+
+as
+
+
+
+declare @run_id int
+declare @tico_account_id int
+declare @date datetime
+declare @trade_date datetime
+declare @resid_status_id int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "login not found"
+	return
+end
+
+select
+	@resid_status_id = status_id
+from
+	statuses
+where
+	name = "Resid"
+if @@rowcount != 1
+begin
+	select
+		error = -1,
+		msg = "Problem finding status with name 'Resid'"
+	return
+end
+select
+	@run_id = b.run_id
+from
+	runs b
+where
+	b.name = @run_name
+if @run_id = NULL
+begin
+	select
+		id = -1,
+		error = "Problem finding run for run name",
+		run = @run_name
+	return
+end
+
+
+
+if @begin_date = NULL
+	select
+		@begin_date = convert(datetime, convert(char(11), getdate(), 1))
+if @begin_date != convert(varchar(12), @begin_date, 112)+" 17:00"
+begin
+	exec
+		r_prevbusinessday
+			@begin_date,
+			@begin_date output
+	select
+		@begin_date = convert(varchar(12), @begin_date, 112)+" 17:00"
+end
+
+if @end_date = NULL
+	exec
+		r_nextbusinessday
+			@begin_date,
+			@end_date output
+/*else
+begin
+	exec
+		r_daterangefordate
+			@end_date,
+			@date output,
+			@end_date output
+end*/
+select
+	@end_date = convert(varchar(8), @end_date, 112)+" 17:00"
+
+
+	
+
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select  
+	internal_account_id
+from    
+	run_internal_accounts
+where   
+	run_id = @run_id 
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select  
+		internal_account_id
+	from    
+		internal_accounts
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+
+
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+        #counterparties(
+                counterparty_id int)
+insert into
+        #counterparties
+select
+        counterparty_id
+from
+        run_counterparties
+where
+        run_id = @run_id 
+if @@rowcount = 0
+        insert into
+                #counterparties
+        select
+                counterparty_id
+        from
+                counterparties
+
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		trade_date datetime,
+		currency_pair varchar(20) NULL,
+		value_date varchar(11) NULL,
+		quantity numeric(30,4) NULL,
+		all_in_rate float NULL,
+		platform varchar(25) NULL,
+		external_account varchar(25) NULL,
+		trader varchar(25) NULL,
+		counterparty varchar(25) NULL,
+		status_id int
+		)
+insert into
+	#trades(
+		trade_id,
+		deal_id,
+		quantity,
+		all_in_rate,
+		trade_date,
+		value_date,
+		status_id
+		)	
+select
+	a.trade_id,
+	a.deal_id,
+	a.quantity,     
+	a.price,
+	trade_date = convert(char(30), a.trade_date, 109),
+	value_date = a.value_date,
+	a.status_id
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g
+where
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id = f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	a.quantity != 0
+
+
+
+/*
+|  Adjust display prices to standard rate for all pairs
+*/
+update
+    #trades
+set
+    a.all_in_rate = case 
+        when d.name = "Inverted" and c.factor != NULL then
+            (1 / a.all_in_rate) * c.factor * d.factor
+        when d.name = "Inverted" then
+            (1 / a.all_in_rate) * d.factor
+        when c.factor != NULL then
+            a.all_in_rate * c.factor * d.factor
+        else
+            a.all_in_rate * d.factor
+    end
+from
+    #trades a,
+    trades e,
+    contracts b,
+    contract_price_styles c,
+    price_styles d
+where
+    a.trade_id = e.trade_id
+and
+    e.contract_id = b.contract_id
+and
+    b.contract_id = c.contract_id
+and
+    c.price_style_id = d.price_style_id
+
+update
+	#trades
+set
+	a.currency_pair = c.symbol
+from
+	#trades a,
+	trades b,
+	contracts c
+where
+	a.trade_id = b.trade_id
+and
+	b.contract_id = c.contract_id
+
+update
+	#trades
+set
+	a.external_account = c.symbol
+from
+	#trades a,
+	trades b,
+	external_accounts c
+where
+	a.trade_id = b.trade_id 
+and
+	b.external_account_id = c.external_account_id
+
+update
+        #trades
+set
+        a.counterparty = c.name
+from
+        #trades a,
+        trades b,
+        counterparties c
+where
+        a.trade_id = b.trade_id 
+and
+        b.counterparty_id = c.counterparty_id
+
+
+update
+	#trades
+set
+	a.trader = c.symbol
+from
+	#trades a,
+	trades b,
+	traders c
+where
+	a.trade_id = b.trade_id 
+and
+	b.trader_id = c.trader_id
+
+update
+	#trades
+set
+	a.platform = c.symbol
+from
+	#trades a,
+	trades b,
+	brokers c
+where
+	a.trade_id = b.trade_id 
+and
+	b.broker_id = c.broker_id
+
+
+create table
+    #meta (
+        meta_type char(50),
+        name char(50) NULL,
+        action char(100) NULL,
+        value char(200) NULL
+    )
+
+
+insert into
+    #meta
+values (
+    "Column Link",
+    "mark_resid",
+    "Mark Resid",
+    NULL
+)
+
+insert into
+    #meta
+values (
+    "Column Link",
+    "batch_mark",
+    "Batch Mark",
+    NULL
+)
+
+insert into
+    #meta
+values (
+    "Column Link",
+    "unmark_resid",
+    "Unmark Resid",
+    NULL
+)
+
+insert into
+    #meta
+values (
+    "Column Link",
+    "batch_unmark",
+    "Batch Unmark",
+    NULL
+)
+
+insert into
+    #meta
+values (
+    "Column Hidden",
+    "run_name",
+    NULL,
+    NULL
+)
+
+
+select
+	*
+from
+	#meta
+
+select
+	begin_date = @begin_date,
+	end_date = @end_date,
+	"status" = "Marked Trades",
+        "unmarked_count" = (select count(*) from #trades where status_id != @resid_status_id),
+        "batch_mark" = "MARK ALL RESID",
+	"marked_count" = (select count(*) from #trades where status_id = @resid_status_id),
+	"batch_unmark" = "UNMARK ALL RESID",
+	run_name = @run_name
+        
+insert into
+    #meta
+values (
+    "Column Hidden",
+    "begin_date",
+    NULL,
+    NULL
+)
+
+insert into
+    #meta
+values (
+    "Column Hidden",
+    "end_date",
+    NULL,
+    NULL
+)
+
+select * from #meta
+select 
+	"<h1>Unmarked Trades</h1>"/*,
+ 	"unmarked_count" = (select count(*) from #trades where status_id != @resid_status_id),
+        "batch_mark" = "MARK ALL RESID"*/
+	
+select  
+        trade_id,
+	deal_id,
+        trade_date,
+        currency_pair,
+        quantity,
+        all_in_rate,
+        value_date,
+        platform,
+        external_account,
+	trader,
+	counterparty,
+	mark_resid = "MARK",
+	begin_date = @begin_date,
+	end_date = @end_date,
+	run_name = @run_name
+from 
+	#trades 
+where
+	status_id != @resid_status_id
+order by 
+	currency_pair,
+	value_date
+
+	
+select 
+	"<h1>Marked Residuals</h1>"/*,
+        "marked_count" = (select count(*) from #trades where status_id = @resid_status_id),
+        "batch_unmark" = "UNMARK ALL RESID"*/
+
+select
+        trade_id,
+        deal_id,
+        trade_date,
+        currency_pair,
+        quantity,
+        all_in_rate,
+        value_date,
+        platform,
+        external_account,
+        trader,
+	counterparty,
+	unmark_resid = "UNMARK",
+	begin_date = @begin_date,
+	end_date = @end_date,
+	run_name = @run_name
+from
+        #trades
+where
+        status_id = @resid_status_id
+order by
+        currency_pair,
+	value_date
+
+go

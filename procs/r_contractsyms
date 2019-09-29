@@ -1,0 +1,19 @@
+
+drop procedure 
+	r_contractsyms
+go
+
+create procedure 
+	r_contractsyms
+as
+
+select
+	name=symbol
+from
+	contracts
+order by
+	symbol
+
+
+go
+

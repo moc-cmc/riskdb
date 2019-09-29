@@ -1,0 +1,125 @@
+
+if object_id("cm_createnewlogin") != NULL
+    drop procedure
+        cm_createnewlogin
+go
+
+create procedure
+	cm_createnewlogin
+		@login varchar(30),
+		@fund_type varchar(50),
+		@user_name varchar(50),
+		@user_password varchar(50)
+as
+
+declare @template_account varchar(30)
+declare @tico_server varchar(100)
+declare @tico_database varchar(100)
+declare @sql_string varchar(250)
+declare @tico_account_id int
+declare @status_id int
+declare @fund_id int
+declare @pl_view_style_id int
+
+select
+	@pl_view_style_id = pl_view_style_id
+from
+	pl_view_styles
+where
+	name = "Delta Breakdown Top Detail"
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@status_id output
+
+	insert into
+		statuses
+	values(
+		@status_id,
+		"New")
+end
+
+if @fund_type = "FX Agency"
+	select
+		@template_account = "agencymanager"
+		
+
+if @fund_type = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve fund type"
+	return
+end
+
+exec
+	j_nextkey
+		"tico_accounts",
+		@tico_account_id output
+
+insert into
+	tico_accounts
+values(
+	@tico_account_id,
+	@user_name,
+	@user_password,
+	@status_id,
+	@user_name,
+	@user_name)
+
+
+select
+        @tico_server = tico_server,
+        @tico_database = tico_database,
+	@fund_id = fund_id
+from
+        funds
+
+insert into
+	fund_tico_accounts
+values(
+	@fund_id,
+	@tico_account_id,
+	1)
+
+/*
+insert into
+	user_runs
+select
+	tico_account_id = @tico_account_id,
+	run_id
+from
+	runs
+
+if @pl_view_style_id != NULL
+begin
+	insert into
+		fwd_pl_preferences
+	values(
+		@tico_account_id,
+		@pl_view_style_id,
+		1)
+end
+*/
+
+select
+        @sql_string = "exec " + rtrim(@tico_database) + "..ti_copymanageraccount '" + rtrim(@template_account) + "', '" + rtrim(@user_name) + "', '" + rtrim(@user_password) + "', '" + rtrim(convert(varchar(30), db_name())) + "'"
+
+exec
+        sp_remotesql @tico_server, @sql_string 
+
+
+exec
+	cm_fundaccounts
+		@login
+
+go

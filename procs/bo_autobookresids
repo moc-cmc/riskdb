@@ -1,0 +1,435 @@
+drop procedure
+	bo_autobookresids
+go
+
+create procedure
+	bo_autobookresids
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @fund_id int
+declare @evaluation_currency_id int
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @id int
+declare @ids int
+declare @position numeric(30,4)
+
+declare @tally_login varchar(50)
+
+declare @product_id int
+declare @currency_id int
+declare @contract_id int
+declare @external_account_id int
+declare @external_account varchar(50)
+declare @source varchar(50)
+declare @tally_type varchar(15)
+declare @deal_type varchar(20)
+declare @trade_type varchar(20)
+declare @trade_type_id int
+
+declare @trade_id int
+declare @value_date datetime
+declare @deal_id int
+declare @quantity numeric(30,4)
+declare @symbol varchar(50)
+declare @price numeric(30,8)
+declare @trader varchar(50)
+declare @identifier varchar(50)
+declare @missing_prices int
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation Currency not found"
+	return
+end
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@value_date = convert(datetime, convert(date, @end_date))
+
+
+select
+	@source = "MPT",
+	@tally_type = "Spot",
+	@deal_type = "Market Forward",
+	@trade_type = "Spot",
+	@trader = "RESID"
+
+
+
+select
+	@tally_login = a.login
+from
+	tico_accounts a,
+	traders b
+where
+	a.account_id = b.tico_account_id
+and
+	b.symbol = @trader
+if @tally_login = NULL
+begin
+	select
+		status = "Error",
+		message = "RESID trader not found"
+	return
+end
+
+select
+	@trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = "Rolling Spot"
+
+
+create table
+	#positions(
+		external_account_id int,
+		product_id int,
+		quantity numeric(30,4))
+insert into
+	#positions(
+		external_account_id,
+		product_id,
+		quantity)
+select
+	a.external_account_id,
+	b.product_id,
+	sum(a.quantity)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_type_id = @trade_type_id
+and
+	a.trade_date < @end_date
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+group by
+	a.external_account_id,
+	b.product_id
+
+insert into
+	#positions(
+		external_account_id,
+		product_id,
+		quantity)
+select
+	a.external_account_id,
+	b.currency_id,
+	sum(a.quantity * a.price * -1.0)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_type_id = @trade_type_id
+and
+	a.trade_date < @end_date
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+group by
+	a.external_account_id,
+	b.currency_id
+
+
+delete
+	#positions
+from
+	#positions a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.evaluation_currency_id
+
+
+create table
+	#balances(
+		id int identity,
+		external_account_id int,
+		product_id int,
+		balance numeric(30,4),
+		currency_id int NULL,
+		price float NULL)
+insert into
+	#balances(
+		external_account_id,
+		product_id,
+		balance)
+select
+	external_account_id,
+	product_id,
+	sum(quantity)
+from
+	#positions
+group by
+	external_account_id,
+	product_id
+
+
+delete
+
+from
+	#balances
+where
+	abs(balance) < 0.01
+
+update
+	#balances
+set
+	a.currency_id = b.evaluation_currency_id
+from
+	#balances a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+
+update
+	#balances
+set
+	a.price = c.price
+from
+	#balances a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @value_date)
+
+update
+	#balances
+set
+	a.price = 1.0 / c.price
+from
+	#balances a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @value_date)
+and
+	a.price = NULL
+
+update
+	#balances
+set
+	a.price = 1.0 / a.price
+from
+	#balances a,
+	forwards b,
+	contract_price_styles c,
+	price_styles d
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	c.price_style_id = d.price_style_id
+and
+	d.name = "Inverted"
+
+
+
+select
+	@missing_prices = count(*)
+from
+	#balances
+where
+	price = NULL
+if @missing_prices > 0
+begin
+	select
+		status = "Error",
+		message = "Missing conversion prices for products",
+		product = a.symbol,
+		currency = b.symbol
+	from
+		products a,
+		products b,
+		#balances c
+	where
+		a.product_id = c.product_id
+	and
+		b.product_id = c.currency_id
+	and
+		c.price = NULL
+	return
+end
+		
+
+
+
+
+/* select
+	convert(varchar(20), a.symbol),
+	convert(varchar(5), b.symbol),
+	c.balance
+from
+	external_accounts a,
+	products b,
+	#balances c
+where
+	a.external_account_id = c.external_account_id
+and
+	b.product_id = c.product_id
+order by
+	a.symbol,
+	b.symbol MARKR */
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#balances
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#balances
+	where
+		id > @id
+
+	select * from #balances where id = @id
+
+	select
+		@trade_id = NULL,
+		@deal_id = NULL,
+		@external_account_id = NULL,
+		@external_account = NULL,
+		@symbol = NULL,
+		@product_id = NULL,
+		@currency_id = NULL,
+		@quantity = NULL,
+		@price = NULL,
+		@identifier = NULL
+
+	select
+		@product_id = product_id,
+		@currency_id = currency_id,
+		@price = price,
+		@quantity = balance * -1.0,
+		@external_account_id = external_account_id
+	from
+		#balances
+	where
+		id = @id
+
+
+	select
+		@symbol = a.symbol
+	from
+		contracts a,
+		forwards b
+	where
+		b.product_id = @product_id
+	and
+		b.currency_id = @currency_id
+	and
+		a.contract_id = b.contract_id
+
+	select
+		@external_account = symbol
+	from
+		external_accounts
+	where
+		external_account_id = @external_account_id
+
+	exec
+		j_nextkey
+			"deals",
+			@deal_id output
+
+	select
+		@identifier = convert(varchar(15), @deal_id) + " AUTO RESID"
+
+	select
+		login = @tally_login,
+		source = @source,
+		trade_id = @trade_id,
+		deal_id = @deal_id,
+		tally_type = @tally_type,
+		deal_type = @deal_type,
+		trade_type = @trade_type,
+		external_account = @external_account,
+		quantity = @quantity,
+		symbol = @symbol,
+		value_date = @value_date,
+		price = @price,
+		trade_date = @trade_date,
+		trader = @trader,
+		identifier = @identifier 
+	exec
+		fxa_tallytrade
+			@login = @tally_login,
+			@source = @source,
+			@trade_id = @trade_id output,
+			@deal_id = @deal_id output,
+			@tally_type = @tally_type,
+			@deal_type = @deal_type,
+			@trade_type = @trade_type,
+			@external_account = @external_account,
+			@quantity = @quantity,
+			@symbol = @symbol,
+			@value_date = @value_date,
+			@price = @price,
+			@trade_date = @trade_date,
+			@trader = @trader,
+			@identifier = @identifier 
+
+	select
+		@ids = count(*)
+	from
+		#balances
+	where
+		id > @id
+end
+
+
+
+go

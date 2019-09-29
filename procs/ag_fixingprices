@@ -1,0 +1,824 @@
+use
+	risk_moc
+go
+
+drop procedure
+	ag_fixingprices
+go
+
+create procedure
+	ag_fixingprices
+		@login varchar(50),
+		@fixing_date datetime=NULL
+
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @disabled_style varchar(250)
+declare @closeout_trade_type_id int
+declare @closeout_trade_type varchar(50)
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @ids int
+declare @id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"fixing_rates",
+	"Fixing Rates",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_fixing",
+	"Set Fixing Price",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"fixing_price",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	 "#,##0.00000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dealt_amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"counter_amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"quantity",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dealt_amt",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@disabled_style = "color:#CCCCCC;background:#FFFFFF;border: 1px solid white",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+exec
+	r_defaultfundforlogin
+		@login = @login,
+		@fund_id = @fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found"
+	return
+end
+
+select
+	@closeout_trade_type = "NDF Closeout"
+
+select
+	@closeout_trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = @closeout_trade_type
+if @closeout_trade_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Trade type not found",
+		trade_type = @closeout_trade_type
+	return
+end
+
+
+
+if @fixing_date = NULL
+	select
+		@fixing_date = convert(datetime, convert(date, getdate()))
+
+select
+	style = @style,
+	fixing_rates = "Change Fixing Date"
+
+create table
+	#trades(
+		id int identity,
+		style varchar(250) NULL,
+		trade_type_id int NULL,
+		trade_type varchar(50) NULL,
+		trade_id int NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		trade_date datetime NULL,
+		value_date datetime NULL,
+		fixing_date datetime NULL,
+		price float NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		quantity float NULL,
+		dealt_amount float NULL,
+		counter_amount float NULL,
+		fixing_price float NULL,
+		closeout_identifier varchar(50) NULL,
+		closing_trade_id int NULL,
+		resid_contract_id int NULL,
+		native_pl float NULL
+)
+		
+insert into
+	#trades(
+		trade_type_id,
+		trade_id,
+		contract_id,
+		product_id,
+		product,
+		currency_id,
+		currency,
+		trade_date,
+		value_date,
+		fixing_date,
+		price,
+		quantity,
+		dealt_amount,
+		counter_amount)
+select
+	a.trade_type_id,
+	a.trade_id,
+	a.contract_id,
+	b.product_id,
+	c.symbol,
+	b.currency_id,
+	d.symbol,
+	a.trade_date,
+	a.value_date,
+	a.fixing_date,
+	a.price,
+	a.quantity,
+	a.quantity,
+	a.quantity * a.price * -1.0
+from
+	trades a,
+	forwards b,
+	products c,
+	products d
+where
+	a.contract_id = b.contract_id
+and
+	b.product_id = c.product_id
+and
+	b.currency_id = d.product_id
+and
+	convert(date, a.fixing_date) = convert(date, @fixing_date)
+order by
+	c.symbol,
+	d.symbol
+	
+
+update
+	#trades
+set
+	a.resid_contract_id = b.contract_id
+from
+	#trades a,
+	forwards b
+where
+	a.currency_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+update
+	#trades
+set
+	a.trade_type = b.name
+from
+	#trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+update
+	#trades
+set
+	a.symbol = b.symbol
+from
+	#trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	style = @error_style
+
+update
+	#trades
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+	
+create table
+	#product_balances(
+		product_id int,
+		balance float NULL)
+insert into
+	#product_balances(
+		product_id,
+		balance)
+select
+	product_id,
+	sum(dealt_amount)
+from
+	#trades
+group by
+	product_id
+insert into
+	#product_balances(
+		product_id,
+		balance)
+select
+	currency_id,
+	sum(counter_amount)
+from
+	#trades
+group by
+	currency_id
+
+create table
+	#net_balances(
+		product_id int,
+		balance float,
+		deliverable varchar(10) NULL,
+		conversion_contract_id int NULL,
+		conversion_contract varchar(50) NULL,
+		conversion_rate float NULL)
+insert into
+	#net_balances(
+		product_id,
+		balance)
+select
+	product_id,
+	sum(balance)
+from
+	#product_balances
+group by
+	product_id
+		
+update
+	#net_balances
+set
+	deliverable = "Yes"
+
+update
+	#net_balances
+set
+	a.deliverable = "No"
+from
+	#net_balances a,
+	nondeliverable_ccys b
+where
+	a.product_id = b.product_id
+
+update
+	#net_balances
+set
+	a.conversion_contract_id = b.contract_id
+from
+	#net_balances a,
+	forwards b
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+update
+	#net_balances
+set
+	a.conversion_contract = b.symbol
+from
+	#net_balances a,
+	contracts b
+where
+	a.conversion_contract_id = b.contract_id
+
+
+	
+create table
+	#ndfs(
+		id int identity,
+		style varchar(250) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		fixing_date datetime NULL,
+		price float NULL,
+		inverted_contract_id int NULL,
+		inverted_contract varchar(50) NULL,
+		inverted_price float NULL)
+insert into
+	#ndfs(
+		symbol)
+select
+	distinct(symbol)
+from
+	#trades
+order by
+	symbol
+
+update
+	#ndfs
+set
+	style = @error_style
+
+update
+	#ndfs
+set
+	a.contract_id = b.contract_id
+from
+	#ndfs a,
+	contracts b
+where
+	a.symbol = b.symbol
+
+update
+	#ndfs
+set
+	a.inverted_contract_id = c.contract_id
+from
+	#ndfs a,
+	forwards b,
+	forwards c
+where
+	a.contract_id = b.contract_id
+and
+	b.product_id = c.currency_id
+and
+	b.currency_id = c.product_id
+
+create table
+	#all_contracts(
+		contract_id int,
+		price float NULL)
+insert into
+	#all_contracts(
+		contract_id)
+select
+	contract_id
+from
+	#ndfs
+insert into
+	#all_contracts(
+		contract_id)
+select
+	inverted_contract_id
+from
+	#ndfs
+insert into
+	#ndfs(
+		style,
+		contract_id,
+		symbol)
+select
+	style = @error_style,
+	conversion_contract_id,
+	conversion_contract
+from
+	#net_balances
+where
+	conversion_contract_id
+not in(
+	select
+		contract_id
+	from
+		#all_contracts)
+
+
+update
+	#ndfs
+set
+	a.inverted_contract = b.symbol
+from
+	#ndfs a,
+	contracts b
+where
+	a.inverted_contract_id = b.contract_id
+
+update
+	#ndfs
+set
+	fixing_date = @fixing_date
+
+update
+	#ndfs
+set
+	a.price = b.price,
+	a.style = @style
+from
+	#ndfs a,
+	fixings b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, a.fixing_date) = convert(date, b.fixing_date)
+
+
+update
+	#ndfs
+set
+	inverted_price = 1.0 / price
+where
+	price != 0.0
+
+
+
+update
+	#all_contracts
+set
+	a.price = b.price
+from
+	#all_contracts a,
+	#ndfs b
+where
+	a.contract_id = b.contract_id
+
+update
+	#all_contracts 
+set
+	a.price = b.inverted_price
+from
+	#all_contracts a,
+	#ndfs b
+where
+	a.contract_id = b.inverted_contract_id
+
+
+update
+	#trades
+set
+	a.fixing_price = b.price,
+	a.style = @style
+from
+	#trades a,
+	fixings b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, a.fixing_date) = convert(date, b.fixing_date)
+
+update
+	#trades
+set
+	native_pl = counter_amount - (quantity * fixing_price * -1.0)
+update
+	#trades
+set
+	closeout_identifier = rtrim(@closeout_trade_type) + " " + rtrim(convert(varchar(40), trade_id))
+where
+	trade_type != @closeout_trade_type
+
+update
+	#trades
+set
+	a.closing_trade_id = b.trade_id
+from
+	#trades a,
+	trades b
+where
+	a.closeout_identifier = b.identifier
+
+update
+	#trades
+set
+	style = @disabled_style
+where
+	closing_trade_id != NULL
+
+create table
+	#closing_trades(
+		id int identity,
+		style varchar(250) NULL,
+		trade_type_id int NULL,
+		trade_type varchar(50) NULL,
+		trade_date datetime NULL,
+		quantity numeric(30,4) NULL,
+		contract_id int NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		fixing_date datetime NULL,
+		price float NULL,
+		identifier varchar(50) NULL)
+
+insert into
+	#closing_trades(
+		style,
+		trade_type_id,
+		trade_date,
+		quantity,
+		contract_id,
+		symbol,
+		value_date,
+		fixing_date,
+		price,
+		identifier)
+select
+	style = @style,
+	trade_type_id = @closeout_trade_type_id,
+	trade_date = @fixing_date,
+	quantity * -1.0,
+	contract_id,
+	symbol,
+	value_date,
+	fixing_date,
+	fixing_price,
+	closeout_identifier
+from
+	#trades
+where
+	closing_trade_id = NULL
+and
+	quantity != 0.0
+
+insert into
+	#closing_trades(
+		style,
+		trade_type_id,
+		trade_date,
+		quantity,
+		contract_id,
+		value_date,
+		fixing_date,
+		price,
+		identifier)
+select
+	style = @style,
+	trade_type_id = @closeout_trade_type_id,
+	trade_date = @fixing_date,
+	quantity = a.native_pl * -1.0,
+	a.resid_contract_id,
+	a.value_date,
+	a.fixing_date,
+	b.price,
+	identifier = "R + " + rtrim(a.closeout_identifier)
+from
+	#trades a,
+	#all_contracts b,
+	#net_balances c
+where
+	a.resid_contract_id = b.contract_id
+and
+	a.resid_contract_id = c.conversion_contract_id
+and
+	a.native_pl != 0.0
+and
+	c.deliverable = "No" 
+	
+update
+	#closing_trades
+set
+	a.symbol = b.symbol
+from
+	#closing_trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#closing_trades
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#closing_trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#closing_trades
+set
+	a.trade_type = b.name
+from
+	#closing_trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+create table
+	#suggested_balances(
+		product_id int,
+		balance float NULL)
+insert into
+	#suggested_balances(
+		product_id,
+		balance)
+select
+	product_id,
+	sum(quantity)
+from
+	#closing_trades
+group by
+	product_id
+insert into
+	#suggested_balances(
+		product_id,
+		balance)
+select
+	currency_id,
+	sum(quantity * price * -1.0)
+from
+	#closing_trades
+group by
+	currency_id
+	
+create table
+	#net_closing_balances(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		symbol varchar(50) NULL,
+		balance float NULL)
+insert into
+	#net_closing_balances(
+		product_id,
+		balance)
+select
+	product_id,
+	sum(balance)
+from
+	#suggested_balances
+group by
+	product_id
+
+update
+	#net_closing_balances
+set
+	style = @style
+
+update
+	#net_closing_balances
+set
+	a.symbol = b.symbol
+from
+	#net_closing_balances a,
+	products b
+where
+	a.product_id = b.product_id
+
+
+select
+	section = "Starting Balances For " + convert(varchar(11), @fixing_date),
+	style = @style,
+	b.symbol,
+	a.balance,
+	a.deliverable
+from
+	#net_balances a,
+	products b
+where
+	a.product_id = b.product_id
+	
+
+select
+	section = "Fixing Prices",
+	style,
+	symbol,
+	fixing_date = convert(varchar(11), fixing_date),
+	price,
+	set_fixing = "Set Fixing Price"
+from
+	#ndfs
+order by
+	symbol
+
+
+select
+	section = "Trades",
+	style,
+	trade_type,
+	trade_id,
+	trade_date = convert(varchar(11), trade_date),
+	quantity,
+	symbol,
+	value_date = convert(varchar(11), value_date),
+	fixing_date = convert(varchar(11), fixing_date),
+	price,
+	fixing_price
+from
+	#trades
+where
+	trade_type != @closeout_trade_type
+order by
+	id
+
+select
+	section = "Suggested Closing Trades",
+	style,
+	trade_type,
+	trade_date = convert(varchar(11), trade_date),
+	quantity,
+	symbol,
+	value_date = convert(varchar(11), value_date),
+	fixing_date = convert(varchar(11), fixing_date),
+	price,
+	identifier
+from
+	#closing_trades
+order by
+	symbol
+
+
+select
+	section = "Net Closing Trade Balances",
+	style,
+	symbol,
+	balance
+from
+	#net_closing_balances
+order by
+	symbol
+go

@@ -1,0 +1,61 @@
+use
+	risk_finotec
+go
+
+drop procedure
+	ag_margincommitstatus
+go
+
+create procedure
+	ag_margincommitstatus
+		@login varchar(50),
+		@trade_date datetime,
+		@status varchar(50) output,
+		@most_recent_commit datetime output
+as
+
+declare @transaction_type_id int
+declare @snapshots int
+
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Margin"
+
+select
+	@snapshots = count(*)
+from
+	account_snapshots
+where
+	transaction_type_id = @transaction_type_id
+and
+	convert(date, snapshot_date) = convert(date, @trade_date)
+if @snapshots = NULL
+	select
+		@snapshots = 0
+
+if @snapshots > 0
+begin
+	select
+		@status = "Committed"
+end
+
+if @snapshots <= 0
+begin
+	select
+		@status = "Not Committed" /* probably unknown? */
+end
+
+
+select
+	@most_recent_commit = max(snapshot_date)
+from
+	account_snapshots
+where
+	transaction_type_id = @transaction_type_id
+
+
+go	

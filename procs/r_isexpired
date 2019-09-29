@@ -1,0 +1,74 @@
+
+if object_id("r_isexpired") != NULL
+    drop procedure
+        r_isexpired
+go
+ 
+create procedure
+	r_isexpired
+		@contract_id int,
+		@as_of_date datetime,
+		@is_expired int output
+as
+
+declare @expiration datetime
+
+select
+	@expiration = a.expiration
+from
+	option_expirations a,
+	option_contracts b
+where
+	a.option_expiration_id = b.option_expiration_id
+and
+	b.contract_id = @contract_id
+
+if @expiration = NULL
+begin
+	select
+		@expiration = expiration
+	from
+		future_contracts
+	where
+		contract_id = @contract_id
+	if @expiration = NULL
+	begin
+		select
+			@is_expired = NULL
+		return
+	end
+end
+
+if @expiration = NULL
+begin
+	select
+		@expiration = a.expiration
+	from
+		option_expirations a,
+		exotic_contracts b
+	where
+		a.option_expiration_id = b.option_expiration_id
+	and
+		b.contract_id = @contract_id
+        
+    /* KLS: Commented out until the following issue is resolved:
+       https://ourwiki.elysiumtechgroup.com/issues/1213
+	if @@rowcount = 0
+		select
+			@expiration = ko_ki_date
+		from
+			exotic_contracts
+		where
+			contract_id = @contract_id
+     */
+end
+
+
+if @expiration > @as_of_date
+	select
+		@is_expired = 0
+else
+	select
+		@is_expired = 1
+
+go

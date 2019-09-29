@@ -1,0 +1,31 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_defaultflows
+go
+
+create procedure
+	lw_defaultflows
+		@login varchar(50)
+as
+
+
+select
+	collection_event = b.name,
+	a.offset_days,
+	a.fixed_cost,
+	a.settlement_offset,
+	a.collection_rate,
+	a.confidence
+from
+	default_flows a,
+	strategies b
+where
+	a.collection_event_id = b.strategy_id
+order by
+	a.offset_days
+
+
+go

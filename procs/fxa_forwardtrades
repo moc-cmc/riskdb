@@ -1,0 +1,231 @@
+
+if object_id("fxa_forwardtrades") != NULL
+    drop procedure
+        fxa_forwardtrades
+go
+
+create procedure
+	fxa_forwardtrades	
+		@source varchar(50)
+as
+
+declare @source_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Source not found",
+		source = @source
+end
+
+create table
+	#deals(
+		product_group varchar(10),
+		action varchar(10),
+		message_type varchar(10),
+		process varchar(10) NULL,
+		trade_ref int,
+		entity varchar(10),
+		portfolio varchar(50),
+		reporting_system varchar(5),
+		reporter_ticket_number int,
+		trader_name varchar(50),
+		counterparty varchar(50) NULL,
+		prime_broker varchar(50) NULL,
+		trade_date varchar(15),
+		product_type varchar(10),
+        contract_id int,
+		traded_currency varchar(10),
+		counter_currency varchar(10),
+		traded_amount numeric(30,4),
+		dealt_rate float,
+		value_date varchar(15),
+		trade_notification_id int,
+		external_account_id int)
+		
+insert into
+	#deals
+select 
+	product_group = "FX",
+	action = "REPORT",
+	mesage_type = "REGULAR",
+	process = NULL,
+	trade_ref = a.trade_id,
+	entity = "CLIENT",
+	portfolio = m.name,
+	reporting_system = "ETG",
+	reporter_ticket_number = a.trade_id,
+	trader_name = b.symbol,
+	counterparty = c.name,
+	prime_broker = "BAML",
+	trade_date = convert(varchar(15), a.trade_date,110),
+	product_type = "FORWARD",
+    contract_id = d.contract_id,
+	traded_currency = g.symbol,
+	counter_currency = f.symbol,
+	traded_amount = a.quantity,
+	dealt_rate = a.price,
+	value_date = convert(varchar(15),a.value_date,110),
+	j.trade_notification_id,
+	a.external_account_id
+from
+	trades a,
+	traders b,
+	counterparties c,
+	contracts d,
+	forwards e,
+	products f,
+	products g,
+	trade_notifications j,
+	statuses k,
+	trade_types l,
+	strategies m
+where
+	a.trader_id=b.trader_id
+and
+	a.contract_id=d.contract_id
+and
+	d.contract_id=e.contract_id
+and
+	e.currency_id=f.product_id
+and
+	e.product_id=g.product_id
+and
+	a.trade_id=j.trade_id
+and
+	j.status_id=k.status_id
+and
+	k.name in ("Active", "Edit", "Cancelled")
+and
+	a.trade_type_id=l.trade_type_id
+and
+	l.name="Forward"
+and
+	a.strategy_id=m.strategy_id
+and
+	a.counterparty_id=c.counterparty_id
+
+/* Adjust display prices */
+update
+    #deals
+set
+    dealt_rate = case 
+        when d.name = "Inverted" and c.factor != NULL then
+            (1 / a.dealt_rate) * c.factor * d.factor
+        when d.name = "Inverted" then
+            (1 / a.dealt_rate) * d.factor
+        when c.factor != NULL then
+            a.dealt_rate * c.factor * d.factor
+        else
+            a.dealt_rate * d.factor
+    end
+from
+    #deals a,
+    contracts b,
+    contract_price_styles c,
+    price_styles d
+where
+    a.contract_id = b.contract_id
+and
+    b.contract_id = c.contract_id
+and
+    c.price_style_id = d.price_style_id
+
+update
+	#deals
+set
+	process=status_symbol
+from
+	#deals a,
+	trade_notifications b,
+	status_symbols c 
+where
+	a.trade_notification_id=b.trade_notification_id 
+and
+	b.status_id=c.status_id
+
+update
+        #deals
+set
+        counterparty = a.symbol
+from
+        external_account_symbols a,
+        #deals b
+where
+        a.external_account_id = b.external_account_id
+and
+        a.source_id = @source_id
+
+update
+    #deals
+set
+    trader_name = ""
+from
+    #deals a,
+    trades b,
+    external_accounts c,
+    external_account_types d
+where
+    a.trade_ref = b.trade_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    d.name = "Counterparty"
+	
+select
+	product_group,
+    action,
+    message_type,
+    process,
+    trade_ref,
+	entity,
+    portfolio,
+	reporting_system,
+    reporter_ticket_number,
+    trader_name,
+    counterparty,
+    prime_broker,
+	trade_date,
+    product_type,
+    traded_currency,
+    counter_currency,
+    traded_amount=sum(traded_amount),
+	dealt_rate,
+    value_date,
+    trade_notification_id 
+from
+	#deals
+where
+	counterparty != NULL
+group by
+	trade_ref,
+	product_group,
+	action,
+	message_type,
+	process,
+	entity,
+	portfolio,
+	reporting_system,
+	reporter_ticket_number,
+	trader_name,
+	counterparty,
+	prime_broker,
+	trade_date,
+	product_type,
+	traded_currency,
+	counter_currency,
+	dealt_rate,
+	value_date,
+	trade_notification_id
+order by 
+	trade_ref
+go

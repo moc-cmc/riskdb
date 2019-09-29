@@ -1,0 +1,156 @@
+
+if object_id("cm_deleterun") != NULL
+    drop procedure
+        cm_deleterun
+go
+
+create procedure
+	cm_deleterun
+		@login varchar(30),
+		@name varchar(50)
+as
+
+declare @run_id int
+declare @committed_pls int
+
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	tico_accounts b,
+	user_runs c
+where
+	a.run_id = c.run_id
+and
+	b.account_id = c.tico_account_id
+and
+	b.login = @login
+and
+	a.name = @name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @name
+	return
+end
+
+select
+	@committed_pls = NULL
+
+exec
+	cm_numruncommits
+		@login,
+		@name,
+		@committed_pls output
+
+
+if @committed_pls > 0
+begin
+	select
+		status = "Error",
+		message = "This run has committed p&ls and cannot be deleted",
+		run_name = @name
+	return
+end
+
+delete
+
+from
+	run_trader_pos_cache
+where
+	run_id = @run_id
+
+
+delete
+
+from
+	run_traders
+where
+	run_id = @run_id
+
+delete
+
+from
+	user_runs
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_brokers
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_external_accounts
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_strategies
+where
+	run_id = @run_id
+
+delete
+
+from
+	runs
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_perspective_contracts
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_pos_cache
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_preferences
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_position_cache
+where
+	run_id = @run_id
+
+delete
+
+from
+	run_defaults
+where
+	run_id = @run_id
+
+
+exec
+	cm_myruns
+		@login
+
+go

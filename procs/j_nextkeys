@@ -1,0 +1,32 @@
+
+if object_id("j_nextkeys") != NULL
+    drop procedure
+        j_nextkeys
+go
+ 
+create procedure
+    j_nextkeys
+        @relation char(30),
+        @id int output,
+        @count int = 1
+as
+
+if @count <= 0
+    return
+
+begin tran
+    update
+        keys
+    set
+        last_id = last_id + @count
+    where
+        relation = @relation
+    select
+        @id = last_id - @count + 1
+    from
+        keys
+    where
+        relation = @relation
+commit tran
+
+go

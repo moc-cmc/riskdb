@@ -1,0 +1,76 @@
+
+if object_id("r_forwardpriceasof") != NULL
+    drop procedure
+        r_forwardpriceasof
+go
+
+
+create procedure
+	r_forwardpriceasof
+		@contract_id int,
+		@as_of_date datetime,
+		@forward_date datetime,
+		@days float output,
+		@spot_price float output,
+		@forward_price float output,
+		@give_product_rate float output,
+		@get_product_rate float output
+
+as
+
+declare @give_product_id int
+declare @get_product_id int
+declare @minutes int
+declare @hours float
+declare @pl_price_type_id int
+declare @is_committable int
+
+exec
+	r_priceasof
+		@contract_id,
+		@as_of_date,
+		@spot_price output
+
+
+select
+	@minutes = datediff(minute, @as_of_date, @forward_date)
+if @minutes >= 1
+	select
+		@hours = convert(float, @minutes) / 60.0
+else
+	select
+		@hours = 0
+
+select
+	@days = @hours / 24.0
+
+
+exec
+	r_contractcurrency
+		@contract_id,
+		@give_product_id output
+
+exec
+	r_contractproduct
+		@contract_id,
+		@get_product_id output
+
+
+exec
+	r_rateasof
+		@give_product_id,
+		@as_of_date,
+		@forward_date,
+		@give_product_rate output
+
+exec
+	r_rateasof
+		@get_product_id,
+		@as_of_date,
+		@forward_date,
+		@get_product_rate output
+
+select
+	@forward_price = @spot_price * exp((@give_product_rate - @get_product_rate) * @days / 360)
+
+go

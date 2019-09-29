@@ -1,0 +1,134 @@
+drop procedure
+	r_deletefeeschedule
+go
+
+create procedure
+	r_deletefeeschedule
+		@login varchar(50),
+		@fsid int
+
+
+as
+
+declare @trade_type_id int  
+declare @internal_account_id int 
+declare @external_account_id int 
+declare @counterparty_id int 
+declare @contract_id int 
+declare @trader_id int 
+declare @strategy_id int 
+declare @status_id int 
+declare @broker_id int 
+declare @sales_code_id int 
+declare @fee_product_id int
+declare @product_id int
+declare @fee_schedule_type_id int
+declare @archived_by int
+declare @archived_at datetime
+declare @new_created_by int
+declare @new_created_at datetime
+declare @created_by_id int
+declare @fee_schedule_id int
+declare @book_to_ext_account_id int
+
+select
+	@fee_schedule_id = @fsid
+
+
+select
+        @archived_by = account_id
+from
+        tico_accounts
+where
+        login = @login
+
+select
+        @archived_at = getdate()
+
+select
+	@book_to_ext_account_id = book_to_ext_account_id
+from
+	fee_schedules
+where
+	fee_schedule_id = @fee_schedule_id
+
+insert into
+        archive_fee_schedules
+select
+        fee_schedule_id,
+        name,
+        description,
+        fee_schedule_type_id,
+        trade_type_id,
+        internal_account_id,
+        external_account_id,
+        counterparty_id,
+        contract_id,
+        trader_id,
+        strategy_id,
+        status_id,
+        broker_id,
+        sales_code_id,
+        fee_product_id,
+        fee_price,
+        min_ticket_size,
+        direction,
+        created_at,
+        created_by,
+        @archived_at,
+        @archived_by,
+	@fee_schedule_id
+from
+	fee_schedules
+where
+	fee_schedule_id = @fee_schedule_id
+
+insert into
+	archive_fee_schedule_breaks
+		(fee_schedule_break_id,
+		fee_schedule_id,
+		name,
+		description,
+		break_period_id,
+		start_level,
+		end_level,
+		break_price,
+		direction,
+		created_at,	
+		created_by,
+		archived_at,
+		archived_by)
+select
+	fee_schedule_break_id,
+        fee_schedule_id,
+        name,
+        description,
+        break_period_id,
+        start_level,
+        end_level,
+        break_price,
+        direction,
+        created_at,     
+        created_by,
+	@archived_at,
+	@archived_by
+from
+	fee_schedule_breaks
+where
+	fee_schedule_id = @fee_schedule_id
+
+
+delete from
+	fee_schedules
+where
+	 fee_schedule_id = @fee_schedule_id
+
+delete from 
+	fee_schedule_breaks
+where
+	 fee_schedule_id = @fee_schedule_id
+	
+exec
+	r_viewfeeschedule
+		@login	
+go

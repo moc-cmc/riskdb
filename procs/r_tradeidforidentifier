@@ -1,0 +1,34 @@
+drop procedure
+	r_tradeidforidentifier
+go
+
+create procedure
+	r_tradeidforidentifier
+		@trade_identifier varchar(100)
+
+as 
+
+declare @trade_id int
+
+select
+	@trade_id = trade_id
+from
+	trades
+where
+	identifier = @trade_identifier 
+
+if @trade_id = NULL
+begin
+	return
+end
+
+if @trade_id != NULL
+begin
+	select
+		trade_id = @trade_id
+end
+
+go
+
+
+

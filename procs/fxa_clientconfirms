@@ -1,0 +1,235 @@
+drop procedure fxa_clientconfirms
+go
+
+create procedure
+	fxa_clientconfirms
+
+as
+
+declare @source_id int
+declare @active_status_id int
+declare @edit_status_id int
+declare @cancelled_status_id int
+
+select 
+	@source_id = source_id
+from
+	sources
+where
+	name = "Agency Client"
+if @source_id = NULL
+begin
+	select
+		id = -1, 
+		error = "'Agency Client' source not found"
+	return
+end
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @active_status_id = NULL
+begin
+	select 
+		id = -1,
+		error = "'Active' status not found"
+	return
+end
+select
+	@edit_status_id = status_id
+from
+	statuses
+where
+	name = "Edit"
+if @edit_status_id = NULL
+begin
+	select 
+		id = -1,
+		error = "'Edit' status not found"
+	return
+end
+select
+	@cancelled_status_id = status_id
+from
+	statuses
+where
+	name = "Cancelled"
+if @cancelled_status_id = NULL
+begin
+	select 
+		id = -1,
+		error = "'Cancelled' status not found"
+	return
+end
+
+
+create table
+	#trades
+(
+	trade_notification_id int,
+	trade_id int,
+	client varchar(50),
+	name varchar(25),
+	symbol varchar(25),
+	dealt_currency varchar(10) NULL,
+	contra_currency varchar(10) NULL,
+	price float,
+    min_scale int,
+    max_scale int,
+    buy_sell varchar(4),
+	quantity numeric(30, 2),
+    valdate varchar(10)
+)
+
+insert into #trades
+select
+	a.trade_notification_id,
+	a.trade_id,
+	d.symbol,
+	b.name,
+        e.symbol,
+        NULL,
+	NULL,
+	c.price,
+    6, /* Default to 6 decimal places */
+    6, /* Default to 6 decimal places */
+	buy_sell = case   /* Client buys sells, if qty is +, client sold */ 
+		when c.quantity > 0 then "sell"
+		when c.quantity < 0 then "buy"
+                else ""
+		end,
+	round(abs(c.quantity), 2),
+        rtrim(convert(char(2), datepart(month, c.value_date)))+"/"+convert(char(2), datepart(day, c.value_date))
+from
+	trade_notifications a,
+	statuses b,
+	trades c,
+	external_accounts d,
+        contracts e
+where
+	a.status_id = b.status_id
+and
+	a.trade_id = c.trade_id 
+and
+	c.external_account_id = d.external_account_id
+and
+	c.contract_id = e.contract_id
+and
+	a.source_id = @source_id
+and
+	a.status_id in(@active_status_id, @edit_status_id, @cancelled_status_id)
+
+/*
+|  Adjust display prices to standard rate for all pairs
+*/
+/* Mon Jun 20 12:52:11 CDT 2011 - CDO: Per JC request, all contracts to be 6 decimals */
+update
+   #trades
+set
+   price = case
+       when d.name = "Inverted" and c.factor != NULL then
+           (1 / a.price) * c.factor * d.factor
+       when d.name = "Inverted" then
+           (1 / a.price) * d.factor
+       when c.factor != NULL then
+           a.price * c.factor * d.factor
+       else
+           a.price * d.factor
+   end/*,
+   min_scale = c.min_scale + 1,
+   max_scale = c.max_scale*/
+from
+   #trades a,
+   trades e,
+   contracts b,
+   contract_price_styles c,
+   price_styles d
+where
+   a.trade_id = e.trade_id
+and
+   e.contract_id = b.contract_id
+and
+   b.contract_id = c.contract_id
+and
+   c.price_style_id = d.price_style_id
+
+
+update
+        #trades
+set
+        dealt_currency = d.symbol
+from
+        #trades a,
+        trades b,
+        forwards c,
+        products d
+where
+        a.trade_id = b.trade_id
+and
+        b.contract_id = c.contract_id
+and
+        c.product_id = d.product_id
+
+
+update
+        #trades
+set
+        contra_currency = d.symbol
+from
+        #trades a,
+        trades b,
+        forwards c,
+        products d
+where
+        a.trade_id = b.trade_id
+and
+        b.contract_id = c.contract_id
+and
+        c.currency_id = d.product_id
+
+
+update
+	#trades
+set
+	price = round((floor(price * power(10, 7))/power(10, 7)), 6)
+
+update 
+	#trades
+set 
+        price = round((floor(price * power(10, 5))/power(10, 5)), 4)
+where
+	symbol like "%JPY%"
+and
+	symbol not like "%USD%"
+	
+
+select
+	trade_notification_id,
+	trade_id,
+	client,
+	name,
+	symbol,
+/*    price, 
+	orig_price = convert(numeric(30,10), price), */
+/* NO price improvement */
+/*
+	price = case buy_sell
+        when "sell" then
+            ceiling(price * power(10, max_scale)) / power(10, max_scale)
+        else
+            floor(price * power(10, max_scale)) / power(10, max_scale)
+    end,
+*/
+/* Truncate the 8th+ decimals and round to 6 decimals off of the 7th decimal */
+        /*price = round((floor(price * power(10, 7))/power(10, 7)), 6),*/
+    price,
+    buy_sell,
+	quantity,
+    valdate
+from
+    #trades
+
+go

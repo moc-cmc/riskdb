@@ -1,0 +1,161 @@
+
+drop procedure
+	ag_importvostrobalancefile
+go
+
+create procedure
+	ag_importvostrobalancefile
+		@login varchar(50),
+		@customer varchar(50)=NULL,
+		@account varchar(50)=NULL,
+		@balance varchar(50)=NULL,
+                @cur varchar(50)=NULL,
+		@rate varchar(50)=NULL,
+		@accrual varchar(50)=NULL,
+		@base_balance varchar(50)=NULL,
+		@base_accrual varchar(50)=NULL,
+		@row_index int,
+		@row_count int
+
+as
+
+declare @balance_date datetime
+declare @external_account_id int
+declare @product_id int
+declare @balance_2 numeric(30,4)
+declare @external_balance_id int
+
+declare @source_id int
+declare @source varchar(50)
+
+
+select
+	@source = "Spectrum"
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+select
+	@balance_date = max(value_date)
+from
+	source_ladder
+where
+	source_id = @source_id
+if @balance_date = NULL
+begin
+	select
+		status = "Error",
+		message = "Current Balance date not found"
+	return
+end
+
+
+
+select
+	@product_id = product_id
+from
+	product_symbols
+where
+	source_id = @source_id
+and
+	symbol = rtrim(@cur)
+if @product_id = NULL
+begin
+	select
+		@product_id = product_id
+	from
+		products
+	where
+		symbol = rtrim(@cur)
+	if @product_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Product not found",
+			product = @cur
+		return
+	end
+end
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_account_symbols
+where
+	source_id = @source_id
+and
+	symbol = rtrim(@account)
+if @external_account_id = NULL
+begin
+	select
+		@external_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = rtrim(@account)
+	if @external_account_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Account not found",
+			account = @account
+		return
+	end
+end
+
+select
+	@balance_2 = convert(numeric(30,4), @base_balance)
+
+update
+	external_balances
+set
+	balance = @balance_2
+where
+	external_account_id = @external_account_id
+and
+	product_id = @product_id
+and
+	convert(date, @balance_date) = convert(date, balance_date)
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"external_balances",
+			@external_balance_id output
+
+	insert into
+		external_balances(
+			external_balance_id,
+			external_account_id,
+			balance_date,
+			product_id,
+			balance)
+	values(
+		@external_balance_id,
+		@external_account_id,
+		@balance_date,
+		@product_id,
+		@balance_2)
+end
+
+
+if @row_index = @row_count - 1
+	exec
+		ag_reconsourceladder
+			@login,
+			@balance_date
+
+go

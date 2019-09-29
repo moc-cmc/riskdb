@@ -1,0 +1,30 @@
+
+if object_id("r_contractevalmethod") != NULL
+    drop procedure
+        r_contractevalmethod
+go
+ 
+create procedure
+	r_contractevalmethod
+		@contract_id int,
+		@eval_method char(200) output
+as
+
+select
+	@eval_method = NULL
+
+select
+	@eval_method = a.name
+from
+	eval_methods a,
+	contract_eval_methods b
+where
+	b.contract_id = @contract_id
+and
+	a.eval_method_id = b.eval_method_id
+
+if @eval_method = NULL
+	select
+		@eval_method = "External Mark"
+
+go

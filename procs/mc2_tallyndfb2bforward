@@ -1,0 +1,68 @@
+
+if object_id("mc2_tallyndfb2bforward") != NULL
+    drop procedure
+        mc2_tallyndfb2bforward
+go
+
+create procedure
+	mc2_tallyndfb2bforward
+		@login varchar(50),
+		@tally_type varchar(25),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@counterparty varchar(50),
+		@quantity numeric(30,2),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@client_price float,
+		@client_val_date datetime,
+		@client_fixing_date datetime,
+		@market_price float,
+		@market_val_date datetime,
+		@market_fixing_date datetime,
+		@client_mid float=NULL,
+		@client_trade_note varchar(255)=NULL,
+		@market_trade_note varchar(255)=NULL
+
+as
+
+declare @tally_tally_type varchar(25)
+declare @deal_id int
+
+select
+    @tally_tally_type = case
+        when @tally_type = "NDF" then
+            "Forward"
+        else
+            @tally_type
+    end
+
+
+exec
+    api_tallyb2bforward
+        @login = @login,
+        @tally_type = @tally_tally_type,
+        @client_user = @client_user,
+        @client_buys_sells = @client_buys_sells,
+        @counterparty = @counterparty,
+        @quantity = @quantity,
+        @dealt_currency = @dealt_currency,
+        @counter_currency = @counter_currency,
+        @client_price = @client_price,
+        @client_val_date = @client_val_date,
+        @market_price = @market_price,
+        @market_val_date = @market_val_date,
+        @deal_id = @deal_id output,
+        @client_fixing_date = @client_fixing_date,
+        @market_fixing_date = @market_fixing_date,
+        @client_mid_mark = @client_mid,
+        @client_trade_node = @client_trade_note,
+        @market_trade_node = @market_trade_note 
+
+exec
+    mc_inspectdealtrades
+        @login,
+        @deal_id
+
+
+go

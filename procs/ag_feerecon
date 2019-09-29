@@ -1,0 +1,23 @@
+use
+	risk_untl
+go
+drop procedure
+	ag_feerecon
+go
+
+create procedure
+	ag_feerecon
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+exec
+	api_feerecon
+		@login = @login,
+		@trade_date = @trade_date,
+		@tally_fees = "No",
+		@display_output = "Yes"
+
+
+go

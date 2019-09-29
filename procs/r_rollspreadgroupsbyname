@@ -1,0 +1,29 @@
+
+if object_id("r_rollspreadgroupsbyname") != NULL
+    drop procedure
+        r_rollspreadgroupsbyname
+go
+
+create procedure
+	r_rollspreadgroupsbyname
+as
+
+
+create table
+	#spread_groups(
+		symbol char(100)) 
+
+insert into
+	#spread_groups
+select
+	name
+from
+	roll_spread_groups
+
+select
+	symbol
+from
+	#spread_groups
+order by
+	symbol
+go

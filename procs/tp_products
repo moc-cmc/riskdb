@@ -1,0 +1,16 @@
+drop procedure tp_products
+go
+
+create procedure 
+	tp_products
+
+as
+
+select 
+	symbol
+from
+	products
+order by
+	symbol
+
+go

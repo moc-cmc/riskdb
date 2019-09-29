@@ -1,0 +1,93 @@
+create or replace procedure
+	cbo_unrollpendingtransactions
+		@login varchar(100),
+		@trade_date datetime
+
+as
+
+declare @roll_transaction_date datetime
+declare @pending_count int
+declare @deleted_count int
+declare @updated_count int
+
+select
+	@trade_date = convert(date, @trade_date)
+
+
+create table
+	#pending_transaction_rolls(
+		transaction_roll_id int,
+		account_transaction_id int,
+		transaction_date datetime,
+		roll_date datetime NULL
+)
+
+insert into
+	#pending_transaction_rolls(
+		transaction_roll_id,
+		account_transaction_id,
+		transaction_date,
+		roll_date)
+select
+	transaction_roll_id,
+	account_transaction_id,
+	transaction_date,
+	roll_date
+from
+	pending_transaction_rolls
+where
+	transaction_date = @trade_date
+select
+	@pending_count = @@rowcount
+
+begin tran
+	update
+		pending_transactions
+	set
+		transaction_date = b.transaction_date
+	from
+		pending_transactions a,
+		#pending_transaction_rolls b
+	where
+		a.account_transaction_id = b.account_transaction_id
+	select
+		@updated_count = @@rowcount
+	
+	if @pending_count != @updated_count
+	begin
+		select
+			status = "Error",
+			message = "Problem wiping pending transaction rolls. Pending count did not match updated count",
+			pending_count = @pending_count,
+			updated_count = @updated_count
+		rollback
+		return
+	end
+
+	delete
+		pending_transaction_rolls
+        from
+                pending_transaction_rolls a,
+                #pending_transaction_rolls b
+        where
+                a.transaction_roll_id = b.transaction_roll_id
+        select
+                @deleted_count = @@rowcount
+
+	if @pending_count != @deleted_count
+	begin
+		select
+			status = "Error",
+			message = "Problem rolling pending transactions pending count did not match deleted count",
+			pending_count = @pending_count,
+			deleted_count = @deleted_count
+		rollback
+		return
+	end
+
+commit tran
+
+
+go
+
+

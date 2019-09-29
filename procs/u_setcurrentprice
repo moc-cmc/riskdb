@@ -1,0 +1,38 @@
+drop procedure
+	u_setcurrentprice
+go 
+
+create procedure
+	u_setcurrentprice
+		@symbol char(50),
+		@price float
+as
+
+update
+	current_prices
+set
+	a.price = @price,
+	a.timestamp = getdate()
+from
+	current_prices a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	b.symbol = @symbol
+if @@rowcount = 0
+begin
+	insert into
+		current_prices
+	select
+		contract_id,
+		price = @price,
+		timestamp = getdate()
+	from
+		contracts
+	where
+		symbol = @symbol
+end
+
+go
+

@@ -1,0 +1,106 @@
+
+if object_id("cm_togglerunstrategy") != NULL
+    drop procedure
+        cm_togglerunstrategy
+go
+
+create procedure
+	cm_togglerunstrategy
+		@login varchar(30),
+		@run_name varchar(50),
+		@strategy varchar(50)
+as
+
+
+declare @tico_account_id int
+declare @run_id int
+declare @strategy_id int
+declare @is_included int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run Not Found"
+	return
+end
+
+select
+	@strategy_id = strategy_id
+from
+	strategies
+where
+	name = @strategy
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Trader not found",
+		strategy = @strategy
+	return
+end
+
+
+select
+	@is_included = count(*)
+from
+	run_strategies
+where
+	run_id = @run_id
+and
+	strategy_id = @strategy_id
+
+if @is_included > 0
+begin
+	delete
+
+	from
+		run_strategies
+	where
+		run_id = @run_id
+	and
+		strategy_id = @strategy_id
+end
+else
+begin
+	insert into
+		run_strategies
+	values(
+		@run_id,
+		@strategy_id)
+end
+
+exec
+	cm_runstrategyfilters
+		@login,
+		@run_name,
+		"Trader"
+
+
+
+go

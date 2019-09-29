@@ -1,0 +1,314 @@
+use
+	risk_pinepoint
+go
+
+drop procedure
+	mn_portfoliovami
+go
+
+create procedure
+	mn_portfoliovami
+		@login varchar(50),
+		@portfolio varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+
+as
+
+declare @trading_level float
+declare @min_date datetime
+declare @max_date datetime
+declare @day float
+declare @day_pl float
+declare @month float
+declare @month_pl float
+declare @year float
+declare @year_pl float
+declare @id int
+declare @ids int
+declare @vami float
+declare @roc float
+
+create table
+	#external_accounts(
+		external_account_id int)
+
+
+insert into
+	#external_accounts
+select
+	a.external_account_id
+from
+	cta_portfolio_ext_accts a,
+	cta_portfolios b
+where
+	a.portfolio_id = b.portfolio_id
+and
+	b.name = @portfolio
+
+select
+	@min_date = min(a.trade_date),
+	@max_date = max(a.trade_date)
+from
+	external_margin_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+	
+if @min_date = NULL
+	select
+		@min_date = getdate()
+if @max_date = NULL
+	select
+		@max_date = getdate()
+
+create table
+	#trading_levels(
+		external_account_id int,
+		date datetime,
+		trading_level float NULL)
+insert into
+	#trading_levels(
+		external_account_id,
+		date)
+select
+	a.external_account_id,
+	max(a.date)
+from
+	trading_levels a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+group by
+	a.external_account_id
+
+update
+	#trading_levels
+set
+	a.trading_level = b.trading_level
+from
+	#trading_levels a,
+	trading_levels b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.date = b.date
+
+	
+select
+	@trading_level = sum(trading_level)
+from
+	#trading_levels
+where
+	trading_level != NULL
+
+	
+create table
+	#returns(
+		id int identity,
+		date datetime,
+		begin_value float,
+		begin_futures_value float NULL,
+		begin_option_value float NULL,
+		end_value float,
+		cash_activity float,
+		futures_value float,
+		option_value float,
+		p_l float NULL,
+		roc float NULL,
+		vami float NULL)
+insert into
+	#returns(
+		date,
+		begin_value,
+		end_value,
+		cash_activity,
+		futures_value,
+		option_value)
+select
+	a.trade_date,
+	sum(a.begin_balance),
+	sum(a.end_balance),
+	sum(a.cash_activity),
+	sum(a.futures_value),
+	sum(a.option_value)
+from
+	external_margin_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+group by
+	a.trade_date
+order by
+	a.trade_date
+
+
+update
+	#returns
+set
+	a.begin_option_value = b.option_value,
+	a.begin_futures_value = b.futures_value
+from
+	#returns a,
+	#returns b
+where
+	a.id = b.id + 1
+	
+		
+/* delete
+
+from
+	#returns
+where
+	begin_option_value = NULL */
+
+update
+	#returns
+set
+	begin_option_value = option_value,
+	begin_futures_value = futures_value,
+	vami = 1000.00
+where
+	id = 1
+
+update
+	#returns
+set
+	p_l = (end_value + begin_futures_value + option_value - cash_activity) - (begin_value + begin_futures_value + begin_option_value)
+
+update
+	#returns
+set
+	/* roc = 1.0 - (end_value + option_value - cash_activity) / (begin_value + begin_option_value) */
+	roc = p_l / (begin_value + begin_option_value + begin_futures_value)
+where
+	begin_value + begin_futures_value + begin_option_value != 0
+
+	
+
+select
+	@id = 1,
+	@vami = 1000.00
+select
+	@ids = count(*)
+from
+	#returns
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#returns
+	where
+		id > @id
+
+	select
+		@roc = roc
+	from
+		#returns
+	where
+		id = @id
+
+	select
+		/* @vami = @vami * (1.0 + @roc) */
+
+		@vami = @vami + (@vami * @roc)
+
+	update
+		#returns
+	set
+		vami = @vami
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#returns
+	where
+		id > @id
+end
+
+
+select
+	@day = roc,
+	@day_pl = p_l
+from
+	#returns
+where
+	convert(date, date) = convert(date, @max_date)
+
+create table
+	#months(
+		month varchar(50),
+		first datetime,
+		last datetime,
+		p_l float)
+insert into
+	#months
+select
+	rtrim(datename(month, date)) + " " + rtrim(datename(year, date)),
+	min(date),
+	max(date),
+	sum((end_value + option_value - cash_activity) - (begin_value + begin_option_value))
+from
+	#returns
+group by
+	rtrim(datename(month, date)) + " " + rtrim(datename(year, date))
+
+
+select
+	@month_pl = p_l
+from
+	#months
+where
+	last = (select
+			max(last)
+		from
+			#months)
+
+select
+	@month = @month_pl / @trading_level
+
+
+select
+	@year_pl = sum(p_l)
+from
+	#returns
+where
+	datepart(year, date) = datepart(year, @max_date)
+
+select
+	@year = @year_pl / @trading_level
+
+select
+	@vami = vami
+from
+	#returns
+where
+	convert(date, date) = convert(date, @max_date)
+
+select
+	trading_level = @trading_level,
+	day = @day,
+	day_pl = @day_pl,
+	month = @month,
+	month_pl = @month_pl,
+	year = @year,
+	year_pl = @year_pl,
+	vami = @vami
+
+select
+	date,
+	roc,
+	vami
+from
+	#returns
+order by
+	id
+
+
+
+go

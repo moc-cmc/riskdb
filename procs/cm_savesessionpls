@@ -1,0 +1,92 @@
+drop procedure
+	cm_savesessionpls
+go
+
+create procedure
+	cm_savesessionpls
+		@login varchar(30),
+		@batch_id int
+
+as
+
+declare @run_id int
+declare @runs int
+declare @run_name varchar(100)
+declare @commit_date datetime
+declare @total_pl float
+
+select
+	@run_id = 0
+select
+	@runs = count(*)
+from
+	
+ session_runs
+where
+	session_id = @batch_id
+and
+	run_id > @run_id
+
+while @runs > 0
+begin
+	select
+		@run_id = min(run_id)
+	from
+		session_runs
+	where
+		session_id = @batch_id
+	and
+		run_id > @run_id
+
+	select
+		@commit_date = trade_date,
+		@total_pl = p_l
+	from
+		session_runs
+	where
+		session_id = @batch_id
+	and
+		run_id = @run_id
+
+	select
+		@run_name = name
+	from
+		runs
+	where
+		run_id = @run_id
+
+	 exec
+		r_addintaccountcommit
+			@login,
+			@run_name,
+			@commit_date,
+			@total_pl,
+			NULL
+
+
+	delete
+
+	from
+
+ 		session_runs
+	where
+		run_id = @run_id
+	and
+		session_id = @batch_id
+
+	select
+		@runs = count(*)
+	from
+		session_runs
+	where
+		session_id = @batch_id
+	and
+		run_id > @run_id
+end
+
+exec
+	cbo_postcommit
+		@login
+
+
+go

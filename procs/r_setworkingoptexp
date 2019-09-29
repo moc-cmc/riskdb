@@ -1,0 +1,94 @@
+use
+	risk_ram
+go
+
+drop procedure
+	r_setworkingoptexp
+go
+
+create procedure
+	r_setworkingoptexp
+		@login varchar(50),
+		@session_id varchar(100),
+		@option_expiration varchar(50),
+		@trade_date datetime
+as
+
+declare @option_expiration_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"import",
+	"Import CME Opt",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"session_id",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+select
+	@option_expiration_id = option_expiration_id
+from
+	option_expirations
+where
+	symbol = @option_expiration
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Option expiration not found",
+		option_expiration = @option_expiration
+	return
+end
+
+delete
+
+from
+	session_working_opt_exp
+where
+	session_id = @session_id
+
+
+insert into
+	session_working_opt_exp
+values(
+	@session_id,
+	@option_expiration_id,
+	@trade_date)
+
+
+
+select
+	a.session_id,
+	option_expiration = b.symbol,
+	trade_date = convert(char(11), a.trade_date),
+	import = "IMPORT"
+from
+	session_working_opt_exp a,
+	option_expirations b
+where
+	a.option_expiration_id = b.option_expiration_id
+
+
+
+
+
+
+
+go

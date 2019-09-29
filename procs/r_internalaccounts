@@ -1,0 +1,18 @@
+
+if object_id("r_internalaccounts") != NULL
+    drop procedure
+        r_internalaccounts
+go
+
+create procedure
+	r_internalaccounts
+as
+
+select
+	name = rtrim(symbol)
+from
+	internal_accounts
+
+order by
+	internal_account_id, symbol
+go

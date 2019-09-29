@@ -1,0 +1,14 @@
+create or replace procedure
+	r_legalentities
+		@login varchar(50)
+
+as
+
+select
+	name
+from
+	legal_entities
+order by 
+	name
+
+go

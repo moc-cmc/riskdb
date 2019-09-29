@@ -1,0 +1,58 @@
+use
+	risk_finotec
+go
+
+drop procedure
+	ag_volumecommitstatus
+go
+
+create procedure
+	ag_volumecommitstatus
+		@login varchar(50),
+		@trade_date datetime,
+		@status varchar(50) output,
+		@most_recent_commit datetime output
+as
+
+
+declare @snapshots int
+
+
+select
+	@snapshots = count(account_snapshot_id)
+from
+	account_snapshots a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	convert(date, a.snapshot_date) = convert(date, @trade_date)
+and
+	lower(b.name) like "%volume%"
+
+if @snapshots = NULL
+	select
+		@snapshots = 0
+
+if @snapshots = 0
+	select
+		@status = "Uncommitted"
+if @snapshots > 0
+	select
+		@status = "Committed"
+
+
+select
+	@most_recent_commit = max(snapshot_date)
+from
+	account_snapshots a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	lower(b.name) like "%volume%"
+
+
+
+go
+

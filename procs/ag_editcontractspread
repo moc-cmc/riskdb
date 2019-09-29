@@ -1,0 +1,77 @@
+drop procedure
+	ag_editcontractspread
+go
+
+create procedure
+	ag_editcontractspread
+		@login varchar(50),
+		@pip_spread varchar(50),
+		@symbol varchar(50),
+		@spread numeric(30,10)
+as
+
+
+declare @pip_spread_id int
+declare @contract_id int
+
+
+select
+	@pip_spread_id = pip_spread_id
+from
+	pip_spreads
+where
+	name = @pip_spread
+if @pip_spread_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Pip spread not found",
+		pip_spread = @pip_spread
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+update
+	pip_spread_contracts
+set
+	pip_spread = @spread
+where
+	pip_spread_id = @pip_spread_id
+and
+	contract_id = @contract_id
+if @@rowcount = 0
+begin
+	insert into
+		pip_spread_contracts(
+			pip_spread_id,
+			contract_id,
+			pip_spread)
+	values(
+		@pip_spread_id,
+		@contract_id,
+		@spread)
+end
+
+
+exec
+	ag_editpipsreadcontracts
+		@login = @login,
+		@pip_spread = @pip_spread
+
+go
+	
+

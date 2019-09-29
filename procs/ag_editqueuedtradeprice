@@ -1,0 +1,68 @@
+use
+	risk_edgewater
+go
+
+drop procedure
+	ag_editqueuedtradeprice
+go
+
+create procedure
+	ag_editqueuedtradeprice
+		@login varchar(50),
+		@queued_trade_id int,
+		@booking_date datetime,
+		@symbol varchar(50),
+		@value_date datetime,
+		@quantity numeric(30,4),
+		@price numeric(30,6),
+		@external_account varchar(50),
+		@counterparty varchar(50),
+		@trader varchar(50),
+		@broker varchar(50)
+as
+
+declare @batch_id int
+declare @trade_date datetime
+declare @run_name varchar(50)
+
+select
+	@batch_id = batch_id
+from
+	queued_trades
+where
+	queued_trade_id = @queued_trade_id
+if @batch_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No batch found for queued trade id",
+		queued_trade_id = @queued_trade_id
+	return
+end
+
+select
+	@run_name = run_name,
+	@trade_date = trade_date
+from
+	batch_info
+where
+	batch_id = @batch_id
+
+begin tran
+	update
+		queued_trades
+	set
+		price = @price
+	where
+		queued_trade_id = @queued_trade_id
+commit tran
+
+exec
+	ag_runpbpositions
+		@login,
+		@run_name,
+		@trade_date,
+		@value_date,
+		@batch_id
+
+go

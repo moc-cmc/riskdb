@@ -1,0 +1,106 @@
+
+if object_id("cm_togglerunbroker") != NULL
+    drop procedure
+        cm_togglerunbroker
+go
+
+create procedure
+	cm_togglerunbroker
+		@login varchar(30),
+		@run_name varchar(50),
+		@broker varchar(50)
+as
+
+
+declare @tico_account_id int
+declare @run_id int
+declare @broker_id int
+declare @is_included int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run Not Found"
+	return
+end
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = @broker
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Broker not found",
+		broker = @broker
+	return
+end
+
+
+select
+	@is_included = count(*)
+from
+	run_brokers
+where
+	run_id = @run_id
+and
+	broker_id = @broker_id
+
+if @is_included > 0
+begin
+	delete
+
+	from
+		run_brokers
+	where
+		run_id = @run_id
+	and
+		broker_id = @broker_id
+end
+else
+begin
+	insert into
+		run_brokers
+	values(
+		@run_id,
+		@broker_id)
+end
+
+exec
+	cm_runbrokerfilters
+		@login,
+		@run_name,
+		"Broker"
+
+
+
+go

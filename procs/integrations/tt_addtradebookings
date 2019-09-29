@@ -1,0 +1,112 @@
+drop procedure tt_addtradebookings
+go
+
+create procedure 
+	tt_addtradebookings
+		@c_trade_id int,
+		@m_trade_id int
+
+as
+
+declare @booking_id int
+declare @c_booking_id int
+declare @m_booking_id int
+
+select
+	@c_booking_id = booking_id
+from
+	trade_bookings
+where
+	trade_id = @c_trade_id
+
+select
+	@m_booking_id = booking_id
+from
+	trade_bookings
+where
+	trade_id = @m_trade_id
+
+if @c_booking_id != NULL and @m_booking_id != NULL 
+begin
+	if @m_booking_id != @c_booking_id
+	begin
+		select
+			status = "Warn",
+			message = "trade_ids provided have different booking ids",
+			c_trade_id = @c_trade_id,
+			c_booking_id = @c_booking_id,
+			m_trade_id = @m_trade_id,
+			m_booking_id = @m_booking_id	
+	end
+	/* return because both trades have booking ids */
+	return
+end
+
+if @c_booking_id = NULL and  @m_booking_id = NULL
+begin
+	exec
+		j_nextkey
+			"trade_bookings",
+			@booking_id output
+
+	begin tran
+		/* Add booking for c_trade_id */
+		insert into
+			trade_bookings(
+				trade_id,
+				booking_id)
+		values(
+			@c_trade_id,
+			@booking_id
+		)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Warn",
+				message = "Problem adding c_trade_id booking id",
+				c_trade_id = @c_trade_id,
+				m_trade_id = @m_trade_id,
+				booking_id = @booking_id
+			rollback tran
+			return
+		end
+
+		/* Add booking for m_trade_id */
+		insert into
+			trade_bookings(
+				trade_id,
+				booking_id)
+		values(
+			@m_trade_id,
+			@booking_id
+		)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Warn",
+				message = "Problem adding c_trade_id booking id",
+				c_trade_id = @c_trade_id,
+				m_trade_id = @m_trade_id,
+				booking_id = @booking_id
+
+			rollback tran
+			return
+		end
+	commit tran
+	/* return because we have created new booking records */
+	return
+end
+
+
+if (@c_booking_id = NULL and @m_booking_id != NULL) or (@c_booking_id != NULL and @m_booking_id = NULL) 
+	select
+		status = "Warn",
+		message = "Booking ID missing for 1 leg. This should not be possible. Investigate",
+		c_trade_id = @c_trade_id,
+		m_trade_id = @m_trade_id,
+		c_booking_id = @c_booking_id,
+		m_booking_id = @m_booking_id
+
+
+
+go

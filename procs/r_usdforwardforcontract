@@ -1,0 +1,58 @@
+drop procedure
+	r_usdforwardforcontract
+go
+
+create procedure
+	r_usdforwardforcontract
+		@contract_id int,
+		@product_forward_id int output,
+		@currency_forward_id int output
+as
+
+
+declare @usd_product_id int
+declare @product_id int
+declare @currency_id int
+
+select
+	@usd_product_id = product_id
+from
+	products
+where
+	symbol = "USD"
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding USD product"
+	return
+end
+
+select
+	@product_id = product_id,
+	@currency_id = currency_id
+from
+	forwards
+where
+	contract_id = @contract_id
+
+select
+	@product_forward_id = contract_id
+from
+	forwards
+where
+	product_id = @product_id
+and
+	currency_id = @usd_product_id
+
+
+select
+	@currency_forward_id = contract_id
+from
+	forwards
+where
+	product_id = @currency_id
+and
+	currency_id = @usd_product_id
+
+go

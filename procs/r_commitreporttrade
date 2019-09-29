@@ -1,0 +1,447 @@
+
+print "r_commitreporttrade is deprecated. Use rc_managetradematch"
+exit
+
+if object_id("r_commitreporttrade") != NULL
+    drop procedure
+        r_commitreporttrade
+go
+
+create procedure
+    r_commitreporttrade
+        @login char(50),
+        @report_commit_id int,
+        @report_trade_id int,
+        @trade_id int,
+        @action char(50)
+as
+
+declare @report_trade_match_id int
+declare @status_id int
+declare @matched_status_id int
+declare @committed_status_id int
+declare @internal_price float
+declare @internal_quantity numeric(30,4)
+declare @external_price float
+declare @external_quantity numeric(30,4)
+    
+/* ---------------------------- Retrieve settings --------------------------- */
+
+select
+    @matched_status_id = status_id
+from
+    statuses
+where
+    name = "Matched"
+if @@rowcount != 1
+begin
+    select
+        id = -1,
+        error = "Couldn't find the ""Matched"" status"
+    return
+end
+
+select
+    @committed_status_id = status_id
+from
+    statuses
+where
+    name = "Committed"
+if @@rowcount != 1
+begin
+    select
+        id = -1,
+        error = "Couldn't find the ""Committed"" status"
+    return
+end
+
+/* ---------------------------- Get the mappings ---------------------------- */
+
+if @report_commit_id = NULL
+begin
+    select
+        id = -1,
+        error = "Report commit not provided"
+    return
+end
+
+if @report_trade_id != NULL and @trade_id != NULL
+begin
+    select
+        @report_trade_match_id = report_trade_match_id
+    from
+        report_trade_matches
+    where
+        report_commit_id = @report_commit_id
+    and
+        report_trade_id = @report_trade_id
+    and
+        trade_id = @trade_id
+    if @@rowcount != 1
+    begin
+        select
+            id = -1,
+            error = "Report trade match not found for report_commit_id, " + str(@report_commit_id) + ", report_trade_id, " + str(@report_trade_id) + ", trade_id, " + str(@trade_id)
+        return
+    end
+    
+end
+
+
+
+/* ----------------------------- Perform Actions ---------------------------- */
+	
+if @action = "Match" and @report_trade_match_id != NULL
+begin
+	
+    select
+        id = -1,
+        msg = "Matched"
+
+end
+else if @action = "OK" and @report_trade_match_id != NULL
+begin
+
+    select
+        @status_id = status_id
+    from
+        report_trade_matches
+    where
+        report_trade_match_id = @report_trade_match_id
+    if @status_id = @committed_status_id
+        select
+            @status_id = @matched_status_id
+    else
+        select
+            @status_id = @committed_status_id
+	
+    update
+        report_trade_matches
+    set
+        status_id = @status_id,
+        status_date = getdate()
+    where
+        report_trade_match_id = @report_trade_match_id
+    if @@rowcount != 1
+    begin
+        select
+            id = -1,
+            error = "Couldn't commit report trade"
+        return
+    end
+    
+    select
+        id = -1,
+        msg = "Committed"
+
+end
+else if @action = "Modify" and @report_trade_match_id != NULL
+begin
+	
+    /* 
+     * Adjust the price and quantity of the trade
+     */
+    /* Extract the original trade price and quantity */
+    select
+        @internal_price = price,
+        @internal_quantity = quantity
+    from
+        trades
+    where
+        trade_id = @trade_id
+    if @@rowcount != 1
+    begin
+        select
+            id = -1,
+            error = "Couldn't find trade"
+        return
+    end
+
+    /* Calculate the new trade price and quantity */
+    select
+        @external_price = price,
+        @external_quantity = quantity
+    from    
+        report_trade_matches
+    where
+        report_trade_match_id = @report_trade_match_id
+    
+    /* 
+     * Edit the trade
+     */
+    begin tran
+        
+        update
+            report_trade_matches
+        set
+            status_id = @committed_status_id,
+            status_date = getdate(),
+            quantity = @internal_quantity,
+            price = @internal_price,
+            match_strength = 1.0
+        where
+            report_trade_match_id = @report_trade_match_id
+        if @@rowcount != 1
+        begin
+            select
+                id = -1,
+                error = "Couldn't commit report trade"
+            raiserror 99999 "Couldn't commit report trade"
+            return
+        end
+        
+        update
+            trades
+        set
+            quantity = @external_quantity,
+            price = @external_price
+        where
+            trade_id = @trade_id
+        if @@rowcount != 1
+        begin
+            select
+                id = -1,
+                error = "Couldn't edit trade"
+            raiserror 99999 "Couldn't edit trade"
+            return
+        end
+        
+    commit tran
+    
+    select
+        id = -1,
+        msg = "Committed"
+
+end
+else if @action = "Unpair" and @report_trade_match_id != NULL
+begin
+
+    delete
+    from
+        report_trade_matches
+    where
+        report_trade_match_id = @report_trade_match_id
+    if @@rowcount != 1
+    begin
+        select
+            id = -1,
+            error = "Couldn't unmatch report trade"
+        return
+    end
+	
+    select
+        id = -1,
+        msg = "Unmatched"
+
+end
+else if @action = "Tally" and @report_trade_id != NULL
+begin
+
+    declare @tico_account_id int
+    declare @internal_account_id int
+    declare @deal_id int
+    declare @contract_id int
+    declare @broker_id int
+    declare @value_date datetime
+
+    select
+        @tico_account_id = account_id
+    from
+        tico_accounts
+    where
+        login = @login
+    if @@rowcount != 1
+    begin
+        select
+            id = -1,
+            err = "Login not found"
+        return
+    end
+
+    select
+        @internal_account_id = a.default_internal_account_id
+    from
+        fund_reports a,
+        report_commits b
+    where
+        a.fund_report_id = b.fund_report_id
+    and
+        b.report_commit_id = @report_commit_id
+
+    if @internal_account_id is NULL
+    begin
+        select
+            @internal_account_id = spot_internal_account_id
+        from
+            default_accounts
+        where
+            tico_account_id = @tico_account_id
+        if @@rowcount != 1
+        begin
+            select
+                id = -1,
+                err = "Default spot internal account not found"
+            return
+        end
+        end
+        
+    select
+        @contract_id = a.contract_id
+    from
+        contracts a,
+        report_trades b
+    where
+        a.symbol = rtrim(b.ccy_1) + rtrim(b.ccy_2)
+    and
+        b.report_trade_id = @report_trade_id
+    if @@rowcount != 1
+    begin
+        select
+            id = -1,
+            err = "Couldn't find contract"
+        return
+    end
+        
+    select
+        @broker_id = a.broker_id
+    from
+        report_trades a
+    where
+        a.report_trade_id = @report_trade_id
+    if @broker_id is NULL
+    begin
+        select
+            @broker_id = a.default_broker_id
+        from
+            fund_reports a,
+            report_commits b
+        where
+            a.fund_report_id = b.fund_report_id
+        and
+            b.report_commit_id = @report_commit_id
+        if @@rowcount != 1 or @broker_id is NULL
+        begin
+            select
+                id = -1,
+                err = "Couldn't find either a reported or default broker"
+        end
+    end
+    
+    select
+        @value_date = a.value_date
+    from
+        report_trades a
+    where
+        a.report_trade_id = @report_trade_id
+    if @@rowcount != 1 or @value_date is NULL
+    begin
+        select
+            id = -1,
+            err = "No value date was imported"
+        return
+    end
+        
+        
+    exec
+        u_newkey
+            "trades",
+            @trade_id out
+            
+    exec
+        u_newkey
+            "deals",
+            @deal_id out
+            
+    begin tran
+            
+        insert
+            trades
+        select
+            @trade_id,
+            @deal_id,
+            @tico_account_id,
+            @internal_account_id,
+            a.external_account_id,
+            a.ccy_1_quantity,
+            @contract_id,
+            - a.ccy_2_quantity / a.ccy_1_quantity,
+            a.trade_date,
+            c.default_trader_id,
+            a.strategy_id,
+            1,
+            @broker_id
+        from
+            report_trades a,
+            report_commits b,
+            fund_reports c
+        where
+            a.report_trade_id = @report_trade_id
+        and
+            a.report_commit_id = b.report_commit_id
+        and
+            b.fund_report_id = c.fund_report_id
+        if @@rowcount != 1
+        begin
+            select
+                id = -1,
+                msg = "Failed to tally trade"
+            rollback
+            return
+        end
+
+        insert
+            trade_value_dates
+        values(
+            @trade_id,
+            @value_date
+        )
+            
+        insert into
+            report_trade_matches
+        select
+            @report_commit_id,
+            @trade_id,
+            @report_trade_id,
+            0,
+            1.0,
+            1,
+            @committed_status_id,
+            getdate(),
+            quantity,
+            price
+        from
+            trades
+        where
+            trade_id = @trade_id
+        if @@rowcount != 1
+        begin
+            select
+                id = -1,
+                msg = "Failed to complete tally (trade_id: " + convert(varchar(10), @trade_id) + ")"
+            rollback
+            return
+        end
+    commit tran
+
+    select
+        id = -1,
+        msg = "Tallied"
+
+end
+else if @action = "Tally Rollover" and @report_trade_id != NULL
+begin
+
+
+    select
+        id = -1,
+        msg = "Tallied"
+
+end
+else
+begin
+    select
+        id = -1,
+        error = "Action, '" + rtrim(@action) + "', not supported"
+end
+
+go

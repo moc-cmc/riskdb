@@ -1,0 +1,64 @@
+
+create or replace procedure
+	mc4_tallytraderotcmatch
+		@login varchar(50),
+                @trade_date datetime=NULL,
+                @i_buy_sell varchar(50),
+		/*@account varchar(50)=NULL,*/
+                @trader varchar(50),
+                @counterparty_trader varchar(50),
+                @dealt_currency varchar(50),
+                @counter_currency varchar(50),
+                @dealt_amount float,
+                @price float,
+                @value_date datetime=NULL
+
+as
+declare @account varchar(50)
+
+declare @otc_match_id int
+
+if @i_buy_sell in("Sell", "sell", "SELL", "S")
+begin
+	select
+		@i_buy_sell = "I Sell"
+end
+if @i_buy_sell in("Buy", "buy", "BUY", "B")
+begin
+        select
+                @i_buy_sell = "I Buy"
+end
+
+exec
+        api_tallytraderotcmatch
+                @login = @login,
+                @otc_match_id = @otc_match_id output,
+                @trade_date = @trade_date,
+		@i_buy_sell = @i_buy_sell,
+                @accoont = @account,
+                @trader = @trader,
+                @counterparty_trader = @counterparty_trader,
+                @dealt_currency = @dealt_currency,
+                @counter_currency = @counter_currency,
+                @dealt_amount = @dealt_amount,
+                @price = @price,
+                @value_date = @value_date
+
+
+if @otc_match_id != NULL
+begin
+	select
+		status = "Success",
+		message = "OTC Trade submitted and sent to counterparty",
+                trader = @trader,
+                counterparty_trader = @counterparty_trader,
+                dealt_currency = @dealt_currency,
+		counter_currency = @counter_currency,
+		amount = @dealt_amount,
+		otc_match_id = @otc_match_id
+end
+
+
+
+
+go

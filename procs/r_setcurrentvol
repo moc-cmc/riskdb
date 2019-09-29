@@ -1,0 +1,102 @@
+
+if object_id("r_setcurrentvol") != NULL
+    drop procedure
+        r_setcurrentvol
+go
+
+create procedure
+	r_setcurrentvol
+		@symbol char(50),
+		@vol float
+as
+
+declare @contract_id int
+declare @contract_tv_id int
+declare @tv_date datetime
+
+
+select
+	@vol = @vol / 100.00
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount = 1
+begin
+	select
+		contract_id = @contract_id 
+
+	select
+		@tv_date = max(tv_date)
+	from
+		contract_tvs
+	where
+		contract_id = @contract_id
+	if @@rowcount = 0
+	begin
+		select
+			id = -1,
+			error = "Problem finding vol for contract",
+			symbol = @symbol
+		return
+	end
+
+	select
+		@contract_tv_id = contract_tv_id
+	from
+		contract_tvs
+	where
+		contract_id = @contract_id
+	and
+		tv_date = @tv_date
+
+	select
+		contract_tv_id = @contract_tv_id
+
+	begin tran
+		update
+			contract_tvs
+		set
+			volatility = @vol
+		where
+			contract_tv_id = @contract_tv_id
+		if @@rowcount != 1
+		begin
+			select
+				id = -1,
+				error = "Problem updating vol",
+				symbol = @symbol
+			rollback tran
+			return
+		end
+	commit tran
+
+	delete
+
+	from
+		current_contract_tvs
+	where
+		contract_id = @contract_id
+
+	delete
+
+	from
+		contract_eval_methods
+	where
+		contract_id = @contract_id
+
+end
+
+exec
+	r_initoptcontract
+		@contract_id
+
+select
+	id = 0,
+	msg = "Successfully updated vol",
+	symbol = @symbol
+
+go

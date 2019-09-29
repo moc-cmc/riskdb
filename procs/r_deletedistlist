@@ -1,0 +1,86 @@
+drop procedure
+	r_deletedistlist
+go
+
+create procedure
+	r_deletedistlist
+		@login varchar(50),
+		@dist_list varchar(50)
+
+as
+
+declare @tico_account_id int
+declare @dist_list_id int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = -1,
+		error = "Problem deterimining login"
+	return
+end
+
+select
+	@dist_list_id = dist_list_id
+from
+	dist_lists
+where
+	name = @dist_list
+if @@rowcount != 1
+begin
+        select
+                status = -1,
+                error = "Problem deterimining dist_list",
+		dist_list = @dist_list
+        return
+end
+
+if exists(select dist_list_id from client_transfer_details where dist_list_id = @dist_list_id)
+begin
+        select
+                status = -1,
+                message = "Can not delete distrubution list that is currently in use by client account",
+                dist_list = @dist_list
+        return
+end
+
+
+begin tran
+	delete from
+		dist_list_emails
+	where
+		dist_list_id = @dist_list_id
+
+	delete from
+		dist_lists
+	where
+		dist_list_id = @dist_list_id
+	if @@rowcount != 1
+	begin
+        	select
+                	id = -1,
+                	msg = "Problem deleteing dist_list",
+                	dist_list = @dist_list
+		rollback tran
+        	return
+	end
+commit tran
+
+select
+        id = 1,
+        msg = "Successfully deleted distribution list",
+        dist_list = @dist_list
+
+exec 
+	r_managedistributionlists
+			@login
+
+go
+

@@ -1,0 +1,82 @@
+use
+	risk_cc
+go
+
+drop procedure
+	r_importratecurve
+go
+
+create procedure
+	r_importratecurve
+		@login varchar(50),
+		@trade_date varchar(50)=NULL,
+		@currency varchar(50)=NULL,
+		@rate_date varchar(50)=NULL,
+		@interest_rate varchar(50)
+as
+
+declare @product_id int
+declare @product_rate_id int
+declare @date datetime
+declare @forward_date datetime
+declare @days int
+declare @rate float
+
+if @trade_date = "TRADE_DATE" or @trade_date = NULL or @trade_date = ""
+	return
+
+
+select
+	@date = convert(datetime, @trade_date),
+	@forward_date = convert(datetime, @rate_date),
+	@rate = convert(float, @interest_rate)
+
+
+select
+	@days = datediff(day, @date, @forward_date)
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+
+exec
+	r_ratecurvewithdate
+		@product_id,
+		@date,
+		@product_rate_id output
+
+		
+update
+	product_rate_points
+set
+	rate = @rate
+where
+	product_rate_id = @product_rate_id
+and
+	days = @days
+if @@rowcount = 0
+begin
+	insert into
+		product_rate_points
+	values(
+		@product_rate_id,
+		@days,
+		@rate)
+end
+
+
+
+
+
+go

@@ -1,0 +1,66 @@
+drop procedure
+	mk_tallyonetouchpayathit
+go
+
+create procedure
+	mk_tallyonetouchpayathit
+		@login varchar(50),
+		@counterparty varchar(50),
+		@buy_sells varchar(50),
+		@dealt_currency varchar(20),
+		@counter_currency varchar(20),
+		@spot_ref numeric(30,8),
+		@rebate numeric(30,4),
+		@notional_currency varchar(20),
+		@timezone varchar(50),
+		@expiration datetime,
+		@exercise_style varchar(50),
+		@option_settledate datetime,
+		@barrier numeric(30,8),
+		@barrier_direction varchar(30)=NULL,
+		@payment_timing varchar(30),
+		@window_start datetime,
+		@window_end datetime,
+		@premium numeric(30,4),
+		@premium_ccy varchar(10),
+		@premium_settledate datetime,
+		@fixing_source varchar(50),
+		@trade_note varchar(100)
+
+as
+
+declare @deal_id int
+
+exec
+	api_mktonetouchpayathit
+		@login = @login,
+		@counterparty = @counterparty,
+		@buy_sells = @buy_sells,
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@spot_ref = @spot_ref,
+		@rebate = @rebate,
+		@notional_currency = @notional_currency,
+		@timezone = @timezone,
+		@expiration = @expiration,
+		@exercise_style = @exercise_style,
+		@option_settledate = @option_settledate,
+		@barrier = @barrier,
+		@barrier_direction = @barrier_direction,
+		@payment_timing = @payment_timing,
+		@window_start = @window_start,
+		@window_end = @window_end,
+		@premium = @premium,
+		@premium_ccy = @premium_ccy,
+		@premium_settledate = @premium_settledate,
+		@fixing_source = @fixing_source,
+		@trade_note = @trade_note,
+		@deal_id = @deal_id output
+
+	
+exec
+	r_inspectdealtrades
+		@login = @login,
+		@deal_id = @deal_id 
+
+go

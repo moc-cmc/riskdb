@@ -1,0 +1,201 @@
+
+if object_id("s_addaccounttransaction") != NULL
+    drop procedure
+        s_addaccounttransaction
+go
+
+create procedure
+	s_addaccounttransaction
+		@login char(25),
+		@account char(25),
+		@category char(100),
+		@date datetime,
+		@amount float,
+                @product varchar(50)=NULL, 
+		@note char(255)=NULL
+as
+
+declare @account_transaction_id int
+declare @multiplier int
+declare @account_id int
+declare @account_transaction_type_id int
+declare @external_account_id int
+declare @currency_id int
+declare @fund_id int
+declare @style varchar(50)
+
+/* export from MC does not handle # signs. prevent from entering into note field */
+select 
+	@note = str_replace(@note,"#","no.")
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(30),
+                action char(200) NULL,
+                value char(255) NULL
+)
+
+
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL
+)
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+select
+	@style = "background:#FFFFFF;border: 1px solid white"
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @product
+
+if @currency_id = NULL
+begin
+	select
+		@currency_id = evaluation_currency_id
+	from
+		funds
+	where
+		fund_id = @fund_id
+end
+	
+if @login = "CS"
+begin
+	select
+		msg = "This Feature is not active for demo users"
+	return
+end
+
+select
+	@account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem determining current user"
+	return
+end
+
+
+select
+	@account_transaction_type_id = transaction_type_id,
+	@multiplier = direction
+from
+	transaction_types
+where
+	name = @category
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Could not find the account transaction category",
+		category = @category
+	return
+end
+
+select
+	@amount = @amount * @multiplier
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding account",
+		account = @account
+	return
+end
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "account_transactions"
+	select
+		@account_transaction_id = last_id
+	from
+		keys
+	where
+		relation = "account_transactions"
+commit tran
+
+begin tran
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note
+	)
+	values(
+		@account_transaction_id,
+		@account_id,
+		@external_account_id,
+		@account_transaction_type_id,
+		@date,
+		@currency_id,
+		@amount,
+		@note)
+	if @@rowcount != 1
+	begin
+		select
+			style = @style,
+			id = -1,
+			error = "<b><font color='FF0000'>Problem adding transaction</font></b>",
+			account = @account,
+			category = @category,
+			date = @date,
+			amount = @amount
+		rollback tran
+		return
+	end
+commit tran
+
+select
+	style = @style,
+	id = 0, 
+	msg = "<b><font color='00CC00'>Successfully added transaction</font></b>",
+	account = @account,
+	date = @date,
+	category = @category,
+	amount = @amount
+
+
+
+exec
+	ag_accounttransactions
+		@login,
+		@account=@account,
+		@begin_date=@date,
+		@end_date=@date
+
+
+go

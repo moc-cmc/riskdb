@@ -1,0 +1,48 @@
+drop procedure
+	fxa_clientnotificationemails
+go
+
+create procedure
+	fxa_clientnotificationemails
+		@external_account varchar(50)
+
+as
+
+
+declare @external_account_id int
+declare @dist_list_id int
+declare @email_id int
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where 
+	symbol = @external_account
+if @@rowcount != 1
+begin
+	select
+		error = "Error",
+		messasge = "Problem determining external account",
+		external_account = @external_account
+	return
+end
+
+select
+	@dist_list_id = dist_list_id
+from
+	client_transfer_details
+where
+	external_account_id = @external_account_id
+
+select
+	a.email
+from
+	emails a,
+	dist_list_emails b
+where
+	a.email_id = b.email_id
+and
+	b.dist_list_id = @dist_list_id
+
+go

@@ -1,0 +1,27 @@
+drop procedure r_years
+go
+
+create procedure
+	r_years
+as
+
+
+create table
+	#years(
+		year int)
+
+insert into
+	#years
+select
+	distinct(datepart(year, commit_date))
+from
+	daily_commits
+
+select
+	name = convert(varchar(10), year)
+from
+	#years
+order by
+	convert(int, year)
+
+go

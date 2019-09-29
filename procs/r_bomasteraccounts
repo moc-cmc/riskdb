@@ -1,0 +1,17 @@
+create or replace procedure
+	r_bomasteraccounts
+		@login varchar(50)
+
+as
+
+select
+	a.name
+from
+	external_accounts a,
+	bo_master_accounts b
+where
+	a.external_account_id = b.external_account_id
+order by
+	a.name
+
+go

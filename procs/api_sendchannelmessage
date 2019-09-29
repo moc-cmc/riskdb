@@ -1,0 +1,257 @@
+
+if object_id("api_sendchannelmessage") != NULL
+    drop procedure
+        api_sendchannelmessage
+go
+
+create procedure
+	api_sendchannelmessage
+		@login varchar(50),
+		@channel varchar(100),
+		@message_type varchar(100),
+		@subject varchar(250),
+		@content varchar(250),
+		@priority varchar(100),
+		@message_id int=NULL output
+as
+
+declare @author_user_id int
+declare @channel_id int
+declare @activity_status_id int
+declare @priority_id int
+declare @user_message_id int
+declare @tico_account_id int
+declare @message_date datetime
+declare @message_type_id int
+declare @status_id int
+
+declare @tico_accounts int
+declare @user_messages int
+
+select
+	@author_user_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @author_user_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Login not found",
+		login = @login
+	return
+end
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @status_id = NULL
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@status_id output
+	insert into
+		statuses(
+			status_id,
+			name)
+	values(
+		@status_id,
+		"New")
+end
+
+select
+	@message_type_id = message_type_id
+from
+	message_types
+where
+	name = @message_type
+if @message_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Message type not found",
+		message_type = @message_type
+	return
+end
+
+select
+	@channel_id = channel_id,
+	@activity_status_id = activity_status_id
+from
+	channels
+where
+	name = @channel
+if @channel_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Channel not found",
+		channel = @channel
+	return
+end
+
+select
+	@priority_id = priority_id
+from
+	priorities
+where
+	name = @priority
+if @priority_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Priority not found",
+		priority = @priority
+	return
+end
+
+
+create table
+	#tico_accounts(
+		account_id int)
+insert into
+	#tico_accounts(
+		account_id)
+select
+	distinct(a.tico_account_id)
+from
+	group_accounts a,
+	group_channels b
+where
+	a.group_id = b.group_id
+and
+	b.channel_id = @channel_id
+
+select
+	@message_date = getdate()
+
+exec
+	j_nextkey
+		"messages",
+		@message_id output
+
+
+create table
+	#user_messages(
+		user_message_id int,
+		account_id int,
+		message_id int,
+		status_id int)
+
+select
+	@tico_account_id = 0
+select
+	@tico_accounts = count(*)
+from
+	#tico_accounts
+where
+	account_id > @tico_account_id
+
+while @tico_accounts > 0
+begin
+	select
+		@tico_account_id = min(account_id)
+	from
+		#tico_accounts
+	where
+		account_id > @tico_account_id
+
+	select
+		@user_message_id = NULL
+
+	exec
+		j_nextkey
+			"user_messages",
+			@user_message_id output
+
+	insert into
+		#user_messages(
+			user_message_id,
+			account_id,
+			message_id,
+			status_id)
+	values(
+		@user_message_id,
+		@tico_account_id,
+		@message_id,
+		@status_id)
+
+	select
+		@tico_accounts = count(*)
+	from
+		#tico_accounts
+	where
+		account_id > @tico_account_id
+end
+
+select
+	@user_messages = count(*)
+from
+	#user_messages
+
+begin tran
+	insert into
+		messages(
+			message_id,
+			author_user_id,
+			message_date,
+			channel_id,
+			message_type_id,
+			subject,
+			content,
+			priority_id,
+			activity_status_id)
+	values(
+		@message_id,
+		@author_user_id,
+		@message_date,
+		@channel_id,
+		@message_type_id,
+		@subject,
+		@content,
+		@priority_id,
+		@activity_status_id) 
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Failed to create new message",
+			subject = @subject
+		rollback tran
+		return
+	end
+
+	insert into
+		user_messages(
+			user_message_id,
+			account_id,
+			message_id,
+			status_id)
+	select
+		user_message_id,
+		account_id,
+		message_id,
+		status_id
+	from
+		#user_messages
+	if @@rowcount != @user_messages
+	begin
+		select
+			status = "Error",
+			message = "Unable to send message to all recipients",
+			intended_recipients = @user_messages,
+			subject = @subject
+		rollback tran
+		return
+	end
+
+commit tran
+
+
+
+go

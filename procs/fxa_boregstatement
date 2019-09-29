@@ -1,0 +1,49 @@
+
+if object_id("fxa_boregstatement") != NULL
+    drop procedure
+        fxa_boregstatement
+go
+
+create procedure
+	fxa_boregstatement
+		@login char(100)
+as
+
+create table
+        #links(
+                meta_type char(200),
+                column char(30),
+                link char(200) NULL,
+                arguments char(255) NULL,
+                format char(20) NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"run_name",
+	"Run PL Statement",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+select
+	run_name = a.name 
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+order by
+	name
+
+go

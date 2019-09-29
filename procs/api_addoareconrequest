@@ -1,0 +1,106 @@
+create or replace procedure
+	api_addoareconrequest
+		@login varchar(50),
+		@legal_entity varchar(150),
+		@outside_account varchar(100),
+		@oa_recon_request_id int=NULL output
+as
+
+declare @new_status_id int
+declare @tico_account_id int
+declare @outside_account_id int
+declare @origination_type_id int
+declare @origination_type varchar(50)
+declare @legal_entity_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@legal_entity_id =  a.legal_entity_id
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @legal_entity
+if @legal_entity_id  = NULL
+begin
+	select
+		status = "Error",
+		message = "Legal entity not found or user does not have permission",
+		legal_entity = @legal_entity
+	return
+end
+
+
+select
+	@outside_account_id = outside_account_id
+from
+	outside_accounts 
+where
+	name = @outside_account
+and
+	legal_entity_id = @legal_entity_id
+if @outside_account_id = NULL
+begin
+	select
+		status = "Error", 
+		message = "Outside account not found",
+		outside_account = @outside_account
+		
+		
+	return
+end
+
+select
+	@new_status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @new_status_id = NULL
+begin
+	select
+		status = "Error",
+		mesage = "Problem finding New status"
+	return
+end
+
+select
+	@oa_recon_request_id = NULL
+
+exec
+	j_nextkey
+		"oa_recon_requests",
+		@oa_recon_request_id output
+
+insert into
+	oa_recon_requests(
+		oa_recon_request_id,
+		requestor_id,
+		status_id,
+		outside_account_id,
+		request_date)
+values(
+	@oa_recon_request_id,
+	@tico_account_id,
+	@new_status_id,
+	@outside_account_id,
+	getdate())
+
+go

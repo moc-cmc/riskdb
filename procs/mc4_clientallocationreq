@@ -1,0 +1,47 @@
+create or replace procedure
+	mc4_clientallocationreq
+		@login varchar(50),
+		@product varchar(50),
+		@amount numeric(30, 8),
+		@from_account varchar(50),
+		@to_account varchar(50)
+as
+
+declare @allocation_request_id int
+
+exec
+	api_clientallocationreq
+		@login = @login,
+		@product = @product,
+		@amount = @amount,
+		@from_account = @from_account,
+		@to_account = @to_account,
+		@allocation_request_id = @allocation_request_id output
+
+
+
+if @allocation_request_id != NULL
+begin
+        select
+                status = "Success",
+                message = "Allocation request entered for product and account",
+                product = @product,
+                amount = @amount,
+                from_account = @from_account,
+                to_account = @to_account,
+                allocation_request_id = @allocation_request_id
+end
+else
+begin
+        select
+                status = "Error",
+                message = "Allocation request not entered. No allocation request id returned",
+                product = @product,
+                amount = @amount,
+                from_account = @from_account,
+                to_account = @to_account,
+                allocation_request_id = @allocation_request_id
+end
+
+
+go

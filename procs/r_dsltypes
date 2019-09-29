@@ -1,0 +1,13 @@
+drop procedure r_dsltypes
+go
+
+create procedure r_dsltypes as
+
+select 
+	name
+from
+	dsl_types
+
+go
+
+

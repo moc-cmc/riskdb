@@ -1,0 +1,136 @@
+
+if object_id("r_importfutcontract") != NULL
+    drop procedure
+        r_importfutcontract
+go
+
+create procedure
+	r_importfutcontract
+		@source varchar(50),
+		@future_symbol varchar(50),
+		@contract_symbol varchar(50),
+		@expiration datetime
+as
+
+declare @source_id int
+declare @status_id int
+declare @contract_id int
+declare @future_id int
+declare @instrument_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = "Active"
+	if @status_id = NULL
+	begin
+		exec
+			j_nextkey
+				"statuses",
+				@status_id output
+		insert into
+			statuses
+		values(
+			@status_id,
+			"Active")
+	end
+
+	exec
+		j_nextkey
+			"sources",
+			@source_id output
+
+	insert into
+		sources
+	values(
+		@source_id,
+		@source,
+		@status_id)
+end
+
+select
+	@contract_id = contract_id
+from
+	contract_symbols
+where
+	symbol = @contract_symbol
+and
+	source_id = @source_id
+
+if @contract_id != NULL
+begin
+	update
+		future_contracts
+	set
+		expiration = @expiration
+	where
+		contract_id = @contract_id
+	return
+end
+
+
+select
+	@future_id = future_id
+from
+	future_symbols
+where
+	symbol = @future_symbol
+and
+	source_id = @source_id
+if @future_id = NULL
+begin
+	return
+end
+
+select
+	@instrument_id = instrument_id
+from
+	instruments
+where
+	name = "Future"
+if @instrument_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Future instrument not found"
+	return
+end
+
+exec
+	j_nextkey
+		"contracts",
+		@contract_id output
+
+insert into
+	future_contracts
+values(
+	@contract_id,
+	@future_id,
+	@expiration)
+
+insert into
+	contracts
+values(
+	@contract_id,
+	@contract_symbol,
+	@instrument_id)
+
+insert into
+	contract_symbols
+values(
+	@contract_id,
+	@source_id,
+	@contract_symbol)
+
+
+go

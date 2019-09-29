@@ -1,0 +1,140 @@
+
+if object_id("tt_tradecapturemap") != NULL
+    drop procedure
+        tt_tradecapturemap
+go
+
+create procedure
+    tt_tradecapturemap
+        @search varchar(50) = NULL
+as
+
+/*
+ * SHOW traders: with mappings
+ */
+select
+    id = convert(numeric(4,0), a.trader_id),
+    trader = convert(varchar(30), a.symbol),
+    symbol = convert(varchar(30), case when ba.name != null then rtrim(ba.name) + " -> " + b.symbol else "" end),
+    external_account = convert(varchar(30), "(" + case ca.name when "Counterparty" then "M" else convert(varchar(1), ca.name) end + ") " + c.symbol),
+    agg_style = convert(varchar(15), cb.name),
+    'user' = convert(varchar(20), d.login),
+    salec = convert(varchar(5), e.name)
+from
+    traders a
+left outer join
+    trader_symbols b
+        on a.trader_id = b.trader_id
+    left outer join
+        sources ba
+            on b.source_id = ba.source_id
+join
+    external_accounts c
+        on a.external_account_id = c.external_account_id
+    join
+        external_account_types ca
+            on c.external_account_type_id = ca.external_account_type_id
+    join
+        aggregation_styles cb
+            on c.aggregation_style_id = cb.aggregation_style_id 
+join
+    tico_accounts d
+        on a.tico_account_id = d.account_id
+join
+    sales_codes e
+        on a.sales_code_id = e.sales_code_id
+order by
+    ca.name,
+    a.symbol,
+    d.login
+
+/*
+ * SHOW counterparties: with mappings
+ */
+select
+    id = convert(numeric(4,0), a.counterparty_id),
+    counterparty = convert(varchar(30), a.name),
+    symbol = convert(varchar(30), case when ba.name != null then rtrim(ba.name) + " -> " + b.symbol else "" end),
+    external_account = convert(varchar(30), "(" + case ca.name when "Counterparty" then "M" else convert(varchar(1), ca.name) end + ") " + c.symbol),
+    agg_style = convert(varchar(15), cb.name)
+from
+    counterparties a
+left outer join
+    counterparty_symbols b
+        on a.counterparty_id = b.counterparty_id
+    left outer join
+        sources ba
+            on b.source_id = ba.source_id
+join external_accounts c
+    on a.external_account_id = c.external_account_id
+    join
+        external_account_types ca
+            on c.external_account_type_id = ca.external_account_type_id
+    join
+        aggregation_styles cb
+            on c.aggregation_style_id = cb.aggregation_style_id 
+order by
+    ca.name,
+    c.symbol,
+    a.name
+    
+/*
+ * SHOW external_accounts: with mappings
+ */
+select
+    id = convert(numeric(4,0), a.external_account_id),
+    external_account = convert(varchar(30), "(" + case aa.name when "Counterparty" then "M" else convert(varchar(1), aa.name) end + ") " + a.symbol),
+    name = convert(varchar(30), a.name),
+    agg_style = convert(varchar(15), ab.name),
+    symbol = convert(varchar(30), case when ba.name != null then rtrim(ba.name) + " -> " + b.symbol else "" end)
+from
+    external_accounts a
+    join
+        external_account_types aa
+            on a.external_account_type_id = aa.external_account_type_id
+    join
+        aggregation_styles ab
+            on a.aggregation_style_id = ab.aggregation_style_id 
+left outer join
+    external_account_symbols b
+        on a.external_account_id = b.external_account_id
+    left outer join
+        sources ba
+            on b.source_id = ba.source_id
+order by
+    aa.name
+
+/*
+ * SHOW trade_notifiers: with mappings
+ */
+
+select
+    id = case when b.trade_notifier_id != NULL then convert(varchar(4), b.trade_notifier_id) else "" end,
+    notifier_source = case when ba.name != NULL then convert(varchar(25), ba.name) else "* Not mapped *" end,
+    broker = case when bb.symbol != null then convert(varchar(25), bb.symbol) else "*" end,
+    external_account = case when a.symbol != null then convert(varchar(25), a.symbol) else "*" end,
+    status = case when bc.name != null then convert(varchar(25), bc.name) else "*" end,
+    notification_status = case when bd.name != NULL then convert(varchar(25), bd.name) else "" end
+from
+    external_accounts a
+left outer join
+    trade_notifiers b
+        on a.external_account_id = b.external_account_id
+    left outer join
+        sources ba
+            on b.source_id = ba.source_id
+    left outer join
+        brokers bb
+            on b.broker_id = bb.broker_id
+    left outer join
+        statuses bc
+            on b.status_id = bc.status_id
+    left outer join
+        statuses bd
+            on b.notification_status_id = bd.status_id
+order by
+    ba.name,
+    bb.symbol,
+    a.symbol
+    
+go

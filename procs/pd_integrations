@@ -1,0 +1,13 @@
+create or replace procedure
+	pd_integrations
+
+as
+
+select
+	name = name
+from
+	integrations
+order by
+	name
+
+go

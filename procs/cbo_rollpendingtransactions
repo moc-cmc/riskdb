@@ -1,0 +1,99 @@
+create or replace procedure
+	cbo_rollpendingtransactions
+		@login varchar(100),
+		@trade_date datetime
+
+as
+
+declare @roll_transaction_date datetime
+declare @pending_count int
+declare @rolled_count int
+declare @updated_count int
+
+select
+	@trade_date = convert(date, @trade_date)
+
+/* this uses the business_days table for a lookup so may return a weekend */
+exec
+	r_nextbusinessdaylookup
+		@trade_date,
+		@roll_transaction_date output
+
+
+create table
+	#pending_transactions(
+		account_transaction_id int,
+		transaction_date datetime,
+		roll_transaction_date datetime NULL
+)
+
+insert into
+	#pending_transactions(
+		account_transaction_id,
+		transaction_date,
+		roll_transaction_date)
+select
+	account_transaction_id,
+	transaction_date,
+	@roll_transaction_date
+from
+	pending_transactions
+where
+	transaction_date = @trade_date
+select
+	@pending_count = @@rowcount
+
+begin tran
+	insert into 
+		pending_transaction_rolls(
+			account_transaction_id,
+			transaction_date,
+			roll_date)
+	select
+		account_transaction_id,
+		transaction_date,
+		roll_transaction_date
+	from
+		#pending_transactions
+	select
+		@rolled_count = @@rowcount
+
+	if @pending_count != @rolled_count
+	begin
+		select
+			status = "Error",
+			message = "Problem rolling pending transactions pending count did not match roll count",
+			pending_count = @pending_count,
+			rolled_count = @rolled_count
+		rollback
+		return
+	end
+
+	update
+		pending_transactions
+	set
+		transaction_date = b.roll_transaction_date
+	from
+		pending_transactions a,
+		#pending_transactions b
+	where
+		a.account_transaction_id = b.account_transaction_id
+	select
+		@updated_count = @@rowcount
+	
+	if @pending_count != @updated_count
+	begin
+		select
+			status = "Error",
+			message = "Problem rolling pending transactions pending count did not match updated count",
+			pending_count = @pending_count,
+			updated_count = @updated_count
+		rollback
+		return
+	end
+commit tran
+
+
+go
+
+

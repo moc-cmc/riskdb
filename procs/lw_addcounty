@@ -1,0 +1,64 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_addcounty
+go
+
+create procedure
+	lw_addcounty
+		@login varchar(50),
+		@name varchar(50),
+		@state_code varchar(2)
+as
+
+declare @state_id int
+declare @county_id int
+
+select
+	@state_id = state_id
+from
+	states
+where
+	code = @state_code
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "State not found",
+		state_code = @state_code
+	return
+end
+
+select
+	@county_id = county_id
+from
+	counties
+where
+	name = @name
+and
+	state_id = @state_id
+if @county_id != NULL
+begin
+	select
+		status = "Dupe",
+		message = "Country already exists for state",
+		county = @name,
+		state = @state_code
+	return
+end
+
+exec
+	j_nextkey
+		"counties",
+		@county_id output
+
+insert into
+	counties
+values(
+	@county_id,
+	@name,
+	@state_id)
+
+go

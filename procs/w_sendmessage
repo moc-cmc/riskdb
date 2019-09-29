@@ -1,0 +1,157 @@
+
+if object_id("w_sendmessage") != NULL
+    drop procedure
+        w_sendmessage
+go
+ 
+
+create procedure
+	w_sendmessage
+		@login char(50),
+		@to char(200),
+		@message char(255)
+as
+
+declare @group_id int
+declare @accounts int
+declare @account_id int
+declare @user_message_id int
+declare @active_status_id int
+declare @message_id numeric(30,0)
+declare @sender_id int
+
+select
+	@sender_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem determining current user"
+	return
+end
+
+begin tran
+	insert into
+		messages(
+			message,
+			sender_id,
+	 
+ 		timestamp)
+	values(
+		@message,
+		@sender_id,
+		getdate())
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem adding message"
+		rollback tran
+		return
+	end
+	select
+		@message_id = max(message_id)
+	from
+		messages
+	if @message_id = NULL
+ 
+ 	begin
+		select
+			id = -1,
+			error = "Problem adding message"
+		rollback tran
+		return
+	end
+commit tran
+	
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding Active status"
+	return
+end
+
+select
+	@group_id = group_id
+from
+	groups
+where
+	name = @to
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding group",
+		message_group = @to
+	return
+end
+
+select
+	@account_id = 0
+select
+	@accounts = count(*)
+from
+	group_accounts
+where
+	group_id = @group_id
+and
+	tico_account_id > @account_id
+
+while @accounts > 0
+begin
+	select
+		@account_id = min(tico_account_id)
+	from
+		group_accounts
+	where
+		group_id = @group_id
+	and
+		tico_account_id > @account_id
+
+	begin tran
+		update
+			keys
+		set
+			last_id = last_id + 1
+		where
+			relation = "user_messages"
+		select
+			@user_message_id = last_id
+		from
+			keys
+		where
+			relation = "user_messages"
+	commit tran
+
+	insert into
+		user_messages
+	values(
+		@user_message_id,
+	 
+ 	@account_id,
+		@message_id,
+		@active_status_id)
+
+	select
+		@accounts = count(*)
+	from
+		group_accounts
+	where
+		group_id = @group_id
+	and
+		tico_account_id > @account_id
+end
+
+
+go

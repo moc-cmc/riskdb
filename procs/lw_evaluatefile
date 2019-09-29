@@ -1,0 +1,443 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_evaluatefile
+go
+
+create procedure
+	lw_evaluatefile
+		@login varchar(100),
+		@identifier varchar(100),
+		@model varchar(100)
+as
+
+declare @collection_model_id int
+declare @batch_file_id int
+declare @offset_days int
+declare @days int
+declare @total_days int
+declare @prev_days int
+declare @total_balance float
+declare @total_collected float
+declare @confident_amount float
+declare @net_confidence float
+declare @net_return float
+declare @annualized_return float
+declare @total_cost float
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"annualized",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_cost",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"projected",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_return",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"begin_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"collection_model",
+	"Model Collection Events",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"view_model",
+	"Model Collection Events",
+	NULL)
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "confident_amount",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "net_projected",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "total_balance",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+select
+	@collection_model_id = collection_model_id
+from
+	collection_models
+where
+	name = @model
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Collection model not found",
+		collection_model = @model
+	return
+end
+
+select
+	@batch_file_id = batch_file_id
+from
+	batch_files
+where
+	identifier = @identifier
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Batch file not found",
+		identifier = @identifier
+	return
+end
+
+create table
+	#collections(
+		id int identity,
+		method varchar(50),
+		batch_file_account_id int,
+		starting_balance float NULL,
+		ending_balance float NULL,
+		collection_event_id int,
+		jurisdiction_id int,
+		county_id int,
+		offset_days int NULL,
+		fixed_cost float NULL,
+		settlement_offset float NULL,
+		settlement_days int NULL,
+		collection_rate float NULL,
+		confidence float NULL,
+		projected float NULL)
+
+insert into
+	#collections(
+		method,
+		batch_file_account_id,
+		collection_event_id,
+		jurisdiction_id,
+		county_id,
+		offset_days,
+		fixed_cost,
+		settlement_offset,
+		collection_rate,
+		confidence)
+select
+	method = "MODEL",
+	a.batch_file_account_id,
+	b.collection_event_id,
+	a.jurisdiction_id,
+	a.county_id,
+	b.offset_days,
+	b.fixed_cost,
+	b.settlement_offset,
+	b.collection_rate,
+	b.confidence
+from
+	batch_file_accounts a,
+	jurisdiction_flows b
+where
+	a.jurisdiction_id = b.jurisdiction_id
+and
+	a.batch_file_id = @batch_file_id
+and
+	b.collection_model_id = @collection_model_id
+
+
+insert into
+	#collections(
+		method,
+		batch_file_account_id,
+		collection_event_id,
+		jurisdiction_id,
+		offset_days,
+		fixed_cost,
+		settlement_offset,
+		collection_rate,
+		confidence)
+select
+	method = "DEFAULT",
+	a.batch_file_account_id,
+	b.collection_event_id,
+	a.jurisdiction_id,
+	b.offset_days,
+	b.fixed_cost,
+	b.settlement_offset,
+	b.collection_rate,
+	b.confidence
+from
+	batch_file_accounts a,
+	default_flows b
+where
+	a.batch_file_id = @batch_file_id
+and
+	a.jurisdiction_id not in(
+		select
+			jurisdiction_id
+		from
+			#collections)
+
+create table
+	#balances(
+		batch_file_account_id int,
+		balance float NULL)
+insert into
+	#balances(
+		batch_file_account_id,
+		balance)
+select
+	batch_file_account_id,
+	amount
+from
+	batch_file_accounts
+where
+	batch_file_id = @batch_file_id
+	
+select
+	@total_balance = sum(balance)
+from
+	#balances
+
+create table
+	#days(
+		offset_days int)
+insert into
+	#days
+select
+	distinct(offset_days)
+from
+	#collections
+
+
+select
+	@total_days = max(offset_days)
+from
+	#days
+
+select
+	@days = 0
+select
+	@offset_days = count(*)
+from
+	#days
+where
+	offset_days > @days
+
+while @offset_days > 0
+begin
+	select
+		@days = min(offset_days)
+	from
+		#days
+	where
+		offset_days > @days
+
+	update
+		#collections
+	set
+		a.starting_balance = b.balance
+	from
+		#collections a,
+		#balances b
+	where
+		a.batch_file_account_id = b.batch_file_account_id
+	and
+		a.offset_days = @days
+
+	update
+		#collections
+	set
+		projected = (starting_balance * collection_rate) - fixed_cost
+	where
+		offset_days = @days
+
+	update
+		#collections
+	set
+		ending_balance = starting_balance - projected
+	where
+		offset_days = @days
+
+	update
+		#balances
+	set
+		a.balance = b.ending_balance
+	from
+		#balances a,
+		#collections b
+	where
+		a.batch_file_account_id = b.batch_file_account_id
+	and
+		b.offset_days = @days
+		
+
+	select
+		@offset_days = count(*)
+	from
+		#days
+	where
+		offset_days > @days
+end
+
+
+select
+	@total_collected = sum(projected),
+	@confident_amount = sum(projected * confidence)
+from
+	#collections
+
+if @total_balance != 0.0
+	select
+		@net_return = @total_collected / @total_balance
+
+if @total_collected != 0.0
+	select
+		@net_confidence = @confident_amount / @total_collected
+
+
+if @total_days != 0
+	select
+		@annualized_return = @net_return * (365.0 / convert(float, @total_days))
+
+	
+select
+	@total_cost = sum(fixed_cost)
+from
+	#collections
+
+select
+	section = "Summary",
+	collection_model = @model,
+	total_balance = @total_balance,
+	total_cost = @total_cost,
+	net_projected = @total_collected,
+	net_confidence = @net_confidence,
+	net_return = @net_return,
+	total_days = @days,
+	annualized = @annualized_return
+
+update
+	#collections
+set
+	settlement_days = settlement_offset + offset_days
+
+
+select
+	batch_file_account = b.identifier,
+	starting_balance = convert(numeric(30,2), a.starting_balance),
+	ending_balance = convert(numeric(30,2), a.ending_balance),
+	collection_event = c.name,
+	county = d.name,
+	a.offset_days,
+	a.fixed_cost,
+	a.settlement_offset,
+	a.settlement_days,
+	a.collection_rate,
+	a.confidence,
+	projected = convert(numeric(30,2), a.projected)
+from
+	#collections a,
+	batch_file_accounts b,
+	strategies c,
+	counties d
+where
+	a.batch_file_account_id = b.batch_file_account_id
+and
+	a.collection_event_id = c.strategy_id
+and
+	a.county_id = d.county_id
+
+create table
+	#analyzer_meta (
+		analyzer_metadata_id int identity,
+		bind varchar(25),
+		name varchar(50) NULL,
+		type varchar(25) NULL,
+		config varchar(200) NULL
+	)
+
+insert into #analyzer_meta values("axis", "batch_file_account", "category", NULL)
+insert into #analyzer_meta values("axis", "collection_event", "category", NULL)
+insert into #analyzer_meta values("axis", "county", "category", NULL)
+insert into #analyzer_meta values("series", "projected", "number", NULL)
+insert into #analyzer_meta values("dataset", "summary", "table", NULL)
+insert into #analyzer_meta values("dataset", "data", "table", NULL)
+insert into #analyzer_meta values("analyzer", NULL, NULL, "<script src=""/modules/tico-1.0.0/js/analyze/analyzer.js""></script>")
+
+select
+	*
+from
+	#analyzer_meta
+
+
+go
