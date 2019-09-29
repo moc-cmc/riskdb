@@ -1,0 +1,150 @@
+
+if object_id("cm_rundetails") != NULL
+    drop procedure
+        cm_rundetails
+go
+
+create procedure
+	cm_rundetails
+		@login varchar(30),
+		@name varchar(50)
+as
+
+declare @run_id int
+declare @num_filters int
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_filters",
+	"Run Attribute Filters",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @name
+
+create table
+	#output(
+		run_name varchar(50),
+		trade_attribute varchar(30),
+		number_of_filters int,
+		edit_filters varchar(15))
+
+select
+	@num_filters = count(*)
+from
+	run_external_accounts
+where
+	run_id = @run_id
+
+insert into
+	#output
+values(
+	@name,
+	"External Account",
+	@num_filters,
+	"EDIT")
+
+
+select
+	@num_filters = count(*)
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+
+insert into
+	#output
+values(
+	@name,
+	"Internal Account",
+	@num_filters,
+	"EDIT")
+
+
+select
+	@num_filters = count(*)
+from
+	run_traders
+where
+	run_id = @run_id
+
+insert into
+	#output
+values(
+	@name,
+	"Trader",
+	@num_filters,
+	"EDIT")
+
+
+select
+	@num_filters = count(*)
+from
+	run_strategies
+where
+	run_id = @run_id
+
+insert into
+	#output
+values(
+	@name,
+	"Strategy",
+	@num_filters,
+	"EDIT")
+
+select
+	@num_filters = count(*)
+from
+	run_brokers
+where
+	run_id = @run_id
+
+insert into
+	#output
+values(
+	@name,
+	"Broker",
+	@num_filters,
+	"EDIT")
+
+
+select
+	@num_filters = count(*)
+from
+	run_counterparties
+where
+	run_id = @run_id
+
+insert into
+	#output
+values(
+	@name,
+	"Counterparties",
+	@num_filters,
+	"EDIT")
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #output.run_name, #output.trade_attribute, #output.number_of_filters, #output.edit_filters from #output
+
+go

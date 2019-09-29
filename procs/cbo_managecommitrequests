@@ -1,0 +1,445 @@
+drop procedure
+	cbo_managecommitrequests
+go
+
+create procedure
+	cbo_managecommitrequests
+		@login varchar(50)
+
+as
+
+declare @fund_id int
+declare @tico_account_id int
+declare @fund_type varchar(30)
+declare @fund_name varchar(30)
+
+declare @commit_runs int
+declare @runs_committed int
+
+declare @date datetime
+
+declare @max_commit_transaction_dt datetime
+declare @fo_commit_type_id int
+
+declare @today_eod datetime
+declare @dummy_date datetime
+
+declare @account_status_id int
+declare @readonly_status_id int
+
+select
+	@tico_account_id = account_id,
+	@account_status_id = status_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount = 0
+begin
+	select 
+		"error" = "Error",
+		"msg" = "Problem determing account from login",
+		"login" = @login
+	return
+end
+	
+
+
+select
+        @readonly_status_id = status_id
+from
+        statuses
+where
+        name = "Read Only"
+
+if @account_status_id = @readonly_status_id
+begin
+        select
+                status = "Restricted",
+                message = "Can not edit commit information"
+        return
+end
+
+
+exec	
+	r_defaultfundforlogin
+			@login,
+			@fund_id output	
+
+select
+	@fund_name = a.name,
+	@fund_type = b.name
+from
+	funds a,
+	fund_types b
+where
+	a.fund_type_id = b.fund_type_id
+and
+	a.fund_id = @fund_id
+if @@rowcount != 1
+begin
+	select
+		"error" = "Error",
+		"msg" = "Problem finding fund from id"
+	return
+end
+
+declare @can_request_commit char(1)
+declare @can_request_uncommit char(1)
+declare @last_commit_date datetime
+declare @last_uncommit_date datetime
+declare @next_commit_date datetime
+declare @next_uncommit_date datetime
+declare @min_trade_date datetime 
+
+/* default can requests to Yes */
+select
+       @can_request_commit = "Y",
+       @can_request_uncommit = "Y"
+
+/* If we are not completely uncomitted succesfully, dont allow a request to commit */
+select
+       @can_request_commit = "N"
+from
+       daily_commits a,
+       commit_statuses b
+where
+       a.commit_status_id = b.commit_status_id
+and
+       b.name in("Uncommit Requested", "Uncommit Pending", "Uncommit Failed")
+
+/* If we are not completely committed, dont allow a request to commit */
+select
+       @can_request_uncommit = "N"
+from
+       daily_commits a,
+       commit_statuses b
+where
+       a.commit_status_id = b.commit_status_id
+and
+       b.name in("Commit Requested", "Commit Pending", "Commit Failed")
+
+/* Find the last commit that is done or started or requested */
+select
+       @last_commit_date = max(commit_date)
+from
+       daily_commits a,
+       commit_statuses b
+where
+       a.commit_status_id = b.commit_status_id
+and
+       b.name in("Commit Complete", "Commit Pending", "Commit Requested")
+
+if @last_commit_date = NULL
+begin
+
+	select
+		@min_trade_date = min(trade_date)
+	from
+		trades
+	
+	if @min_trade_date = NULL
+	begin
+		select
+			section = "No Trade Date",
+			msg = "No trades are booked in the system"
+		return
+	end
+	else
+	begin
+		if datepart(hour, @min_trade_date) >= 17
+		begin
+			select
+				@min_trade_date = convert(date, @min_trade_date)
+			exec
+				r_nextbusinessday
+					@min_trade_date,
+					@min_trade_date output
+		end
+		else
+		begin
+			select
+				@min_trade_date = convert(date, @min_trade_date)
+		end
+			
+		select
+			section = "No Data Committed",
+			msg = "No data has been committed for this system",
+			first_trade_date = @min_trade_date
+	end
+end
+	
+
+if @min_trade_date != NULL
+begin
+	exec
+		r_prevbusinessday
+			@min_trade_date,
+			@last_commit_date output
+end
+
+exec
+       r_nextbusinessday
+               @last_commit_date,
+               @next_commit_date output
+
+/* truncate timestamp */
+select
+       @next_commit_date = convert(date, @next_commit_date)
+
+	
+
+/* Find the last commit that is available, or the last uncommit that has been requested or pending */
+select
+       @last_uncommit_date = max(commit_date)
+from
+       daily_commits a,
+       commit_statuses b
+where
+       a.commit_status_id = b.commit_status_id
+and
+        b.name in("Commit Complete", "Uncommit Complete", "Uncommit Requested", "Uncommit Pending")
+and
+       a.commit_date < @last_commit_date
+
+exec
+       r_prevbusinessday
+               @last_uncommit_date,
+               @next_uncommit_date output
+
+select
+       @next_uncommit_date = convert(date, @next_uncommit_date)
+
+declare @uncommit varchar(25)
+declare @commit   varchar(25)
+
+create table
+	#messages
+(
+	message varchar(100)
+)
+
+select 
+	@uncommit = "REQUEST UNCOMMIT "+convert(char(5), @last_commit_date,1),
+	@commit = "REQUEST COMMIT "+convert(char(5), @next_commit_date, 1)
+
+if(@can_request_commit = "N")
+begin
+	select @commit = ""
+	insert into 
+		#messages
+	values("Can not request a commit for date if there are uncommit requests pending or in process")
+end
+
+if(@can_request_uncommit = "N")
+begin
+	select @uncommit = ""
+	insert into 
+		#messages
+	values("Can not request an uncommit for date if there are commit requests pending or in process")
+end
+
+select @today_eod = getdate()
+
+
+exec
+        r_daterangefordate
+                @today_eod,
+                @dummy_date output,
+                @today_eod output
+
+
+if @today_eod = convert(char(8), @next_commit_date, 112) + " 17:00"
+begin
+	select
+		@can_request_commit = "N",
+		@commit = ""
+end
+
+
+create table
+	#output
+(
+	fund_name varchar(50), 
+	uncommit_last_date varchar(25),
+	last_commit_date datetime,
+	uncommit_date datetime,
+	next_commit_date datetime,
+	action varchar(25) NULL,
+	trade_date datetime NULL
+)
+
+
+insert into 
+	#output
+(
+	fund_name,
+	uncommit_last_date,
+	last_commit_date,
+	uncommit_date,
+	next_commit_date,
+	action,
+	trade_date
+)
+values(
+	@fund_name,
+	@uncommit,
+	@last_commit_date,
+	convert(char(8), @last_commit_date,112),
+	@next_commit_date,
+	@commit,
+	convert(char(8), @next_commit_date, 112)
+	)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+
+
+
+select @today_eod = getdate()
+
+exec
+        r_daterangefordate
+                @today_eod,
+                @dummy_date output,
+                @today_eod output
+
+
+if @today_eod = @next_commit_date
+begin
+	update
+		#output
+	set
+		action=""
+end
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"uncommit_last_date",
+	/*"Uncommit PL Request for Date",*/
+	"Request Uncommit For Date",
+	NULL
+)
+insert into 
+	#meta
+values(
+	"Column Link",
+	"action",
+	/*"Commit Request Process",*/
+	"Request Commit For Date",
+	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "trade_date",
+        NULL,
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "uncommit_date",
+        NULL,
+        NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Group",
+	"section",
+	NULL,
+	NULL
+)
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL
+)
+
+
+
+select * from #meta
+select
+	section = "Commit P&L",
+	fund_name,
+        uncommit_last_date,
+        last_commit_date,
+        uncommit_date,
+        next_commit_date,
+        action,
+        trade_date
+from
+	#output
+
+select
+	section = "Notices",
+	style = "background:#FFFFFF;border: 1px solid white",
+	message = message
+from
+	#messages
+
+/* determine date to show only the this month or last months commits */
+declare @historical_commit_date datetime
+exec
+        r_prevbusinessday
+                @next_uncommit_date,
+                @historical_commit_date output
+
+if @historical_commit_date = NULL
+begin
+	return
+end
+exec
+        r_firstbusinessdayofmonth
+                @historical_commit_date,
+                @historical_commit_date output
+
+create table
+	#historical_commits(
+		style varchar(50),
+		commit_date datetime,
+		commit_status varchar(25)
+)
+
+insert into
+	#historical_commits
+select  
+        style = "background:#FFFFFF;border: 1px solid white",
+        commit_date = a.commit_date,
+        commit_status = b.name
+from    
+        daily_commits a,
+        commit_statuses b
+where   
+        a.commit_status_id=b.commit_status_id
+and
+	commit_date >= @historical_commit_date
+
+select
+        section = "Historical Commit Statuses",
+	style,
+	commit_date=convert(char(12), convert(datetime, commit_date, 112)),
+	commit_status
+from
+	#historical_commits
+order by
+        commit_date desc
+
+go

@@ -1,0 +1,165 @@
+
+drop procedure
+	r_expiringpositions
+go
+
+create procedure
+	r_expiringpositions
+		@login char(30),
+		@symbol char(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+as
+
+declare @begin_day_string char(15)
+declare @end_day_string char(15)
+declare @contract_id int
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+
+insert into
+	#links
+values(
+	"Format Number",
+	"quantity",
+	NULL,
+	NULL,
+	"#,##0")
+
+
+select * from #links
+
+if @begin_date = NULL
+	select
+		@begin_date = getdate()
+	if datepart(hour, @begin_date) >= 17
+		exec
+			r_nextbusinessday
+				@begin_date,
+				@begin_date output
+
+	select
+		@begin_day_string = convert(char(2), datepart(month, @begin_date)) + "/" +
+			convert(char(2), datepart(day, @begin_date)) + "/" +
+			convert(char(4), datepart(year, @begin_date))
+	select
+		@begin_date = convert(datetime, @begin_day_string)
+
+	exec
+		r_prevbusinessday
+			@begin_date,
+			@begin_date output
+
+	select
+		@begin_date = dateadd(hour, 17, @begin_date)
+
+if @end_date = NULL
+	exec
+		r_nextbusinessday
+			@begin_date,
+			@end_date output
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding contract",
+		symbol = @symbol
+	return
+end
+
+
+create table
+	#expiring_trades(
+		trade_id int)
+
+insert into
+	#expiring_trades
+select
+	a.trade_id
+from
+	trades a,
+	option_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	a.contract_id = @contract_id
+and
+	c.expiration >= @begin_date 
+and
+	c.expiration < @end_date
+
+
+insert into
+	#expiring_trades
+select
+	a.trade_id
+from
+	trades a,
+	exotic_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	a.contract_id = @contract_id
+and
+	c.expiration >= @begin_date 
+and
+	c.expiration < @end_date
+
+
+select
+	a.deal_id,
+	a.trade_id,
+	trade_date = convert(char(22), a.trade_date, 1),
+	quantity = a.quantity,
+	symbol = b.symbol,
+	price = convert(numeric(30,6), convert(char(30), a.price)),
+	trader = c.symbol,
+	counterparty = d.name,
+	strategy = e.name
+from
+	trades a,
+	contracts b,
+	traders c,
+	counterparties d,
+	strategies e,
+	#expiring_trades f
+where
+	a.trade_id = f.trade_id
+and
+	a.contract_id = b.contract_id
+and
+	a.trader_id = c.trader_id
+and
+	a.counterparty_id = d.counterparty_id
+and
+	a.strategy_id = e.strategy_id
+order by
+	b.symbol
+	
+
+
+
+
+
+
+
+go

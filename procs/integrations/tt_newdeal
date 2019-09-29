@@ -1,0 +1,83 @@
+drop procedure tt_newdeal
+go
+
+create procedure
+	tt_newdeal
+		@deal_type varchar(20)=NULL,
+		@deal_status varchar(20)=NULL,
+		@deal_exec_symbol varchar(100)=NULL,
+		@deal_id int=NULL output
+
+as
+
+declare @deal_status_id int
+declare @deal_type_id int
+
+if @deal_status = NULL
+	select
+		@deal_status = "User Review"
+select
+	@deal_status_id = status_id
+from
+	statuses
+where
+	name = @deal_status
+if @deal_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No status found named",
+		deal_status = @deal_status
+	return
+end
+	
+select
+	@deal_type_id = deal_type_id
+from
+	deal_types
+where
+	name = @deal_type
+if @deal_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding deal type",
+		deal_type = @deal_type
+	return
+end
+
+exec
+	j_nextkey
+		"deals",
+		@deal_id output
+
+insert into
+	deals(
+		deal_id,   
+		deal_type_id,
+		timestamp,  
+		status_id )      
+values( 
+	@deal_id,
+	@deal_type_id,
+	getdate(),
+	@deal_status_id
+	)
+
+if @deal_exec_symbol != NULL
+	insert into
+		deal_exec_symbols(
+			deal_id,
+			symbol)
+	values(
+		@deal_id,
+		@deal_exec_symbol
+    		)
+
+
+go
+
+
+
+	
+		

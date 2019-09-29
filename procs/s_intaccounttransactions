@@ -1,0 +1,87 @@
+
+if object_id("s_intaccounttransactions") != NULL
+    drop procedure
+        s_intaccounttransactions
+go
+
+create procedure
+	s_intaccounttransactions
+		@track_record char(50),
+		@since_date datetime=NULL
+as
+
+declare @internal_account char(50)
+declare @internal_account_id int
+declare @total_balance float
+
+select
+	@internal_account = @track_record
+
+if @since_date = NULL
+	select
+		@since_date = "8/8/88"
+
+select
+	@internal_account_id = internal_account_id
+from
+	internal_accounts
+where
+	symbol = @internal_account
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding account with symbol",
+		account = @internal_account
+	return
+end
+
+select
+	@total_balance = sum(a.amount)
+from
+	int_account_transactions a,
+	tico_accounts b,
+	internal_accounts c,
+	transaction_types d
+where
+	a.transaction_date >= @since_date
+and
+	a.entered_by = b.account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.transaction_type_id = d.transaction_type_id
+and
+	c.internal_account_id = @internal_account_id
+
+
+select
+	balance = convert(char(30), convert(numeric(30,2), @total_balance))
+
+select
+	transaction_id = a.int_account_transaction_id,
+	entered_by = b.login,
+	account = c.symbol,
+	transaction_type = d.name,
+	transaction_date = convert(char(25), a.transaction_date, 0),
+	amount = convert(char(30), convert(numeric(30,2), a.amount)),
+	a.note
+from
+	int_account_transactions a,
+	tico_accounts b,
+	internal_accounts c,
+	transaction_types d
+where
+	a.transaction_date >= @since_date
+and
+	a.entered_by = b.account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.transaction_type_id = d.transaction_type_id
+and
+	c.internal_account_id = @internal_account_id
+order by
+	convert(datetime, transaction_date)
+
+go

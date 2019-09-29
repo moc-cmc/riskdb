@@ -1,0 +1,117 @@
+
+if object_id("cm_sources") != NULL
+    drop procedure
+        cm_sources
+go
+
+create procedure
+	cm_sources
+		@login varchar(30)
+as
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"contracts",
+	"Source Contracts",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"delete_source",
+	"Delete Source",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"new_source",
+	"Add Mapping Source",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"overview",
+	"Mapping Overview",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_source",
+	"Edit Source",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+select
+	new_source = "ADD NEW EXTERNAL MAPPING SOURCE",
+    overview = "MAPPING OVERVIEW"
+
+create table
+	#output(
+		source varchar(50),
+		status varchar(30),
+		edit_source varchar(20) NULL,
+		delete_source varchar(20) NULL,
+		mappings varchar(20) NULL,
+		contracts varchar(30) NULL)
+
+insert into
+	#output
+select
+	source = a.name,
+	status = b.name,
+	edit_source = "EDIT",
+	delete_source = "DELETE",
+	mappings = "MAPPINGS",
+	contracts = "CONTRACTS"
+from
+	sources a,
+	statuses b
+where
+	a.status_id = b.status_id
+order by
+	a.name
+
+update
+	#output
+set
+	edit_source = NULL,
+	delete_source = NULL
+where
+	status = "Active"
+
+select
+	source,
+	status,
+	edit_source,
+	delete_source,
+	contracts
+from
+	#output
+order by
+	source
+
+go

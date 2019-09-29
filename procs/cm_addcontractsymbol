@@ -1,0 +1,81 @@
+
+if object_id("cm_addcontractsymbol") != NULL
+    drop procedure
+        cm_addcontractsymbol
+go
+
+create procedure
+	cm_addcontractsymbol
+		@login varchar(50),
+		@contract varchar(50),
+		@source varchar(50),
+		@mapping varchar(100)
+as
+
+
+declare @source_id int
+declare @contract_id int
+declare @mappings int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Source name not found",
+		source_name = @source
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @contract
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		contract = @contract
+	return
+end
+
+select
+	@mappings = count(*)
+from
+	contract_symbols
+where
+	contract_id = @contract_id
+and
+	source_id = @source_id
+
+if @mappings > 0
+begin
+	select
+		status = "Error",
+		message = "Contract is already mapped for mapping source",
+		contract= @contract,
+		source = @source
+	return
+end
+
+insert into
+	contract_symbols
+values(
+	@contract_id,
+	@source_id,
+	@mapping)
+
+exec
+	cm_sourcecontracts
+		@login,
+		@source
+
+go

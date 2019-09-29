@@ -1,0 +1,148 @@
+
+if object_id("r_initializeoptcontract") != NULL
+    drop procedure
+        r_initializeoptcontract
+go
+
+create procedure
+	r_initializeoptcontract
+		@symbol varchar(50),
+		@vol float
+
+
+as
+
+
+declare @contract_id int
+declare @now datetime
+declare @prev_day datetime
+declare @prev_begin datetime
+declare @prev_end datetime
+declare @contract_tvs int
+declare @contract_tv_id int
+declare @price float
+declare @eval_method_id int
+
+select
+	@eval_method_id = eval_method_id
+from
+	eval_methods
+where
+	name = "Internal Theo"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"eval_methods",
+			@eval_method_id output
+	insert into
+		eval_methods
+	values(
+		@eval_method_id,
+		"Internal Theo")
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+	return
+
+update
+	contract_eval_methods
+set
+	eval_method_id = @eval_method_id
+where
+	contract_id = @contract_id
+if @@rowcount = 0
+	insert into
+		contract_eval_methods
+	values(
+		@contract_id,
+		@eval_method_id)
+
+
+select
+	@now = getdate()
+
+
+exec
+	r_prevbusinessday
+		@now,
+		@prev_day output
+
+exec
+	r_daterangefordate
+		@prev_day,
+		@prev_begin output,
+		@prev_end output
+
+select
+	@contract_tvs = count(*)
+from
+	contract_tvs
+where
+	contract_id = @contract_id
+if @contract_tvs = 0
+begin
+
+	select
+		@price = max(price)
+	from
+		trades
+	where
+		contract_id = @contract_id
+	if @price = NULL
+		return
+
+	update
+		contract_tvs
+	set
+		tv = @price,
+		volatility = @vol
+	where
+		contract_id = @contract_id
+	and
+		tv_date = @prev_end
+	if @@rowcount = 0
+	begin
+		exec
+			j_nextkey
+				"contract_tvs",
+				@contract_tv_id output
+
+		insert into
+			contract_tvs(
+				contract_tv_id,
+				contract_id,
+				tv,
+				volatility,
+				tv_date)
+		values(
+			@contract_tv_id,
+			@contract_id,
+			@price,
+			@vol,
+			@prev_end)
+	end
+
+	update
+		current_contract_tvs
+	set
+		timestamp = getdate()
+	where
+		contract_id = @contract_id
+	if @@rowcount = 0
+		insert into
+			current_contract_tvs(
+				contract_id,
+				timestamp)
+		values(
+			@contract_id,
+			@now)
+end
+
+go

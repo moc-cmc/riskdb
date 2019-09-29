@@ -1,0 +1,143 @@
+use
+	risk_crossfield
+go
+
+drop procedure
+	fxa_tallyimportedtrades
+go
+
+create procedure
+	fxa_tallyimportedtrades
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+declare @date date
+declare @begin_date datetime
+declare @end_date datetime
+declare @report_trade_id int
+declare @report_trades int
+declare @deal_id int
+declare @trade_id int
+declare @quantity numeric(30,4)
+declare @symbol varchar(50)
+declare @value_date datetime
+declare @price float
+declare @strategy varchar(50)
+
+select
+	@date = @trade_date
+select
+	@trade_date = @date
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+create table 
+	#report_trades
+(
+	report_trade_id int
+)
+
+insert into #report_trades
+select
+	report_trade_id
+from
+	report_trades
+where
+	report_trade_id not in(select report_trade_id from trade_matches)
+and	
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+
+
+select
+	@report_trade_id = 0
+select
+	@report_trades = count(*)
+from
+	#report_trades
+
+
+while @report_trades > 0
+begin
+	select
+		@report_trade_id = min(report_trade_id)
+	from
+		#report_trades
+	where
+		report_trade_id > @report_trade_id
+
+	select
+		@strategy = NULL
+
+	select
+		@strategy = a.name
+	from
+		strategies a,
+		report_trades b
+	where
+		a.strategy_id = b.strategy_id
+	and
+		b.report_trade_id = @report_trade_id
+
+	if @strategy != "FX Roll"
+	begin
+		select
+			@deal_id = NULL,
+			@trade_id = NULL
+		select
+			@symbol = a.symbol,
+			@value_date = b.value_date,
+			@price = b.price,
+			@quantity = b.quantity
+		from
+			contracts a,
+			report_trades b
+		where
+			a.contract_id = b.contract_id
+		and
+			b.report_trade_id = @report_trade_id
+
+
+		exec
+			fxa_tallytrade
+				@login = "gman",
+				@source = "MPT Manual Tally",
+				@trade_id = @trade_id output,
+				@deal_id = @deal_id output,
+				@tally_type = "Spot",
+				@deal_type = "Market Forward",
+				@trade_type = "Spot",
+				@quantity = @quantity,
+				@symbol = @symbol,
+				@trade_date = @trade_date,
+				@value_date = @value_date,
+				@price = @price,
+				@sales_code = "None"
+	end
+
+
+	delete from
+		#report_trades
+	where
+		report_trade_id = @report_trade_id
+
+	select
+		@report_trades = count(*)
+	from
+		#report_trades
+end
+
+
+
+
+
+
+	
+go

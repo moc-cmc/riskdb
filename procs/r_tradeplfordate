@@ -1,0 +1,103 @@
+
+if object_id("r_tradeplfordate") != NULL
+    drop procedure
+        r_tradeplfordate
+go
+
+create procedure
+	r_tradeplfordate
+		@pl_type char(200),
+		@trade_id int,
+		@quantity numeric(30,2),
+		@trade_price float,
+		@begin_value float output,
+		@end_date datetime,
+		@close_price float output,
+		@end_value float output,
+		@p_l float output,
+		@native_currency_id int output,
+		@native_pl float output
+		
+as
+
+declare @instrument char(100)
+declare @contract_id int
+declare @is_committable int
+
+select
+	@contract_id = contract_id
+from
+	trades
+where
+	trade_id = @trade_id
+
+select
+	@instrument = a.name
+from
+	instruments a,
+	contracts b
+where
+	a.instrument_id = b.instrument_id
+and
+	b.contract_id = @contract_id
+
+
+if @instrument = "Forward"
+	exec
+		r_forwardtradeplfordate
+			@trade_id,
+			@contract_id,
+			@quantity,
+			@end_date,
+			@trade_price,
+			@close_price output,
+			@native_pl output
+	
+if @instrument = "Future"
+	exec
+		r_futuretradeplfordate
+			@contract_id,
+			@quantity,
+			@end_date,
+			@trade_price,
+			@close_price output,
+			@native_pl output
+	
+if @instrument = "Option"
+	exec
+		r_optiontradeplfordate
+			@trade_id,
+			@quantity,
+			@end_date,
+			@trade_price,
+			@close_price output,
+			@native_pl output
+
+if @instrument = "Exotic"
+	exec
+		r_exotictradeplfordate
+			@trade_id,
+			@quantity,
+			@end_date,
+			@trade_price,
+			@close_price output,
+			@native_pl output
+
+
+exec
+	r_dollarvalue
+		@native_pl,
+		@contract_id,
+		@end_date,
+		@p_l output,
+		@native_currency_id output 
+
+/* exec
+	f_dollarvalue
+		@native_pl,
+		@contract_id,
+		@end_date,
+		@p_l output,
+		@native_currency_id output,
+		@is_committable output */
+go

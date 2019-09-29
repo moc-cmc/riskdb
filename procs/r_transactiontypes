@@ -1,0 +1,16 @@
+drop procedure
+	r_transactiontypes
+go
+
+create procedure
+	r_transactiontypes
+as
+
+select
+	name
+from
+	transaction_types
+order by
+	name
+
+go

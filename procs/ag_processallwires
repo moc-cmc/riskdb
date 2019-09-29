@@ -1,0 +1,28 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_processallwires
+go
+
+create procedure
+	ag_processallwires
+		@login varchar(50),
+		@value_date datetime
+
+as
+
+
+exec
+	ag_tallypendingwires
+		@login = @login,
+		@value_date = @value_date
+
+exec
+	ag_confirmedsignoffs
+		@login = @login,
+		@value_date = @value_date
+
+
+go

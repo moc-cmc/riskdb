@@ -1,0 +1,43 @@
+
+if object_id("r_ungrouptradefromdealid") != NULL
+    drop procedure
+        r_ungrouptradefromdealid
+go
+
+create procedure
+	r_ungrouptradefromdealid
+		@login varchar(50),
+		@deal_id int,
+		@trade_id int,
+		@symbol varchar(50),
+		@value_date datetime,
+		@trader varchar(50),
+		@quantity numeric(30,4)
+as
+
+declare @new_deal_id int
+
+exec
+	j_nextkey
+		"deals",
+		@new_deal_id output
+
+update
+	trades
+set
+	deal_id = @new_deal_id
+where
+	trade_id = @trade_id
+
+
+exec
+	r_viewmarketfills
+		@login,
+		@symbol,
+		@value_date,
+		@trader,
+		@quantity,
+		@deal_id
+
+
+go

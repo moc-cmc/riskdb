@@ -1,0 +1,151 @@
+
+if object_id("r_editsettle") != NULL
+    drop procedure
+        r_editsettle
+go
+
+create procedure
+	r_editsettle
+		@symbol char(50),
+		@price_date datetime,
+		@price float
+as
+
+declare @close_price_type_id int
+declare @contract_id int
+declare @instrument char(100)
+declare @price_id int
+declare @price_style char(30)
+
+select
+	@price_date = convert(char(2), datepart(month, @price_date)) + "/" +
+			convert(char(2), datepart(day, @price_date)) + "/" +
+			convert(char(4), datepart(year, @price_date))
+
+select
+	@price_date = dateadd(hour, 17, @price_date)
+
+select
+	@contract_id = a.contract_id,
+	@instrument = b.name
+from
+	contracts a,
+	instruments b
+where
+	a.symbol = @symbol
+and
+	b.instrument_id = a.instrument_id
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding contract with symbol",	
+		sybmol = @symbol
+	return
+end
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id  = b.price_style_id
+and
+	b.contract_id = @contract_id
+if @price_style = "Inverted"
+begin
+	select
+		@price = 1.0 / @price
+end
+
+select
+	@close_price_type_id = price_type_id
+from
+	price_types
+where
+	name = "Close"
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding the Close price type"
+	return
+end
+
+select
+	@price_id = price_id
+from
+	prices
+where
+	price_date = @price_date
+and
+	price_type_id = @close_price_type_id
+and
+	contract_id = @contract_id
+
+if @@rowcount = 1
+begin
+	begin tran
+		update
+			prices
+		set
+			price = @price
+		where
+			price_id = @price_id
+		if @@rowcount != 1
+		begin
+			select
+				id = -1,
+				error = "Problem editing price"
+			rollback tran
+			return
+		end
+	
+		if @instrument = "Option"
+		begin
+			delete
+	
+			from
+				theos_queue
+			where
+				price_id = @price_id
+	
+			insert into
+				theos_queue
+			values(
+				@price_id)
+		end
+		if @instrument = "Exotic"
+		begin
+			update
+				current_prices
+			set
+				price = @price
+			where
+				contract_id = @contract_id
+		end
+	
+	commit tran
+	select
+		id = 0,
+		msg = "Successfully edited settle",
+		symbol = @symbol,
+		price = @price
+		
+	return
+end
+else
+begin
+
+	exec
+		r_addsettle
+			@symbol,
+			@price_date,
+			@price
+
+end
+
+
+
+go

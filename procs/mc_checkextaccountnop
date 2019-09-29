@@ -1,0 +1,383 @@
+
+if object_id("mc_checkextaccountnop") != NULL
+    drop procedure
+        mc_checkextaccountnop
+go
+
+create procedure
+    mc_checkextaccountnop
+        @login varchar(25),
+        @fund varchar(50)
+as
+
+/* 
+ * Calculate all external account credit utilizations (#utilizations) and their
+ * statuses (nop_status). Manage issues which are still active and delete the
+ * ones that are "ok".
+ */
+
+/* MARK: VARIABLES */
+declare @fund_id int
+declare @item_relation_id int
+declare @external_account_id int
+declare @external_account varchar(50)
+declare @currency varchar(5)
+declare @nop_type varchar(25)
+declare @nop_limit numeric(30,4)
+declare @nop float
+declare @nop_utilization float
+declare @nop_status varchar(25)
+declare @nop_level float
+declare @issue_id int
+declare @issue_properties varchar(250)
+declare @issue_dsl_status varchar(25)
+declare @subject varchar(250)
+declare @content varchar(250)
+declare @properties varchar(250)
+declare @priority varchar(15)
+declare @timer varchar(100)
+declare @timer_sql varchar(250)
+
+/* MARK: FIND @fund_id from funds for @fund */
+select
+    @fund_id
+from
+    funds 
+where
+    name = @fund
+
+if @@rowcount != 1
+begin
+    select
+        status = "Error",
+        message = "Fund, '" + @fund + "', not found",
+        fund = @fund
+    return
+end
+
+/* MARK: - CREATE #messages: to calculate levels */
+create table
+    #messages (
+        id int identity,
+        subject varchar(20),
+        message varchar(80)
+    )
+
+/* MARK: - CREATE #utilizations: to calculate levels */
+create table
+    #utilizations (
+        external_account_id int,
+        external_account varchar(50),
+        currency varchar(5),
+        nop_type varchar(25) NULL,
+        nop_limit numeric(30,4) NULL,
+        nop float NULL,
+        nop_utilization float NULL,
+        nop_status varchar(25) NULL,
+        nop_level float NULL
+    )
+
+/* MARK: INSERT #utilizations: from current_ext_account_utils */
+insert into
+    #utilizations (
+        external_account_id,
+        external_account,
+        currency,
+        nop_type,
+        nop_limit,
+        nop,
+        nop_utilization
+    )
+select
+    a.external_account_id,
+    external_account = a.symbol,
+    currency = ba.symbol,
+    nop_type = bc.name,
+    b.nop_limit,
+    c.nop,
+    nop_utilization = case 
+        when b.nop_limit != NULL and b.nop_limit > 0 then
+            c.nop / b.nop_limit
+        else
+            NULL
+    end
+from
+    external_accounts a,
+    ext_account_limits b,
+        products ba,
+        nop_types bc,
+    current_ext_account_utils c
+where
+    a.external_account_id = b.external_account_id
+        and
+            b.currency_id = ba.product_id
+        and
+            b.nop_type_id = bc.nop_type_id
+and
+    a.external_account_id = c.external_account_id
+
+/* MARK: UPDATE #utilizations: set nop_status */
+update
+    #utilizations
+set
+    nop_status = case 
+        when a.nop_utilization = NULL then
+            "ok"
+        when a.nop_utilization > b.blocked_level then
+            "blocked"
+        when a.nop_utilization > b.warning_level then
+            "warning"
+        when a.nop_utilization > b.notice_level then
+            "notice"
+        else
+            "ok"
+    end,
+    nop_level = case 
+        when a.nop_utilization = NULL then
+            NULL
+        when a.nop_utilization > b.blocked_level then
+            b.blocked_level
+        when a.nop_utilization > b.warning_level then
+            b.warning_level
+        when a.nop_utilization > b.notice_level then
+            b.notice_level
+        else
+            NULL
+    end
+from
+    #utilizations a,
+    ext_account_limits b
+where
+    a.external_account_id = b.external_account_id
+
+/*
+ * MARK: - CREATE #issues: for all active Credit Exceeded issues
+ * 
+ * Find all of the issues that 
+ */
+ 
+create table
+    #issues (
+        issue_id int,
+        external_account_id int,
+        properties varchar(250) NULL
+    )
+
+/* MARK: INSERT #issues: all active Credit Exceeded issues */
+insert into
+    #issues (
+        issue_id,
+        external_account_id,
+        properties
+    )
+select
+    a.issue_id,
+    external_account_id = a.item_id,
+    a.properties
+from
+    issues a,
+    statuses b,
+    channels c
+where
+    a.status_id = b.status_id
+and
+    b.name != "Resolved"
+and
+    a.channel_id = c.channel_id
+and
+    c.name = "Account NOP Credit Exceeded"
+and
+    a.item_relation_id = object_id("external_accounts")
+    
+
+/* MARK: - LOOP exceeded: for all #utilizations and create/update issues */
+declare
+    exceeded 
+cursor for select
+    external_account_id,
+    external_account,
+    currency,
+    nop_type,
+    nop_limit,
+    nop,
+    nop_utilization,
+    nop_status,
+    nop_level
+from
+    #utilizations a
+order by
+    a.external_account_id
+    
+open
+    exceeded
+    
+/* MARK: FETCH exceeded */
+fetch
+    exceeded
+into
+    @external_account_id,
+    @external_account,
+    @currency,
+    @nop_type,
+    @nop_limit,
+    @nop,
+    @nop_utilization,
+    @nop_status,
+    @nop_level
+
+while @@sqlstatus = 0
+begin
+
+    /* MARK: . FIND @issue_id from #issues for @external_account_id */
+    select
+        @issue_id = NULL,
+        @issue_properties = NULL
+        
+    select
+        @issue_id = a.issue_id,
+        @issue_properties = a.properties
+    from
+        #issues a
+    where
+        a.external_account_id = @external_account_id
+       
+    /* MARK: . IF @issues_properties is found */
+    if @issue_properties != NULL
+    begin
+    
+        /* MARK: . . FIND @issue_dsl_status to obtain previous status */
+        select
+            @issue_dsl_status = substring(@issue_properties, patindex("%dsl_status:%", @issue_properties) + 11, 25)
+        select
+            @issue_dsl_status = substring(@issue_dsl_status, 1, patindex("%,%", @issue_dsl_status) - 1)
+        
+    end
+       
+    /* MARK: . IF: @nop_status is not "ok" */
+    if @nop_status != "ok"
+    begin
+    
+        /* MARK: . . SET @channel, @subject, etc.: for r_manageissue params */
+        select
+            @subject = @fund + ": Account " + @external_account + " NOP credit utilization has exceeded",
+            @content = @external_account + "'s " + @nop_type + " NOP credit utilization is " + @currency + " " + convert(varchar(30), convert(money, @nop)) + " which is " + convert(varchar(30), convert(money, @nop_utilization * 100)) + "% of the " + @currency + " " + convert(varchar(30), convert(money, @nop_limit)) + " limit. This exceeds the " + @nop_status + " level of " + convert(varchar(30), convert(money, @nop_level * 100)) + "%",
+            @properties = '{'
+                + 'external_account:"' + @external_account+ '",'
+                + 'currency:"' + @currency + '",'
+                + 'nop_type:"' + @nop_type + '",'
+                + 'nop_limit:' + convert(varchar(30),
+                    convert(numeric(30,0), @nop_limit)) + ','
+                + 'nop:' + convert(varchar(30),
+                    convert(numeric(30,0), @nop)) + ','
+                + 'nop_utilization:' + convert(varchar(30),
+                    convert(numeric(30,2), @nop_utilization)) + ','
+                + 'nop_status:' + @nop_status + ','
+                + 'nop_level:' + convert(varchar(30),
+                    convert(numeric(30,2), @nop_level)) + ','
+            + '}'
+        
+        insert into
+            #messages
+        select
+            name = case 
+                when @issue_id = NULL then
+                    "Added Issue"
+                else
+                    "Updated Issue"
+            end,
+            message = @external_account + " NOP exceeds "
+        
+        select
+            @item_relation_id = object_id("external_accounts"),
+            @priority = case @nop_status
+                when "blocked" then
+                    "High"
+                when "warning" then
+                    "Medium"
+                when "notice" then
+                    "Normal"
+                else
+                    "Low"
+            end
+
+        /* MARK: . . EXEC r_manageissue: create or update issue */
+        exec
+            r_manageissue
+                @login = @login,
+                @issue_id = @issue_id out,
+                @channel = "Account NOP Credit Exceeded",
+                @item_relation_id = @item_relation_id,
+                @item_id = @external_account_id,
+                @subject = @subject,
+                @content = @content,
+                @properties = @properties,
+                @priority = @priority,
+                @status = "New",
+                @check_interval = 60
+        
+    end
+    /* MARK: . ELSE IF: @nop_status is "ok" */
+    else if @issue_id != NULL
+    begin
+        
+        /* MARK: . . EXEC r_manageissue: create or update issue */
+        exec
+            r_manageissue
+                @login = @login,
+                @issue_id = @issue_id,
+                @status = "Resolved"
+                
+    end
+    
+    /* MARK: . DELETE #issues: for @issue_id to mark this issue as done */
+    delete
+        #issues
+    where
+        issue_id = @issue_id
+    
+    /* MARK: . FETCH exceeded */
+    fetch
+        exceeded
+    into
+        @external_account_id,
+        @external_account,
+        @currency,
+        @nop_type,
+        @nop_limit,
+        @nop,
+        @nop_utilization,
+        @nop_status,
+        @nop_level
+    
+end
+
+/* MARK: - INSERT #messages: for any remaining #issues */
+insert into
+    #messages
+select
+    subject = "Remaining Issues",
+    message = "Issue " + convert(varchar(30), a.issue_id) + " is either not associated with an external account or has not utilization"
+from
+    #issues a
+
+/* MARK: - SHOW #messages */
+select
+    subject,
+    message
+from
+    #messages
+order by
+    id
+
+/* MARK: - EXEC r_managetimer: for any remaining #issues */
+select
+    @timer = "mc_checkextaccountnop:login=" + @login + ",fund=" + @fund,
+    @timer_sql = "exec mc_checkextaccountnop @login=""" + @login + """, @fund=""" + @fund + """"
+exec
+    r_managetimer
+        @name = @timer,
+        @iterations = -1, /* indefinite */
+        @interval = 30,  /* minimum 30 seconds */
+        @sql = @timer_sql
+    
+go

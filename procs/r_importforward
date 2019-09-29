@@ -1,0 +1,382 @@
+
+create or replace procedure
+	r_importforward
+		@login varchar(30),
+		@source varchar(50),
+		@product_type varchar(30),
+		@product_symbol varchar(30),
+		@product_name varchar(50),
+		@currency_symbol varchar(30),
+		@currency_name varchar(50),
+		@exchange varchar(30),
+		@contract_symbol varchar(50)
+as
+
+
+declare @source_id int
+declare @status_id int
+declare @product_type_id int
+declare @product_dupe_sym varchar(30)
+declare @currency_dupe_sym varchar(30)
+declare @contract_id int
+declare @product_id int
+declare @currency_id int
+declare @currency_product_type_id int
+declare @instrument_id int
+declare @exchange_id int
+declare @price_style_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = "Active"
+	if @status_id = NULL
+	begin
+		exec
+			j_nextkey
+				"statuses",
+				@status_id output
+		insert into
+			statuses(
+				status_id,
+				name)
+		values(
+			@status_id,
+			"Active")
+	end
+
+	exec
+		j_nextkey
+			"sources",
+			@source_id output
+
+        declare @internal_source_type_id int
+        select
+                @internal_source_type_id = source_type_id
+        from
+                source_types
+        where
+                name = "Internal"
+
+        insert into
+                sources(
+			source_id,
+                        name,
+                        status_id,
+                        source_type_id)
+        values(
+                @source_id,
+                @source,
+                @status_id,
+                @internal_source_type_id)
+end
+
+select
+	@contract_id = contract_id
+from
+	contract_symbols
+where
+	symbol = @contract_symbol
+and
+	source_id = @source_id
+if @contract_id != NULL
+begin
+	/* select
+		status = "Dupe",
+		message = "Contract symbol already exists for source",
+		contract_symbol = @contract_symbol,
+		source = @source */
+	return
+end
+
+select
+	@currency_product_type_id = product_type_id
+from
+	product_types
+where
+	name = "Currency"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"product_types",
+			@currency_product_type_id output
+
+	insert into
+		product_types
+	values(
+		@currency_product_type_id,
+		"Currency")
+end
+
+select
+	@currency_id = product_id
+from
+	product_symbols
+where
+	symbol = @currency_symbol
+and
+	source_id = @source_id
+if @currency_id = NULL
+begin
+	select
+		@currency_id = product_id
+	from
+		products
+	where
+		symbol = @currency_symbol
+	if @currency_id != NULL
+	begin
+		insert into
+			product_symbols
+		values(
+			@currency_id,
+			@source_id,
+			@currency_symbol)
+	end
+	else
+	begin
+		exec
+			j_nextkey
+				"products",
+				@currency_id output
+		insert into
+			products(
+				product_id,
+				product_type_id,
+				symbol,
+				name)
+		values(
+			@currency_id,
+			@currency_product_type_id,
+			@currency_symbol,
+			@currency_name)
+
+		insert into
+			product_symbols(
+				product_id,
+				source_id,
+				symbol)
+		values(
+			@currency_id,
+			@source_id,
+			@currency_symbol)
+	end
+end
+
+select
+	@product_type_id = product_type_id
+from
+	product_types
+where
+	name = @product_type
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"product_types",
+			@product_type_id output
+
+	insert into
+		product_types(
+			product_type_id,
+			name)
+	values(
+		@product_type_id,
+		@product_type)
+end
+
+select
+	@product_id = product_id
+from
+	product_symbols
+where
+	source_id = @source_id
+and
+	symbol = @product_symbol
+if @product_id = NULL
+begin
+	select
+		@product_id = product_id
+	from
+		products
+	where
+		symbol = @product_symbol
+	if @product_id != NULL
+	begin
+		insert into
+			product_symbols(
+				product_id,
+				source_id,
+				symbol)
+		values(
+			@product_id,
+			@source_id,
+			@product_symbol)
+	end
+	else
+	begin
+		exec
+			j_nextkey
+				"products",
+				@product_id output
+		insert into
+			products(
+				product_id,
+				product_type_id,
+				symbol,
+				name)
+		values(
+			@product_id,
+			@product_type_id,
+			@product_symbol,
+			@product_name)
+
+		insert into
+			product_symbols(
+				product_id,
+				source_id,
+				symbol)
+		values(
+			@product_id,
+			@source_id,
+			@product_symbol)
+	end
+end
+
+select
+	@instrument_id = instrument_id
+from
+	instruments
+where
+	name = "Forward"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"instruments",
+			@instrument_id output
+
+	insert into
+		instruments(
+			instrument_id,
+			name)
+	values(
+		@instrument_id,
+		"Forward")
+end
+
+select
+	@exchange_id = exchange_id
+from
+	exchanges
+where
+	name = @exchange
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"exchanges",
+			@exchange_id output
+	insert into
+		exchanges(
+			exchange_id,
+			name)
+	values(
+		@exchange_id,
+		@exchange)
+end
+
+exec
+	j_nextkey
+		"contracts",
+		@contract_id output
+
+insert into
+	forwards(
+		contract_id,
+		currency_id,
+		product_id,
+		quantity,
+		exchange_id)
+values(
+	@contract_id,
+	@currency_id,
+	@product_id,
+	1,
+	@exchange_id)
+
+insert into
+	contracts(
+		contract_id,
+		symbol,
+		instrument_id)
+values(
+	@contract_id,
+	@contract_symbol,
+	@instrument_id)
+
+insert into
+	contract_symbols(
+		contract_id,
+		source_id,
+		symbol)
+values(
+	@contract_id,
+	@source_id,
+	@contract_symbol)
+
+if @exchange = "UNCONVENTIONAL OTC"
+begin
+	select
+		@price_style_id = price_style_id
+	from
+		price_styles
+	where
+		name = "Inverted"
+	if @price_style_id = NULL
+	begin
+		exec
+			j_nextkey
+				"price_styles",
+				@price_style_id output
+		insert into
+			price_styles(
+				price_style_id,
+				name,
+				factor)
+		values(
+			@price_style_id,
+			"Inverted",
+			1.0)
+	end
+
+	insert into
+		contract_price_styles (
+            		contract_id,
+            		price_style_id,
+            		factor,
+	    		min_scale,
+	    		max_scale)
+	values(
+		@contract_id,
+		@price_style_id,
+		1.0,
+		4,
+		6)
+end
+
+
+
+go 
+

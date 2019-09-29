@@ -1,0 +1,208 @@
+create or replace procedure
+	api_affirmotcmatch
+		@login varchar(50),
+		@otc_match_id int
+as
+
+
+declare @tico_account_id int
+declare @buyer_legal_entity_id int
+declare @seller_legal_entity_id int
+declare @new_status_id int
+declare @affirmed_status_id int
+declare @submitted_status_id int
+declare @rejected_status_id int
+declare @execution_status_id int
+declare @buyer_has_affirmed char(1)
+declare @seller_has_affirmed char(1)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@new_status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @new_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "New status not found"
+	return
+end
+
+select
+	@affirmed_status_id = status_id
+from
+	statuses
+where
+	name = "Affirmed"
+if @affirmed_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Affirmed status not found"
+	return
+end
+
+select
+        @submitted_status_id = status_id
+from
+        statuses
+where
+        name = "Submitted"
+if @submitted_status_id = NULL
+begin           
+        select  
+                status = "Error",
+                message = "Submitted status not found"
+        return
+end
+
+
+select
+        @rejected_status_id = status_id
+from
+        statuses
+where
+        name = "Rejected"
+if @rejected_status_id = NULL
+begin           
+        select  
+                status = "Error",
+                message = "Rejected status not found"
+        return
+end
+
+
+
+select
+	@buyer_legal_entity_id = a.buyer_legal_entity_id
+from
+	otc_matches a,
+	legal_entity_tico_accounts b
+where
+	a.buyer_legal_entity_id = b.legal_entity_id
+and
+	a.otc_match_id = @otc_match_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.buyer_status_id = @new_status_id
+
+
+select
+	@seller_legal_entity_id = a.seller_legal_entity_id
+from
+	otc_matches a,
+	legal_entity_tico_accounts b
+where
+	a.seller_legal_entity_id = b.legal_entity_id
+and
+	a.otc_match_id = @otc_match_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.seller_status_id = @new_status_id
+
+if @buyer_legal_entity_id = NULL and @seller_legal_entity_id = NULL
+begin
+	select
+		status = "Error",
+		message = "OTC match not found",
+		otc_match_id = @otc_match_id
+	return
+end
+
+select
+	@buyer_has_affirmed = "Y"
+from
+	otc_matches
+where
+	otc_match_id = @otc_match_id
+and
+	buyer_status_id = @affirmed_status_id
+
+select
+        @seller_has_affirmed = "Y"
+from
+        otc_matches
+where
+        otc_match_id = @otc_match_id
+and
+        seller_status_id = @affirmed_status_id
+	
+select
+	@execution_status_id = NULL
+
+if @buyer_legal_entity_id != NULL
+begin
+	if @seller_has_affirmed = "Y"
+	begin
+		select
+			@execution_status_id = @submitted_status_id
+	end
+	begin tran
+		update
+			otc_matches
+		set
+			buyer_status_id = @affirmed_status_id,
+			execution_status_id = @execution_status_id
+		where
+			otc_match_id = @otc_match_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to approve buyer status for otc match",
+				otc_match = @otc_match_id
+			rollback tran
+			return
+		end
+	commit tran
+end
+
+if @seller_legal_entity_id != NULL
+begin
+	if @buyer_has_affirmed = "Y"
+	begin
+		select
+			@execution_status_id = @submitted_status_id
+	end
+	begin tran
+		update
+			otc_matches
+		set
+			seller_status_id = @affirmed_status_id,
+			execution_status_id = @execution_status_id
+		where
+			otc_match_id = @otc_match_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to approve seller status for otc match",
+				otc_match = @otc_match_id
+			rollback tran
+			return
+		end
+	commit tran
+end
+
+
+
+go
+

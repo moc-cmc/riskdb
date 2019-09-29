@@ -1,0 +1,138 @@
+create or replace procedure
+	api_processoareconresponse
+		@oa_recon_request_id int,
+		@success_status varchar(50),
+		@message varchar(100),
+		@error_message varchar(150)=NULL,
+		@error_code varchar(150)=NULL,
+		@rest_call_id int=NULL
+
+
+as
+
+declare @open_request char(1)
+
+declare @status_id int
+declare @status varchar(50)
+declare @response_message varchar(150)
+
+
+select
+	@open_request = "Y"
+from
+	oa_recon_requests a,
+	statuses b
+where
+	a.status_id = b.status_id
+and
+	b.name in("New")
+and
+	a.oa_recon_request_id = @oa_recon_request_id
+
+if @open_request != "Y"
+begin
+	select
+		status = "Error", 
+		message = "Problem finding open request from id",
+		oa_recon_request_id = @oa_recon_request_id
+	return
+end
+
+
+if @message = ""
+begin
+        select
+                @response_message = "Recon Call ("+rtrim(convert(varchar(30), @rest_call_id))+")"
+end
+else
+begin
+        select
+                @response_message = rtrim(@message) + " ("+rtrim(convert(varchar(30), @rest_call_id))+")"
+end
+
+
+
+if @success_status = 'true' and @error_message = ""
+begin
+	select
+		@status = "Success"
+end
+else if @success_status = 'false' or @error_message != ""
+begin
+	select
+		@status = "Failed"
+end
+else
+begin
+	select
+		@status = "Unknown"
+end
+
+select
+	@status_id = status_id
+from
+	statuses 
+where
+	name = @status
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding status ",
+		status_provided = @status
+	return
+end
+
+if @status != "Success"
+begin
+
+	select
+		@response_message = rtrim(@error_message) + " ("+rtrim(convert(varchar(30), @rest_call_id))+")"
+
+	if @error_code != NULL and @error_code != ""
+	begin
+		select
+			@response_message = rtrim(@response_message)+" - "+rtrim(@error_code)
+	end
+end
+
+
+begin tran
+        update
+                oa_recon_requests
+        set
+                status_id = @status_id,
+		respond_message = @response_message,
+		respond_timestamp = getdate()
+        where
+                oa_recon_request_id = @oa_recon_request_id
+        if @@rowcount != 1
+        begin
+                select
+                        status = "Error",
+                        message = "Problem setting status on request"
+                rollback tran
+                return
+        end
+commit tran
+
+select
+	status = "OK",
+	message = "Processed Recon Request",
+	oa_recon_request_id = @oa_recon_request_id,
+	requestor = b.login,
+	oa_account = c.name,
+	response_status = @status,
+	response_message = @response_message
+from
+	oa_recon_requests a,
+	tico_accounts b,
+	outside_accounts c	
+where
+	a.requestor_id = b.account_id
+and
+	a.outside_account_id = c.outside_account_id
+and
+	a.oa_recon_request_id = @oa_recon_request_id
+
+go

@@ -1,0 +1,16 @@
+drop procedure
+	r_managecontractswrap
+go
+
+create procedure
+	r_managecontractswrap
+		@login varchar(50)
+
+as
+
+
+exec
+	ctm_fxforwards
+		@login
+
+go

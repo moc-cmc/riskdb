@@ -1,0 +1,374 @@
+
+if object_id("fxa_tallyswap") != NULL
+    drop procedure
+        fxa_tallyswap
+go
+
+create procedure
+	fxa_tallyswap
+		@login char(25),
+		@trader_id int,
+		@external_account_id int,
+		@biproduct  char(25),
+		@quantity numeric(30,6),
+		@near_date	datetime = NULL,
+		@near_price float,	
+		@far_date	datetime = NULL,
+		@far_price	float,
+		@trade_date datetime,
+		@notes		varchar(255) = NULL
+		
+as
+
+return
+
+/* REWRITE IF NEEDED
+declare @account_id int
+declare @contract_id int
+declare @internal_account_id int
+declare @closing_trade_id int
+declare @roll_trade_id int
+declare @deal_id int
+declare @trade_quantity numeric(30,4)
+declare @price_style char(100)
+declare @strategy_id int
+declare @fund_id int
+declare @status_id int
+declare @broker_id int
+declare @symbol varchar(25)
+declare @source_id int
+declare @trade_symbol_id int
+declare @tally_type_id int
+
+select @symbol=@biproduct
+
+select
+	@account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+
+if(@@rowcount != 1)
+begin
+	select
+		err=-1,
+		errmsg="Invalid login ", @login
+	return
+end
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = "MPT Manual Tally"
+
+if @@rowcount != 1
+begin
+        select
+                id=-1,
+                error="Could not find source_id for source MPT Manual Tally"
+        return
+end
+
+exec
+    r_defaultfundforlogin
+        @login,
+        @fund_id output
+
+if @fund_id = NULL
+begin
+    select
+        id = -1,
+        error = "Problem finding default fund for user"
+    return
+end
+
+select 
+	@tally_type_id=tally_type_id
+from
+	tally_types
+where
+	name="Swap"
+
+if(@@rowcount < 1)
+begin
+	select
+		err=-1,
+		error="Could not find tally type for Swap tally"
+	return
+end
+
+select
+	@internal_account_id=internal_account_id,
+	@strategy_id=strategy_id,
+	@status_id=status_id,
+	@broker_id=broker_id
+from
+	default_tally_accounts
+where
+	tico_account_id=@account_id and
+	tally_type_id=@tally_type_id
+
+if(@@rowcount < 1)
+begin
+	select
+		err=-1,
+		error="Could not find default values for account ", @login
+	return
+end
+	
+select
+	@trade_quantity = convert(numeric(30,4), @quantity)
+
+select
+	@trade_date = convert(char(2), datepart(month, @trade_date)) + "/" +
+		convert(char(2), datepart(day, @trade_date)) + "/" +
+		convert(char(4), datepart(year, @trade_date))
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding contract with symbol",
+		symbol = @symbol
+	return
+end
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	b.contract_id = @contract_id
+
+if @price_style = "Inverted"
+begin
+	select
+		@near_price = 1 / @near_price,
+		@far_price = 1 / @far_price
+end
+
+if @near_date = NULL
+begin
+	exec
+		r_nextbusinessday
+			@trade_date,
+			@near_date output
+	if @symbol != "CADUSD" and @symbol != "USDCAD"
+	exec
+		r_nextbusinessday
+			@near_date,
+			@near_date output
+end
+
+select
+	@near_date = convert(char(2), datepart(month, @near_date)) + "/" +
+		convert(char(2), datepart(day, @near_date)) + "/" +
+		convert(char(4), datepart(year, @near_date))
+
+select
+	@far_date = convert(char(2), datepart(month, @far_date)) + "/" +
+		convert(char(2), datepart(day, @far_date)) + "/" +
+		convert(char(4), datepart(year, @far_date))
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "deals"
+
+	select
+		@deal_id = last_id
+	from
+		keys
+	where
+		relation = "deals"
+
+	insert into
+		deals
+	values(
+		@deal_id,
+		getdate())
+
+	if(@notes != NULL)
+	begin
+		insert into 
+			deal_notes
+		values
+			(@deal_id,
+			 @notes)
+	end
+
+commit tran
+
+begin tran
+    update
+        keys
+    set
+        last_id = last_id + 2 
+    where
+        relation = "trades"
+    select
+        @roll_trade_id = last_id
+    from
+        keys
+    where
+        relation = "trades"
+
+	select
+		@closing_trade_id = @roll_trade_id - 1
+
+commit tran
+
+begin tran
+
+		insert into
+            trades
+        values(
+            @closing_trade_id,
+            @deal_id,
+            @account_id,
+            @internal_account_id,
+            @external_account_id,
+            @trade_quantity,
+            @contract_id,
+            @near_price,
+            @trade_date,
+            @trader_id,
+            @strategy_id,
+            @status_id,
+            @broker_id)
+        if @@rowcount != 1
+        begin
+            select
+                id = -1,
+                error = "Problem adding closing trade"
+            rollback tran
+            return
+        end
+
+        insert into
+            trade_value_dates
+        values(
+            @closing_trade_id,
+            @near_date)
+
+        insert into
+            trade_types
+        values(
+            @closing_trade_id,
+            "1")                /* 1 is for type Swap 1st leg */
+
+		insert into
+        	trade_identifiers
+		values(
+        	@closing_trade_id,
+        	@source_id,
+        	convert(varchar(50), @closing_trade_id))
+		
+		insert into
+    		trade_notifications
+    	(source_id,
+     	trade_id,
+     	status_id,
+     	capture_date,
+     	notify_date,
+     	error)
+		values
+    	(1,
+     	@closing_trade_id,
+     	3,
+     	getdate(),
+     	getdate(),
+     	"")
+
+		insert into
+            trades
+        values(
+            @roll_trade_id,
+            @deal_id,
+            @account_id,
+            @internal_account_id,
+            @external_account_id,
+            -@trade_quantity,
+            @contract_id,
+            @far_price,
+            @trade_date,
+            @trader_id,
+            @strategy_id,
+            @status_id,
+            @broker_id)
+        if @@rowcount != 1
+        begin
+            select
+                id = -1,
+                error = "Problem adding roll trade"
+            rollback tran
+            return
+        end
+
+        insert into
+            trade_value_dates
+        values(
+            @roll_trade_id,
+            @far_date)
+
+        insert into
+            trade_types
+        values(
+            @roll_trade_id,
+            "2")   				/* 2 is for type Swap 2nd leg */
+
+		exec j_nextkey "trade_symbols", @trade_symbol_id output
+
+		insert into
+    		trade_symbols
+		values(
+    		@trade_symbol_id,
+    		@source_id,
+    		@deal_id,
+    		convert(char(100), @deal_id),
+    		getdate())
+
+		insert into
+        	trade_identifiers
+		values(
+        	@roll_trade_id,
+        	@source_id,
+        	convert(varchar(50), @roll_trade_id))
+
+		insert into
+    		trade_notifications
+    	(source_id,
+     	trade_id,
+     	status_id,
+     	capture_date,
+     	notify_date,
+     	error)
+		values
+    		(1,
+     		@roll_trade_id,
+     		3,
+     		getdate(),
+     		getdate(),
+     		"")
+
+commit tran
+
+exec
+	r_inspectdeal
+			@deal_id
+ */
+go

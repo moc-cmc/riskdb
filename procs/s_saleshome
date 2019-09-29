@@ -1,0 +1,22 @@
+use
+	ops
+go
+
+drop procedure
+	s_saleshome
+go
+
+create procedure
+	s_saleshome
+		@login varchar(50)
+as
+
+
+select
+	msg = "test",
+	as_of = getdate()
+
+select
+	"<script>setTimeout(function() { location = jQuery('#sidebar li a:eq(0)').attr('href'); }, 5e3)</script>"
+
+go

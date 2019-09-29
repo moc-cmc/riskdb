@@ -1,0 +1,28 @@
+drop procedure
+	r_addinboundpbsymbol
+go
+
+create procedure
+	r_addinboundpbsymbol
+			@login varchar(25),
+			@name varchar(50),
+			@inbound_source varchar(100),
+			@symbol varchar(50)
+as
+
+exec
+	api_addprimebrokersymbol
+			@login=@login,
+			@name=@name,
+			@symbol=@symbol,
+			@source=@inbound_source
+
+exec
+	r_mappingoverview
+			@login=@login
+
+return
+
+go
+
+

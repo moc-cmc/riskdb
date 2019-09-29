@@ -1,0 +1,85 @@
+create or replace procedure 
+	api_addaccessgroupforlogin
+		@login      varchar(50),
+		@login_name varchar(50),
+		@access_group varchar(50)
+
+as
+
+declare @tico_account_id int
+declare @access_group_id int
+declare @has_permission_already char(1)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login_name
+
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem finding login",
+		login = @login
+	return
+end
+
+select
+	@access_group_id = access_group_id
+from
+	access_groups
+where
+	name = @access_group
+if @access_group_id = NULL
+begin
+	select 
+		status = "Error",
+		msg = "Problem finding acccess group",
+		access_group = @access_group
+	return
+end
+
+select
+	@has_permission_already = "Y"
+from
+	access_group_accounts
+where
+	access_group_id = @access_group_id
+and
+	tico_account_id = @tico_account_id
+if @has_permission_already = "Y"
+begin
+	select
+		status = "Success",
+		msg = "Account already had permission for access group",
+		login = @login_name,
+		access_group = @access_group
+	return
+end
+
+insert into
+	access_group_accounts(
+		tico_account_id,
+		access_group_id)
+values(
+	@tico_account_id,
+	@access_group_id)
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		msg = "Problem granting access group to account"
+	return
+end
+
+select
+	status = "Success",
+	msg = "Account has been granted permission for access group",
+        login = @login_name,
+        access_group = @access_group
+
+
+go
+

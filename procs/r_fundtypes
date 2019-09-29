@@ -1,0 +1,21 @@
+
+if object_id("r_fundtypes") != NULL
+    drop procedure
+        r_fundtypes
+go
+
+create procedure
+	r_fundtypes 
+
+
+as
+
+
+select
+	symbol = a.name
+from
+	fund_types a
+order by
+	a.symbol
+
+go

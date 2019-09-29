@@ -1,0 +1,17 @@
+
+drop procedure
+	mc_priorities
+go
+
+create procedure
+	mc_priorities
+		@login varchar(50)
+as
+
+select
+	name
+from
+	priorities
+order by 
+	name
+go

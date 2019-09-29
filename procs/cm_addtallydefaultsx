@@ -1,0 +1,32 @@
+drop procedure
+	cm_addtallydefaultsx
+go
+
+create procedure
+	cm_addtallydefaultsx
+		@login varchar(50),
+		@user_name varchar(50),
+		@tally_type varchar(50),
+		@internal_account varchar(50),
+		@external_account varchar(50),
+		@trader varchar(25),
+		@strategy varchar(50),
+		@broker varchar(50),
+		@counterparty varchar(50)
+as
+
+
+exec
+	cm_edittallydefaultsx
+		@login,
+		@user_name,
+		@tally_type,
+		@internal_account,
+		@external_account,
+		@trader,
+		@strategy,
+		@broker,
+		@counterparty
+
+go
+

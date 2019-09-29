@@ -1,0 +1,362 @@
+
+drop procedure
+	cbo_copyfopricestobo
+go
+
+create procedure
+	cbo_copyfopricestobo
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @id int
+declare @ids int
+declare @contract_id int
+declare @value_date datetime
+declare @price float
+declare @days float
+declare @spot_price float
+declare @forward_price float
+declare @currency_rate float
+declare @bo_price_id int
+declare @product_rate float
+declare @source_id int
+declare @source varchar(50)
+declare @status varchar(50)
+declare @status_id int
+declare @contracts int
+declare @tv float
+declare @delta float
+declare @gamma float
+declare @theta float
+declare @tau float
+
+
+select
+	@status = "Active"
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = @status
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Status not found",
+		status_name = @status
+	return
+end
+
+select
+	@source = "MPT"
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+select
+	@trade_date = convert(datetime, convert(char(11), @trade_date, 1))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#forwards(
+		id int identity,
+		contract_id int,
+		value_date datetime)
+insert into
+	#forwards
+select
+	a.contract_id,
+	c.value_date
+from
+	trades a,
+	forwards b,
+	trade_value_dates c
+where
+	a.contract_id = b.contract_id
+and
+	c.value_date > @begin_date
+and
+	a.trade_id=c.trade_id
+group by
+	a.contract_id,
+	c.value_date
+order by
+	a.contract_id,
+	c.value_date
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#forwards
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#forwards
+	where
+		id > @id
+
+
+	select
+		@contract_id = contract_id,
+		@value_date = value_date
+	from
+		#forwards
+	where
+		id = @id
+
+
+	select
+		@forward_price = NULL,
+		@days = NULL,
+		@spot_price = NULL,
+		@forward_price = NULL,
+		@currency_rate = NULL,
+		@product_rate = NULL
+
+	exec
+		r_forwardpriceasof
+			@contract_id,
+			@end_date,
+			@value_date,
+			@days output,
+			@spot_price output,
+			@forward_price output,
+			@currency_rate output,
+			@product_rate output
+			
+
+
+	update
+		bo_prices
+	set
+		price = @forward_price
+	where
+		contract_id = @contract_id
+	and
+		price_date = @end_date
+	and
+		value_date = @value_date
+	and
+		source_id = @source_id
+	and
+		status_id = @status_id
+	if @@rowcount != 1
+	begin
+		select
+			@bo_price_id = NULL
+		exec
+			j_nextkey
+				"bo_prices",
+				@bo_price_id output
+
+		insert into
+			bo_prices
+		values(
+			@bo_price_id,
+			@status_id,
+			@contract_id,
+			@end_date,
+			@value_date,
+			@source_id,
+			@forward_price)
+	end
+
+
+	select
+		@ids = count(*)
+	from
+		#forwards
+	where
+		id > @id
+end
+
+create table
+	#options(
+		contract_id int)
+insert into
+	#options
+select
+	distinct(a.contract_id)
+from
+	trades a,
+	option_contracts b,
+	option_expirations c
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.expiration >= @begin_date
+
+
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	#options
+where
+	contract_id > @contract_id
+
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#options
+	where
+		contract_id > @contract_id
+
+
+	select
+		@value_date = a.expiration
+	from
+		option_expirations a,
+		option_contracts b
+	where
+		a.option_expiration_id = b.option_expiration_id
+	and
+		b.contract_id = @contract_id
+
+	select
+		@tv = NULL,
+		@delta = NULL,
+		@gamma = NULL,
+		@theta = NULL,
+		@tau = NULL
+
+	exec
+		r_contracttheoasof
+			@contract_id,
+			@end_date,
+			@tv output,
+			@delta output,
+			@gamma output,
+			@theta output,
+			@tau output
+
+
+	update
+		bo_prices
+	set
+		price = @tv
+	where
+		contract_id = @contract_id
+	and
+		price_date = @end_date
+	and
+		value_date = @value_date
+	and
+		source_id = @source_id
+	and
+		status_id = @status_id
+	if @@rowcount != 1
+	begin
+		select
+			@bo_price_id = NULL
+		exec
+			j_nextkey
+				"bo_prices",
+				@bo_price_id output
+
+		insert into
+			bo_prices
+		values(
+			@bo_price_id,
+			@status_id,
+			@contract_id,
+			@end_date,
+			@value_date,
+			@source_id,
+			@forward_price)
+	end
+
+	select
+		@contracts = count(*)
+	from
+		#options
+	where
+		contract_id > @contract_id
+end
+
+update
+	bo_spot_settles
+set
+	a.price = b.price
+from
+	bo_spot_settles a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	a.price_date = b.price_date
+and
+	a.price_date = @end_date
+and
+	b.price_date = @end_date
+
+insert into
+	bo_spot_settles(
+		contract_id,
+		source_id,
+		price_date,
+		price)
+select
+	contract_id,
+	source_id = @source_id,
+	price_date,
+	price
+from
+	prices
+where
+	price_date = @end_date
+and
+	contract_id not in(
+		select
+			contract_id
+		from
+			bo_prices
+		where
+			source_id = @source_id
+		and
+			price_date = @end_date)
+
+	
+go	

@@ -1,0 +1,43 @@
+create or replace procedure	
+	api_addaccessgroup
+		@name varchar(50),
+		@access_group_id int=NULL output
+
+as
+
+select
+	@access_group_id = access_group_id
+from
+	access_groups
+where
+	name = @name
+
+if @access_group_id != NULL
+begin
+	return
+end
+
+exec
+	j_nextkey
+		"access_groups",
+		@access_group_id output
+
+insert into
+	access_groups(
+		access_group_id,
+		name)
+values(
+	@access_group_id,
+	@name
+)
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Problem adding access group",
+		access_group_id = @access_group_id,
+		name = @name
+	return
+end
+
+go

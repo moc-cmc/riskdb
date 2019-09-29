@@ -1,0 +1,24 @@
+drop procedure dtcc_entityjuristictions
+go
+
+create procedure
+	dtcc_entityjuristictions
+
+as
+
+create table
+	#dtcc(
+		name varchar(50)
+)
+
+insert into #dtcc values("ESMA")
+insert into #dtcc values("non-ESMA")
+
+select
+	name 
+from
+	#dtcc
+order by 
+	name
+
+go

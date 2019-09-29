@@ -1,0 +1,288 @@
+
+if object_id("r_nop") != NULL
+    drop procedure
+        r_nop
+go
+
+create procedure
+	r_nop
+        @login varchar(75),
+        @begin_date datetime = NULL,
+        @end_date datetime = NULL,
+        @nop_type varchar(25),
+        @external_account varchar(50) = NULL
+as
+
+declare @nop_type_id int
+declare @incl_longs char(1)
+declare @incl_shorts char(1)
+declare @incl_base_ccy char(1)
+
+select
+    @nop_type_id = nop_type_id,
+    @incl_longs = incl_longs,
+    @incl_shorts = incl_shorts,
+    @incl_base_ccy = incl_base_ccy
+from
+    nop_types
+where
+    name = @nop_type
+if @nop_type_id = NULL
+begin
+    select
+        status = "Error",
+        error = "No such NOP type",
+        nop_type = @nop_type
+    return
+end
+
+if @end_date is NULL
+    select
+        @end_date = convert(datetime, convert(varchar(10), dateadd(hour, 7, getdate()), 23) + " 17:00")
+else if convert(varchar(50), convert(datetime, @end_date), 20) = "00:00:00.000"
+    select
+        @end_date = dateadd(hour, 17, @end_date)
+
+if @begin_date is NULL
+begin
+    exec
+        r_prevbusinessday
+            @begin_date,
+            @begin_date out
+end
+select
+    @begin_date = convert(datetime, convert(varchar(10), @begin_date) + "17:00")
+
+create table
+    #external_accounts (
+        external_account_id int
+    )
+
+if @external_account != NULL
+begin
+    insert into
+        #external_accounts
+    select
+        external_account_id
+    from
+        external_accounts
+    where
+        symbol = @external_account
+
+    if @@rowcount = 0
+    begin
+        select
+            status = "Error",
+            error = "External account not found",
+            external_account = @external_account
+        return
+    end
+
+end
+else
+begin
+    insert into
+        #external_accounts
+    select
+        external_account_id
+    from
+        external_accounts
+end
+
+
+create table
+    #trade_product_balances (
+        external_account_id int,
+        product_id int,
+        amount float
+    )
+
+insert into
+    #trade_product_balances
+select
+    a.external_account_id,
+    b.product_id,
+    a.quantity
+from
+    trades a,
+    forwards b,
+    #external_accounts c
+where
+    a.contract_id = b.contract_id
+and
+    a.external_account_id = c.external_account_id
+and
+    a.value_date >= @begin_date
+and
+    a.trade_date < @end_date
+
+insert into
+    #trade_product_balances
+select
+    a.external_account_id,
+    b.currency_id,
+    a.quantity * a.price * -1
+from
+    trades a,
+    forwards b,
+    #external_accounts c
+where
+    a.contract_id = b.contract_id
+and
+    a.external_account_id = c.external_account_id
+and
+    a.value_date >= @begin_date
+and
+    a.trade_date < @end_date
+
+/* Sum up amount by external account and product */
+create table
+    #product_balances (
+        external_account_id int,
+        base_currency_id int NULL,
+        product_id int,
+        amount float,
+        equiv float NULL
+    )
+
+insert into
+    #product_balances (
+        external_account_id,
+        product_id,
+        amount
+    )
+select
+    external_account_id,
+    product_id,
+    sum(amount)
+from
+    #trade_product_balances
+group by
+    external_account_id,
+    product_id
+
+/* Set the base currency based on ext_account_limits */
+update
+    #product_balances
+set
+    base_currency_id = b.currency_id
+from
+    #product_balances a,
+    ext_account_limits b
+where
+    a.external_account_id = b.external_account_id
+
+/* Set the base currency for everyone else to USD */
+update
+    #product_balances
+set
+    base_currency_id = b.product_id
+from
+    #product_balances a,
+    products b
+where
+    a.base_currency_id = NULL
+and
+    b.symbol = "USD"
+
+/* Set the equiv based on currency_rates view */
+update
+    #product_balances
+set
+    equiv = a.amount * b.rate
+from
+    #product_balances a,
+    currency_rates b
+where
+    a.product_id = b.product_id
+    
+/* Process NOP logic */
+if @incl_base_ccy = "N"
+    delete
+        #product_balances
+    where
+        base_currency_id = product_id
+
+if @incl_longs = "N"
+    delete
+        #product_balances
+    where
+        amount > 0
+
+if @incl_shorts = "N"
+    delete
+        #product_balances
+    where
+        amount < 0
+
+delete
+    #product_balances
+where
+    amount = 0
+
+    
+create table
+    #output (
+        id int identity,
+        external_account varchar(50),
+        product varchar(15) NULL,
+        amount numeric(30,2) NULL,
+        equiv numeric(30,2)
+    )
+
+insert into
+    #output (
+        external_account,
+        product,
+        amount,
+        equiv
+    )
+select
+    b.symbol,
+    c.symbol,
+    abs(a.amount),
+    abs(a.equiv)
+from
+    #product_balances a,
+    external_accounts b,
+    products c
+where
+    a.external_account_id = b.external_account_id
+and
+    a.product_id = c.product_id
+order by
+    c.symbol
+
+insert into
+    #output (
+        external_account,
+        equiv
+    )
+select
+    b.symbol,
+    abs(sum(a.equiv))
+from
+    #product_balances a,
+    external_accounts b
+where
+    a.external_account_id = b.external_account_id
+group by
+    b.symbol
+
+select
+    external_account,
+    product = case
+        when product is NULL then
+            "Total"
+        else
+            product
+    end,
+    amount,
+    equiv
+from
+    #output
+order by
+    external_account,
+    id
+
+go

@@ -1,0 +1,32 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	ag_standardusers
+go
+
+create procedure
+	ag_standardusers
+
+as
+
+
+select
+	symbol = a.login
+from
+	tico_accounts a,
+	tico_account_types b,
+	login_types c
+where
+	a.account_id = b.tico_account_id
+and
+	b.login_type_id = c.login_type_id
+and
+	c.name = "Standard"
+order by
+	a.login
+
+
+go
+	

@@ -1,0 +1,41 @@
+
+if object_id("r_runprevdayfwdpl") != NULL
+    drop procedure
+        r_runprevdayfwdpl
+go
+
+create procedure
+	r_runprevdayfwdpl
+		@login char(30),
+		@run_name char(200)
+
+as
+
+declare @today datetime
+declare @prev_business_day datetime
+declare @prev_day char(20)
+
+select
+	@today = getdate()
+
+if datepart(hour, @today) < 17
+	exec
+		r_prevbusinessday
+			@today,
+			@prev_business_day output 
+else
+	select
+		@prev_business_day = @today
+
+
+select
+	@prev_day = convert(char(11), @prev_business_day, 1)
+
+exec
+	np_runintradaypl
+		@login,
+		@run_name,
+		@prev_day,
+		NULL
+
+go

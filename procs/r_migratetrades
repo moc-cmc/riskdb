@@ -1,0 +1,260 @@
+
+if object_id('r_migratetrades') != NULL
+    drop procedure
+        r_migratetrades
+go
+
+
+create procedure
+	r_migratetrades
+		@begin_date datetime,
+		@end_date datetime
+
+as
+
+exec
+	r_prevbusinessday
+			@begin_date,
+			@begin_date output
+
+select
+	@begin_date = rtrim(convert(char(8), @begin_date, 112)) + ' 17:00',
+	@end_date = rtrim(convert(char(8), @end_date, 112)) + ' 17:00'
+
+select
+	@begin_date,
+	@end_date
+
+create table
+	#flattened_trades
+(
+	int_trade_id int,
+	int_deal_id int,
+	trade_id varchar(30),
+	deal_id varchar(30),
+	user_login varchar(45),
+	trade_type varchar(45) NULL,
+	internal_account varchar(45),
+	external_account varchar(45),
+	external_account_type varchar(45) NULL,
+        ext_account_limit varchar(45),
+	counterparty varchar(45) NULL,
+	quantity varchar(45),
+	contract varchar(45),
+	value_date varchar(45),
+	fixing_date varchar(45) NULL,
+	price varchar(45),
+	trade_date varchar(45),
+	trader varchar(45),
+	strategy varchar(45),
+	status varchar(45),
+	broker varchar(45),
+	sales_code varchar(45) NULL,
+	trade_identifier varchar(75) NULL,
+	deal_identifier varchar(75) NULL,
+	spot_reference varchar(45) NULL,
+	trade_notification_id varchar(45) NULL,
+	trade_notification_source varchar(75) NULL,
+	trade_notification_status varchar(75) NULL,
+	capture_date varchar(45) NULL,
+	notify_date varchar(45) NULL,
+	error varchar(45) NULL
+)
+
+insert into
+	#flattened_trades
+select 
+	a.trade_id,
+	a.deal_id,
+	'@trade_id='+		rtrim(convert(varchar(10), a.trade_id))	+',', 
+	'@deal_id='+		rtrim(convert(varchar(10), a.deal_id))	+',',
+	'@user_login="'+	rtrim(b.login)	+'",',
+	'@trade_type=NULL,',
+	'@internal_account="'+	rtrim(c.symbol)	+'",',
+	'@external_account="'+	rtrim(d.symbol)	+'",',
+        '@external_account_type="'+ rtrim(k.name) +'",',
+        '@ext_account_limit="'+ rtrim(convert(varchar(30), convert(numeric(30, 10), l.credit_limit))) +'",',
+	'@counterparty=NULL,',
+	'@quantity='+		rtrim(convert(varchar(30), a.quantity))	+',',
+	'@contract="'+		rtrim(e.symbol)	+'",',
+	'@value_date="'+	rtrim(convert(varchar(30), f.value_date))	+'",',
+	'@fixing_date=NULL,',
+	'@price='+		rtrim(convert(varchar(30), convert(numeric(30,15), a.price)))	+',',
+	'@trade_date="'+	rtrim(convert(varchar(30), a.trade_date))	+'",',
+	'@trader="'+		rtrim(g.symbol)	+'",',
+	'@strategy="'+		rtrim(h.name)	+'",',
+	'@status="'+		rtrim(i.name)	+'",',
+	'@broker="'+		rtrim(j.symbol)	+'",',
+	'@sales_code="'+	rtrim(g.rrcode)	+'",',
+	'@trade_identifier=NULL,',
+	'@deal_identifier=NULL,',
+	'@spot_reference=NULL,',
+	'@trade_notification_id=NULL,',
+	'@trade_notification_source=NULL,',
+	'@trade_notification_status=NULL,',
+	'@capture_date=NULL,',
+	'@notify_date=NULL,',
+	'@error=NULL'
+from	
+	trades a,
+	tico_accounts b,
+	internal_accounts c,
+	external_accounts d, 
+	contracts e,
+	trade_value_dates f,
+	traders g,
+	strategies h,
+	statuses i,
+	brokers j,
+	external_account_types k,
+	ext_account_limits l
+where
+	a.user_id = b.account_id
+and
+	a.internal_account_id = c.internal_account_id 
+and
+	a.external_account_id = d.external_account_id
+and
+	a.contract_id = e.contract_id
+and
+	a.trade_id = f.trade_id
+and
+	a.trader_id = g.trader_id
+and
+	a.strategy_id = h.strategy_id
+and
+	a.status_id = i.status_id
+and
+	a.broker_id = j.broker_id
+and
+	d.external_account_type_id = k.external_account_type_id
+and
+	d.external_account_id = l.external_account_id
+and
+	a.trade_date > @begin_date
+and
+	a.trade_date <= @end_date
+
+
+
+update 
+	#flattened_trades
+set
+	trade_type = '@trade_type="'+ a.trade_type  +'",'
+from
+	trade_types a,
+	#flattened_trades b
+where
+	a.trade_id = b.int_trade_id
+
+update 
+	#flattened_trades
+set
+	trade_identifier = '@trade_identifier="'+ a.identifier  +'",'
+from
+	trade_identifiers a,
+	#flattened_trades b
+where
+	a.trade_id = b.int_trade_id
+
+
+update
+	#flattened_trades
+set
+        trade_notification_id = '@trade_notification_id='+ rtrim(convert(varchar(10), a.trade_notification_id)) + ',',
+        trade_notification_source ='@trade_notification_source="'+ rtrim(c.name) +'",',
+        trade_notification_status ='@trade_notification_status="'+ rtrim(d.name) +'",',
+        capture_date ='@capture_date="'+rtrim(convert(varchar(30), a.capture_date))       +'",', 
+        notify_date ='@notify_date="'+rtrim(convert(varchar(30), a.notify_date))       +'",', 
+        error= '@error="'+ a.error + '"'
+from
+	trade_notifications a,
+	#flattened_trades b,
+	sources c,
+	statuses d
+where
+	a.trade_id = b.int_trade_id
+and
+	a.source_id = c.source_id 
+and
+	a.status_id = d.status_id
+
+update
+   #flattened_trades 
+set
+   price = case
+       when d.name = "Inverted" and c.factor != NULL then
+           '@price='+convert(char(30), convert(numeric(30,15), ((1 / e.price) * c.factor * d.factor)))+','
+       when d.name = "Inverted" then
+           '@price='+convert(char(30), convert(numeric(30,15), ((1 / e.price) * d.factor)))+','
+       when c.factor != NULL then
+           '@price='+convert(char(30), convert(numeric(30,15), (e.price * c.factor * d.factor)))+','
+       else
+           '@price='+convert(char(30), convert(numeric(30,15), (e.price * d.factor)))+','
+   end
+from
+   #flattened_trades a,
+   trades e,
+   contracts b,
+   contract_price_styles c,
+   price_styles d
+where
+   a.int_trade_id = e.trade_id
+and
+   e.contract_id = b.contract_id
+and
+   b.contract_id = c.contract_id
+and
+   c.price_style_id = d.price_style_id
+
+update 
+	#flattened_trades
+set
+	deal_identifier = '@deal_identifier="'+ rtrim(b.symbol) +'",'
+from
+	#flattened_trades a,
+	trade_symbols b
+where
+	a.int_deal_id = b.deal_id
+
+
+
+select 
+	sql_proc = "exec r_importmigratedrisktrades ",
+        trade_id ,
+        deal_id ,
+        user_login ,
+        trade_type ,
+        internal_account ,
+        external_account ,
+        external_account_type ,
+        ext_account_limit ,
+        counterparty ,
+        quantity ,
+        contract ,
+        value_date ,
+        fixing_date ,
+        price ,
+        trade_date ,
+        trader ,
+        strategy ,
+        status ,
+        broker ,
+        sales_code ,
+        trade_identifier ,
+        deal_identifier ,
+        spot_reference ,
+        trade_notification_id ,
+        trade_notification_source ,
+        trade_notification_status ,
+        capture_date ,
+        notify_date ,
+        error/*,
+	replace_string = "replace with a new line and go"*/
+from
+	#flattened_trades
+order by
+	trade_id
+
+
+go

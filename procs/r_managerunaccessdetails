@@ -1,0 +1,386 @@
+drop procedure
+	r_managerunaccessdetails
+go
+
+create procedure
+	r_managerunaccessdetails
+		@login varchar(50),
+		@run_name varchar(50)
+
+as
+
+
+declare @run_id int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(30),
+		action char(200) NULL,
+		value char(255) NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Action",
+	"revoke_access",
+	"r_revokerun",
+	NULL
+)
+
+
+insert into
+      #meta
+values(
+      "Column Action",
+      "grant_access",
+      "r_grantrun",
+      NULL
+)
+
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+ 	"section",
+	NULL,
+	NULL
+)
+
+
+insert into 
+	#meta
+values(
+	"Column Hidden",
+	"user_name",
+	NULL,
+	NULL)
+
+insert into
+       #meta
+values(
+       "Column Hidden",
+       "manage_by",
+       NULL,
+       NULL)
+
+
+insert into
+       #meta
+values(
+       "Column Hidden",
+       "access_group",
+       NULL,
+       NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"back",
+	"Run Access",
+	NULL
+)
+
+insert into
+      #meta
+values(
+      "Column Action",
+      "grant_to_admin",
+      "r_grantrunforgroup",
+      NULL
+)
+
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run_name
+if @@rowcount != 1
+begin
+      select
+
+              status = -1,
+              error = "Problem deterimining run"
+      return
+end
+
+create table
+	#run_details(
+		run_id int NULL,
+		run_name varchar(50) NULL,
+		grant_to_admin varchar(50) NULL,
+		access_group varchar(50) NULL,
+		accounts_subscribed int NULL,
+		total_external_accounts varchar(50) NULL,
+		total_counterparties varchar(50) NULL,
+		total_traders varchar(50) NULL,
+		total_brokers varchar(50) NULL,
+		total_strategies varchar(50) NULL,
+		back varchar(25) NULL,
+		manage_by varchar(10) NULL,
+		style varchar(50) NULL
+)
+
+insert into 
+	#run_details
+values(
+	@run_id,
+	@run_name,
+	"Grant to Admin Logins",
+	"Admin",
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	"< Back",
+	"Run",
+	""
+)
+
+update 
+	#run_details
+set
+	accounts_subscribed = (select count(*) from user_runs where run_id = @run_id),
+	total_external_accounts = convert(varchar(50), (select count(*) from run_external_accounts where run_id = @run_id)),
+	total_counterparties = convert(varchar(50), (select count(*) from run_counterparties where run_id = @run_id)),
+      total_traders = convert(varchar(50), (select count(*) from run_traders where run_id = @run_id)),
+      total_brokers = convert(varchar(50), (select count(*) from run_brokers where run_id = @run_id)),
+      total_strategies = convert(varchar(50), (select count(*) from run_strategies where run_id = @run_id))
+
+insert into
+	#run_details (total_external_accounts, style)
+select
+	a.symbol,
+	"background:#fff;border: 1px solid white"
+from
+	external_accounts a,
+	run_external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.run_id = @run_id
+
+insert into
+	#run_details (total_counterparties, style)
+select
+	a.name,
+	"background:#fff;border: 1px solid white"
+from
+	counterparties a,
+	run_counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.run_id = @run_id
+
+insert into
+	#run_details (total_traders, style)
+select
+	a.symbol,
+	"background:#fff;border: 1px solid white"
+from
+	traders a,
+	run_traders b
+where
+	a.trader_id = b.trader_id
+and
+	b.run_id = @run_id
+
+insert into
+		#run_details (total_brokers, style)
+select
+	a.symbol,
+	"background:#fff;border: 1px solid white"
+from
+	brokers a,
+	run_brokers b
+where
+	a.broker_id = b.broker_id
+and
+	b.run_id = @run_id
+
+insert into
+	#run_details (total_strategies, style)
+select
+	a.name,
+	"background:#fff;border: 1px solid white"
+from
+	strategies a,
+	run_strategies b
+where
+	a.strategy_id = b.strategy_id
+and
+	b.run_id = @run_id
+	
+
+--Adaptive Server has expanded all '*' elements in the following statement
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select 
+	    section = "Run Details",
+	   run_name,
+          access_group,
+          accounts_subscribed,
+          grant_to_admin,
+          total_external_accounts,
+          total_counterparties,
+          total_traders,
+          total_brokers, 
+          total_strategies,
+          back,
+          manage_by,
+	   style
+from
+	#run_details
+
+/* -- This code block to separate configured users vs unconfigured users -- COMMENTED OUT
+select
+	section = "Configured Users",
+	"Run Name" = @run_name,
+	"User Name" = a.login,
+	revoke_access = "REVOKE"
+from
+	tico_accounts a,
+	user_runs b
+where
+	a.account_id = b.tico_account_id
+and
+	b.run_id = @run_id
+order by
+	a.login
+
+select
+	section = "Unconfigured Users",
+      "Run Name" = @run_name,
+      "User Name" = login,
+      grant_access = "GRANT"
+from
+	tico_accounts
+where
+	account_id not in(
+			  select
+				tico_account_id 
+			  from
+				user_runs
+			  where
+				run_id in(
+					  select
+						run_id
+					  from
+						runs
+					  where
+						run_id = @run_id))
+order by 
+	login
+*/
+
+/* -- This code block shows configured and unconfigured users in one section -- */
+
+create table
+	#output
+(
+	run_name varchar(50),
+	tico_account_id int,
+        login varchar(100),
+	user_name varchar(50),
+	account_type varchar(50) NULL,
+	has_access char(1) NULL,
+	grant_access varchar(25) NULL,
+	revoke_access varchar(25) NULL,
+	access_group varchar(50) NULL
+)
+
+insert into 
+	#output
+select
+	@run_name,
+	account_id,
+	login,
+	login,
+	NULL,
+	NULL,
+	"GRANT",
+	NULL,
+	NULL
+from
+	tico_accounts
+
+
+update
+	#output
+set
+        account_type = b.name
+from
+        #output a,
+        login_types b,
+        tico_account_types c
+where
+        a.tico_account_id = c.tico_account_id
+and
+        c.login_type_id = b.login_type_id
+
+	
+update 
+	#output
+set
+	revoke_access = "REVOKE",
+	grant_access = NULL,
+	has_access = "Y"
+from
+	#output a,
+	user_runs b
+where
+	a.tico_account_id = b.tico_account_id 
+and
+	b.run_id = @run_id
+
+update
+	#output
+set
+	login = rtrim(login)+" &nbsp;&nbsp;<b>*"+rtrim(c.name)+"</b>",
+	access_group = c.name
+from
+	#output a,
+	access_group_accounts b,
+	access_groups c
+where
+	a.tico_account_id = b.tico_account_id
+and
+	b.access_group_id = c.access_group_id
+
+
+
+select 
+	section = "Account Access",
+	run_name,
+	login,	
+	account_type,
+	user_name,
+	has_access,
+	grant_access,
+	revoke_access,
+	access_group
+from
+	#output
+order by
+	access_group DESC,
+	user_name
+
+go

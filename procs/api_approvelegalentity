@@ -1,0 +1,139 @@
+create or replace procedure
+	api_approvelegalentity
+		@login varchar(100),
+		@legal_entity varchar(255)
+
+as
+
+declare @tico_account_id int
+declare @legal_entity_id int
+declare @legal_entity_approval_id int
+declare @approval_count int
+declare @approved_status_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+select
+	@legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @legal_entity
+if @legal_entity_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding legal entity",
+		legal_entity = @legal_entity
+	return
+end
+
+
+select
+	@legal_entity_approval_id = legal_entity_approval_id
+from
+	legal_entity_approvals
+where
+	legal_entity_id = @legal_entity_id
+and
+	tico_account_id = @tico_account_id
+if @legal_entity_approval_id != NULL
+begin
+	select 
+		status = "Error",
+		message = "Login has already approved this legal entity. Can only approve once",
+		login = @login
+	return
+end
+
+
+exec
+	j_nextkey
+		"legal_entity_approvals",
+		@legal_entity_approval_id output
+
+insert into
+	legal_entity_approvals(
+		legal_entity_approval_id,
+		legal_entity_id,
+		tico_account_id,
+		approved_at)
+values(
+	@legal_entity_approval_id,
+	@legal_entity_id,
+	@tico_account_id,
+	getdate()
+)
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Problem inserting legal entity approval",
+		legal_entity_approval_id = @legal_entity_approval_id
+	return
+end
+
+select
+	@approval_count = count(*)
+from
+	legal_entity_approvals
+where
+	legal_entity_id = @legal_entity_id
+if @approval_count >= 2
+begin
+	select
+		@approved_status_id = status_id
+	from
+		statuses
+	where
+		name = "Approved"
+	if @approved_status_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding 'Approved' status"
+		return
+	end
+
+	begin tran
+		update 
+			legal_entities
+		set
+			status_id = @approved_status_id
+		where
+			legal_entity_id = @legal_entity_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem changing status on legal entity to 'Approved'"
+			rollback tran
+			return
+		end
+	commit tran
+end
+
+select
+	status = "Success",
+	message = "Approved legal entity setup",
+	login = @login,
+	legal_name = @legal_entity
+
+go
+		
+
+
+

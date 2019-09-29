@@ -1,0 +1,146 @@
+drop procedure ag_closesettlebalanceslog
+go
+
+create procedure
+	ag_closesettlebalanceslog
+		@login varchar(50),
+		@settle_date datetime
+as
+
+declare @fx_transaction_type_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "close_settle_balances",
+        "Close Settle Balances",
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"conversion_rate",
+	"Number",
+	"#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"converted_amount",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+create table
+        #transaction_logs(
+                settled_by varchar(50),
+                external_account varchar(50),
+                status varchar(50),
+                currency varchar(50),
+                amount float,
+                settle_date datetime,
+                timestamp datetime,
+                section varchar(50),
+                style varchar(50))
+
+
+insert into
+        #transaction_logs
+select
+
+        settled_by = b.login,
+        account = c.symbol,
+        status = d.name,
+        product = e.symbol,
+        a.amount,
+        a.settle_date,
+        timestamp = a.timestamp,
+        section = "Settlement Audit Log",
+        style = "background:#FFFFFF;border: 1px solid white"
+
+from
+        transaction_logs a,
+        tico_accounts b,
+        external_accounts c,
+        statuses d,
+        products e
+where
+        a.settled_by = b.account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.status_id = d.status_id
+and
+        a.currency_id = e.product_id
+and
+	d.name in("Convert Settlement", "Undo Conversion")
+and
+        a.settle_date = @settle_date
+order by
+        a.timestamp DESC
+
+select 
+	close_settle_balances = "<< Back to Close Settle Balances",
+	settle_date = @settle_date
+
+select
+        settled_by,
+        external_account,
+        status,
+        currency,
+        amount,
+        date = convert(varchar(11), settle_date, 1),
+        timestamp,
+        section,
+        style
+from
+        #transaction_logs
+order by
+        timestamp DESC
+
+go

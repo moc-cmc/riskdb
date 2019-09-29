@@ -1,0 +1,49 @@
+create or replace procedure
+	r_killswitchcreditmessage
+                @login varchar(50),
+                @source varchar(100),
+                @credit_profile_name varchar(50),
+                @request_type varchar(25),
+                @identifier varchar(100),
+                @timestamp datetime=NULL
+
+as
+
+if @request_type = "kill"
+begin
+        exec
+                r_processcpupdaterequest
+                                    @login=@login,
+                                    @source=@source,
+                                    @credit_profile_name=@credit_profile_name,
+                                    @request_type="Pull",
+                                    @identifier=@identifier,
+                                    @timestamp=@timestamp,
+                                    @nop_limit=NULL,
+                                    @dsl_limit=NULL
+
+end
+else if @request_type = "unkill"
+begin
+        exec
+                r_processcpupdaterequest
+                                    @login=@login,
+                                    @source=@source,
+                                    @credit_profile_name=@credit_profile_name,
+                                    @request_type="Restore",
+                                    @identifier=@identifier,
+                                    @timestamp=@timestamp,
+                                    @nop_limit=NULL,
+                                    @dsl_limit=NULL
+
+end
+else
+begin
+        select
+                status = "Error",
+                msg = "Unrecognized credit update request",
+                request = @request_type
+        return
+end
+
+go

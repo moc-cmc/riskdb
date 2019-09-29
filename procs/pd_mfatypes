@@ -1,0 +1,18 @@
+drop procedure pd_mfatypes
+go
+
+create procedure
+	pd_mfatypes
+
+as
+
+select
+	name = name
+from
+	mfa_types
+order by
+	name
+	
+
+go
+

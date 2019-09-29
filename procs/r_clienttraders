@@ -1,0 +1,24 @@
+
+if object_id("r_clienttraders") != NULL
+    drop procedure
+        r_clienttraders
+go
+
+create procedure
+	r_clienttraders
+as
+
+select 
+	name=a.symbol 
+from 
+	traders a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id and
+	b.external_account_type_id = c.external_account_type_id and
+	c.name="Client"
+order 
+	by a.symbol 
+
+go

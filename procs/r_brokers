@@ -1,0 +1,29 @@
+
+if object_id("r_brokers") != NULL
+    drop procedure
+        r_brokers
+go
+
+create procedure
+	r_brokers
+as
+
+
+create table
+	#brokers(
+		symbol char(100)) 
+
+insert into
+	#brokers
+select
+	symbol
+from
+	brokers
+
+select
+	symbol
+from
+	#brokers
+order by
+	symbol
+go

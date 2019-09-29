@@ -1,0 +1,40 @@
+use
+	risk_firsel
+go
+
+drop procedure
+        lw_campaigns
+go
+
+create procedure
+	lw_campaigns
+		@login char(100)
+as
+
+create table
+        #links(
+                meta_type char(200),
+                column char(30),
+                link char(200) NULL,
+                arguments char(255) NULL,
+                format char(20) NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"campaign",
+	"Run Campaign",
+	NULL,
+	NULL)
+
+select * from #links
+
+select
+	campaign = name 
+from
+	exchanges
+order by
+	name
+
+go

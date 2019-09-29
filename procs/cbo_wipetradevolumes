@@ -1,0 +1,61 @@
+drop procedure cbo_wipetradevolumes
+go
+
+create procedure
+	cbo_wipetradevolumes
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+
+declare @volume_date datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @has_volume char(1)
+declare @records_removed int
+
+
+select
+	@volume_date = convert(date, @trade_date)
+
+exec
+	r_daterangefordate
+		@volume_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@has_volume = "Y"
+from
+	trade_volumes
+where
+	volume_date = @volume_date
+
+if @has_volume != "Y"
+begin
+	select
+		status = "Warn",
+		msg = "Volume does not exist for date."
+	return
+end
+
+delete from
+	trade_volumes
+where
+	volume_date = @volume_date
+
+select
+	@records_removed = @@rowcount
+
+select
+	status = "OK",
+	message = "Successfully removed trade volume records for date",
+	volume_date = @volume_date,
+	records_removed = @records_removed
+
+go
+
+
+

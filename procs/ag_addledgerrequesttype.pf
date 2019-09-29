@@ -1,0 +1,10 @@
+use
+        tico_agency_dev
+go
+exec ti_manageprocfield "add", "ag_addledgerrequesttype", "createPendingStatus", "Select Button", "r_statuses", "Editable", "CREATE PENDING STATUS", NULL, NULL
+go
+exec ti_manageprocfield "add", "ag_addledgerrequesttype", "sweepPendingStatus", "Select Button", "r_statuses", "Editable", "CREATE SWEEP STATUS", NULL, NULL
+go
+exec ti_manageprocfield "add", "ag_addledgerrequesttype", "cancelPendingStatus", "Select Button", "r_statuses", "Editable", "CANCEL SWEEP STATUS", NULL, NULL
+go
+

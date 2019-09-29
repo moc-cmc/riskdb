@@ -1,0 +1,40 @@
+
+drop procedure r_revaldatecheck
+go
+
+
+create procedure r_revaldatecheck @reval_date datetime as
+
+declare @count int
+declare @transaction_type_id int
+
+select
+	@transaction_type_id=transaction_type_id
+from
+	transaction_types
+where
+	name="Front Office Commit"
+
+select
+	@count=count(*)
+from
+	int_account_transactions
+where
+	transaction_type_id=@transaction_type_id and
+	convert(varchar(8),transaction_date,112)=convert(varchar(8),@reval_date, 112)
+
+
+if(@count > 0)
+begin
+
+	select @count
+
+	return @count
+
+end
+
+return
+
+go
+
+

@@ -1,0 +1,293 @@
+
+if object_id("mc_tallyfundoptions") != NULL
+    drop procedure
+        mc_tallyfundoptions
+go
+
+create procedure
+	mc_tallyfundoptions
+		@login char(25),
+		@trader char(25),
+		@underlying char(25),
+		@quantity numeric(30,8),
+		@price char(100),
+		@strike char(100),
+		@put_call char(5),
+		@broker char(100),
+		@strategy char(100),
+		@expiration char(100),
+		@option_premium char(100)=NULL,
+		@vol float,
+		@conversion_rate float,
+		@settledate	datetime=NULL,
+		@premium_settledate datetime=NULL,
+		@external_account_id int
+as
+
+declare @instrument char(100)
+declare @contract_id int
+declare @product_id int
+declare @option_expiration_id int
+declare @underlying_contract_id int
+declare @symbol char(100)
+declare @trade_price float
+declare @expiration_date datetime
+declare @base_symbol char(25)
+declare @space_index int
+declare @option_id int
+declare @exercise_style_id int
+declare @exchange_id int
+declare @premium_amount float
+declare @expiration_string char(20)
+declare @prev_business_day datetime
+declare @contract_tv_id int
+declare @now datetime
+declare @total int
+
+select
+	@trade_price = convert(float, @price)
+
+
+select
+	@expiration_date = convert(datetime, @expiration)
+
+select
+	@expiration_string = convert(char(2), datepart(month, @expiration)) + "/" +
+		convert(char(2), datepart(day, @expiration)) + "/" +
+		convert(char(4), datepart(year, @expiration)) + " 10:00"
+select
+	@expiration_date = convert(datetime, @expiration_string)
+
+
+select
+	@premium_amount = convert(float, @option_premium)
+
+select
+	@option_expiration_id = option_expiration_id
+from
+	option_expirations
+where
+	symbol = @underlying
+
+
+/* If the option_expiration couldn't be found, attempt to construct it */
+if @@rowcount != 1
+begin
+	/* Extract the portion of the underlying symbol before the first space */
+	select 
+		@space_index = charindex(" ", @underlying)
+
+	if @space_index != 0
+	begin
+		select 
+			@base_symbol = substring(@underlying, 1, @space_index - 1)
+	end
+	else
+	begin
+		select 
+			@base_symbol = @underlying
+	end
+	
+	/* look up the (real) underlying contract based on the 
+	   base_symbol from the contracts table 
+	*/
+	select 
+		@underlying_contract_id = contract_id
+	from
+		contracts
+	where
+		symbol = @base_symbol
+		
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem finding underlying contract for base symbol",
+			base_symbol = @base_symbol,
+			underlying = @underlying
+		return
+	end
+	
+	/* Use the contract_id to find the option_id (if it exists) */
+	select 
+		@option_id = option_id
+	from
+		options
+	where
+		underlying_contract_id = @underlying_contract_id
+
+	/* if the option_id was not found, create a new row with the underlying contract_id 
+	   using the 'European' exercise style (1) and quantity of 1 */
+	if @@rowcount != 1
+	begin
+		select
+			@exercise_style_id = exercise_style_id
+		from
+			exercise_styles
+		where
+			name = "European"
+			
+		select
+			@exchange_id = exchange_id
+		from
+			exchanges
+		where
+			name = "OTC"
+
+		exec 
+			j_nextkey 
+				"options", 
+				@option_id output
+		
+		insert into 
+			options 
+				values (
+					@option_id, 
+					@underlying_contract_id, 
+					@exchange_id, 
+					@exercise_style_id, 
+					1,
+					.0001)
+	end
+	
+	/* insert a row in the option_expirations table and we should be back in biz */
+	exec
+		j_nextkey 
+			"option_expirations", 
+			@option_expiration_id output
+	insert into 
+		option_expirations 
+			values (
+				@option_expiration_id, 
+				@option_id, 
+				@underlying, 
+				@expiration_date)
+end    
+
+exec
+	r_optioncontract
+		@underlying,
+		@strike,
+		@put_call,
+		@contract_id output
+
+select
+	underlying = @underlying,
+	strike = @strike,
+	put_call = @put_call,
+	contract_id = @contract_id 
+
+
+select
+	@symbol = symbol
+from
+	contracts
+where
+	contract_id = @contract_id
+
+select
+	@underlying_contract_id = a.underlying_contract_id
+from
+	options a,
+	option_expirations b,
+	option_contracts c
+where
+	a.option_id = b.option_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.contract_id = @contract_id
+
+select
+	@instrument = a.name
+from
+	instruments a,
+	contracts b
+where
+	a.instrument_id = b.instrument_id
+and
+	b.contract_id = @underlying_contract_id
+
+exec
+	mc_tallyfundspotoptions
+		@login,
+		@symbol,
+		@trader,
+		@broker,
+		@strategy,
+		@quantity,
+		@trade_price,
+		@premium_amount,
+		@conversion_rate,
+		@premium_settledate,
+		@external_account_id
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "contract_tvs"
+	select
+		@contract_tv_id = last_id
+	from
+		keys
+	where
+		relation = "contract_tvs"
+commit tran
+
+select
+	@now = getdate()
+exec
+	r_prevbusinessday
+		@now,
+		@prev_business_day output
+
+select
+	@prev_business_day = convert(datetime, convert(char(2), datepart(month, @prev_business_day)) + "/" + convert(char(2), datepart(day, @prev_business_day)) + "/" + convert(char(4), datepart(year, @prev_business_day)) + " 17:00")
+
+select
+	@vol = @vol / 100.00
+
+select
+	@total = count(*)
+from
+	contract_tvs
+where
+	contract_id = @contract_id
+if @total = 0
+begin
+	insert into
+		contract_tvs
+	values(
+		@contract_tv_id,
+		@contract_id,
+		@trade_price,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		@vol,
+		NULL,
+		NULL,
+		NULL,
+		@prev_business_day)
+	if @@rowcount = 1
+		exec
+			r_initoptcontract
+				@contract_id
+end
+
+if(@settledate = NULL)
+begin
+	exec r_contractvaluedate @contract_id, @now, @settledate output
+end
+
+insert into
+	option_settledates
+values
+	(@contract_id, @settledate) 
+
+go

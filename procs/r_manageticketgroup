@@ -1,0 +1,825 @@
+
+if object_id("r_manageticketgroup") != NULL
+    drop procedure
+        r_manageticketgroup
+go
+
+create procedure
+	r_manageticketgroup
+		@login varchar(50),
+        	@trade_date datetime,
+        	@action varchar(50),
+        	@group_deal_id int,
+        	@deal_id int = NULL,
+        	@trade_id int = NULL,
+        	@symbol varchar(50) = NULL,
+        	@value_date datetime = NULL,
+        	@quantity numeric(30,4) = NULL,
+        	@price float = NULL,
+        	@external_account varchar(50) = NULL,
+        	@trader varchar(50) = NULL,
+        	@broker varchar(50) = NULL,
+        	@counterparty varchar(50) = NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @now_date datetime
+
+declare @new_trade_id int
+declare @new_deal_id int
+
+
+declare @account_status_id int
+declare @readonly_status_id int
+
+
+select
+    	@account_status_id = status_id
+from
+    	tico_accounts
+where
+    	login = @login
+if @@rowcount = 0begin
+    	select
+        	status = "Error",
+        	error = "Login not found",
+        	login = @login
+    	return
+end
+select
+        @readonly_status_id = status_id
+from
+        statuses
+where
+        name = "Read Only"
+
+if @account_status_id = @readonly_status_id
+begin
+        select
+                status = "Error",
+                message = "Can not modify ticket group. Login status is Read Only"
+        return
+end
+
+
+
+
+select
+    @now_date = getdate()
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+if @action = "Add to Group" or @action = "Link"
+begin
+    /* 
+     * Add all of the trades from the given @deal_id to the @group_deal_id.
+     * Record all of the original deal ids in trade_origin_deals table.
+     */
+    
+    if @group_deal_id = NULL or @deal_id = NULL or @group_deal_id = @deal_id
+    begin
+        select
+            status = "Error",
+            message = "Group deal and deal are equal or are invalid",
+            group_deal_id = @group_deal_id,
+            deal_id = @deal_id
+        return
+    end
+    
+    begin tran
+    
+        insert into
+            trade_origin_deals
+        select
+            a.trade_id,
+            a.deal_id
+        from
+            trades a
+        where
+            a.deal_id = @deal_id
+        and
+            a.trade_id not in ( /* KLS: TODO: This query may become slow */
+                select
+                    b.trade_id
+                from
+                    trade_origin_deals b
+            )
+        
+        update
+            trades
+        set
+            deal_id = @group_deal_id
+        where
+            deal_id = @deal_id
+    
+    commit
+    
+    
+end
+else if @action = "Remove from Group" or @action = "Delink"
+begin
+    /* 
+     * Remove the trade @trade_id and all other trades associated with it back
+     * into its original deal. If the original deal does not exist, do nothing.
+     */
+    declare @trade_deal_id int
+    
+    if @group_deal_id = NULL or @trade_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "Group deal and/or trade not valid",
+            group_deal_id = @group_deal_id,
+            trade_id = @trade_id
+        return
+    end
+    
+    select
+        @trade_deal_id = deal_id
+    from
+        trade_origin_deals
+    where
+        trade_id = @trade_id
+    
+    if @trade_deal_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "Cannot revert trade. Trade does not have an origin deal",
+            trade_id = @trade_id
+        return
+    end
+    
+    if not exists( select * from deals where deal_id = @trade_deal_id ) 
+    begin
+        select
+            status = "Error",
+            message = "Origin deal not longer exists",
+            trade_id = @trade_id,
+            trade_deal_id = @trade_deal_id
+        return
+    end
+    
+    begin tran
+        
+        /* Set trades.deal_id = @trade_deal_id whose deal_id is @group_deal_id
+         * and original deal_id is @trade_deal_id */
+        update
+            trades
+        set
+            deal_id = @trade_deal_id
+        from
+            trades a,
+            trade_origin_deals b
+        where
+            a.trade_id = b.trade_id
+        and
+            a.deal_id = @group_deal_id
+        and
+            b.deal_id = @trade_deal_id
+        
+        /* Delete trade_origin_deals for theses trades whose trades.deal_id is
+         * the same as trade_origin_deals.deal_id. This may delete more rows
+         * than the trades we just updated, but that's okay. */
+        delete
+            trade_origin_deals
+        from
+            trade_origin_deals a,
+            trades b
+        where
+            a.trade_id = b.trade_id
+        and
+            a.deal_id = b.deal_id
+    
+    commit
+    
+end
+else if @action = "NET"
+begin
+    /* 
+     * Nets the trades with the qualifier: @group_deal_id, @trade_date, @symbol,
+     * @value_date, @external_account, @trader, @broker, @counterparty
+     */
+    declare @net_quantity numeric(30,4)
+    declare @net_price float
+    
+    if @group_deal_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "Group deal not valid",
+            group_deal_id = @group_deal_id,
+            trade_id = @trade_id
+        return
+    end
+    
+    if @external_account = NULL or @trader = NULL or @broker = NULL or @counterparty = NULL or @symbol = NULL or @value_date = NULL
+    begin
+        select
+            status = "Error",
+            message = "Cannot net. Invalid parameters",
+            external_account = @external_account,
+            trader = @trader,
+            broker = @broker,
+            counterparty = @counterparty,
+            symbol = @symbol,
+            value_date = @value_date
+        return
+    end
+    
+    create table
+        #aggregated_trades (
+            trade_id int
+        )
+    
+    insert into
+        #aggregated_trades
+    select
+        b.trade_id
+    from
+        deals a,
+        trades b,
+        external_accounts c,
+        external_account_types ca,
+        aggregation_styles cb,
+        traders d,
+        counterparties e,
+        brokers f,
+        contracts g,
+        statuses h
+    where
+        a.deal_id = b.deal_id
+    and
+        b.external_account_id = c.external_account_id
+    and
+        c.external_account_type_id = ca.external_account_type_id
+    and
+        c.aggregation_style_id = cb.aggregation_style_id
+    and
+        b.trader_id = d.trader_id
+    and
+        b.counterparty_id = e.counterparty_id
+    and
+        b.broker_id = f.broker_id
+    and
+        b.contract_id = g.contract_id
+    and
+        b.status_id = h.status_id
+    and
+        b.trade_date >= @begin_date
+    and
+        b.trade_date < @end_date
+    and
+        b.quantity != 0
+    and
+        g.symbol = @symbol
+    and
+        b.value_date = @value_date
+    and
+        ca.name = "Client"
+    and
+        cb.name != "None"
+    and
+        h.name = "Unaggregated"
+    and
+        c.symbol = @external_account
+    and
+        e.name = @counterparty
+    and
+        d.symbol = @trader
+    and
+        f.symbol = @broker
+    and
+        a.deal_id = @group_deal_id
+    order by
+        b.deal_id,
+        b.trade_id
+        
+    if @@rowcount = 0
+    begin
+        select
+            status = "Error",
+            message = "No matching trades",
+            begin_date = @begin_date,
+            end_date = @end_date,
+            symbol = @symbol,
+            value_date = @value_date,
+            external_account = @external_account,
+            counterparty = @counterparty,
+            trader = @trader,
+            broker = @broker,
+            group_deal_id = @group_deal_id
+
+        select
+            b.trade_id
+        from
+            deals a,
+            trades b,
+            external_accounts c,
+            external_account_types ca,
+            aggregation_styles cb,
+            traders d,
+            counterparties e,
+            brokers f,
+            contracts g,
+            statuses h
+        where
+            a.deal_id = b.deal_id
+        and
+            b.external_account_id = c.external_account_id
+        and
+            c.external_account_type_id = ca.external_account_type_id
+        and
+            c.aggregation_style_id = cb.aggregation_style_id
+        and
+            b.trader_id = d.trader_id
+        and
+            b.counterparty_id = e.counterparty_id
+        and
+            b.broker_id = f.broker_id
+        and
+            b.contract_id = g.contract_id
+        and
+            b.status_id = h.status_id
+        and
+            b.trade_date >= @begin_date
+        and
+            b.trade_date < @end_date
+        and
+            b.quantity != 0
+        and
+            g.symbol = @symbol
+        and
+            b.value_date = @value_date
+        and
+            ca.name = "Client"
+        and
+            cb.name != "None"
+        and
+            h.name = "Unaggregated"
+        and
+            c.symbol = @external_account
+        and
+            e.name = @counterparty
+        and
+            d.symbol = @trader
+        and
+            f.symbol = @broker
+        and
+            a.deal_id = @group_deal_id
+        order by
+            b.deal_id,
+            b.trade_id
+            
+        return
+    end
+    
+    select
+        @net_quantity = sum(b.quantity),
+        @net_price = convert(numeric(30, 10), sum(b.quantity*b.price) / sum(b.quantity))
+    from
+        #aggregated_trades a,
+        trades b
+    where
+        a.trade_id = b.trade_id
+
+    /*
+     * Invert the price on behalf of fxa_tallytrade
+     */
+    select
+        @net_price = case c.name
+            when "Inverted" then
+                1 / @net_price
+            else
+                @net_price
+        end
+    from
+        contracts a,
+        contract_price_styles b,
+        price_styles c
+    where
+        a.contract_id = b.contract_id
+    and
+        b.price_style_id = c.price_style_id
+    and
+        a.symbol = @symbol
+        
+    exec
+        fxa_tallytrade
+            @login = @login,
+            @source = "MPT Manual Tally",
+            @trade_id = @new_trade_id out,
+            @deal_id = @group_deal_id,
+            @deal_type = "B2B Forward",
+            @tally_type = "Spot",
+            @trade_type = "Spot",
+            @external_account = @external_account,
+            @trader = @trader,
+            @broker = @broker,
+            @counterparty = @counterparty,
+            @symbol = @symbol,
+            @value_date = @value_date,
+            @trade_date = @now_date,
+            @quantity = @net_quantity,
+            @price = @net_price,
+            @status = "User Review"
+    
+    /* If the trade was tallied, then delete the trades */
+    if @new_trade_id != NULL
+    begin
+        
+        insert into
+            aggregated_trades (
+                aggregate_trade_id,
+                trade_id,
+                deal_id,
+                user_id,
+                trade_type_id,
+                internal_account_id,
+                external_account_id,
+                counterparty_id,
+                quantity,
+                contract_id,
+                value_date,
+                fixing_date,
+                price,
+                trade_date,
+                trader_id,
+                strategy_id,
+                status_id,
+                broker_id,
+                sales_code_id,
+                identifier,
+                pct_price,
+                spot_reference
+            )
+        select
+            @new_trade_id,
+            b.trade_id,
+            b.deal_id,
+            b.user_id,
+            b.trade_type_id,
+            b.internal_account_id,
+            b.external_account_id,
+            b.counterparty_id,
+            b.quantity,
+            b.contract_id,
+            b.value_date,
+            b.fixing_date,
+            b.price,
+            b.trade_date,
+            b.trader_id,
+            b.strategy_id,
+            b.status_id,
+            b.broker_id,
+            b.sales_code_id,
+            b.identifier,
+            b.pct_price,
+            b.spot_reference
+        from
+            #aggregated_trades a,
+            trades b
+        where
+            a.trade_id = b.trade_id
+            
+        delete from
+            trades
+        where
+            trade_id in (
+                select
+                    trade_id
+                from
+                    #aggregated_trades
+            )
+        
+        /* Also delete from other tables */
+        delete from trade_prices where trade_id in (select trade_id from #aggregated_trades)
+        delete from trade_spot_references where trade_id in (select trade_id from #aggregated_trades)
+        delete from trade_matches where trade_id in (select trade_id from #aggregated_trades)
+        delete from trade_exec_symbols where trade_id in (select trade_id from #aggregated_trades)
+        delete from trade_aliases where trade_id in (select trade_id from #aggregated_trades)
+        delete from trade_edits where trade_id in (select trade_id from #aggregated_trades)
+        delete from trade_notifications where trade_id in (select trade_id from #aggregated_trades)    
+        delete from trade_daily_revals where trade_id in (select trade_id from #aggregated_trades)
+        
+    end
+    
+end
+else if @action = "Revert Net"
+begin
+    /* 
+     * Revert a net trade. This is done by deleting the aggregate trade and
+     * reinstating the trades recorded in aggregated_trades.
+     */
+    declare @aggregated_trade_id int
+    declare @aggregated_count int
+    
+    if @group_deal_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "Group deal not valid",
+            group_deal_id = @group_deal_id
+        return
+    end
+    
+    if @trade_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "No net trade selected",
+            group_deal_id = @group_deal_id,
+            trade_id = @trade_id
+        return
+    end
+    
+    if exists( select * from trade_notifications where trade_id = @trade_id )
+    begin
+        select
+            status = "Error",
+            message = "Cannot revert net for trades that have been notified",
+            group_deal_id = @group_deal_id,
+            trade_id = @trade_id
+        return
+    end
+    
+    if not exists( select * from aggregated_trades where aggregate_trade_id = @trade_id )
+    begin
+        select
+            status = "Error",
+            message = "Trade is not an aggregated trade",
+            group_deal_id = @group_deal_id,
+            trade_id = @trade_id
+        return
+    end
+    
+    begin tran
+    
+        insert into
+            trades (
+                trade_id,
+                deal_id,
+                user_id,
+                trade_type_id,
+                internal_account_id,
+                external_account_id,
+                counterparty_id,
+                quantity,
+                contract_id,
+                value_date,
+                fixing_date,
+                price,
+                trade_date,
+                trader_id,
+                strategy_id,
+                status_id,
+                broker_id,
+                sales_code_id,
+                identifier,
+                pct_price,
+                spot_reference
+            )
+        select
+            a.trade_id,
+            @group_deal_id,
+            a.user_id,
+            a.trade_type_id,
+            a.internal_account_id,
+            a.external_account_id,
+            a.counterparty_id,
+            a.quantity,
+            a.contract_id,
+            a.value_date,
+            a.fixing_date,
+            a.price,
+            a.trade_date,
+            a.trader_id,
+            a.strategy_id,
+            b.status_id,
+            a.broker_id,
+            a.sales_code_id,
+            a.identifier,
+            a.pct_price,
+            a.spot_reference
+        from
+            aggregated_trades a,
+            statuses b
+        where
+            a.aggregate_trade_id = @trade_id
+        and
+            b.name = "Unaggregated"
+
+        select
+            @aggregated_count = @@rowcount
+
+        /*
+         * DELETE aggregated_trades: We don't need the aggregated trades anymore
+         */
+        delete
+            aggregated_trades
+        where
+            aggregate_trade_id = @trade_id
+            
+        if @@rowcount != @aggregated_count
+        begin
+            rollback
+            select
+                status = "Error",
+                message = "Expected to delete " + convert(varchar(10), @aggregated_count) + " aggregated_trades but deleted " + convert(varchar(10), @@rowcount) + " instead"
+            return
+        end
+            
+        /*
+         * DELETE trades: We don't need the net trade anymore
+         */
+        delete
+            trades
+        where
+            trade_id = @trade_id
+        
+        if @@rowcount != 1
+        begin
+            rollback
+            select
+                status = "Error",
+                message = "Expected to delete one net trade but deleted " + convert(varchar(10), @@rowcount) + " instead"
+            return
+        end
+            
+        /* Also delete from other tables */
+        delete from trade_prices where trade_id = @trade_id
+        delete from trade_spot_references where trade_id = @trade_id
+        delete from trade_matches where trade_id = @trade_id
+        delete from trade_exec_symbols where trade_id = @trade_id
+        delete from trade_aliases where trade_id = @trade_id
+        delete from trade_edits where trade_id = @trade_id
+        delete from trade_notifications where trade_id = @trade_id    
+        delete from trade_daily_revals where trade_id = @trade_id
+       
+    commit
+    
+end
+else if lower(@action) = "commit"
+begin
+    /* 
+     * Commits the @group_deal_id (which is the same as @deal_id) by setting its
+     * status_id to "Committed". This removes it from the list of deals on the
+     * Assign Trades page and disables any modification to the deal.
+     */
+    
+    if @group_deal_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "Group deal not valid",
+            group_deal_id = @group_deal_id,
+            trade_id = @trade_id
+        return
+    end
+    
+    /* 
+     * Convert all "Unaggregated" trades to "User Review" since they have all
+     * been accepted
+     */
+    
+/*    begin tran */
+    
+        update
+            trades
+        set
+            status_id = c.status_id
+        from
+            trades a,
+            statuses b,
+            statuses c
+        where
+            a.status_id = b.status_id
+        and
+            b.name = "Unaggregated"
+        and
+            c.name = "User Review"
+        and
+            a.deal_id = @group_deal_id
+            
+        update
+            deals
+        set
+            status_id = b.status_id
+        from
+            deals a,
+            statuses b
+        where
+            a.deal_id = @group_deal_id
+        and
+            b.name = "Committed"
+        
+        if @@rowcount != 1
+        begin
+            rollback
+            select
+                status = "Error",
+                message = "Deal could not be modified",
+                group_deal_id = @group_deal_id,
+                trade_id = @trade_id
+            return
+        end
+    
+        select msg = "deal_trades for deal", group_deal_id = @group_deal_id
+        /*
+         * Send out any trade_notifications for all trades in this deal
+         */
+        declare
+            deal_trades
+        cursor for select
+            trade_id
+        from
+            trades
+        where
+            deal_id = @group_deal_id
+        
+        open
+            deal_trades
+            
+        fetch
+            deal_trades
+        into
+            @trade_id
+        
+        while @@sqlstatus = 0
+        begin
+        
+            select msg = "exec r_inserttradenotification", trade_id = @trade_id
+            
+            exec
+                r_inserttradenotification
+                    @trade_id
+            
+            fetch
+                deal_trades
+            into
+                @trade_id
+        end
+        
+        close
+            deal_trades
+        deallocate
+            deal_trades
+        
+/*    commit tran */
+        
+
+end
+else if lower(@action) = "uncommit"
+begin
+    /* 
+     * Uncommits the @group_deal_id (which is the same as @deal_id) by setting
+     * its status_id to "User Review" or whichever status is status_id = 1. This
+     * removes it from the list of deals on the Committed Deals page and places
+     * it back on in the front page list.
+     */
+    
+    if @group_deal_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "Group deal not valid",
+            group_deal_id = @group_deal_id,
+            trade_id = @trade_id
+        return
+    end
+    
+    update
+        deals
+    set
+        status_id = b.status_id
+    from
+        deals a,
+        statuses b
+    where
+        a.deal_id = @group_deal_id
+    and
+        b.name = "User Review"
+    
+    if @@rowcount != 1
+    begin
+        select
+            status = "Error",
+            message = "Deal could not be modified",
+            group_deal_id = @group_deal_id,
+            trade_id = @trade_id
+        return
+    end
+
+end
+else if lower(@action) = "send"
+begin
+    select 1
+end
+
+go

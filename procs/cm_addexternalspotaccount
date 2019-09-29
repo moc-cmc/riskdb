@@ -1,0 +1,857 @@
+drop procedure
+	cm_addexternalspotaccount
+go
+
+create procedure
+	cm_addexternalspotaccount
+		@login varchar(30),
+		@account varchar(50),
+		@account_type varchar(50),
+		@sales_code varchar(50),
+		@aggregation_style varchar(50),
+		@prime_broker varchar(50),
+	        @nop_type varchar(50),
+                @nop_limit float,
+                @dsl_type varchar(50),
+                @dsl_limit float,
+		@trader varchar(50)=NULL,
+                @user_name varchar(50)=NULL,
+		@user_password varchar(50)=NULL,
+		@tally_default_counterparty varchar(50)=NULL,
+                @inbound_mapping_source varchar(50)=NULL,
+                @inbound_mapping_symbol varchar(50)=NULL,
+                @inbound_mapping_source2 varchar(50)=NULL,
+                @inbound_mapping_symbol2 varchar(50)=NULL,
+                @outbound_mapping_source varchar(50)=NULL,
+                @outbound_mapping_symbol varchar(50)=NULL,
+                @outbound_mapping_source2 varchar(50)=NULL,
+                @outbound_mapping_symbol2 varchar(50)=NULL,
+		@client_give_up_source varchar(50)=NULL,
+		@client_give_up_symbol varchar(50)=NULL
+
+as
+
+
+declare @fund_id int
+declare @external_account_id int
+declare @external_account_type_id int
+declare @init_external_account_id int
+declare @fund_name varchar(50)
+declare @internal_account_id int
+declare @run_id int
+declare @portfolio_id int
+declare @external_accounts int 
+declare @evaluation_currency_id int
+declare @aggregation_style_id int
+declare @prime_broker_id int
+declare @trader_id int
+declare @top_level_trader varchar(50)
+declare @top_level_trader_id int
+declare @tico_account_id int
+declare @tico_server varchar(100)
+declare @tico_database varchar(100)
+declare @sql_string varchar(200)
+declare @sales_code_id int
+declare @template_account varchar(30)
+declare @external_account_type varchar(50)
+declare @source_id int
+declare @status_id int
+declare @pl_view_style_id int
+declare @login_type varchar(50)
+declare @client_give_up_source_id int
+declare @nop_type_id int
+declare @dsl_type_id int
+declare @strategy varchar(50)
+declare @strategy_id int
+declare @broker varchar(50)
+declare @broker_id int
+
+
+
+if @user_name != NULL and @user_password != NULL
+begin
+	select
+		@tico_account_id = account_id
+	from
+		tico_accounts
+	where
+		login = @login
+end
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@nop_type_id = nop_type_id
+from
+	nop_types
+where
+	name = @nop_type
+
+select
+	@dsl_type_id = dsl_type_id
+from
+	dsl_types
+where
+	name = @dsl_type
+
+select
+	@external_account_type_id = external_account_type_id
+from
+	external_account_types
+where
+	name = @account_type
+if @external_account_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "External account type not found",
+		account_type = @account_type
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Account name already exists",
+		account_name = @account
+	return
+end
+
+select
+        @aggregation_style_id = aggregation_style_id
+from
+        aggregation_styles
+where
+        name = @aggregation_style
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                message = "Aggregation style not found",
+                aggregation_style = @aggregation_style
+        return
+end
+
+select
+        @prime_broker_id = a.prime_broker_id
+from
+        prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+        b.name = @prime_broker
+if @prime_broker_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Prime Broker not found",
+                prime_broker = @prime_broker
+        return
+end
+
+
+
+select
+	@fund_name = name
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@strategy = name
+from
+	strategies
+where
+	name = "Agency"
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                message = "Strategy not found",
+                strategy = @strategy
+        return
+end
+
+select
+	@broker = symbol
+from
+	brokers
+where
+	symbol = "MPT Tally"
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                message = "Broker not found",
+                broker = @broker
+        return
+end
+
+
+select
+	@internal_account_id = internal_account_id
+from
+	internal_accounts
+where
+	symbol = @fund_name
+
+/* Begin Account Creation */ 
+
+if @internal_account_id = NULL
+begin
+	exec
+		j_nextkey
+			"internal_accounts",
+			@internal_account_id output
+	insert into
+		internal_accounts
+	values(
+		@internal_account_id,
+		@fund_name,
+		@fund_name,
+		0)
+	insert into
+		fund_internal_accounts
+	values(
+		@fund_id,
+		@internal_account_id)
+	insert into
+		internal_account_views
+	values(
+		@internal_account_id)
+end
+
+exec
+	j_nextkey
+		"external_accounts",
+		@external_account_id output
+
+insert into
+	external_accounts(
+		external_account_id,
+		instrument_type,
+		symbol,
+		name,
+		external_account_type_id,
+		internal_account_id,
+		evaluation_currency_id,
+		aggregation_style_id)
+values( 
+	@external_account_id,
+	"S",
+	@account,
+	@account,
+	@external_account_type_id,
+	@internal_account_id,
+	@evaluation_currency_id,
+	@aggregation_style_id)
+
+insert into
+	fund_external_accounts
+values(
+	@fund_id,
+	@external_account_id)
+
+insert into
+	external_account_views
+		values(
+			@external_account_id)
+insert into 
+	external_account_prime_brokers
+		values(	
+			@external_account_id,
+			@prime_broker_id 
+			)
+insert into
+	ext_account_limits(
+		external_account_id,
+		currency_id,
+		nop_type_id,
+		nop_limit,
+		dsl_type_id,
+		dsl_limit,
+		notice_level,
+		warning_level,
+		blocked_level)
+values(
+	@external_account_id,
+	@evaluation_currency_id,
+	@nop_type_id,
+	@nop_limit,
+	@dsl_type_id,
+	@dsl_limit,
+	.5,
+	.75,
+	1.0)
+
+exec
+	j_nextkey
+		"runs",
+		@run_id output
+
+insert into
+	runs
+values(
+	@run_id,
+	@account)
+insert into
+	run_external_accounts
+values(
+	@run_id,
+	@external_account_id)
+
+/* GRANT ACCESS FOR ADMINS */
+
+exec
+	r_grantrunforgroup
+		@account,
+		"Admin"
+
+
+select
+	@internal_account_id = NULL
+
+exec
+	j_nextkey
+		"internal_accounts",
+		@internal_account_id output
+insert into
+	internal_accounts
+values(
+	@internal_account_id,
+	@account,
+	@account,
+	0)
+
+insert into
+	fund_internal_accounts
+values(
+	@fund_id,
+	@internal_account_id)
+insert into
+	internal_account_views
+values(
+	@internal_account_id)
+
+exec
+	j_nextkey
+		"portfolios",
+		@portfolio_id output
+insert into
+	portfolios
+values(
+	@portfolio_id,
+	@account)
+insert into
+	portfolio_accounts
+values(
+	@portfolio_id,
+	@internal_account_id)
+
+
+
+/* Client Creation Only */ 
+/* Create Login if available */
+
+if @account_type = "Client"
+begin
+	if @user_name != NULL and @user_password !=NULL and @tally_default_counterparty != NULL
+	begin
+		select
+			@pl_view_style_id = pl_view_style_id
+		from
+			pl_view_styles
+		where
+			name = "Delta Breakdown Top Detail"
+	
+	
+		select
+			@status_id = status_id
+		from
+			statuses
+		where
+			name = "New"
+		if @@rowcount != 1
+		begin
+			exec
+				j_nextkey
+					"statuses",
+					@status_id output
+		
+			insert into
+				statuses
+			values(
+				@status_id,
+				"New")
+		end
+	
+	
+        	select
+                	@template_account = "template_cao"
+		
+		exec
+			j_nextkey
+				"tico_accounts",
+				@tico_account_id output
+		
+		insert into
+			tico_accounts
+		values(
+			@tico_account_id,
+			@user_name,
+			@user_password,
+			@status_id,
+			@user_name,
+			@user_name)
+		
+		select
+        		@tico_server = tico_server,
+        		@tico_database = tico_database,
+			@fund_id = fund_id
+		from
+        		funds
+		
+		insert into
+			fund_tico_accounts
+		values(
+			@fund_id,
+			@tico_account_id,
+			1)
+		
+	
+		if @pl_view_style_id != NULL
+		begin
+			insert into
+				fwd_pl_preferences
+			values(
+				@tico_account_id,
+				@pl_view_style_id,
+				1)
+		end
+		
+		select
+        		@sql_string = "exec " + rtrim(@tico_database) + "..ti_copymanageraccount '" + rtrim(@template_account) + "', '" + rtrim(@user_name) + "', '" + rtrim(@user_password) + "', '" + rtrim(convert(varchar(30), db_name())) + "'"
+	
+	
+		exec
+        		sp_remotesql 
+				@tico_server, 
+				@sql_string
+	
+	end
+	
+	
+
+	/* Add Top Level Trader */
+
+        select
+                @top_level_trader = @account
+
+        select
+                @sales_code_id = sales_code_id
+        from
+                sales_codes
+        where
+                name = @sales_code
+        if @@rowcount != 1
+        begin
+                exec
+                        j_nextkey
+                                "sales_codes",
+                                @sales_code_id output
+
+                insert into
+                        sales_codes
+                values(
+                        @sales_code_id,
+                        @sales_code)
+        end
+
+
+        if @external_account_type = "Client"
+        begin
+                select
+                        @tico_account_id = 0
+        end
+
+        select
+                @top_level_trader_id = trader_id
+        from
+                traders
+        where
+                symbol = @top_level_trader
+        if @@rowcount != 0
+        begin
+                select
+                        status = "Dupe",
+                        message = "Trader already exists",
+                        trader = @top_level_trader
+                return
+        end
+
+        exec
+                j_nextkey
+                        "traders",
+                        @top_level_trader_id output
+
+        insert into
+                traders
+        values(
+                @top_level_trader_id,
+                @top_level_trader,
+                @tico_account_id,
+                1,
+                @external_account_id,
+                @sales_code_id)
+
+	/* Add tally defaults */
+        exec
+                cm_addtallydefaultsx
+                        @login,
+                        @user_name,
+                        "Swap",
+                        @fund_name,
+                        @account,
+                        @top_level_trader,
+                        @strategy,
+                        @broker,
+                        @tally_default_counterparty
+
+	 /* Add Custom Trader */
+
+        if @trader != NULL and @trader != @top_level_trader
+        begin
+
+                select
+                        @sales_code_id = sales_code_id
+                from
+                        sales_codes
+                where
+                        name = @sales_code
+                if @@rowcount != 1
+                begin
+                        exec
+                                j_nextkey
+                                        "sales_codes",
+                                        @sales_code_id output
+
+                        insert into
+                                sales_codes
+                        values(
+                                @sales_code_id,
+                                @sales_code)
+                end
+
+
+                if @external_account_type = "Client"
+                begin
+                        select
+                                @tico_account_id = 0
+                end
+
+                select
+                        @trader_id = trader_id
+                from
+                        traders
+                where
+                        symbol = @trader
+                if @@rowcount != 0
+                begin
+                        select
+                                status = "Dupe",
+                                message = "Trader already exists",
+                                trader = @trader
+                        return
+                end
+
+                exec
+                        j_nextkey
+                                "traders",
+                                @trader_id output
+
+                insert into
+                        traders
+                values(
+                        @trader_id,
+                        @trader,
+                        @tico_account_id,
+                        1,
+                        @external_account_id,
+                        @sales_code_id)
+
+
+		exec
+			cm_settraderloginx
+				@login,
+				@trader,
+				@user_name
+			
+
+        end
+
+	
+	select
+		@tico_server = tico_server,
+		@tico_database = tico_database
+	from
+		funds
+	
+	
+	select
+		@sql_string = "exec " + rtrim(@tico_database) + "..flush"
+	
+	exec 
+		sp_remotesql 
+			@tico_server, 
+			@sql_string
+
+
+	/* Mappings */
+	
+	if @inbound_mapping_symbol != NULL and @inbound_mapping_source !=NULL
+	begin
+	
+		select
+			@source_id = source_id
+		from
+			sources
+		where
+ 			name = @inbound_mapping_source
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Source name not found",
+				source_name = @inbound_mapping_source
+			return
+		end
+		
+		select
+			@external_account_id = external_account_id
+		from
+			external_accounts
+		where
+			symbol = @account
+		if @@rowcount != 1
+		begin
+			select
+				status ="Error",
+				message = "External Account not found",
+				external_account = @account
+			return
+		end
+		
+		
+		insert into
+			external_account_symbols
+		values(
+				@external_account_id,
+			@source_id,
+			@inbound_mapping_symbol)
+	end
+	
+	if @inbound_mapping_symbol2 != NULL and @inbound_mapping_source2 !=NULL
+	begin
+		select
+                	@source_id = source_id
+        	from
+                	sources
+        	where
+                	name = @inbound_mapping_source2
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status = "Error",
+                        	message = "Source name not found",
+                        	source_name = @inbound_mapping_source2
+                	return
+        	end
+	
+        	select
+                	@external_account_id = external_account_id
+        	from
+                	external_accounts
+        	where
+                	symbol = @account
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status ="Error",
+                        	message = "External Account not found",
+                        	external_account = @account
+                	return
+        	end
+	
+	
+        	insert into
+                	external_account_symbols
+        	values(
+                	@external_account_id,
+                	@source_id,
+                	@inbound_mapping_symbol2)
+		end
+	
+	
+	if @outbound_mapping_symbol != NULL and @outbound_mapping_source != NULL
+	begin
+		select
+                	@source_id = source_id
+        	from
+                	sources
+        	where
+                	name = @outbound_mapping_source
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status = "Error",
+                        	message = "Source name not found",
+                        	source_name = @outbound_mapping_source
+                	return
+        	end
+	
+        	select
+                	@external_account_id = external_account_id
+        	from
+                	external_accounts
+        	where
+                	symbol = @account
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status ="Error",
+                        	message = "External Account not found",
+                        	external_account = @account
+                	return
+        	end
+	
+	
+        	insert into
+                	external_account_symbols
+        	values(
+                	@external_account_id,
+                	@source_id,
+                	@outbound_mapping_symbol)
+
+		insert into
+			trader_symbols
+		values(
+			@top_level_trader_id,
+			@source_id,
+			@outbound_mapping_symbol)
+
+		if @trader_id != NULL
+                begin
+                        insert into
+                                trader_symbols
+                        values(
+                                @trader_id,
+                                @source_id,
+                                @outbound_mapping_symbol)
+                end
+
+	end
+	
+	
+	if @outbound_mapping_symbol2 != NULL and @outbound_mapping_source2 != NULL
+	begin
+        	select
+                	@source_id = source_id
+        	from
+                	sources
+        	where
+                	name = @outbound_mapping_source2
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status = "Error",
+                        	message = "Source name not found",
+                        	source_name = @outbound_mapping_source2
+                	return
+        	end
+	
+        	select
+                	@external_account_id = external_account_id
+        	from
+                	external_accounts
+        	where
+                	symbol = @account
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status ="Error",
+                        	message = "External Account not found",
+                        	external_account = @account
+                	return
+        	end
+	
+	
+        	insert into
+                	external_account_symbols
+        	values(
+                	@external_account_id,
+                	@source_id,
+                	@outbound_mapping_symbol2)
+
+
+		insert into
+                        trader_symbols
+                values(
+                        @top_level_trader_id,
+                        @source_id,
+                        @outbound_mapping_symbol2)
+		
+		if @trader_id != NULL
+		begin
+			insert into
+                        	trader_symbols
+                	values(
+                        	@trader_id,
+                        	@source_id,
+                        	@outbound_mapping_symbol2)
+		end
+
+	end
+	
+	if @client_give_up_symbol != NULL and  @client_give_up_source != NULL
+	begin
+	
+		select
+			@client_give_up_source_id = source_id
+		from
+			sources
+		where
+			name = @client_give_up_source
+	
+		insert into
+			client_give_ups
+		values(
+			@external_account_id,
+			@client_give_up_source_id,
+			@client_give_up_symbol
+			)
+	
+	end
+	
+	
+end	
+
+go

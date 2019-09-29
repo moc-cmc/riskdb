@@ -1,0 +1,46 @@
+drop procedure e_billingdetails
+go
+
+create procedure
+	e_billingdetails
+		@login varchar(50),
+		@due_date datetime
+as
+
+
+declare @billing_server varchar(50)
+declare @sql_string varchar(200)
+declare @fund_id int
+declare @fund_name varchar(50)
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund_name = name
+from
+	funds
+where
+	fund_id = @fund_id
+
+
+select
+	@billing_server = "SYB0103"
+
+select
+	@sql_string = "exec risk_home..e_clientbillingdetails '" + rtrim(@login) + "', '" + rtrim(@fund_name) + "', '" + rtrim(convert(varchar(11), @due_date, 1)) + "'"
+
+if @billing_server != @@servername
+begin
+	exec
+		sp_remotesql @billing_server, @sql_string
+end
+else
+begin
+	exec(@sql_string)
+end
+
+
+go

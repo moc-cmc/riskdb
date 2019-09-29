@@ -1,0 +1,145 @@
+use
+	risk_cc
+go
+
+drop procedure
+	mn_futcontractmappings
+go
+
+create procedure
+	mn_futcontractmappings
+		@login varchar(50),
+		@symbol varchar(50)
+as
+
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"not_currency",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_mapping",
+	"Edit Contract Mapping",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_contract",
+	"Add New Future Contract",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_pl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+create table
+	#output(
+		id int identity,
+		contract_id int NULL,
+		contract varchar(50) NULL,
+		source_id int,
+		source varchar(50),
+		mapping varchar(50) NULL)
+
+insert into
+	#output(
+		source_id,
+		source)
+select
+	source_id,
+	name
+from
+	sources
+order by
+	name
+
+update
+	#output
+set
+	contract = @symbol
+
+update
+	#output
+set
+	a.contract_id = b.contract_id
+from
+	#output a,
+	contracts b
+where
+	a.contract = b.symbol
+
+update
+	#output
+set
+	a.mapping = b.symbol
+from
+	#output a,
+	contract_symbols b
+where
+	a.source_id = b.source_id
+and
+	a.contract_id = b.contract_id
+
+
+
+select
+	section = "Mappings",
+	style = "background:#FFFFFF;border: 1px solid white",
+	contract,
+	source,
+	mapping,
+	edit_mapping = "Edit"
+from
+	#output
+order by
+	id
+
+
+
+
+
+
+
+
+
+
+go

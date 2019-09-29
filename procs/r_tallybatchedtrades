@@ -1,0 +1,313 @@
+drop procedure 
+	r_tallybatchedtrades
+go
+
+create procedure
+	r_tallybatchedtrades
+		@batch_id int
+as
+
+declare @trade_id int
+declare @deal_id int
+declare @queued_trade_id int
+declare @queued_trades int
+declare @user_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @quantity numeric(30,0)
+declare @contract_id int
+declare @trade_date datetime
+declare @price float
+declare @trader_id int
+declare @strategy_id int
+declare @status_id int
+declare @broker_id int
+declare @reference_deal_id int
+declare @reference_deals int
+declare @reference_trade_id int
+declare @instrument char(50)
+declare @value_date datetime
+declare @is_expired int
+declare @now datetime
+declare @symbol char(50)
+declare @transaction_type_id int
+declare @deal_type_id int
+declare @forward_instrument_id int
+declare @counterparty_id int
+declare @sales_code_id int
+
+select
+	@now = getdate()
+
+select
+	@deal_type_id=deal_type_id
+from
+	deal_types
+where
+	name="Option Exercise"
+
+select
+	@forward_instrument_id = trade_type_id
+from 
+	trade_types
+where
+	name="Forward"
+
+create table
+	#queued_trades(
+		queued_trade_id int,
+		reference_deal_id int)
+
+insert into
+	#queued_trades
+select
+	queued_trade_id,
+	reference_deal_id
+from
+	queued_trades
+where
+	batch_id = @batch_id
+
+select
+	@reference_deal_id = 0
+select
+	@reference_deals = count(*)
+from
+	#queued_trades
+where
+	reference_deal_id > @reference_deal_id
+
+while @reference_deals > 0
+begin
+	select
+		@reference_deal_id = min(reference_deal_id)
+	from
+		#queued_trades
+	where
+		reference_deal_id > @reference_deal_id
+
+	select
+		@queued_trade_id = 0
+	select
+		@queued_trades = count(*)
+	from
+		#queued_trades
+	where
+		reference_deal_id = @reference_deal_id
+	and
+		queued_trade_id > @queued_trade_id
+
+	exec
+		j_nextkey
+			"deals",
+			@deal_id output
+
+	insert into
+		deals
+	values(
+		@deal_id,
+		@deal_type_id,
+		getdate(),
+		2)
+
+	while @queued_trades > 0
+	begin
+		select
+			@queued_trade_id = min(queued_trade_id)
+		from
+			#queued_trades
+		where
+			queued_trade_id > @queued_trade_id
+		and
+			reference_deal_id = @reference_deal_id
+
+		exec
+			j_nextkey
+				"trades",
+				@trade_id output
+		
+		select
+			@user_id = user_id,
+			@internal_account_id = internal_account_id,
+			@external_account_id = external_account_id,
+			@quantity = convert(numeric(30,0), quantity),
+			@contract_id = contract_id,
+			@price = price,
+			@trade_date = trade_date,
+			@trader_id = trader_id,
+			@strategy_id = strategy_id,
+			@status_id = status_id,
+			@broker_id = broker_id,
+			@reference_trade_id = reference_trade_id 
+		from
+			queued_trades
+		where
+			queued_trade_id = @queued_trade_id 
+
+		select
+			@counterparty_id = counterparty_id,
+			@sales_code_id = sales_code_id,
+			@value_date = value_date
+		from
+			trades
+		where
+			trade_id=@reference_trade_id
+
+		/* select
+			user_id = @user_id,
+			internal_account_id = @internal_account_id,
+			external_account_id = @external_account_id,
+			trader_id = @trader_id,
+			queued_trade_id = @queued_trade_id  */
+
+		select
+            @instrument = a.name
+        from
+            instruments a,
+            contracts b
+        where
+            a.instrument_id = b.instrument_id
+        and
+            b.contract_id = @contract_id
+
+		if @instrument = "Forward"
+        begin
+
+            select
+                @value_date = value_date
+            from
+                queued_trade_value_dates
+            where
+                queued_trade_id = @queued_trade_id
+
+            if @value_date=  NULL
+            begin
+                /* exec
+                    r_contractvaluedate
+                        @contract_id,
+                        @trade_date,
+                        @value_date output */
+                select
+                    @transaction_type_id=transaction_type_id
+                from
+                    transaction_types
+                where
+                    name="Option Premium"
+
+                select
+                    @value_date = c.transaction_date
+                from
+                    trades a,
+                    account_transaction_trades b,
+                    account_transactions c
+                where
+                    a.trade_id=@reference_trade_id and
+                    a.trade_id=b.trade_id and
+                    b.account_transaction_id=c.account_transaction_id and
+                    c.transaction_type_id=@transaction_type_id
+
+            end
+		end
+
+		begin tran
+			insert into
+				trades
+			values(
+				@trade_id,
+				@deal_id,
+				@user_id,
+				@forward_instrument_id,	
+				@internal_account_id,
+				@external_account_id,
+				@counterparty_id,				
+				@quantity,
+				@contract_id,
+				@value_date,
+				NULL,	
+				@price,
+				@trade_date,
+				@trader_id,
+				@strategy_id,
+				@status_id,
+				@broker_id,
+				@sales_code_id,
+				"Option Exercise" + rtrim(convert(varchar(10), @trade_id)),
+				NULL,
+				NULL
+			)
+			if @@rowcount != 1
+			begin
+				select
+					id = -1,
+					error = "Problem tallying queued trade"
+				rollback tran
+				return
+			end
+		commit tran
+
+		/* select @trade_id, @quantity, @price  */
+
+		if(@quantity != 0 and @price != 0)
+		begin
+			/* select @trade_id */
+			exec r_inserttradenotification @trade_id
+		end
+	
+		delete from
+			queued_trade_value_dates
+		where
+			queued_trade_id = @queued_trade_id
+
+		select
+            @queued_trades = count(*)
+        from
+            #queued_trades
+        where
+            reference_deal_id = @reference_deal_id
+        and
+            queued_trade_id > @queued_trade_id
+				
+		end
+
+		select
+			@is_expired = NULL
+		exec
+			r_isexpired
+				@contract_id,
+				@now,
+				@is_expired output
+
+		if @is_expired = 1
+		begin
+			select
+				@symbol = NULL
+			select
+				@symbol = symbol
+			from
+				contracts
+			where
+				contract_id = @contract_id
+			if @symbol != NULL
+			begin
+				exec
+					r_expireoption
+						@symbol
+			end	
+		end
+
+	select
+		@reference_deals = count(*)
+	from
+		#queued_trades
+	where
+		reference_deal_id > @reference_deal_id
+
+end
+
+select
+	id = 0,
+	msg = "Successfully Tallied Queued Trades",
+	batch_id = @batch_id
+
+go
+

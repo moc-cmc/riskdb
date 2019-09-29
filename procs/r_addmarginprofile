@@ -1,0 +1,100 @@
+drop procedure r_addmarginprofile
+go
+
+create procedure
+	r_addmarginprofile
+		@login varchar(50),
+		@name varchar(50),
+		@currency varchar(10),
+		@margin_model varchar(50),
+		@notice_level float,
+		@warning_level float,
+		@blocked_level float,
+		@multiplier float=NULL
+
+as
+
+/*
+   default_margin_profile_values exists, but is implemented through tico by using 
+   hidden columns instead of NULL values here in this proc
+*/
+declare @margin_profile_id int
+declare @margin_model_id int
+declare @nop_type_id int
+declare @dsl_type_id int
+declare @currency_id int
+
+if @multiplier = NULL
+begin
+	select
+		@multiplier = 1.0
+end
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @currency_id = NULL
+begin
+	select
+		error="Error",
+		msg="Currency not found", @currency
+	return
+end
+
+select
+	@margin_model_id = margin_model_id
+from
+	margin_models
+where
+	name=@margin_model
+if @margin_model_id = NULL
+begin
+	select
+		error="Error",
+		msg="Margin model not found", @margin_model
+	return
+end
+
+exec
+	j_nextkey 
+		"margin_profiles",
+		@margin_profile_id output
+
+insert into
+	margin_profiles(
+		margin_profile_id,
+		name,
+		currency_id,
+		margin_model_id,
+		notice_level,
+		warning_level, 
+		blocked_level,
+		multiplier)
+values(
+	@margin_profile_id,
+	@name,
+	@currency_id,
+	@margin_model_id,
+	@notice_level,
+	@warning_level,
+	@blocked_level,
+	@multiplier
+)
+if @@rowcount = 1
+begin
+	select
+		status = "Successfully created Margin Profile",
+		name = @name
+end
+
+exec
+	r_managemarginprofile
+		@login
+
+
+go
+
+	

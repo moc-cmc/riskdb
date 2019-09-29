@@ -1,0 +1,169 @@
+if object_id("f_agencytransactions") != NULL
+    drop procedure
+	f_agencytransactions
+go
+ 
+create procedure
+	f_agencytransactions
+		@portfolio char(100),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+as
+
+declare @internal_account_id int
+declare @portfolio_id int
+declare @date datetime
+declare @daily_pl float
+declare @p_l float
+declare @commit_transaction_type_id int
+
+create table
+	#meta(
+		meta_type char(50),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"daily_pl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"running_pl",
+	"Number",
+	"#,##0.00")
+
+select * from #meta
+
+select
+	@portfolio_id = portfolio_id
+from
+	portfolios
+where
+	name = @portfolio
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Portfolio not found",
+		portfolio = @portfolio
+	return
+end
+
+
+if @begin_date = NULL
+begin
+	select
+		@begin_date = dateadd(day, ((datepart(day, getdate()) * -1) + 1), getdate())
+
+	select
+		@begin_date = convert(datetime, convert(varchar(11), @begin_date, 1))
+end
+
+if @end_date = NULL
+begin
+	select
+		@end_date = convert(datetime, convert(varchar(11), getdate(), 1))
+	select
+		@end_date = dateadd(day, 1, @end_date)
+end
+	
+select
+	@commit_transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Front Office Commit"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Front Office Commit transaction type not found"
+	return
+end
+
+
+create table
+	#output(
+		date datetime,
+		daily_pl float NULL,
+		running_pl float NULL)	
+
+select
+	@date = @begin_date
+	
+while @date <= @end_date
+begin
+	select
+		@daily_pl = sum(a.amount)
+	from
+		int_account_transactions a,
+		portfolio_accounts b
+	where
+		a.internal_account_id = b.internal_account_id
+	and
+		b.portfolio_id = @portfolio_id
+	and
+		a.transaction_type_id = @commit_transaction_type_id
+	and
+		convert(char(11), a.transaction_date) = convert(char(11), @date)
+
+	if @daily_pl = NULL
+		select
+			@daily_pl = 0.0
+
+	select
+		@p_l = sum(a.amount)
+	from
+		int_account_transactions a,
+		portfolio_accounts b
+	where
+		a.internal_account_id = b.internal_account_id
+	and
+		b.portfolio_id = @portfolio_id
+	and
+		a.transaction_type_id = @commit_transaction_type_id
+	and
+		a.transaction_date < dateadd(day, 1, @date)
+	and
+		a.transaction_date >= @begin_date
+	
+
+	if @p_l = NULL
+		select
+			@p_l = 0.0
+
+
+	insert into
+		#output(
+			date,
+			daily_pl,
+			running_pl)
+	values(
+		@date,
+		@daily_pl,
+		@p_l)
+
+	select
+		@date = dateadd(day, 1, @date)
+
+end
+
+select
+	portfolio = @portfolio,
+	date = convert(char(11), date, 1),
+	daily_pl,
+	running_pl
+from
+	#output
+order by
+	convert(datetime, date)
+
+go

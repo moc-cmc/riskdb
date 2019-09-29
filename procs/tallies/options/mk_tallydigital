@@ -1,0 +1,61 @@
+create or replace procedure
+	mk_tallydigital
+		@login varchar(50),
+		@counterparty varchar(50),
+		@buy_sell varchar(50),
+		@dealt_currency varchar(20),
+                @counter_currency varchar(20),
+                @put_call varchar(10),
+                @spot_ref numeric(30,8),
+                @strike numeric(30,8),
+                @quantity numeric(30,4),
+                @rebate numeric(30,4),
+                @notional_currency varchar(20),
+                @timezone varchar(50),
+                @expiration datetime,
+                @exercise_style varchar(50),
+                @option_settledate datetime,
+                @payment_timing varchar(30),
+		@premium numeric(30,4),
+		@premium_ccy varchar(10),
+		@premium_settledate datetime,
+		@fixing_source varchar(50),
+		@trade_note varchar(100)
+
+as
+
+declare @deal_id int
+declare @window_start datetime
+declare @window_end datetime
+
+exec
+	api_mktdigital
+		@login = @login,
+		@deal_id = @deal_id output,
+                @counterparty = @counterparty,
+                @buy_sell = @buy_sell,
+		@dealt_currency = @dealt_currency,
+                @counter_currency = @counter_currency,
+                @put_call = @put_call,
+                @spot_ref = @spot_ref,
+                @strike = @strike,
+                @quantity = @quantity,
+                @rebate = @rebate,
+                @notional_currency = @notional_currency,
+                @timezone = @timezone,
+                @expiration = @expiration,
+                @exercise_style = @exercise_style,
+                @option_settledate = @option_settledate,
+                @payment_timing = @payment_timing,
+                @premium = @premium,
+                @premium_ccy = @premium_ccy,
+                @premium_settledate = @premium_settledate,
+                @fixing_source = @fixing_source,
+                @trade_note = @trade_note
+	
+exec
+	r_inspectdealtrades
+		@login = @login,
+		@deal_id = @deal_id 
+
+go

@@ -1,0 +1,69 @@
+drop procedure
+	ag_togglechannelgroup
+go
+
+create procedure
+	ag_togglechannelgroup
+		@login varchar(50),
+		@channel_name varchar(100),
+		@group_name varchar(100)
+as
+
+declare @channel_id int
+declare @group_id int
+
+select
+	@channel_id = channel_id
+from
+	channels
+where
+	name = @channel_name
+if @channel_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Channel name not found",
+		channel_name = @channel_name
+	return
+end
+
+select
+	@group_id = group_id
+from
+	groups
+where
+	name = @group_name
+if @group_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Group name not found",
+		group_name = @group_name
+	return
+end
+
+delete
+
+from
+	group_channels
+where
+	group_id = @group_id
+and
+	channel_id = @channel_id
+if @@rowcount = 0
+begin
+	insert into
+		group_channels(
+			group_id,
+			channel_id)
+	values(
+		@group_id,
+		@channel_id)
+end
+
+exec
+	ag_messageshome
+		@login = @login,
+		@channel = @channel_name
+
+go

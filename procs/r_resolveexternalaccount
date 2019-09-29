@@ -1,0 +1,699 @@
+
+if object_id("r_resolveexternalaccount") != NULL
+    drop procedure
+        r_resolveexternalaccount
+go
+
+create procedure
+	r_resolveexternalaccount
+        @login varchar(50),
+        @source varchar(50),
+        
+		@external_account_id int = NULL out,
+        
+		@symbol varchar(50) = NULL out,
+		@name varchar(100) = NULL out,
+        @type varchar(50) = NULL out,
+        /* FEATURE: external_accounts.instrument_type */
+        @instrument_type varchar(15) = NULL out,
+        /* FEATURE: external_accounts.external_account_type_id */
+        @external_account_type_id int = NULL out,
+        @external_account_type varchar(25) = NULL out,
+        /* FEATURE: external_accounts.internal_account_id */
+        @internal_account_id int = NULL out,
+        @internal_account varchar(25) = NULL out,
+        /* FEATURE: external_accounts.evaluation_currency_id */
+        @evaluation_currency_id int = NULL out,
+        @evaluation_currency varchar(25) = NULL out,
+        @fund_id int = NULL out,
+        @fund varchar(50) = NULL out,
+        
+		@source_symbol varchar(50) = NULL out,
+        
+        @create char(1) = NULL out,
+        @report char(1) = NULL
+as
+
+/* messages */
+declare @to varchar(50)
+declare @issue varchar(250)
+declare @subject varchar(250)
+declare @content varchar(250)
+declare @check_sql varchar(250)
+
+declare @status_id int
+declare @should_create char(1)
+declare @source_id int
+
+declare @exec_sql varchar(1020)
+
+select
+    @should_create = @create,
+    @create = "N"
+    
+if @login = NULL or @source = NULL
+begin
+    if @report != "N"
+        select
+            status = "Error",
+            message = "Login and source required",
+            login = @login,
+            source = @source
+    raiserror 99001, "@login and @source required"
+    return
+end
+
+/* Resolve the @source_id from @source */
+exec
+    r_resolvesource
+        @login = @login,
+        @source_id = @source_id out,
+        @name = @source,
+        @report = @report
+if @source_id = NULL
+    return
+    
+if @external_account_id = NULL
+begin
+
+    /* Lookup @external_account_id by symbol */
+    if @external_account_id = NULL and @source_symbol != NULL
+        select
+            @external_account_id = a.external_account_id
+        from
+            external_accounts a
+        join
+            external_account_aliases b 
+                on a.external_account_id = b.external_account_id
+                and b.source_id = @source_id
+        where
+            b.symbol = @source_symbol
+    
+    /* Lookup @external_account_id by symbol */
+    if @external_account_id = NULL and @symbol != NULL
+        select
+            @external_account_id = external_account_id
+        from
+            external_accounts
+        where
+            symbol = @symbol
+    
+    /* Lookup @external_account_id by name */
+    if @external_account_id = NULL and @name != NULL
+        select
+            @external_account_id = external_account_id
+        from
+            external_accounts
+        where
+            name = @name
+    
+end
+
+if @external_account_id = NULL
+begin
+
+    /* ---------------------------- MARK: Create ---------------------------- */
+
+    if @should_create != "N" and /* has permission */ exists (
+        select
+            *
+        from
+            source_permissions
+        where
+            source_id = @source_id
+        and
+            autocreates_external_accounts = "Y"
+    )
+    begin
+    
+        if @symbol = NULL
+        begin
+            
+            select
+                @issue = "unsupported:r_resolveexternalaccount():missing:@symbol",
+                @to = "support",
+                @subject = "Couldn't autocreate external_account without a symbol",
+                @content = "External account does not exist. r_resolveexternalaccount attempted to create the external_account but no @symbol was provided."
+            exec
+                r_postmessage
+                    @login = @login,
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High"
+                    
+            if @report != "N"
+                select
+                    status = "Error",
+                    message = "Cannot create external account without specifying symbol",
+                    external_account = @symbol
+                    
+            return
+        end
+        
+        if @name = NULL
+            select
+                @name = @symbol
+    
+        /* FEATURE: external_accounts.external_account_type_id */
+        if @external_account_type_id = NULL
+        begin
+        
+            if @external_account_type != NULL
+            begin
+                
+                select
+                    @external_account_type_id = external_account_type_id
+                from
+                    external_account_types
+                where
+                    name = @external_account_type
+                    
+                if @external_account_type_id = NULL
+                begin
+                    
+                    select
+                        @issue = "unsupported:r_resolveexternalaccount():missing:external_account_type=" + @external_account_type,
+                        @to = "support",
+                        @subject = "Couldn't find external account, '" + @symbol + "'",
+                        @content = "External account does not exist. r_resolvesource attempted to create the status 'Active' but couldn't."
+                    exec
+                        r_postmessage
+                            @login = @login,
+                            @name = @issue,
+                            @to = @to,
+                            @channel = "System",
+                            @subject = @subject,
+                            @content = @content,
+                            @priority = "High"
+                            
+                    if @report != "N"
+                        select
+                            source = "Error",
+                            message = "Cannot create external account without an external account type",
+                            name = @name
+                            
+                    return
+                    
+                end
+            end
+            else
+            begin
+                select
+                    @issue = "unsupported:r_resolveexternalaccount():missing:external_account_type=" + @external_account_type,
+                    @to = "support",
+                    @subject = "Couldn't find external account, '" + @symbol + "'",
+                    @content = "External account does not exist and no external account type provided"
+                exec
+                    r_postmessage
+                        @login = @login,
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High"
+                        
+                if @report != "N"
+                    select
+                        source = "Error",
+                        message = "Cannot create external account without an extternal account type",
+                        name = @name
+                        
+                return
+            end
+        
+        end
+        
+        /* FEATURE: external_accounts.internal_account_id */
+        if @internal_account_id = NULL
+        begin
+        
+            if @internal_account != NULL
+            begin
+
+                exec
+                    r_resolveinternalaccount
+                        @login = @login,
+                        @source = @source,
+                        @internal_account_id = @internal_account_id out,
+                        @symbol = @internal_account,
+                        @name = @internal_account,
+                        @report = @report
+                
+                if @internal_account_id = NULL
+                begin
+                    
+                    select
+                        @issue = "unsupported:r_resolveexternalaccount():missing:internal_account=" + @internal_account,
+                        @to = "support",
+                        @subject = "Couldn't find external account, '" + @symbol + "'",
+                        @content = "External account does not exist. r_resolvesource attempted to create the status 'Active' but couldn't."
+                    exec
+                        r_postmessage
+                            @login = @login,
+                            @name = @issue,
+                            @to = @to,
+                            @channel = "System",
+                            @subject = @subject,
+                            @content = @content,
+                            @priority = "High"
+                            
+                    if @report != "N"
+                        select
+                            source = "Error",
+                            message = "Cannot create external account without an extternal account type",
+                            name = @name
+                            
+                    return
+                    
+                end
+            end
+            else
+            begin
+                select
+                    @issue = "unsupported:r_resolveexternalaccount():missing:internal_account=" + @internal_account,
+                    @to = "support",
+                    @subject = "Couldn't find external account, '" + @symbol + "'",
+                    @content = "External account does not exist and no external account type provided"
+                exec
+                    r_postmessage
+                        @login = @login,
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High"
+                        
+                if @report != "N"
+                    select
+                        source = "Error",
+                        message = "Cannot create external account without an extternal account type",
+                        name = @name
+                        
+                return
+            end
+        
+        end
+        
+        /* FEATURE: external_accounts.evaluation_currency_id */
+        if @evaluation_currency_id = NULL
+        begin
+        
+            if @evaluation_currency != NULL
+            begin
+                select
+                    @evaluation_currency_id = product_id
+                from
+                    products
+                where
+                    symbol = @evaluation_currency
+                    
+                if @evaluation_currency_id = NULL
+                begin
+                    
+                    select
+                        @issue = "unsupported:r_resolveexternalaccount():missing:evaluation_currency=" + @evaluation_currency,
+                        @to = "support",
+                        @subject = "Couldn't find external account, '" + @symbol + "'",
+                        @content = "External account does not exist. r_resolvesource attempted to create the status 'Active' but couldn't."
+                    exec
+                        r_postmessage
+                            @login = @login,
+                            @name = @issue,
+                            @to = @to,
+                            @channel = "System",
+                            @subject = @subject,
+                            @content = @content,
+                            @priority = "High"
+                            
+                    if @report != "N"
+                        select
+                            source = "Error",
+                            message = "Cannot create external account without an extternal account type",
+                            name = @name
+                            
+                    return
+                    
+                end
+            end
+            else
+            begin
+                select
+                    @issue = "unsupported:r_resolveexternalaccount():missing:evaluation_currency=" + @evaluation_currency,
+                    @to = "support",
+                    @subject = "Couldn't find external account, '" + @symbol + "'",
+                    @content = "External account does not exist and no external account type provided"
+                exec
+                    r_postmessage
+                        @login = @login,
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High"
+                        
+                if @report != "N"
+                    select
+                        source = "Error",
+                        message = "Cannot create external account without an extternal account type",
+                        name = @name
+                        
+                return
+            end
+        
+        end
+        
+        exec
+            r_resolvestatus
+                @login = @login,
+                @source = @name,
+                @status_id = @status_id out,
+                @name = "Active"
+        if @status_id = NULL
+        begin
+            
+            select
+                @issue = "unsupported:r_resolvesource():missing:status=Active",
+                @to = "support",
+                @subject = "Couldn't find status, 'Active'",
+                @content = "Status does not exist. r_resolvesource attempted to create the status 'Active' but couldn't."
+            exec
+                r_postmessage
+                    @login = @login,
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High"
+                    
+            if @report != "N"
+                select
+                    source = "Error",
+                    message = "Cannot create source without an Active status",
+                    name = @name
+                    
+            return
+        end
+       
+        /*+-------------------------------------------------------------------* 
+         |                      INSERT external_accounts                      | 
+         *--------------------------------------------------------------------*/
+
+        exec
+            j_nextkey
+                "external_accounts",
+                @external_account_id out
+                
+        insert into
+            external_accounts (
+                external_account_id,
+                symbol,
+                name
+                /* FEATURE: external_accounts.instrument_type */,
+                instrument_type
+                /* FEATURE: external_accounts.external_account_type_id */,
+                external_account_type_id
+                /* FEATURE: external_accounts.internal_account_id */,
+                internal_account_id
+                /* FEATURE: external_accounts.evaluation_currency_id */,
+                evaluation_currency_id
+            )
+            values (
+                @external_account_id,
+                @symbol,
+                @name
+                /* FEATURE: external_accounts.instrument_type */,
+                @instrument_type
+                /* FEATURE: external_accounts.external_account_type_id */,
+                @external_account_type_id
+                /* FEATURE: external_accounts.internal_account_id */,
+                @internal_account_id
+                /* FEATURE: external_accounts.evaluation_currency_id */,
+                @evaluation_currency_id
+            )
+                
+        if @@rowcount != 1
+        begin
+        
+            select
+                @issue = "insert:external_accounts(name=" + @symbol + ")",
+                @to = "support",
+                @subject = "Failed to create external account",
+                @content = "The external account, """ + @symbol + """, does not exist and r_resolveexternalaccount attempted to autocreate it but no row was inserted with (external_account_id: " + convert(varchar(10), @external_account_id) + ", symbol: '" + @symbol + "', name: " + @name + ").",
+                @check_sql = "if exists(select * from external_accounts where symbol = """ + @symbol + """) exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+            exec
+                r_manageissue
+                    @login = @login,
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High",
+                    @check_sql = @check_sql
+                    
+            if @report != "N"
+                select
+                    status = "Error",
+                    message = "Couldn't add external account",
+                    external_account = @symbol
+            
+            return
+        end
+        
+        /*+-------------------------------------------------------------------* 
+         |                   INSERT fund_external_accounts                    | 
+         *--------------------------------------------------------------------*/
+        
+        if @fund_id = NULL
+        begin
+            
+            /* Look up fund by @fund */
+            if @fund_id = NULL and @fund != NULL
+                exec
+                    r_resolvefund
+                        @login = @login,
+                        @source = @source,
+                        @fund_id = @fund_id out,
+                        @name = @fund,
+                        @create = "Y",
+                        @report = @report
+            
+            /* Look up the @login's default fund */
+            if @fund_id = NULL
+                exec
+                    r_defaultfundforlogin
+                        @login,
+                        @fund_id output
+            
+            /* Look up the "Unknown Accounts" fund */
+            if @fund_id = NULL
+                exec
+                    r_resolvefund
+                        @login = @login,
+                        @source = @source,
+                        @fund_id = @fund_id out,
+                        @name = "Unknown Accounts",
+                        @create = "Y",
+                        @report = @report
+            
+            if @fund_id = NULL
+            begin
+                select
+                    @issue = "notfound:funds(name=" + @fund + "|default_fund=" + @login + "|name=Unknown Accounts)",
+                    @to = "support",
+                    @subject = "No fund found for new external account, """ + @symbol +  """",
+                    @content = "The external account, """ + @symbol + """, does not exist and r_resolveexternalaccount attempted to autocreate it but could not find a fund with either the name, """ + @fund + """, default fund for user, """ + @login + """, or the ""Unknown Accounts"" fund.",
+                    @check_sql = "if exists(select * from external_accounts where symbol = " + @symbol + ") exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+                exec
+                    r_manageissue
+                        @login = @login,
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High",
+                        @check_sql = @check_sql
+                        
+                if @report != "N"
+                    select
+                        status = "Error",
+                        message = "Couldn't determine fund for external account and could not categorize into ""Unknown Accounts""",
+                        external_account = @symbol
+                
+                return
+            end
+            
+        end
+        
+        if @fund_id != NULL
+        begin
+        
+            insert into
+                fund_external_accounts (
+                    fund_id,
+                    external_account_id
+                )
+                values (
+                    @fund_id,
+                    @external_account_id
+                )
+            if @@rowcount != 1
+            begin
+                
+                select
+                    @fund = name
+                from
+                    funds
+                where
+                    fund_id = @fund_id
+            
+                select
+                    @issue = "insert:fund_external_accounts(fund=" + @fund + ",external_account=" + @symbol + ")",
+                    @to = "support",
+                    @subject = "Failed to associate fund, """ + @fund + """, for external account, """ + @symbol +  """",
+                    @content = "The external account, """ + @symbol + """, does not exist and r_resolveexternalaccount attempted to autocreate it but could not associate it with fund, """ + @fund + """ (fund_id: " + convert(varchar(10), @fund_id) + ", external_account_id: " + convert(varchar(10), @external_account_id) + ").",
+                    @check_sql = "if exists(select * from fund_external_accounts where external_account_id = " + convert(varchar(10), @external_account_id) + " and source_id = " + convert(varchar(10), @source_id) + " and symbol = '" + @source_symbol + "') exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+                exec
+                    r_manageissue
+                        @login = @login,
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High",
+                        @check_sql = @check_sql
+                        
+                if @report != "N"
+                    select
+                        status = "Error",
+                        message = "Couldn't associate external account with fund",
+                        external_account = @symbol,
+                        fund = @fund
+                
+            end
+        end
+
+        /*+-------------------------------------------------------------------* 
+         |                  INSERT external_account_aliases                   | 
+         *--------------------------------------------------------------------*/
+
+        if @source_symbol != NULL
+        begin
+        
+            insert into
+                external_account_aliases (
+                    external_account_id,
+                    source_id,
+                    symbol
+                )
+                values (
+                    @external_account_id,
+                    @source_id,
+                    @source_symbol
+                )
+        
+            if @@rowcount != 1
+            begin
+            
+                select
+                    @issue = "insert:external_account_aliases(symbol=" + @source_symbol + ")",
+                    @to = "support",
+                    @subject = "Failed to create external account symbol, """ + @source_symbol + """, for external account, """ + @symbol +  """, for source, """ + @source + """",
+                    @content = "The external account, """ + @source_symbol + """, does not exist and r_resolveexternalaccount attempted to autocreate it but no row was inserted with (external_account_id: " + convert(varchar(10), @external_account_id) + ", source_id: " + convert(varchar(10), @source_id) + ", symbol: '" + @symbol + "').",
+                    @check_sql = "if exists(select * from external_account_aliases where external_account_id = " + convert(varchar(10), @external_account_id) + " and source_id = " + convert(varchar(10), @source_id) + " and symbol = '" + @source_symbol + "') exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+                exec
+                    r_manageissue
+                        @login = @login,
+                        @name = @issue,
+                        @to = @to,
+                        @channel = "System",
+                        @subject = @subject,
+                        @content = @content,
+                        @priority = "High",
+                        @check_sql = @check_sql
+                        
+                if @report != "N"
+                    select
+                        status = "Error",
+                        message = "Couldn't add external account symbol",
+                        external_account = @symbol,
+                        symbol = @source_symbol
+                
+                return
+            end
+            
+        end
+        
+        select
+            @create = "Y"
+    
+        select
+            @to = "support",
+            @subject = "External account, """ + @symbol + """, created",
+            @content = "The external account, """ + @symbol + """, was created by " + @login + " on behalf of " + @source + "."
+        exec
+            r_postmessage
+                @login = @login,
+                @to = @to,
+                @channel = "General",
+                @subject = @subject,
+                @content = @content,
+                @priority = "Low"
+                
+    end
+    else
+    begin
+
+        select
+            @issue = "notfound:external_accounts(name=" + @symbol + ")",
+            @to = "support",
+            @subject = "External account, """ + @symbol + """, not found",
+            @content = "The external account, """ + @symbol + """, could not be found.",
+            @check_sql = "if exists(select * from external_accounts where name = """ + @symbol + """) exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+        exec
+            r_manageissue
+                @login = @login,
+                @name = @issue,
+                @to = @to,
+                @channel = "System",
+                @subject = @subject,
+                @content = @content,
+                @priority = "High",
+                @check_sql = @check_sql
+                
+        if @report != "N"
+            select
+                status = "Error",
+                message = "External account not found",
+                external_account = @symbol
+        
+        return
+    end
+    
+end
+
+select
+	@symbol = a.symbol,
+	@name = a.name,
+	@source_symbol = b.symbol
+from
+	external_accounts a
+left outer join
+	external_account_aliases b
+        on
+            a.external_account_id = b.external_account_id
+        and
+            b.source_id = @source_id
+where
+	a.external_account_id = @external_account_id
+
+go

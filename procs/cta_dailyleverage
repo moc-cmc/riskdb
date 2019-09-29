@@ -1,0 +1,646 @@
+use
+	risk_rcm
+go
+
+drop procedure
+	cta_dailyleverage
+go
+
+
+create procedure
+	cta_dailyleverage
+		@login char(30),
+		@date datetime=NULL
+as
+
+declare @tico_account_id int
+declare @base_currency_id int
+declare @base_symbol char(20)
+declare @contract_id int
+declare @contracts int
+declare @price float
+declare @price_date datetime
+declare @similar_contract_id int
+declare @forward_id int
+declare @future_id int
+declare @expiration datetime
+declare @factor float
+
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200),
+		arguments char(255) NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"exposure_summary",
+	"Exposure Summary",
+	NULL)
+
+select * from #links
+
+
+if @date = NULL
+begin
+	select
+		@date = max(settle_date)
+	from
+		external_pos_transactions
+end
+
+
+select
+	@date = convert(datetime, convert(char(11), @date, 1))
+	
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login 
+if @@rowcount = 0
+begin
+	select
+		id = -1,
+		error = "Problem determining current user"
+
+	return
+
+end
+
+select
+	@base_currency_id = product_id,
+	@base_symbol = symbol
+from
+	products
+where
+	symbol = "USD"
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Base currency not found"
+	return
+end
+
+
+
+create table
+	#positions(
+		external_account_id int,
+		contract_id int,
+		quantity numeric(30,4))
+insert into
+	#positions
+select
+	external_account_id,
+	contract_id,
+	sum(quantity)
+from
+	trades
+where
+	value_date >= @date
+group by
+	external_account_id,
+	contract_id
+	
+
+delete
+
+from
+	#positions
+where
+	quantity = 0.0
+
+create table
+	#allocation(
+		external_account_id int,
+		external_account varchar(50) NULL,
+		product_id int NULL,
+		product_name varchar(50) NULL,
+		contract varchar(50) NULL,
+		sector varchar(50) NULL,
+		currency varchar(50) NULL,
+		buy_sell varchar(2) NULL,
+		quantity int,
+		settle_price float NULL,
+		multiplier float NULL,
+		allocation float NULL,
+		native_ccy_id int NULL,
+		display_ccy_id int NULL,
+		conversion_rate float NULL,
+		market_value float NULL,
+		contract_id int,
+		underlying_contract_id int NULL,
+		delta float NULL,
+		underlying_price float NULL,
+		trade_date datetime NULL,
+		trade_price float NULL)
+
+insert into
+	#allocation(
+		external_account_id,
+		contract_id,
+		quantity)
+select
+	external_account_id,
+	contract_id,
+	quantity
+from
+	#positions
+
+update
+	#allocation
+set
+	a.external_account = b.symbol
+from
+	#allocation a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#allocation
+set
+	a.product_id = b.product_id,
+	a.native_ccy_id = b.currency_id,
+	a.multiplier = b.quantity,
+	a.underlying_contract_id = a.contract_id
+from
+	#allocation a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#allocation
+set
+	a.product_id = d.product_id,
+	a.native_ccy_id = d.currency_id,
+	a.multiplier = c.quantity,
+	a.underlying_contract_id = a.contract_id
+from
+	#allocation a,
+	future_contracts b,
+	futures c,
+	forwards d
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+and
+	c.forward_id = d.contract_id
+
+update
+	#allocation
+set
+	a.product_id = g.product_id,
+	a.native_ccy_id = g.currency_id,
+	a.multiplier = f.quantity,
+	a.underlying_contract_id = e.contract_id
+from
+	#allocation a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	future_contracts e,
+	futures f,
+	forwards g
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id = e.contract_id
+and
+	e.future_id = f.future_id
+and
+	f.forward_id = g.contract_id
+
+
+update
+	#allocation
+set
+	a.product_name = b.name
+from
+	#allocation a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#allocation
+set
+	a.contract = b.symbol
+from
+	#allocation a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+
+update
+	#allocation
+set
+	a.sector = c.name
+from
+	#allocation a,
+	products b,
+	product_types c
+where
+	a.product_id = b.product_id
+and
+	b.product_type_id = c.product_type_id
+	
+update
+	#allocation
+set
+	buy_sell = "B"
+where
+	quantity >= 0
+update
+	#allocation
+set
+	buy_sell = "S"
+where
+	quantity < 0
+
+update
+	#allocation
+set
+	a.settle_price = b.settle_price
+from
+	#allocation a,
+	external_pos_transactions b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = b.external_account_id
+and
+	convert(date, b.settle_date) = convert(date, @date)
+
+
+update
+	#allocation
+set
+	a.currency = b.symbol
+from
+	#allocation a,
+	products b
+where
+	a.native_ccy_id = b.product_id
+
+
+update
+	#allocation
+set
+	market_value = settle_price * quantity * multiplier
+
+update
+	#allocation
+set
+	delta = 1.0
+where
+	delta = 0.0
+or
+	delta = NULL
+
+update
+	#allocation
+set
+	a.delta = b.delta
+from
+	#allocation a,
+	contract_tvs b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, b.tv_date) = convert(date, @date)
+
+update
+	#allocation
+set
+	a.native_ccy_id = b.product_id
+from
+	#allocation a,
+	products b
+where
+	a.currency = b.symbol
+
+update
+	#allocation
+set
+	quantity = quantity * -1.0
+where
+	buy_sell = "S"
+
+update
+	#allocation
+set
+	a.underlying_contract_id = b.underlying_contract_id
+from
+	#allocation a,
+	options b,
+	option_expirations c,
+	option_contracts d
+where
+	a.contract_id = d.contract_id
+and
+	d.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = b.option_id
+
+update
+	#allocation
+set
+	a.delta = a.delta * -1.0
+from
+	#allocation a,
+	option_contracts b
+where
+	a.contract_id = b.contract_id
+and
+	upper(b.put_call) = "P"
+
+
+create table
+	#prices(
+		contract_id int,
+		date datetime NULL,
+		price float NULL)
+insert into
+	#prices(
+		contract_id)
+select
+	distinct(underlying_contract_id)
+from
+	#allocation
+
+update
+	#prices 
+set
+	date = dateadd(hour, 17, @date)
+
+update
+	#prices
+set
+	a.price = b.price
+from
+	#prices a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	a.date = b.price_date
+	
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	#prices
+where
+	contract_id > @contract_id
+and
+	price = NULL
+
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#prices
+	where
+		contract_id > @contract_id
+	and
+		price = NULL
+
+	select
+		@price_date = dateadd(hour, 17, @date),
+		@price = NULL,
+		@similar_contract_id = NULL,
+		@expiration = NULL,
+		@factor = NULL
+
+	select
+		@factor = a.factor
+	from
+		future_price_styles a,
+		future_contracts b
+	where
+		a.future_id = b.future_id
+	and
+		b.contract_id = @contract_id
+
+	if @factor = NULL
+	begin
+		select
+			@factor = a.option_factor
+		from
+			future_price_styles a,
+			future_contracts b,
+			options c,
+			option_expirations d,
+			option_contracts e
+		where
+			a.future_id = b.future_id
+		and
+			b.contract_id = c.underlying_contract_id
+		and
+			c.option_id = d.option_id
+		and
+			d.option_expiration_id = e.option_expiration_id
+		and
+			e.contract_id = @contract_id
+	end
+
+	if @factor = NULL
+		select
+			@factor = 1.0
+
+
+	exec
+		r_priceasof
+			@contract_id,
+			@price_date,
+			@price output
+	/* exec
+		x_nearfutureprice
+			@contract_id,
+			@date,
+			3,
+			@price output */
+
+	update
+		#prices
+	set
+		date = dateadd(hour, 17, @date),
+		price = @price /* @factor TEST */
+	where
+		contract_id = @contract_id
+
+	select
+		@contracts = count(*)
+	from
+		#prices
+	where
+		contract_id > @contract_id
+	and
+		price = NULL
+end
+	
+	
+/* select
+	a.symbol,
+	b.date,
+	b.price
+from
+	contracts a,
+	#prices b
+where
+	a.contract_id = b.contract_id
+order by
+	b.price  */
+
+
+
+create table
+	#currency_conversion_rates(
+		display_currency_id int NULL,
+		currency_id int,
+		conversion_rate float NULL)
+
+insert into
+	#currency_conversion_rates(
+		currency_id)
+select
+	distinct(
+		native_ccy_id)
+from
+	#allocation
+
+
+update
+	#currency_conversion_rates
+set
+	display_currency_id = @base_currency_id
+update
+	#currency_conversion_rates
+set
+	conversion_rate = 1.0
+where
+	display_currency_id = currency_id
+
+
+update
+	#currency_conversion_rates
+set
+	a.conversion_rate = b.price
+from
+	#currency_conversion_rates a,
+	prices b,
+	forwards c
+where
+	a.currency_id = c.product_id
+and
+	a.display_currency_id = c.currency_id
+and
+	c.contract_id = b.contract_id
+and
+	datepart(day, b.price_date) = datepart(day, @date)
+and
+	datepart(month, b.price_date) = datepart(month, @date)
+and
+	datepart(year, b.price_date) = datepart(year, @date)
+
+
+update
+	#currency_conversion_rates
+set
+	a.conversion_rate = 1.0 / b.price
+from
+	#currency_conversion_rates a,
+	prices b,
+	forwards c
+where
+	a.currency_id = c.currency_id
+and
+	a.display_currency_id = c.product_id
+and
+	c.contract_id = b.contract_id
+and
+	datepart(day, b.price_date) = datepart(day, @date)
+and
+	datepart(month, b.price_date) = datepart(month, @date)
+and
+	datepart(year, b.price_date) = datepart(year, @date)
+
+
+update
+	#allocation
+set
+	a.conversion_rate = b.conversion_rate
+from
+	#allocation a,
+	#currency_conversion_rates b
+where
+	a.native_ccy_id = b.currency_id
+
+
+update
+	#allocation
+set
+	a.allocation =  a.multiplier * a.quantity * b.price * a.delta,
+	a.underlying_price = b.price
+from
+	#allocation a,
+	#prices b
+where
+	a.underlying_contract_id = b.contract_id
+
+
+
+select
+	date = @date
+
+select
+	external_account,
+	product_id,
+	product_name,
+	contract,
+	sector,
+	currency,
+	buy_sell,
+	quantity,
+	settle_price,
+	multiplier,
+	native_allocation = allocation,
+	conversion_rate,
+	allocation = allocation * conversion_rate,
+	market_value,
+	difference = market_value - (allocation * conversion_rate),
+	contract_id,
+	underlying_contract_id,
+	delta,
+	underlying_price,
+	trade_date,
+	trade_price
+from
+	#allocation
+where
+	allocation != NULL
+order by
+	external_account,
+	product_name
+
+
+
+go

@@ -1,0 +1,563 @@
+drop procedure
+	xl_runcurrencysummary
+go
+
+create procedure
+	xl_runcurrencysummary
+		@login varchar(50),
+		@run_name varchar(50),
+		@value_date datetime= NULL
+
+
+as
+
+declare @run_id int
+declare @product_id int
+declare @products int
+declare @dealt_amount float
+declare @counter_amount float
+declare @balance float
+declare @settled_premium float
+declare @total float
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	"#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"settled_premium",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"give_quantity",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"get_quantity",
+	"Number",
+	"#,##0")
+
+select * from #meta
+
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding run with name",
+		run = @run_name
+	return
+end
+
+/*
+if @value_date = NULL
+	select
+		@value_date = getdate()
+*/
+
+if @value_date = NULL or @value_date = ""
+        select
+                @value_date = convert(datetime, convert(char(11), getdate(), 1))
+
+select
+        @value_date = convert(char(2), datepart(month, @value_date)) + "/" +
+                convert(char(2), datepart(day, @value_date)) + "/" +
+                convert(char(4), datepart(year, @value_date))
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders	
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies	
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts	
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts	
+
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers	
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties	
+
+create table
+	#forward_trades(
+		deal_id int,
+		trade_id int,
+		trade_date datetime,
+		value_date datetime,
+		trader_id int,
+		external_account_id int,
+		counterparty_id int,
+		counter_amount float,
+		currency_id int,
+		dealt_amount float,
+		product_id int,
+		price float)
+insert into
+	#forward_trades
+select
+	a.deal_id,
+	a.trade_id,
+	a.trade_date,
+	a.value_date,
+	a.trader_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.quantity,
+	h.currency_id,
+	a.quantity * a.price * -1.0,
+	h.product_id,
+	a.price
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g,
+	forwards h
+where
+	a.contract_id = h.contract_id
+and
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id = f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+
+/* Get the option trades -- used later */
+create table
+	#option_trades(
+		deal_id int,
+		trade_id int,
+		trade_date datetime,
+		value_date datetime,
+		trader_id int,
+		external_account_id int,
+		counterparty_id int,
+		quantity numeric(30,4),
+		contract_id int,
+		premium float,
+		premium_ccy_id int,
+		price float)
+
+insert into
+	#option_trades
+select
+	a.deal_id,
+	a.trade_id,
+	a.trade_date,
+	i.transaction_date,
+	a.trader_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.quantity,
+	a.contract_id,
+	i.amount,
+	i.currency_id,
+	a.price
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g,
+	account_transaction_trades h,
+	account_transactions i
+where
+	a.trade_id = h.trade_id
+and
+	h.account_transaction_id = i.account_transaction_id
+and
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id = f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	convert(date, i.transaction_date) = convert(date, @value_date)
+
+create table
+	#all_products(
+		product_id int)
+insert into
+	#all_products
+select
+	distinct(product_id)
+from
+	#forward_trades
+insert into
+	#all_products
+select
+	distinct(currency_id)
+from
+	#forward_trades
+insert into
+	#all_products
+select
+	distinct(premium_ccy_id)
+from
+	#option_trades
+
+create table
+	#products(
+		product_id int,
+		closing_date datetime NULL,
+		balance float NULL,
+		settled_premium float NULL,
+		total float NULL)
+insert into
+	#products(
+		product_id)
+select
+	distinct(product_id)
+from
+	#all_products
+
+update
+	#products
+set
+	closing_date = @value_date,
+	balance = 0.0,
+	settled_premium = 0.0,
+	total = 0.0
+
+select
+	@product_id = 0
+select
+	@products = count(*)
+from
+	#products
+where
+	product_id > @product_id
+
+while @products > 0
+begin
+	select
+		@product_id = min(product_id)
+	from
+		#products
+	where
+		product_id > @product_id
+
+	select
+		@dealt_amount = NULL,
+		@counter_amount = NULL,
+		@settled_premium = NULL,
+		@balance = NULL,
+		@total = NULL
+
+	select
+		@dealt_amount = sum(dealt_amount)
+	from
+		#forward_trades
+	where
+		product_id = @product_id
+	if @dealt_amount = NULL
+		select
+			@dealt_amount = 0.0
+
+	select
+		@counter_amount = sum(counter_amount)
+	from
+		#forward_trades
+	where
+		currency_id = @product_id
+	if @counter_amount = NULL
+		select
+			@counter_amount = 0.0
+
+	select
+		@balance = @dealt_amount + @counter_amount
+
+	select
+		@settled_premium = sum(premium)
+	from
+		#option_trades
+	where
+		premium_ccy_id = @product_id
+	if @settled_premium = NULL
+		select
+			@settled_premium = 0.0
+
+	select
+		@total = @balance + @settled_premium
+
+	update
+		#products
+	set
+		balance = @balance,
+		settled_premium = @settled_premium,
+		total = @total
+	where
+		product_id = @product_id
+
+	select
+		@products = count(*)
+	from
+		#products
+	where
+		product_id > @product_id
+end
+
+
+/* Select out all results */
+select
+	product = b.symbol,
+	closing_date = convert(varchar(11), a.closing_date, 1),
+	a.balance,
+	a.settled_premium,
+	a.total
+from
+	#products a,
+	products b
+where
+	a.product_id = b.product_id
+order by
+	b.symbol
+
+select
+	a.deal_id,
+	a.trade_id,
+	trade_date = convert(varchar(11), a.trade_date, 1),
+	value_date = convert(varchar(11), a.value_date, 1),
+	trader = b.symbol,
+	external_account = c.symbol,
+	counterparty = d.name,
+	give_quantity = a.dealt_amount,
+	give_product = e.symbol,
+	get_quantity = a.counter_amount,
+	get_product = f.symbol,
+	a.price
+from
+	#forward_trades a,
+	traders b,
+	external_accounts c,
+	counterparties d,
+	products e,
+	products f
+where
+	a.trader_id = b.trader_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.counterparty_id = d.counterparty_id
+and
+	a.currency_id = e.product_id
+and
+	a.product_id = f.product_id
+order by
+	a.price
+
+select
+	a.deal_id,
+	a.trade_id,
+	trade_date = convert(varchar(11), a.trade_date, 1),
+	value_date = convert(varchar(11), a.value_date, 1),
+	trader = b.symbol,
+	external_account= c.symbol,
+	counterparty = d.name,
+	a.quantity,
+	e.symbol,
+	a.premium,
+	premium_ccy = f.symbol,
+	a.price
+from
+	#option_trades a,
+	traders b,
+	external_accounts c,
+	counterparties d,
+	contracts e,
+	products f
+where
+	a.trader_id= b.trader_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.counterparty_id = d.counterparty_id
+and
+	a.contract_id = e.contract_id
+and
+	a.premium_ccy_id = f.product_id
+order by
+	e.symbol
+	
+
+
+
+go
+

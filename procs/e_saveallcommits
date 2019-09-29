@@ -1,0 +1,256 @@
+drop procedure e_saveallcommits
+go
+
+create procedure
+	e_saveallcommits
+		@login varchar(50),
+		@trade_date datetime
+as
+
+select
+	@login = "markr"
+/* chriso -- 20150729 -- removing ADM
+select msg = "Tallying ADM V.1 Volume"
+exec
+	adm_ex_tallycommittedtrades
+		@login,
+		"ADM",
+		"ADM",
+		@trade_date,
+		"FXMNG-STPUSD"
+
+select msg = "Tallying ADM V.1 BoA 1 Volume"
+exec
+	adm_ex_tallycommittedtrades
+		@login,
+		"ADM",
+		"Notify BoA 1",
+		@trade_date,
+		"BAML-STPUSD"
+
+select msg = "Tallying ADM V.1 BoA 2 Volume"
+exec
+	adm_ex_tallycommittedtrades
+		@login,
+		"ADM",
+		"Notify BoA 2", 
+		@trade_date,
+		"BAML-STPUSD"
+
+select msg = "Tallying ADM BAML FXPB Volume"
+exec
+	adm2_ex_tallycommittedtrades
+		@login,
+		"ADM",
+		"BAML FXPB",
+		@trade_date,
+		"BAML-STPUSD"
+
+select msg = "Tallying ADM V.2 Volume"
+exec
+	adm_tallycommittedtrades
+		@login,
+		"ADM",
+		@trade_date,
+		"FXMNG-STPUSD"
+*/
+
+/* select msg = "Tallying SEB Volume"
+exec
+	seb_ex_tallycommittedtrades
+		@login,
+		"SEB",
+		@trade_date */
+
+/* select msg = "Tallying VSCap Volume"
+exec
+	vscap_ex_tallycommittedtrades
+		@login,
+		"VS Cap",
+		@trade_date */
+
+/* chriso: Removing Buttonwood 
+select msg = "Tallying Buttonwood Volume"
+exec
+	bwe_tallycommittedtrades
+		@login,
+		"Buttonwood",
+		@trade_date
+*/
+
+/* chriso - 20150729 - removing faros
+select msg = "Tallying Faros Volume"
+exec
+	frs_tallycommittedtrades
+		@login,
+		"Faros",
+		@trade_date
+select
+	msg = "Tally Faros Source TT Volume"
+exec
+	frs_tallycommittedsource
+		@login,
+		"Faros",
+		@trade_date
+
+select
+	msg = "Tally Faros Cancel/Rebook Volume"
+exec
+	frs_tallystatustrades
+		@login,
+		"Faros",
+		@trade_date
+*/
+
+select
+	msg = "Tally Mint Volume"
+begin
+exec
+	mnt_tallycommittedtrades
+		@login,
+		"MINT",
+		@trade_date
+end
+
+/* chriso -- 21050729 - removing ILQ
+select
+	msg = "Tally ILQ Volume"
+begin
+exec
+	ilq_tallycommittedtrades
+		@login,
+		"ILQ",
+		@trade_date
+end
+*/
+
+select
+	msg = "Tally Chappy Volume"
+begin
+exec
+	chap_tallycommittedtrades
+		@login,
+		"CHAPD",
+		@trade_date
+end
+
+
+/*------------- chriso: Removing Cantor NY 6/25
+select msg = "Tallying CFS-NY Volume"
+exec
+	cfs_tallycommittedtrades
+		@login,
+		"CFS-NY",
+		@trade_date
+
+select msg = "Tallying CFS-NY Netted Trades"
+e
+ xec
+	cfs_ex_tallynettedtrades
+		@login,
+		"CFS-NY",
+		@trade_date
+
+select msg = "Tallying CFS-NY Netted FIX TT Trades"
+exec
+	cfs_ex_tallytttrades
+		@login,
+		"CFS-NY",
+		@trade_date
+
+
+select msg = "Tallying CFS-NY Netted File TT Trades"
+exec
+	cfs_ex_tallyfiletttrades
+		@login,
+		"CFS-NY",
+		@trade_date
+
+select
+	msg = "Tallying CFS-NY Source TT Trades"
+exec
+	cfs_tallycommittedsource
+		@login,
+		"CFS-NY",
+		@trade_date
+----------------*/
+
+select msg = "Tallying CFEFX Trades"
+exec
+	cfe_tallycommittedtrades 
+ 		@login,
+		"CFEFX",
+		@trade_date
+
+select msg = "Tallying CFE-NY Netted Trades"
+exec
+	cfe_ex_tallynettedtrades
+		@login,
+		"CFEFX",
+		@trade_date
+
+
+select msg = "Tallying BGC Trades"
+exec
+	bgc_tallycommittedtrades
+		@login,
+		"BGC",
+		@trade_date
+
+
+select msg = "Tallying TJM Trades"
+exec
+	tjm_tallycommittedtrades
+		@login,
+		"TJM",
+		@trade_date
+
+select msg = "Tallying BGC FXWiz Trades"
+exec
+	wiz_tallycommittedtrades
+		@login,
+		"BGC FXWiz",
+		@trade_date
+/* chriso - 20150729 - removing SQFX
+select msg = "Tallying Squared FX Trades"
+exec
+  
+       sqf_tallycommittedtrades
+		@login,
+		"Squared FX",
+		@trade_date
+*/
+
+/* select msg = "Tallying Squared FX Trades"
+exec
+	bluef_tallycommittedtrades
+		@login,
+		"Bluefin", 
+	 	@trade_date */
+
+/* chriso - 20150729 - removing alum
+
+select msg = "Tallying ALUM FX Trades"
+exec
+ 	alum_tallycommittedtrades
+                @login,
+                "ALUM FX",
+                @trade_date
+*/
+
+select msg = "Tallying Cresco Trades"
+exec
+        cres_tallycommittedtrades
+                @login,
+                "Cresco",
+                @trade_date
+
+select msg = "Tallying ITG trades"
+exec
+	itg_tallycommittedtrades
+		@login,
+		"ITG",
+		@trade_date
+
+
+go

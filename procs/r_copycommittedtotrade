@@ -1,0 +1,54 @@
+drop procedure r_copycommittedtotrade
+go
+
+create procedure
+	r_copycommittedtotrade
+		@reval_date datetime
+
+as
+
+select @reval_date = convert(char(8), @reval_date, 112) + " 17:00"
+
+
+
+
+insert into 
+	trade_daily_revals
+select
+	trade_id,
+	bo_trade_date,
+	source_id,
+	status_id,
+	contract_id,
+	contract_qty,
+	value_date,
+	reval_date,
+	close_price,
+	native_value,
+	delta,
+	gamma,
+	theta,
+	tau,
+	native_currency_id,
+	product_id,
+	evaluation_currency_id,
+	evaluation_value,
+	price_change_to_date,
+	native_realized_pl_to_date,
+	native_unrealized_pl_to_date,
+	realized_pl_to_date,
+	unrealized_pl_to_date,
+	premium_ccy_id,
+	premium,
+	evaluation_premium,
+	premium_settle_date,
+	notional_amount,
+	evaluation_notional
+        /*, forward_id some dbs do not have this field */
+from
+	committed_daily_revals
+where 
+	reval_date = @reval_date
+
+go
+

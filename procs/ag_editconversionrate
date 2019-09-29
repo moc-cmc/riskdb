@@ -1,0 +1,200 @@
+use
+	risk_finotec
+go
+
+drop procedure
+	ag_editconversionrate
+go
+
+create procedure
+	ag_editconversionrate
+		@login varchar(50),
+		@symbol varchar(50),
+		@price_date datetime,
+		@price float
+
+as
+
+declare @contract_id int
+declare @bo_spot_settle_id int
+declare @source_id int
+declare @inverted_contract_id int
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "MPT"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "MPT source not found"
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+exec
+	r_invertedcontract
+		@contract_id,
+		@inverted_contract_id output
+
+select
+	@price_date = convert(datetime, convert(date, @price_date))
+select
+	@price_date = dateadd(hour, 17, @price_date)
+
+
+select
+	@bo_spot_settle_id = bo_spot_settle_id
+from
+	bo_spot_settles
+where
+	contract_id = @contract_id
+and
+	price_date = @price_date
+and
+	source_id = @source_id
+if @bo_spot_settle_id = NULL
+begin
+	exec
+		r_invertedcontract
+			@contract_id,
+			@inverted_contract_id output
+
+	select
+		@bo_spot_settle_id = bo_spot_settle_id
+	from
+		bo_spot_settles
+	where
+		contract_id = @inverted_contract_id
+	and
+		price_date = @price_date
+	and
+		source_id = @source_id
+	if @bo_spot_settle_id = NULL
+	begin
+		insert into
+			bo_spot_settles(
+				contract_id,
+				source_id,
+				price_date,
+				price)
+		values(
+			@contract_id,
+			@source_id,
+			@price_date,
+			@price)
+		select
+			@bo_spot_settle_id = @@identity
+			
+	end
+	else
+	begin
+		select
+			@symbol = symbol
+		from
+			contracts
+		where
+			contract_id = @inverted_contract_id
+
+		select
+			@contract_id = @inverted_contract_id,
+			@price = 1.0 / @price
+	end
+end
+
+
+begin tran
+
+	insert into
+		bo_spot_settle_edits(
+			bo_spot_settle_id,
+			contract_id,
+			source_id,
+			price_date,
+			price,
+			tico_account_id,
+			timestamp)
+	select
+		bo_spot_settle_id,
+		contract_id,
+		source_id,
+		price_date,
+		price,
+		tico_account_id = @tico_account_id,
+		timestamp = getdate()
+	from
+		bo_spot_settles
+	where
+		bo_spot_settle_id = @bo_spot_settle_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to archive edit, update failed",
+			symbol = @symbol,
+			price_date = @price_date
+		rollback tran
+		return
+	end
+
+	update
+		bo_spot_settles
+	set
+		price = @price
+	where
+		bo_spot_settle_id = @bo_spot_settle_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Update failed. No price record found",
+			symbol = @symbol,
+			price_date = @price_date
+		rollback tran
+		return
+	end
+
+commit tran
+
+
+	
+exec
+	ag_conversionratesfordate
+		@login,
+		@price_date
+
+
+go

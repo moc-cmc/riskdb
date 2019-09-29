@@ -1,0 +1,229 @@
+drop procedure ag_tallyqueuedresids
+go
+
+create procedure
+	ag_tallyqueuedresids
+		@login varchar(50),
+		@batch_id int
+as
+
+declare @fund_id int
+declare @fund varchar(100)
+declare @resid_trader_id int
+declare @resid_trader varchar(50)
+declare @resid_trader_login varchar(50)
+declare @resid_trader_account_id int
+
+declare @queued_resids int
+declare @queued_resid_id int
+
+declare @deal_id int
+declare @trade_id int
+declare @contract_id int
+declare @quantity numeric(30,4)
+declare @account varchar(50)
+declare @symbol varchar(50)
+declare @trade_date datetime
+declare @price float
+declare @value_date datetime
+declare @price_style varchar(50)
+declare @residual_trade_type_id int
+
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund = name
+from
+	funds
+where
+	fund_id = @fund_id
+
+select	
+	@resid_trader_id = resid_trader_id
+from
+	fund_resid_traders
+where
+	fund_id = @fund_id
+
+select
+	@resid_trader = symbol,
+	@resid_trader_account_id = tico_account_id
+from
+	traders
+where
+	trader_id = @resid_trader_id
+if @resid_trader = NULL
+begin
+	select
+		status = "Error",
+		message = "Resid trader not found"
+	return
+end
+
+select
+	@resid_trader_login = login
+from
+	tico_accounts
+where
+	account_id = @resid_trader_account_id
+
+
+select
+	@residual_trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = "Residual"
+if @residual_trade_type_id = NULL
+begin
+	insert into
+		trade_types(
+			name
+	)
+	values(
+		"Residual"
+	)
+end
+
+
+
+select
+	@queued_resid_id = 0
+select
+	@queued_resids = count(*)
+from
+	queued_resid_trades
+where
+	batch_id = @batch_id
+
+while @queued_resids > 0
+begin
+	select
+		@queued_resid_id = min(queued_resid_id)
+	from
+		queued_resid_trades
+	where
+		batch_id = @batch_id
+	and
+		queued_resid_id > @queued_resid_id
+
+
+	select
+		@account = NULL,
+		@symbol = NULL,
+		@trade_date = NULL,
+		@deal_id = NULL,
+		@price = NULL,
+		@trade_id = NULL,
+		@price_style = NULL,
+		@contract_id = NULL
+
+	select
+		@account = b.symbol,
+		@symbol = c.symbol,
+		@trade_date = a.trade_date,
+		@price = a.price,
+		@value_date = a.value_date,
+		@quantity = a.quantity,
+		@contract_id = a.contract_id
+	from
+		queued_resid_trades a,
+		external_accounts b,
+		contracts c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.contract_id = c.contract_id
+	and
+		queued_resid_id = @queued_resid_id
+
+	if @trade_date > @value_date
+		select
+			@trade_date = @value_date
+
+	select
+		@price_style = a.name
+	from
+		price_styles a,
+		contract_price_styles b
+	where
+		a.price_style_id = b.price_style_id
+	and
+		b.contract_id = @contract_id
+
+        /* chriso -- we save the price as a standard price, and fxa_tallytrade will handle the inversion */
+        /*
+	if @price_style = "Inverted"
+		select
+			@price = 1.0 / @price
+        */
+
+	/* select
+		account = @account,
+		trader = @resid_trader,
+		deal_id = @deal_id,
+		trade_date = @trade_date ,
+		price = @price,
+		symbol = @symbol,
+		value_date = @value_date */
+
+		
+	if @price != NULL
+	begin
+		exec
+			fxa_tallytrade
+				@login = @login,
+				@source = "MPT",
+				@trade_id = @trade_id output,
+				@deal_id = @deal_id output,
+				@tally_type = "Spot",
+				@deal_type = "Client Forward",
+				@trade_type = "Residual",
+				@external_account = @account,
+				@quantity = @quantity,
+				@symbol = @symbol,
+				@value_date = @value_date,
+				@price = @price,
+				@status = "Resid",
+				@trader = @resid_trader,
+				@trade_date = @trade_date
+
+		if @trade_id != NULL
+		begin
+			exec
+				r_inserttradenotification
+					@trade_id=@trade_id
+		end
+
+	end
+
+	select
+		@queued_resids = count(*)
+	from
+		queued_resid_trades
+	where
+		batch_id = @batch_id
+	and
+		queued_resid_id > @queued_resid_id
+
+end
+
+delete
+
+from
+	queued_resid_trades
+where
+	batch_id = @batch_id
+
+exec
+	ag_manageresids
+		@login = @login,
+		@value_date = @value_date
+
+go
+

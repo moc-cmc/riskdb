@@ -1,0 +1,557 @@
+
+if object_id("cbo_revalcommitteddeltas") != NULL
+    drop procedure
+        cbo_revalcommitteddeltas
+go
+
+/*
+exec cbo_revalcommitteddeltas "cantorops", "2011-04-29"
+exec cbo_revalcommitteddeltas "cantorops", "2011-04-30"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-01"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-02"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-03"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-04"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-05"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-06"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-07"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-08"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-09"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-10"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-11"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-12"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-13"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-14"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-15"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-16"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-17"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-18"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-19"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-20"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-21"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-22"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-23"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-24"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-25"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-26"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-27"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-28"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-29"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-30"
+exec cbo_revalcommitteddeltas "cantorops", "2011-05-31"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-01"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-02"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-03"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-04"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-05"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-06"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-07"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-08"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-09"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-10"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-11"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-12"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-13"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-14"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-15"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-16"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-17"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-18"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-19"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-20"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-21"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-22"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-23"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-24"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-25"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-26"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-27"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-28"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-29"
+exec cbo_revalcommitteddeltas "cantorops", "2011-06-30"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-01"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-02"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-03"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-04"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-05"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-06"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-07"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-08"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-09"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-10"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-11"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-12"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-13"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-14"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-15"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-16"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-17"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-18"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-19"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-20"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-21"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-22"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-23"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-24"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-25"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-26"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-27"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-28"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-29"
+exec cbo_revalcommitteddeltas "cantorops", "2011-07-30"
+*/
+
+create procedure
+    cbo_revalcommitteddeltas
+        @login varchar(50),
+        @trade_date datetime
+as
+
+/* 
+ * Calculates the committed_daily_revals.delta column for all trades on the
+ * reval_date = @trade_date. This should be called at the end of
+ * cbo_revaltrades.
+ */
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @as_of_date datetime
+declare @fund_id int
+declare @source varchar(50)
+declare @source_id int
+declare @evaluation_currency varchar(5)
+declare @evaluation_currency_id int
+
+/* MARK: EXEC r_defaultfundforlogin */
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+/* MARK: FIND @source_id and @evaluation_currency_id from fund_run_defaults */
+select
+    @evaluation_currency_id = evaluation_currency_id,
+    @source_id = source_id
+from
+    fund_run_defaults
+where
+    fund_id = @fund_id
+
+if @evaluation_currency_id = NULL or @source_id = NULL
+begin
+    select
+        id = -1,
+        error = "Unable to determine default run settings"
+    return
+end
+
+/* MARK: FIND @begin_date, @end_date */
+if @trade_date = NULL
+    select
+        @trade_date = getdate()
+
+exec
+    r_daterangefordate
+        @trade_date,
+        @begin_date output,
+        @end_date output
+    
+select
+    @as_of_date = @end_date
+    
+/*+---------------------------------------------------------------------------* 
+ |                             MARK: | Contracts                              | 
+ *----------------------------------------------------------------------------*/
+/* select "M1", begin_date = @begin_date, end_date = @end_date, as_of_date = @as_of_date */
+
+/* MARK: FIND @committed_status_id */
+
+/* MARK: CREATE #contracts */
+create table
+    #contracts (
+        contract_id int,
+        type varchar(15) NULL,
+        instrument varchar(15) NULL,
+        multiplier float NULL,
+        expiration datetime NULL,
+        option_id int NULL,
+        future_id int NULL,
+        forward_id int NULL,
+        inverted_forward_id int NULL,
+        product_id int NULL,
+        currency_id int NULL,
+        perspective_contract_id int NULL,
+        inverted char(1) NULL,
+        price float NULL,
+        forward_price float NULL,
+        unit_delta float NULL
+    )
+/*
+create unique clustered index
+    u_cd
+on
+    #contracts (
+        contract_id
+    ) */
+
+/* MARK: INSERT #contracts: All distinct contract_ids */
+insert into
+    #contracts (
+        contract_id,
+        inverted
+    )
+select
+    contract_id = a.contract_id,
+    inverted = "N"
+from
+    committed_daily_revals a
+where
+    a.source_id = @source_id
+and
+    a.evaluation_currency_id = @evaluation_currency_id
+and
+    a.reval_date = @end_date
+group by
+    a.contract_id
+
+/* MARK: UPDATE #contracts: (instrument) */
+update
+    #contracts
+set
+    instrument = c.name
+from
+    #contracts a,
+    contracts b,
+    instruments c
+where
+    a.contract_id = b.contract_id
+and
+    b.instrument_id = c.instrument_id
+
+/*+---------------------------------------------------------------------------* 
+ |                           MARK: | Contract Specs                           | 
+ *----------------------------------------------------------------------------*/
+
+/* MARK: UPDATE #contracts: (spec) Exotic/Future  */
+update
+    #contracts
+set
+    option_id = d.option_id,
+    future_id = f.future_id,
+    forward_id = g.contract_id,
+    multiplier = d.quantity
+from
+    #contracts a,
+    exotic_contracts b,
+    option_expirations c,
+    options d,
+    future_contracts e,
+    futures f,
+    forwards g
+where
+    a.contract_id = b.contract_id
+and
+    b.option_expiration_id = c.option_expiration_id
+and
+    c.option_id = d.option_id
+and
+    d.underlying_contract_id = e.contract_id
+and
+    e.future_id = f.future_id
+and
+    f.forward_id = g.contract_id
+and
+    a.instrument = "Exotic"
+
+/* MARK: UPDATE #contracts: (spec) Exotic/Forward  */
+update
+    #contracts
+set
+    option_id = d.option_id,
+    forward_id = e.contract_id,
+    multiplier = d.quantity
+from
+    #contracts a,
+    exotic_contracts b,
+    option_expirations c,
+    options d,
+    forwards e
+where
+    a.contract_id = b.contract_id
+and
+    b.option_expiration_id = c.option_expiration_id
+and
+    c.option_id = d.option_id
+and
+    d.underlying_contract_id = e.contract_id
+and
+    a.instrument = "Exotic"
+
+/* MARK: UPDATE #contracts: (spec) Option/Future  */
+update
+    #contracts
+set
+    option_id = d.option_id,
+    future_id = f.future_id,
+    forward_id = g.contract_id,
+    multiplier = d.quantity
+from
+    #contracts a,
+    option_contracts b,
+    option_expirations c,
+    options d,
+    future_contracts e,
+    futures f,
+    forwards g
+where
+    a.contract_id = b.contract_id
+and
+    b.option_expiration_id = c.option_expiration_id
+and
+    c.option_id = d.option_id
+and
+    d.underlying_contract_id = e.contract_id
+and
+    e.future_id = f.future_id
+and
+    f.forward_id = g.contract_id
+and
+    a.instrument = "Option"
+
+/* MARK: UPDATE #contracts: (spec) Option/Forward  */
+update
+    #contracts
+set
+    option_id = d.option_id,
+    forward_id = e.contract_id,
+    multiplier = d.quantity
+from
+    #contracts a,
+    option_contracts b,
+    option_expirations c,
+    options d,
+    forwards e
+where
+    a.contract_id = b.contract_id
+and
+    b.option_expiration_id = c.option_expiration_id
+and
+    c.option_id = d.option_id
+and
+    d.underlying_contract_id = e.contract_id
+and
+    a.instrument = "Option"
+
+/* MARK: UPDATE #contracts: (spec) Future */
+update
+    #contracts
+set
+    future_id = c.future_id,
+    forward_id = d.contract_id,
+    multiplier = c.quantity * d.quantity
+from
+    #contracts a,
+    future_contracts b,
+    futures c,
+    forwards d
+where
+    a.contract_id = b.contract_id
+and
+    b.future_id = c.future_id
+and
+    c.forward_id = d.contract_id
+and
+    a.instrument = "Future"
+
+/* MARK: UPDATE #contracts: (spec) Forward  */
+update
+    #contracts
+set
+    forward_id = b.contract_id,
+    multiplier = b.quantity
+from
+    #contracts a,
+    forwards b
+where
+    a.contract_id = b.contract_id
+and
+    a.instrument = "Forward"
+
+/* 
+ * At this point, all rows in #contracts have a perspective_contract_id that
+ * is the underlying forward of the contract. Now, we'll insert into any missing
+ * rows into #contracts such that #contracts.perspective_contract_id =
+ * #contracts.contract_id. This will allow us to join.
+ */
+
+/* MARK: UPDATE #contracts: (perspective_contract_id) use forward_id as
+ * perspective contract */
+update
+    #contracts
+set
+    perspective_contract_id = forward_id
+
+/* MARK: INSERT #contracts: (pc) Missing perspective contracts */
+insert into 
+    #contracts (
+        contract_id,
+        instrument,
+        forward_id,
+        multiplier
+    )
+select
+    contract_id = a.perspective_contract_id,
+    instrument = "Forward",
+    forward_id = a.perspective_contract_id,
+    multiplier = b.quantity
+from
+    #contracts a,
+    forwards b
+where
+    a.perspective_contract_id = b.contract_id
+and
+    a.perspective_contract_id not in (
+        select
+            c.contract_id
+        from
+            #contracts c
+    )
+
+/* 
+ * Now that we have all contracts and their perspective contracts in
+ * #contracts, calculate price.
+ */
+
+/* MARK: UPDATE #contracts: (spec) Find product & currency */
+update
+    #contracts
+set
+    product_id = b.product_id,
+    currency_id = b.currency_id
+from
+    #contracts a,
+    forwards b
+where
+    a.forward_id = b.contract_id
+    
+/* MARK: UPDATE #contracts: (spec) Calc inverted */
+update
+    #contracts
+set
+    inverted = "Y"
+from
+    #contracts a,
+    #contracts b
+where
+    a.perspective_contract_id = b.contract_id
+and
+    a.product_id = b.currency_id
+and
+    a.currency_id = a.product_id
+
+/* MARK: UPDATE #contracts: (spec) inverted_forward_id */
+update
+    #contracts
+set
+    inverted_forward_id = b.contract_id
+from
+    #contracts a,
+    forwards b
+where
+    a.product_id = b.currency_id
+and
+    a.currency_id = b.product_id
+
+
+/*+---------------------------------------------------------------------------* 
+ |                               MARK: | Prices                               | 
+ *----------------------------------------------------------------------------*/
+
+/* MARK: UPDATE #contracts: (price) Forward = @as_of_date */
+update
+    #contracts
+set
+    price = b.close_price
+from
+    #contracts a,
+    committed_daily_revals b
+where
+    a.contract_id = b.contract_id
+and
+    b.reval_date = @as_of_date
+
+/*+---------------------------------------------------------------------------* 
+ |                               MARK: | Deltas                               | 
+ *----------------------------------------------------------------------------*/
+
+/* MARK: UPDATE #contracts: (unit_delta) Exotic */
+update
+    #contracts
+set
+    type = a.instrument,
+    unit_delta = b.delta
+from
+    #contracts a,
+    contract_tvs b
+where
+    a.contract_id = b.contract_id
+and
+    b.tv_date = @as_of_date
+and
+    a.instrument in ("Exotic", "Option")
+and
+    a.unit_delta = NULL
+
+/* MARK: UPDATE #contracts: (unit_delta) non-inverted */
+update
+    #contracts
+set
+    type = "Non-Inverted",
+    unit_delta = a.multiplier / b.multiplier * a.price / b.price
+from
+    #contracts a,
+    #contracts b
+where
+    a.perspective_contract_id = b.contract_id
+and
+    a.inverted = "N"
+and
+    a.unit_delta = NULL
+
+/* MARK: UPDATE #contracts: (unit_delta) inverted */
+update
+    #contracts
+set
+    type = "Inverted",
+    unit_delta = a.multiplier / b.multiplier * -1.0 / b.price
+from
+    #contracts a,
+    #contracts b
+where
+    a.perspective_contract_id = b.contract_id
+and
+    a.inverted = "Y"
+and
+    a.unit_delta = NULL
+
+/* MARK: UPDATE committed_daily_revals: (delta) inverted */
+update
+    committed_daily_revals
+set
+    forward_id = c.forward_id,
+    delta = b.quantity * c.unit_delta
+from
+    committed_daily_revals a,
+    trades b,
+    #contracts c
+where
+    a.trade_id = b.trade_id
+and
+    a.contract_id = c.contract_id
+and
+    a.reval_date = @as_of_date
+
+/* select "M10", * from #contracts order by contract_id */
+/* select "M11", a.* from #contracts a order by a.contract_id */
+
+go
+

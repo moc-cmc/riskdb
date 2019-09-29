@@ -1,0 +1,88 @@
+
+if object_id("ins_trade_identifiers") != NULL
+    drop trigger
+        ins_trade_identifiers
+go
+
+create trigger
+        ins_trade_identifiers
+on
+        trade_identifiers
+for
+        insert
+as
+
+declare @result int
+
+/* If this is a currency forward, then make sure that the value date is in.
+ * Otherwise, fail. */
+if exists (
+        select
+            a.*
+        from
+            inserted a
+            inner join trades b
+                on
+                    a.trade_id = b.trade_id
+            inner join forwards c
+                on
+                    b.contract_id = c.contract_id
+            inner join products d
+                on
+                    c.product_id = d.product_id
+            inner join product_types e
+                on
+                    d.product_type_id = e.product_type_id
+                and
+                    e.name = "Currency"
+    )
+begin
+
+    /* 
+     * Notify of symbol_trades inserts. Only do this if the
+     * @counterparty_source_id is "Cognotec".
+     */
+    select
+        @result = syb_sendmsg("localhost", 9999, 
+            "Notify /topic/Store.Notify." + @@servername + "." + db_name() + "."
+            + "symbol_trades: insert " 
+            + convert(varchar(10), b.trade_id) + " " 
+            + convert(varchar(10), b.deal_id) + " " 
+            + convert(varchar(10), b.user_id) + " " 
+            + convert(varchar(10), b.internal_account_id) + " " 
+            + convert(varchar(10), b.external_account_id) + " " 
+            + convert(varchar(50), b.quantity) + " " 
+            + convert(varchar(10), b.contract_id) + " " 
+            + convert(varchar(50), b.price) + " " 
+            + "'"+ rtrim(convert(varchar(30), dateadd(mi, datediff(mi, getdate(), getutcdate()), b.trade_date), 9)) + "' " 
+            + convert(varchar(10), b.trader_id) + " " 
+            + convert(varchar(10), b.strategy_id) + " " 
+            + convert(varchar(10), b.status_id) + " " 
+            + convert(varchar(10), b.broker_id) + " "
+            + "'" + convert(varchar(30), dateadd(mi, datediff(mi, getdate(), getutcdate()), c.value_date), 9) + "' " 
+            + "'" + convert(varchar(50), a.identifier) + "' " 
+            + "'" + convert(varchar(50), d.symbol) + "'"
+        )
+    from
+        inserted a,
+        trades b,
+        trade_value_dates c,
+        trade_symbols d
+    where
+        a.trade_id = b.trade_id
+    and
+        a.trade_id = c.trade_id
+    and
+        b.deal_id = d.deal_id
+        
+/*
+    if @@rowcount != 1
+    begin
+        rollback
+        raiserror 80201 "Inserted trade_identifiers for currency forward without exactly one trade_value_date and one trade_symbol"
+    end
+*/
+    
+end
+
+go

@@ -1,0 +1,549 @@
+use
+	risk_finotec_test
+go
+
+drop procedure
+	ag_nopshort
+go
+
+create procedure
+	ag_nopshort
+		@login varchar(50),
+		@account varchar(50),
+		@trade_date datetime
+as
+
+declare @fund_id int
+declare @external_account_id int
+declare @run_id int
+declare @tico_account_id int
+declare @currency_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @ids int
+declare @id int
+declare @total_long float
+declare @total_short float
+declare @total_usage float
+declare @prime_broker_id int
+declare @margin_multiplier float
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"margin",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"nop_short",
+	"Client NOP Detail",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"usage",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"position",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values( 
+ 	"Column Format",
+	"equiv_short",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv_long",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equivalent",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values( 
+ 	"Column Format",
+	"margin_use",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	user_runs a,
+	runs b
+where
+	a.run_id = b.run_id
+and
+	a.tico_account_id = @tico_account_id
+and
+	b.name = @account
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+select
+	@external_account_id = external_account_id,
+	@margin_multiplier = margin_multiplier
+from
+	external_accounts
+where
+	symbol = @account
+
+select
+	@prime_broker_id = prime_broker_id
+from
+	external_account_prime_brokers
+where
+	external_account_id = @external_account_id
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+create table
+	#trades(
+		trade_id int,
+		contract_id int,
+		product_id int,
+		currency_id int,
+		dealt_amount float,
+		counter_amount float,
+		margin float NULL,
+		bucket_label varchar(50) NULL)
+
+insert into
+	#trades(
+		trade_id,
+		contract_id,
+		product_id,
+		currency_id,
+		dealt_amount,
+		counter_amount,
+		margin)
+select
+	a.trade_id,
+	a.contract_id,
+	b.product_id,
+	b.currency_id,
+	a.quantity,
+	a.quantity * a.price * -1.0,
+	margin = 0.0
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.trade_date < @end_date
+and
+	a.value_date > @begin_date
+
+update
+	#trades
+set
+	a.margin = b.margin * @margin_multiplier
+from
+	#trades a,
+	product_margins b
+where
+	a.product_id = b.product_id
+and
+	b.prime_broker_id = @prime_broker_id
+and
+	b.margin > a.margin
+
+update
+	#trades
+set
+	a.margin = b.margin * @margin_multiplier
+from
+	#trades a,
+	product_margins b
+where
+	a.currency_id = b.product_id
+and
+	b.prime_broker_id = @prime_broker_id
+and
+	b.margin > a.margin
+
+
+create table
+	#product_positions(
+		product_id int,
+		margin float,
+		quantity float)
+insert into
+	#product_positions
+select
+	product_id,
+	margin,	
+	sum(dealt_amount)
+from
+	#trades
+group by
+	product_id,
+	margin
+
+insert into
+	#product_positions
+select
+	currency_id,
+	margin,
+	sum(counter_amount)
+from
+	#trades
+group by
+	currency_id,
+	margin
+
+
+create table
+	#balances(
+		product_id int,
+		quantity float,
+		margin float,
+		currency_id int NULL,
+		equiv float NULL)
+insert into
+	#balances(
+		product_id,
+		margin,
+		quantity)
+select
+	product_id,
+	margin,
+	sum(quantity)
+from
+	#product_positions
+group by
+	product_id,
+	margin
+
+update
+	#balances
+set
+	currency_id = @currency_id
+
+update
+	#balances
+set
+	equiv = quantity
+where
+	product_id = currency_id
+
+update
+	#balances
+set
+	a.equiv = a.quantity * c.price
+from
+	#balances a,
+	forwards b,
+	prices c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @trade_date)
+and
+	a.equiv = NULL
+
+update
+	#balances
+set
+	a.equiv = a.quantity * (1.0 / c.price)
+from
+	#balances a,
+	forwards b,
+	prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @trade_date)
+and
+	a.equiv = NULL
+
+
+/******************************
+ *******************************/
+
+update
+	#balances
+set
+	a.equiv = a.quantity * c.price
+from
+	#balances a,
+	forwards b,
+	current_prices c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	a.equiv = NULL
+
+update
+	#balances
+set
+	a.equiv = a.quantity * (1.0 / c.price)
+from
+	#balances a,
+	forwards b,
+	current_prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.equiv = NULL
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		symbol varchar(50) NULL,
+		quantity float NULL,
+		equiv float NULL,
+		equiv_short float NULL,
+		equiv_long float NULL,
+		currency_id int NULL,
+		margin float NULL,
+		usage float NULL)
+		
+
+select
+	@total_long = NULL,
+	@total_short = NULL
+
+insert into
+	#output(
+		style,
+		product_id,
+		symbol,
+		quantity,
+		equiv,
+		currency_id,
+		margin)
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	a.product_id,
+	b.symbol,
+	a.quantity,
+	a.equiv,
+	currency_id = @currency_id,
+	a.margin
+from
+	#balances a,
+	products b
+where
+	a.product_id = b.product_id
+order by
+	a.margin,
+	b.symbol
+
+update
+	#output
+set
+	equiv_long = 0.0,
+	equiv_short = 0.0
+
+update
+	#output
+set
+	equiv_long = equiv
+where
+	equiv >= 0.0
+update
+	#output
+set
+	equiv_short = equiv
+where
+	equiv < 0.0
+		
+update
+	#output
+set
+	usage = 0.0
+
+update
+	#output
+set
+	usage = abs(equiv_short) * margin
+
+select
+	@total_long = sum(equiv_long),
+	@total_short = sum(equiv_short),
+	@total_usage = sum(usage)
+from
+	#output
+
+
+
+insert into
+	#output(
+		style,
+		symbol,
+		equiv_short,
+		equiv_long,
+		usage)
+values(
+	"background:#E1F2EB;border: 1px solid white",
+	"Total",
+	@total_short,
+	@total_long,
+	@total_usage)
+	
+create table
+	#bucket(
+
+ 		margin float,
+		equiv_short float,
+		usage float)
+insert into
+	#bucket
+select
+	margin,
+	sum(equiv_short),
+	sum(usage)
+from
+	#output
+where
+	margin != NULL
+group by
+	margin
+
+
+select
+	section = "Margin Use By Bucket",
+	style = "background:#FFFFFF;border: 1 px solid white",
+	margin,
+	equiv_short,
+	usage
+from
+	#bucket
+order by
+	margin
+	
+select
+	section = "Account Balances",
+	style,
+	symbol,
+	position = quantity,
+	equiv_short,
+	equiv_long,
+	usage,
+	margin
+from
+	#output
+order by
+	id
+
+
+
+go

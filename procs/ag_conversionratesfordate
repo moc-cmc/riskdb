@@ -1,0 +1,212 @@
+drop procedure
+	ag_conversionratesfordate
+go
+
+create procedure
+	ag_conversionratesfordate
+		@login varchar(50),
+		@price_date datetime
+as
+
+
+declare @style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"change_date",
+	"Conversion Rates For Date",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_rate",
+	"Edit EOD Conversion Rate",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"previous_price",
+	"Number",
+	 "#,##0.000000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	 "#,##0.000000000")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+select
+	@style = "background:#FFFFFF;border: 1px solid white"
+
+
+if @price_date = NULL
+begin
+	select
+		@price_date = max(price_date)
+	from
+		bo_spot_settles
+end
+
+select
+	@price_date = convert(datetime, convert(date, @price_date))
+
+select
+	@price_date = dateadd(hour, 17, @price_date)
+
+
+create table
+	#prices(
+		bo_spot_settle_id int,
+		contract_id int,
+		symbol varchar(50) NULL,
+		price_date datetime,
+		price float,
+		previous_price float NULL,
+		tico_account_id int NULL,
+		updated_by varchar(50) NULL,
+		timestamp datetime NULL,
+		style varchar(250) NULL)
+insert into
+	#prices(
+		bo_spot_settle_id,
+		contract_id,
+		price_date,
+		price)
+select
+	bo_spot_settle_id,
+	contract_id,
+	price_date,
+	price
+from
+	bo_spot_settles
+where
+	price_date = @price_date
+	
+
+create table
+	#edits(
+		bo_spot_settle_id int,
+		price float NULL,
+		tico_account_id int NULL,
+		timestamp datetime)
+insert into
+	#edits(
+		bo_spot_settle_id,
+		timestamp)
+select
+	bo_spot_settle_id,
+	max(timestamp)
+from
+	bo_spot_settle_edits
+where
+	price_date = @price_date
+group by
+	bo_spot_settle_id
+
+
+update
+	#edits
+set
+	a.price = b.price,
+	a.tico_account_id = b.tico_account_id
+from
+	#edits a,
+	bo_spot_settle_edits b
+where
+	a.bo_spot_settle_id = b.bo_spot_settle_id
+and
+	a.timestamp = b.timestamp
+
+
+update
+	#prices
+set
+	a.previous_price = b.price,
+	a.tico_account_id = b.tico_account_id,
+	a.timestamp = b.timestamp
+from
+	#prices a,
+	#edits b
+where
+	a.bo_spot_settle_id = b.bo_spot_settle_id
+
+update
+	#prices
+set
+	a.symbol = b.symbol
+from
+	#prices a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+
+update
+	#prices
+set
+	a.updated_by = b.login
+from
+	#prices a,
+	tico_accounts b
+where
+	a.tico_account_id = b.account_id
+
+
+update
+	#prices
+set
+	style = @style
+
+select
+	change_date = "Change Date",
+	style = @style
+
+select
+	symbol,
+	price_date,
+	price,
+	previous_price,
+	updated_by,
+	timestamp,
+	edit_rate = "EDIT",
+	style
+from
+	#prices
+order by
+	symbol
+
+
+go

@@ -1,0 +1,62 @@
+
+if object_id("cm_addbroker") != NULL
+    drop procedure
+        cm_addbroker
+go
+
+create procedure
+	cm_addbroker
+		@login varchar(30),
+		@broker varchar(50)
+as
+
+
+declare @broker_id int
+declare @tico_server varchar(100)
+declare @tico_database varchar(100)
+declare @sql_string varchar(200)
+
+select
+	@tico_server = tico_server,
+	@tico_database = tico_database
+from
+	funds
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = @broker
+if @@rowcount != 0
+begin
+	select
+		status = "Dupe",
+		message = "Broker already exists",
+		broker = @broker
+	return
+end
+
+exec
+	j_nextkey
+		"brokers",
+		@broker_id output
+
+
+insert into
+	brokers
+values(
+	@broker_id,
+	@broker,
+	100)
+
+select
+	@sql_string = "exec " + rtrim(@tico_database) + "..flush"
+
+exec sp_remotesql @tico_server, @sql_string
+
+exec
+	cm_brokers
+		@login
+
+go

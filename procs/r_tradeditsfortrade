@@ -1,0 +1,426 @@
+
+drop procedure
+	r_tradeditsfortrade
+go
+
+create procedure
+	r_tradeditsfortrade
+		@login varchar(50),
+		@trade_id int
+as
+
+
+declare @run_id int
+declare @style varchar(200)
+declare @current_style varchar(200)
+declare @trades int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"not_currency",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	 "#,##0.000000")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@current_style = "background:#FAF7A5;border: 1px solid white"
+
+create table
+	#trades(
+		trade_id int)
+
+insert into
+	#trades
+select
+	a.trade_id
+from
+	trades a,
+	trade_edits h
+where
+	a.trade_id = h.trade_id
+and
+	a.trade_id = @trade_id
+if @@rowcount = 0
+begin
+	select
+		section = "Error",
+		msg = "Trade edited but audit information not found. May require manual intervention",
+		trade_id = @trade_id
+	return
+end
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		trade_id int NULL,
+		deal_id int NULL,
+		login varchar(50) NULL,
+		trade_type varchar(50) NULL,
+		external_account varchar(50) NULL,
+		counterparty varchar(50) NULL,
+		quantity numeric(30,4) NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		fixing_date datetime NULL,
+		price float NULL,
+		trade_date datetime NULL,
+		trader varchar(50) NULL,
+		strategy varchar(50) NULL,
+		status varchar(50) NULL,
+		broker varchar(50) NULL,
+		sales_code varchar(50) NULL,
+		identifier varchar(100) NULL,
+		pct_price float NULL,
+		spot_reference float NULL,
+		timestamp datetime NULL,
+		mid_mark float NULL,
+		premium_amount numeric(30, 6) NULL,
+                premium_ccy_id int NULL,
+		premium_ccy varchar(10) NULL,
+		premium_date datetime NULL
+)
+
+select
+	@trade_id = 0
+select
+	@trades = count(*)
+from
+	#trades
+where
+	trade_id > @trade_id
+
+while @trades > 0
+begin
+	select
+		@trade_id = min(trade_id)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+
+
+	insert into
+		#output(
+		style,
+		trade_id,
+		deal_id,
+		login,
+		trade_type,
+		external_account,
+		counterparty,
+		quantity,
+		symbol,
+		value_date,
+		fixing_date,
+		price,
+		trade_date,
+		trader,
+		strategy,
+		broker,
+		sales_code,
+		identifier,
+		pct_price,
+		spot_reference,
+		mid_mark)
+	select
+		style = @current_style,
+		a.trade_id,
+		a.deal_id,
+		b.login,
+		c.name,
+		d.symbol,
+		e.name,
+		a.quantity,
+		f.symbol,
+		a.value_date,
+		a.fixing_date,
+		a.price,
+		a.trade_date,
+		g.symbol,
+		h.name,
+		i.symbol,
+		j.name,
+		a.identifier,
+		a.pct_price,
+		a.spot_reference,
+		k.mid_mark
+	from
+		trades a,
+		tico_accounts b,
+		trade_types c,
+		external_accounts d,
+		counterparties e,
+		contracts f,
+		traders g,
+		strategies h,
+		brokers i,
+		sales_codes j,
+		trade_attributes k
+	where
+		a.user_id = b.account_id
+	and
+		a.trade_type_id = c.trade_type_id
+	and
+		a.external_account_id = d.external_account_id
+	and
+		a.counterparty_id = e.counterparty_id
+	and
+		a.contract_id = f.contract_id
+	and
+		a.trader_id = g.trader_id
+	and
+		a.strategy_id = h.strategy_id
+	and
+		a.broker_id = i.broker_id
+	and
+		a.sales_code_id = j.sales_code_id
+	and
+		a.trade_id = k.trade_id
+	and
+		a.trade_id = @trade_id
+
+
+	update
+		#output
+	set
+		premium_amount = b.amount,
+		premium_ccy_id = b.currency_id,
+		premium_date = b.transaction_date
+	from
+		account_transaction_trades a,
+		account_transactions b,
+		#output c
+	where
+		a.account_transaction_id = b.account_transaction_id
+	and
+		a.trade_id = c.trade_id
+	and
+		a.trade_id = @trade_id
+
+
+
+	insert into
+		#output(
+		style,
+		trade_id,
+		deal_id,
+		login,
+		trade_type,
+		external_account,
+		counterparty,
+		quantity,
+		symbol,
+		value_date,
+		fixing_date,
+		price,
+		trade_date,
+		trader,
+		strategy,
+		broker,
+		sales_code,
+		identifier,
+		pct_price,
+		spot_reference,
+		mid_mark,
+		timestamp,
+		premium_amount,
+		premium_ccy_id,
+		premium_date)
+
+	select
+		style = @style,
+		a.trade_id,
+		a.deal_id,
+		b.login,
+		c.name,
+		d.symbol,
+		e.name,
+		a.quantity,
+		f.symbol,
+		a.value_date,
+		a.fixing_date,
+		a.price,
+		a.trade_date,
+		g.symbol,
+		h.name,
+		i.symbol,
+		j.name,
+		a.identifier,
+		a.pct_price,
+		a.spot_reference,
+		a.mid_mark,
+		a.timestamp,
+		a.premium_amount,
+		a.premium_ccy_id,
+		a.premium_date
+	from
+		trade_edits a,
+		tico_accounts b,
+		trade_types c,
+		external_accounts d,
+		counterparties e,
+		contracts f,
+		traders g,
+		strategies h,
+		brokers i,
+		sales_codes j
+	where
+		a.user_id = b.account_id
+	and
+		a.trade_type_id = c.trade_type_id
+	and
+		a.external_account_id = d.external_account_id
+	and
+		a.counterparty_id = e.counterparty_id
+	and
+		a.contract_id = f.contract_id
+	and
+		a.trader_id = g.trader_id
+	and
+		a.strategy_id = h.strategy_id
+	and
+		a.broker_id = i.broker_id
+	and
+		a.sales_code_id = j.sales_code_id
+	and
+		a.trade_id = @trade_id
+	order by
+		a.timestamp desc
+
+	select
+		@trades = count(*)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+end
+
+declare @max_timestamp datetime
+
+select
+	@max_timestamp = max(timestamp)
+from
+	#output
+
+select
+	section = "Last Edit",
+	style = @style,
+	most_recent_edit =  timestamp,
+	edited_by = login
+from
+	#output
+where
+	timestamp = @max_timestamp
+
+update
+	#output
+set
+	premium_ccy = a.symbol
+from
+	products a,
+	#output b
+where
+	a.product_id = b.premium_ccy_id
+
+
+select
+	section = "Edited Trades",
+	style,
+	trade_id,
+	deal_id,
+	login,
+	trd_type=trade_type,
+	ext_acct=external_account,
+	cpty=counterparty,
+	qty=quantity,
+	symbol,
+	value_date = convert(varchar(11), value_date, 1),
+	fixing_date,
+	price,
+	trade_date,
+	trader,
+	broker,
+	pct_price,
+	spot_ref=spot_reference,
+	mid_mark,
+	premium=premium_amount,
+	prem_ccy=premium_ccy,
+	prem_date = convert(varchar(11), premium_date, 1),
+	timestamp
+from
+	#output
+order by
+	id
+
+
+/*select
+	section = "Edited Trades",
+	style,
+	trade_id,
+	deal_id,
+	login,
+	trade_type,
+	external_account,
+	counterparty,
+	quantity,
+	symbol,
+	value_date = convert(varchar(11), value_date, 1),
+	fixing_date,
+	price,
+	trade_date,
+	trader,
+	/* strategy, */
+	broker,
+	sales_code,
+	/* identifier, */
+	pct_price,
+	spot_reference,
+	mid_mark,
+	timestamp
+from
+	#output
+order by
+	id
+*/
+
+	
+
+go

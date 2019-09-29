@@ -1,0 +1,84 @@
+drop procedure spc_indexreport
+go
+
+create procedure
+	spc_indexreport
+		@table_name varchar(50)=NULL
+
+as
+
+declare @found_table char(1)
+
+if @table_name = NULL
+begin
+	select 
+		table_name = a.name, 
+		index_name=b.name
+	from 
+		sysindexes a, 
+		sysindexes b, 
+		sysobjects c  
+	where 
+		a.name = c.name 
+	and 
+		c.type = "U" 
+	and 
+		a.indid = 0 
+	and 
+		b.indid > 0 
+	and 
+		b.indid < 255 
+	and 
+		a.id = b.id 
+	order by 
+		a.name
+end
+else
+begin
+	select
+		@found_table = 'Y'
+	from
+		sysobjects
+	where
+		name = @table_name
+	if @found_table != 'Y'
+	begin
+		select
+			"msg"="Table not found",
+			"table_name"=@table_name
+		return
+	end
+
+	select 
+		table_name = a.name, 
+		index_name=b.name
+	from 
+		sysindexes a, 
+		sysindexes b, 
+		sysobjects c  
+	where 
+		a.name = c.name 
+	and 
+		c.type = "U" 
+	and 
+		a.indid = 0 
+	and 
+		b.indid > 0 
+	and 
+		b.indid < 255 
+	and 
+		a.id = b.id 
+	and
+		a.name = @table_name
+	order by 
+		a.name
+	if @@rowcount = 0
+	begin
+		select
+			"msg"="No indexes found for table greater than run date",
+			"table_name"=@table_name
+		return
+	end
+end
+
+go

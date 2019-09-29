@@ -1,0 +1,70 @@
+create or replace procedure
+	bn_bankmonthlystatement
+                @login varchar(50),
+                @account varchar(255),
+                @month varchar(20),
+                @year varchar(10)
+
+as
+
+/* date logic taken from ag_clientmonthlystatement */
+
+declare @date datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @first_of_month datetime
+declare @first_of_next_month datetime
+declare @first_biz_day datetime
+declare @last_of_prev_month datetime
+declare @last_biz_last_month datetime
+declare @last_of_month datetime
+declare @last_biz_day datetime
+declare @report_month varchar(2)
+declare @report_year varchar(4)
+
+
+select
+        @date = convert(datetime, rtrim(@month) + " 1, " + rtrim(@year))
+
+select
+        @report_month = convert(varchar(2), datepart(month, @date)),
+        @report_year = convert(varchar(4), datepart(year, @date))
+
+select
+        @first_of_month = convert(datetime, @report_month + "/1/" + @report_year)
+
+exec
+        r_prevbusinessday
+                @first_of_month,
+                @last_biz_last_month output
+select
+        @first_of_next_month = dateadd(month, 1, @first_of_month)
+
+select
+        @last_of_prev_month = dateadd(day, -1, @first_of_month),
+        @last_of_month = dateadd(day, -1, @first_of_next_month)
+
+exec
+        r_nextbusinessday
+                @last_of_prev_month,
+                @first_biz_day output
+
+exec
+        r_prevbusinessday
+                @first_of_next_month,
+                @last_biz_day output
+
+select
+	@begin_date = @first_biz_day,
+	@end_date = @last_biz_day
+
+
+exec
+	bn_subaccounttradingstatement
+		@login = @login,
+		@account = @account,
+		@begin_date = @begin_date,
+		@end_date = @end_date	
+
+
+go

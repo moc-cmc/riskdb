@@ -1,0 +1,19 @@
+create or replace procedure
+	r_entitymonthlystatementwrap
+                @login varchar(50),
+                @legal_entity varchar(255),
+                @month varchar(20),
+                @year varchar(10)
+
+as
+
+
+exec
+	bn_lemonthlystatement
+                @login=@login,
+                @legal_entity=@legal_entity,
+                @month=@month,
+                @year=@year
+
+
+go

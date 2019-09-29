@@ -1,0 +1,49 @@
+create or replace procedure
+	r_nextbusinessday
+		@a_date datetime,
+		@next_date datetime output
+as
+
+declare @weekday int
+declare @loopcount int
+declare @is_business_day char(1)
+
+select 
+	@next_date = dateadd(day, 1, @a_date),
+	@loopcount = 0
+
+while @next_date > @a_date
+begin
+	
+	select
+		@weekday = datepart(weekday, @next_date),
+		@loopcount = @loopcount + 1
+
+	if @loopcount > 10
+	begin
+		select
+			status = "Error",
+			message = "Could not find a 'Y' business day, check business_days data"
+		select
+			@next_date = NULL
+		break
+	end
+
+
+	select
+		@is_business_day = is_business_day
+	from
+		business_days
+	where
+		day_id = @weekday
+
+	if @is_business_day = "Y"
+		break
+	else
+		select
+			@next_date = dateadd(day, 1, @next_date)
+end
+
+return
+
+go

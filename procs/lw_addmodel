@@ -1,0 +1,48 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_addmodel
+go
+
+create procedure
+	lw_addmodel
+		@login varchar(50),
+		@name varchar(200)
+as
+
+declare @collection_model_id int
+
+select
+	@collection_model_id = collection_model_id
+from
+	collection_models
+where
+	name = @name
+
+if @collection_model_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Collection model with name already exists",
+		name = @name
+	return
+end
+
+exec
+	j_nextkey
+		"collection_models",
+		@collection_model_id output
+
+insert into
+	collection_models
+values(
+	@collection_model_id,
+	@name)
+
+exec
+	lw_models
+		@login
+
+go

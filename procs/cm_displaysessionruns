@@ -1,0 +1,66 @@
+
+if object_id("cm_displaysessionruns") != NULL
+    drop procedure
+        cm_displaysessionruns
+go
+
+create procedure
+	cm_displaysessionruns
+		@session_id int
+
+as
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+
+
+insert into
+	#links
+values(
+	"Format Number",
+	"p_l",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"save_commits",
+	"Save Session P&LS",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+select
+	batch_id = b.session_id,
+	run = a.name,
+	b.trade_date,
+	b.p_l
+from
+	runs a,
+	session_runs b
+where
+	a.run_id = b.run_id
+and
+	b.session_id = @session_id
+order by
+	a.name
+
+
+select
+	save_commits = "Save P&L Commits To Track Records",
+	batch_id = @session_id
+
+
+go

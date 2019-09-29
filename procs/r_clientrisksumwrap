@@ -1,0 +1,64 @@
+drop procedure r_clientrisksumwrap
+go
+
+create procedure
+	r_clientrisksumwrap
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @fund_sub_type varchar(50)
+
+select
+	@fund_sub_type = name
+from
+	fund_sub_types
+if @@rowcount != 1
+begin
+	/* Default to Agency */
+	select
+		@fund_sub_type = 'FX Agency'
+end
+
+if @fund_sub_type = "Prime of Prime"
+begin
+	exec
+		r_clientrisksum
+			@login=@login,
+			@trade_date=@trade_date
+end
+else
+begin
+	/* FX Agency */
+	create table
+		#meta(
+			meta_type char(200),
+			name char(50) NULL,
+			action char(100) NULL,
+			value char(200) NULL)
+	insert into
+		#meta
+	values(
+		"Row Style",
+		"style",
+		NULL,
+		NULL)
+
+	insert into
+		#meta
+	values (
+		"Column Group",
+		"section",
+		NULL,
+		NULL)
+
+	select * from #meta
+
+	select
+		section = "Report Not Applicable",
+		message = "Margin reporting is only for prime of prime customers who are accepting funds from clients and need to manage margin usage. Please contact " + '<a href="mailto:sales@elysiumtechgroup.com">' + 'sales@elysiumtechgroup.com</a>'  + " for more information"
+end
+
+
+
+go

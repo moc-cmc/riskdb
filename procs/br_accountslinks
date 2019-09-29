@@ -1,0 +1,125 @@
+drop procedure br_accountslinks
+go
+
+create procedure
+	br_accountslinks
+		@login varchar(50)
+as
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Style",
+        "trading_total",
+        NULL,
+        "background:#FFFFFF;color:black;")
+
+insert into
+        #meta
+values(
+        "Column Style",
+        "trading_activity",
+        NULL,
+        "background:#FFFFFF;color:black;")
+
+insert into
+        #meta
+values(
+        "Column Style",
+        "account",
+        NULL,
+        "background:#FFFFFF;color:black;")
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"perspective_contract",
+	NULL,
+	NULL)
+
+/* insert into
+	#meta
+values(
+	"Column Link",
+	"evaluate",
+	"Evaluate Indicators",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "pct_change",
+	 "Number",
+	 "#,##0.00%") */
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "trading_total",
+	 "Number",
+	 "#,##0")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "opening",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "volume",
+	 "Number",
+	 "#,##0")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "activity",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "total",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+go

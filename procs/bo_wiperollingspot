@@ -1,0 +1,82 @@
+drop procedure
+	bo_wiperollingspot
+go
+
+create procedure
+	bo_wiperollingspot
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @trade_type_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @trade_id int
+declare @trades int
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = "Rolling Spot"
+
+
+create table
+	#trades(
+		trade_id int)
+insert into
+	#trades(
+		trade_id)
+select
+	trade_id
+from
+	trades
+where
+	identifier like "%Rolling%"
+and
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+
+
+select
+	@trade_id = 0
+select
+	@trades = count(*)
+from
+	#trades
+where
+	trade_id > @trade_id
+
+while @trades > 0
+begin
+	select
+		@trade_id = min(trade_id)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+
+	exec
+		tt_deletetrade
+			@trade_id = @trade_id
+
+	select
+		@trades = count(*)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+end
+
+go
+

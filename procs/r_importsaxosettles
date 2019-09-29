@@ -1,0 +1,52 @@
+drop procedure
+	r_importsaxosettles
+go
+
+create procedure
+	r_importsaxosettles
+		@login varchar(50),
+		@source varchar(50)=NULL,
+		@file_date varchar(50)=NULL,
+		@ccy_pair varchar(50)=NULL,
+		@market_rate varchar(50)=NULL
+
+as
+
+declare @base_ccy varchar(10)
+declare	@term_ccy varchar(10)
+select
+	@base_ccy = substring(@ccy_pair, 1, 3),
+	@term_ccy = substring(@ccy_pair, 4, 6)
+
+
+declare @tally_market_rate float
+declare @tally_trade_date datetime
+declare @tally_file_date datetime
+declare @symbol_check1 varchar(10)
+declare @standard_contract varchar(10)
+
+
+select
+	@tally_market_rate = convert(float, @market_rate),
+	@tally_file_date = convert(datetime, @file_date)
+
+select
+	@symbol_check1 = rtrim(@base_ccy)+rtrim(@term_ccy)
+
+exec
+	r_standardpair
+		@ccy1=@base_ccy,
+		@ccy2=@term_ccy,	
+		@standard_contract=@standard_contract output
+	
+if (@standard_contract = @symbol_check1)
+begin
+        exec
+                r_editsettle
+                        @standard_contract,
+                        @tally_file_date,
+                        @tally_market_rate
+end
+
+
+go

@@ -1,0 +1,196 @@
+use
+	risk_pinepoint
+go
+
+drop procedure
+	cbo_copyfutpricestobo
+go
+
+create procedure
+	cbo_copyfutpricestobo
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @id int
+declare @ids int 
+declare @bo_price_id int
+declare @contract_id int
+declare @value_date datetime
+declare @price float
+declare @source_id int
+declare @status_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "MPT"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "MPT Source not found"
+	return
+end
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Committed"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Committed status not found"
+	return
+end
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+create table
+	#contracts(
+		id int identity,
+		contract_id int,
+		value_date datetime,
+		price float NULL)
+
+insert into
+	#contracts(
+		contract_id,
+		value_date)
+select
+	contract_id,
+	expiration
+from
+	future_contracts
+where
+	expiration > @begin_date
+
+
+insert into
+	#contracts(
+		contract_id,
+		value_date)
+select
+	a.contract_id,
+	d.expiration	
+from
+	option_contracts a,
+	option_expirations b,
+	options c,
+	future_contracts d
+where
+	a.option_expiration_id = b.option_expiration_id
+and
+	b.option_id = c.option_id
+and
+	c.underlying_contract_id = d.contract_id
+and
+	b.expiration >= @begin_date
+
+
+update
+	#contracts
+set
+	a.price = b.price
+from
+	#contracts a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	b.price_date = @end_date
+
+delete
+
+from
+	#contracts
+where
+	price = NULL
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#contracts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#contracts
+	where
+		id > @id
+
+	select
+		@contract_id = contract_id,
+		@value_date = value_date,
+		@price = price
+	from
+		#contracts
+	where
+		id = @id
+
+	select
+		@bo_price_id = NULL
+
+	exec
+		j_nextkey
+			"bo_prices",
+			@bo_price_id output
+
+	delete
+
+	from
+		bo_prices
+	where
+		contract_id = @contract_id
+	and
+		price_date = @end_date
+	and
+		value_date = @value_date
+	and
+		source_id = @source_id
+
+	insert into
+		bo_prices
+	values(
+		@bo_price_id,
+		@status_id,
+		@contract_id,
+		@end_date,
+		@value_date,
+		@source_id,
+		@price)
+
+	select
+		@ids = count(*)
+	from
+		#contracts
+	where
+		id > @id
+end
+
+
+go
+		
+
+
+
+
+

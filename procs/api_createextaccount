@@ -1,0 +1,458 @@
+create or replace procedure
+	api_createextaccount
+		@login varchar(50),
+		@symbol varchar(50),
+		@name varchar(150),
+		@prime_broker varchar(50),
+		@account_type varchar(50),
+		@evaluation_ccy varchar(10)=NULL,
+		@notional_amount float=NULL,
+		@aggregation_style varchar(10)=NULL,
+		@settlement_method varchar(20)=NULL,
+		@lp_transparency char(1)=NULL,
+		@max_mtd_statement_trades int=NULL,
+		@margin_multiplier int=NULL
+
+
+as
+
+declare @did_create_account char(1)
+declare @fund_id int
+declare @fund_name varchar(50)
+declare @fund_code varchar(50)
+declare @evaluation_currency_id int
+declare @external_account_type_id int
+declare @external_account_id int
+declare @account varchar(50)
+declare @prime_broker_id int
+declare @aggregation_style_id int
+declare @settlement_method_id int
+declare @internal_account_id int
+declare @run_id int
+declare @pb_run_id int
+declare @fund_agency_cpty int
+declare @mkt_ext_account_id int
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+        @fund_name = name,
+	@fund_code = fund_code
+from
+        funds
+where
+        fund_id = @fund_id
+if @fund_name = NULL
+begin
+	select
+		status = "Error",
+		msg = "Fund not found"
+	return
+end
+
+
+/* Default  eval ccy is the eval ccy of the fund */
+if @evaluation_ccy = NULL
+begin
+	select
+        	@evaluation_currency_id = evaluation_currency_id
+	from
+        	funds
+	where
+        	fund_id = @fund_id
+end
+else
+begin
+	select
+		@evaluation_currency_id = product_id
+	from
+		products
+	where
+		symbol = @evaluation_ccy
+	if @evaluation_currency_id = NULL
+	begin
+		select
+			status = "Error",
+			msg = "Problem finding evaluation currency",
+			evaluation_ccy = @evaluation_ccy
+		return
+	end
+end
+
+select
+        @external_account_type_id = external_account_type_id
+from
+        external_account_types
+where
+        name = @account_type
+if @external_account_type_id = NULL
+begin
+        select
+                status = "Error",
+                message = "External account type not found",
+                account_type = @account_type
+        return
+end
+
+select
+        @external_account_id = external_account_id
+from
+        external_accounts
+where
+        symbol = @symbol
+if @external_account_id != NULL
+begin
+        select
+                status = "Error",
+                message = "Account name already exists",
+                account_name = @symbol
+        return
+end
+
+select
+        @prime_broker_id = a.prime_broker_id,
+	@pb_run_id = a.run_id,
+	@mkt_ext_account_id=mkt_ext_account_id
+from
+        prime_brokers a,
+        sources b
+where
+        a.source_id = b.source_id
+and
+        b.name = @prime_broker
+if @prime_broker_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Prime Broker not found",
+                prime_broker = @prime_broker
+        return
+end
+
+/* Default agg style = None */
+select
+        @aggregation_style_id = aggregation_style_id
+from
+        aggregation_styles
+where
+        name = @aggregation_style
+if @@rowcount != 1
+begin
+	select
+		@aggregation_style = "None"
+
+	select
+		@aggregation_style_id = aggregation_style_id
+	from
+		aggregation_styles
+	where
+		name=@aggregation_style
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Aggregation syle does not exist",
+			style=@aggregation_style
+
+		return
+	end
+end
+
+/* Default settlement method is 'Roll' */
+if @settlement_method = NULL
+begin
+	select
+		@settlement_method = "Roll"
+
+end
+
+select
+	@settlement_method_id = settlement_method_id
+from
+	settlement_methods
+where
+	name = @settlement_method
+if @settlement_method_id = NULL
+begin
+        select
+                @settlement_method = "Roll"
+	select
+		@settlement_method_id=settlement_method_id
+	from
+		settlement_methods 
+	where
+		name=@settlement_method
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Settlement Method does not exist",
+			method = @settlement_method
+		return
+	end
+end
+		
+
+/* Default lp transparency is "N" -- if you pass in something other than "Y", default to "N" */
+if @lp_transparency != "Y"
+begin
+	select
+		@lp_transparency = "N"
+end
+
+/* Default max_mtd_statement_trades is 0, to not show trades on statement */
+if @max_mtd_statement_trades = NULL
+begin
+	select
+		@max_mtd_statement_trades = 0
+end
+	
+/* Default margin multiplier is 1 */
+if @margin_multiplier = NULL
+begin
+	select
+		@margin_multiplier = 1
+end
+
+/* The fund should should already have an internal account that matches the fund name
+   but if not, create one */
+select
+        @internal_account_id = internal_account_id
+from
+        internal_accounts
+where
+        symbol = @fund_name
+if @internal_account_id = NULL
+begin
+        exec
+                j_nextkey
+                        "internal_accounts",
+                        @internal_account_id output
+        insert into
+                internal_accounts(
+                        internal_account_id,
+                        symbol,
+                        name,
+                        default_external_account_id)
+        values(
+                @internal_account_id,
+                @fund_name,
+                @fund_name,
+                0)
+        insert into
+                fund_internal_accounts(
+                        fund_id,
+                        internal_account_id)
+        values(
+                @fund_id,
+                @internal_account_id)
+        insert into
+                internal_account_views
+        values(
+                @internal_account_id)
+end
+
+
+/* 
+ *  CREATE the external account
+ */ 
+
+exec 
+	j_nextkey 
+		"external_accounts", 
+		@external_account_id output
+
+insert into
+        external_accounts(
+                external_account_id,
+                instrument_type,
+                symbol,
+                name,
+                external_account_type_id,
+                internal_account_id,
+                evaluation_currency_id,
+                aggregation_style_id,
+                settlement_method_id,
+                lp_transparency,
+                max_mtd_statement_trades,
+                margin_multiplier)
+values(
+        @external_account_id,
+        "S",
+        @symbol,
+        @name,
+        @external_account_type_id,
+        @internal_account_id,
+        @evaluation_currency_id,
+        @aggregation_style_id,
+        @settlement_method_id,
+        @lp_transparency,
+        @max_mtd_statement_trades,
+        @margin_multiplier)
+
+/*
+Insert into:
+	fund_external_accounts
+	external_account_prime_brokers
+	runs
+	run_external_accounts
+
+	chriso:	Dont think we need to insert into all these old accounts anymore. 
+		Going to ignore for now. May want to add back. Reference r_addexternalspotaccount if so.
+	external_account_views
+	internal_accounts
+	fund_internal_accounts
+	internal_account_views
+	call proc s_addintaccounttrans
+	portfolios
+	portfolio_accounts
+
+*/
+
+insert into
+        fund_external_accounts
+values(
+        @fund_id,
+        @external_account_id)
+
+insert into
+        external_account_prime_brokers
+                values(
+                        @external_account_id,
+                        @prime_broker_id
+                        )
+
+/* 
+ *  CREATE run
+ */ 
+exec
+        j_nextkey
+                "runs",
+                @run_id output
+
+insert into
+        runs
+values(
+        @run_id,
+        @symbol)
+insert into
+        run_external_accounts
+values(
+        @run_id,
+        @external_account_id)
+
+/* GRANT ACCESS FOR ADMINS */
+
+exec
+        r_grantrunforgroup
+                @symbol,
+                "Admin"
+
+
+declare @fund_sub_type varchar(50)
+
+select
+	@fund_sub_type=name
+from
+	fund_sub_types
+
+if(@fund_sub_type = "FX Agency")
+begin
+
+	if(@pb_run_id != NULL)
+	begin	
+		insert into
+			run_external_accounts
+		(run_id,
+		external_account_id)
+		values (
+		@pb_run_id,
+		@external_account_id)
+	end
+	else
+	begin
+		select 
+			status="Warn",
+			msg="Could not create run external account for prime broker",
+			prime_broker=@prime_broker
+	end
+
+	
+end
+
+/* Client Creation Only,  create a top level trader */
+if @account_type = "Client"
+begin
+	/* Ensure a counterparty exists for the fund */
+	select
+		@fund_agency_cpty = counterparty_id
+	from
+		counterparties 
+	where
+		name = @fund_code
+	if @fund_agency_cpty = NULL
+	begin
+		declare @u_fundcode varchar(20)
+		select
+			@u_fundcode = upper(@fund_code)
+		
+		exec
+			api_addcounterparty
+				@login=@login,
+				@cpty=@fund_code,
+				@ext_acct=@u_fundcode,
+				@fund_agency_counterparty="Y"
+	end
+		
+
+	exec
+		api_createclitrader
+			@login=@login,
+			@trader=@symbol,
+			@external_account=@symbol
+end
+
+if @account_type = "Counterparty"
+begin
+
+	if (@mkt_ext_account_id = NULL)
+	begin
+		select @mkt_ext_account_id=@external_account_id
+	end
+	
+	update
+		prime_brokers
+	set
+		mkt_ext_account_id=@mkt_ext_account_id
+	where
+		prime_broker_id=@prime_broker_id
+
+end
+
+select
+	@did_create_account = "Y"
+from
+	external_accounts
+where
+	symbol = @symbol
+
+if @did_create_account = "Y"
+begin
+	select
+		status = "Success",
+		msg = "Created external account"
+end
+else
+begin
+	select
+		status = "Error",
+		msg = "Did not create external account. Check data"
+end
+
+go
+

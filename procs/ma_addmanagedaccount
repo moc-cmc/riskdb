@@ -1,0 +1,257 @@
+
+drop  procedure
+	ma_addmanagedaccount
+go
+
+create procedure
+	ma_addmanagedaccount
+		@login varchar(50),
+		@account varchar(50)
+as
+
+declare @external_account_id int
+declare @external_account_type_id int
+declare @internal_account_id int
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @aggregation_style_id int
+declare @run_id int
+declare @master_allocation_id int
+declare @allocation_mode_id int
+declare @status_id int
+declare @tico_account_id int
+declare @committed_status_id int
+declare @active_status_id int
+declare @ib_broker_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_account",
+	"New Master Account",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	"#,##0.00")
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@aggregation_style_id = aggregation_style_id
+from
+	aggregation_styles
+where
+	name = "None"
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Aggregation style not found"
+	return
+end
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Administrator Review"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@status_id output
+	insert into
+		statuses
+	values(
+		@status_id,
+		"Administrator Review")
+end
+
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+
+select
+	@internal_account_id = a.internal_account_id
+from
+	internal_accounts a,
+	funds b
+where
+	a.symbol = b.name
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Default internal account not found"
+	return
+end
+
+
+select
+	@external_account_type_id = external_account_type_id
+from
+	external_account_types
+where
+	name = "Managed"
+if @@rowcount = 0
+begin
+	insert into
+		external_account_types
+	values(
+		"Master")
+	select
+		@external_account_type_id = @@identity
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @@rowcount != 0
+begin
+	select
+		status = "Error",
+		message = "Account name already exists",
+		account = @account
+	return
+end
+
+select
+	@committed_status_id = status_id
+from
+	statuses
+where
+	name = "Committed"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Committed status not found"
+	return
+end
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Active status not found"
+	return
+end
+
+select
+        @ib_broker_id = ib_broker_id
+from
+        ib_brokers
+where
+        symbol = "RAM"
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                message = "IB Broker not found"
+        return
+end
+
+
+	
+exec
+	j_nextkey
+		"external_accounts",
+		@external_account_id output
+
+insert into
+	external_accounts
+values(
+	@external_account_id,
+	"S",
+	@account,
+	@account,
+	@external_account_type_id,
+	@internal_account_id,
+	@evaluation_currency_id,
+	@aggregation_style_id,
+	@ib_broker_id)
+
+
+exec
+	j_nextkey
+		"runs",
+		@run_id output
+
+insert into
+	runs
+values(
+	@run_id,
+	@account)
+insert into
+	user_runs
+values(
+	@tico_account_id,
+	@run_id)
+insert into
+	run_external_accounts
+values(
+	@run_id,
+	@external_account_id)
+
+
+
+exec
+	mn_managedaccounts
+		@login
+
+go

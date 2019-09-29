@@ -1,0 +1,12 @@
+drop procedure r_checkdbcon
+go
+
+create procedure 
+	r_checkdbcon
+
+as
+
+select
+	status = "Success"
+
+go

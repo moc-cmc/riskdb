@@ -1,0 +1,120 @@
+
+if object_id("s_addintaccounttrans") != NULL
+    drop procedure
+        s_addintaccounttrans
+go
+
+create procedure
+	s_addintaccounttrans
+		@login char(25),
+		@account char(50),
+		@category char(100),
+		@date datetime,
+		@amount float,
+		@note char(255)=NULL
+as
+
+declare @account_transaction_id int
+declare @multiplier int
+declare @account_id int
+declare @account_transaction_type_id int
+declare @internal_account_id int
+
+select
+	@account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem determining current user"
+	return
+end
+
+
+select
+	@account_transaction_type_id = transaction_type_id,
+	@multiplier = direction
+from
+	transaction_types
+where
+	name = @category
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Could not find the account transaction category",
+		category = @category
+	return
+end
+
+select
+	@amount = @amount * convert(float, @multiplier)
+
+select
+	@internal_account_id = internal_account_id
+from
+	internal_accounts
+where
+	symbol = @account
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding account",
+		account = @account
+	return
+end
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = "account_transactions"
+	select
+		@account_transaction_id = last_id
+	from
+		keys
+	where
+		relation = "account_transactions"
+commit tran
+
+begin tran
+	insert into
+		int_account_transactions
+	values(
+		@account_transaction_id,
+		@account_id,
+		@internal_account_id,
+		@account_transaction_type_id,
+		@date,
+		@amount,
+		@note)
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem adding transaction",
+			account = @account,
+			category = @category,
+			date = @date,
+			amount = @amount
+		rollback tran
+		return
+	end
+commit tran
+
+select
+	id = 0,
+	msg = "Successfully added transaction",
+	account = @account,
+	date = @date,
+	category = @category,
+	amount = @amount
+
+go

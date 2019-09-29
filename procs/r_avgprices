@@ -1,0 +1,540 @@
+use
+	risk_cantorny_uat
+go
+
+drop procedure
+	r_avgprices
+go
+
+create procedure
+	r_avgprices
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @id int
+declare @ids int
+declare @contract_id int
+declare @value_date datetime
+declare @days float
+declare @spot_price float
+declare @forward_price float
+declare @give_rate float
+declare @get_rate float
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @total_pl float
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+exec
+	r_avgviewllinks
+		@login
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+
+create table
+	#pl(
+		symbol varchar(50) NULL,
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4),
+		average_price float)
+insert into
+	#pl(
+		contract_id,
+		value_date,
+		quantity,
+		average_price)
+select
+	contract_id,
+	value_date,
+	sum(quantity),
+	avg_long = sum(quantity * price) / sum(quantity)
+from
+	trades
+where
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+and
+	quantity > 0.0
+group by
+	contract_id,
+	value_date
+	
+
+insert into
+	#pl(
+		contract_id,
+		value_date,
+		quantity,
+		average_price)
+select
+	contract_id,
+	value_date,
+	sum(quantity),
+	avg_short = sum(abs(quantity) * price) / sum(abs(quantity))
+from
+	trades
+where
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+and
+	quantity < 0.0
+group by
+	contract_id,
+	value_date
+	
+update
+	#pl
+set
+	a.symbol = b.symbol
+from
+	#pl a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+create table
+	#positions(
+		label varchar(250),
+		contract_id int NULL,
+		value_date datetime NULL)
+insert into
+	#positions(
+		label)
+select
+	distinct(rtrim(symbol) + rtrim(convert(varchar(50), value_date)))
+from
+	#pl
+
+update
+	#positions
+set
+	a.contract_id = b.contract_id,
+	a.value_date = b.value_date
+from
+	#positions a,
+	#pl b
+where
+	a.label = rtrim(b.symbol) + rtrim(convert(varchar(50), b.value_date))
+
+
+create table
+	#contracts(
+		id int identity,
+		contract_id int,
+		perspective_contract_id int,
+		native_ccy_id int NULL,
+		value_date datetime NULL,
+		net_long numeric(30,4) NULL,
+		avg_long float NULL,
+		net_short numeric(30,4) NULL,
+		avg_short float NULL,
+		days float NULL,
+		spot_price float NULL,
+		forward_price float NULL,
+		give_rate float NULL,
+		get_rate float NULL,
+		long_pl float NULL,
+		short_pl float NULL,
+		pl float NULL,
+		conversion_rate float NULL,
+		equiv_pl float NULL)
+
+insert into
+	#contracts(
+		contract_id,
+		perspective_contract_id,
+		value_date)
+select
+	contract_id,
+	contract_id,
+	value_date
+from
+	#positions
+
+update
+	#contracts
+set
+	a.perspective_contract_id = b.perspective_contract_id
+from
+	#contracts a,
+	def_perspective_contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#contracts
+set
+	a.native_ccy_id = b.currency_id
+from
+	#contracts a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#contracts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#contracts
+	where
+		id > @id
+
+	select
+		@contract_id = contract_id,
+		@value_date = value_date
+	from
+		#contracts
+	where
+		id = @id
+
+	select
+		@days = NULL,
+		@spot_price = NULL,
+		@forward_price = NULL,
+		@give_rate = NULL,
+		@get_rate = NULL
+
+
+	exec
+		r_forwardpriceasof
+			@contract_id,
+			@end_date,
+			@value_date,
+			@days output,
+			@spot_price output,
+			@forward_price output,
+			@give_rate output,
+			@get_rate output
+
+	update
+		#contracts
+	set
+		days = @days,
+		spot_price = @spot_price,
+		forward_price = @forward_price,
+		give_rate = @give_rate,
+		get_rate = @get_rate
+	where
+		id = @id
+
+
+	select
+		@ids = count(*)
+	from
+		#contracts
+	where
+		id > @id
+end
+
+
+
+
+update
+	#contracts
+set
+	a.net_long = b.quantity,
+	a.avg_long = b.average_price
+from
+	#contracts a,
+	#pl b
+where
+	a.contract_id = b.contract_id
+and
+	a.value_date = b.value_date
+and
+	b.quantity > 0.0
+	
+
+update
+	#contracts
+set
+	a.net_short = b.quantity,
+	a.avg_short = b.average_price
+from
+	#contracts a,
+	#pl b
+where
+	a.contract_id = b.contract_id
+and
+	a.value_date = b.value_date
+and
+	b.quantity < 0.0
+	
+
+
+update
+	#contracts
+set
+	net_long = 0.0
+where
+	net_long = NULL
+
+update
+	#contracts
+set
+	net_short = 0.0
+where
+	net_short = NULL
+
+update
+	#contracts
+set
+	long_pl = 0.0,
+	short_pl = 0.0,
+	pl = 0.0,
+	equiv_pl = 0.0
+
+update
+	#contracts
+set
+	long_pl = (forward_price - avg_long) * net_long
+where
+	avg_long != NULL
+
+
+update
+	#contracts
+set
+	short_pl = (forward_price - avg_short) * net_short
+where
+	avg_short != NULL
+
+
+update
+	#contracts
+set
+	pl = long_pl + short_pl
+
+update
+	#contracts
+set
+	a.conversion_rate = c.price
+from
+	#contracts a,
+	forwards b,
+	current_prices c
+where
+	a.native_ccy_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+
+update
+	#contracts
+set
+	a.conversion_rate = 1.0 / c.price
+from
+	#contracts a,
+	forwards b,
+	current_prices c
+where
+	a.native_ccy_id = b.currency_id
+and
+	b.product_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+
+update
+	#contracts
+set
+	conversion_rate = 1.0
+where
+	native_ccy_id = @evaluation_currency_id
+
+update
+	#contracts
+set
+	equiv_pl = pl * conversion_rate
+
+create table
+	#output(
+		id int identity,
+		style varchar(255) NULL,
+		pair varchar(50) NULL,
+		symbol varchar(50) NULL,
+		perspective varchar(50) NULL,
+		value_date datetime NULL,
+		net_long numeric(30,4) NULL,
+		avg_long float NULL,
+		net_short numeric(30,4) NULL,
+		avg_short float NULL,
+		last float NULL,
+		pl float NULL)
+
+insert into
+	#output(
+		style,
+		symbol,
+		perspective,
+		value_date,
+		net_long,
+		avg_long,
+		net_short,
+		avg_short,
+		last,
+		pl)
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	b.symbol,
+	perspective = c.symbol,
+	value_date = convert(varchar(11), a.value_date, 1),
+	a.net_long,
+	a.avg_long,
+	a.net_short,
+	a.avg_short,
+	last = a.forward_price,
+	a.equiv_pl
+from
+	#contracts a,
+	contracts b,
+	contracts c,
+	products d
+where
+	a.contract_id = b.contract_id
+and
+	a.perspective_contract_id = c.contract_id
+and
+	a.native_ccy_id = d.product_id
+order by
+	c.symbol,
+	a.value_date
+
+create table
+	#min_perspective_ids(
+		perspective varchar(50),
+		id int)
+insert into
+	#min_perspective_ids
+select
+	perspective,
+	min(id)
+from
+	#output
+group by
+	perspective
+
+
+update
+	#output
+set
+	a.pair = a.perspective,
+	style = "background:#FFFFCC;border: 1px solid white"
+from
+	#output a,
+	#min_perspective_ids b
+where
+	a.id = b.id
+
+create table
+	#sum(
+		symbol varchar(50),
+		pl float)
+insert into
+	#sum
+select
+	perspective,
+	pl = sum(pl)
+from
+	#output
+group by
+	perspective
+
+create table
+	#sum_output(
+		id int identity,
+		symbol varchar(50),
+		pl float NULL)
+insert into
+	#sum_output(
+		symbol,
+		pl)
+select
+	symbol,
+	pl
+from
+	#sum
+order by
+	symbol
+	
+select
+	@total_pl = sum(pl)
+from
+	#sum
+insert into
+	#sum_output(
+		symbol,
+		pl)
+values(
+	"Total",
+	@total_pl)
+
+select
+	symbol,
+	pl
+from
+	#sum_output
+order by
+	id
+
+select
+	style,
+	pair,
+	symbol,
+	value_date,
+	net_long,
+	avg_long,
+	net_short,
+	avg_short,
+	last,
+	pl
+from
+	#output
+order by
+	id
+
+
+
+
+go

@@ -1,0 +1,28 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	r_legalentitymasteraccts
+go
+
+create procedure
+	r_legalentitymasteraccts
+		@login varchar(50)
+as
+
+
+select
+	a.symbol
+from
+	external_accounts a,
+	bo_master_accounts b,
+	legal_entities c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.legal_entity_id = c.legal_entity_id
+order by
+	a.symbol
+
+go

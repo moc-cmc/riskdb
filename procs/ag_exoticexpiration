@@ -1,0 +1,200 @@
+drop procedure
+	ag_exoticexpiration
+go
+
+create procedure
+	ag_exoticexpiration
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@expiration datetime,
+		@exercise_style varchar(50),
+		@timezone varchar(50),
+		@option_expiration_id int output,
+		@symbol varchar(100) output
+
+as
+
+declare @option_id int
+declare @product_id int
+declare @currency_id int
+declare @underlying_contract_id int
+declare @exchange_id int
+declare @timezone_id int
+declare @exercise_style_id int
+declare @quantity numeric(30,4)
+declare @tick_size numeric(30,10)
+declare @expiration_time varchar(20)
+
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @dealt_currency
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Dealt currency not found",
+		dealt_currency = @dealt_currency
+	return
+end
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @counter_currency
+if @currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Counter currency not found",
+		counter_currency = @counter_currency
+	return
+end
+
+
+select
+	@underlying_contract_id = contract_id
+from
+	forwards
+where
+	product_id = @product_id
+and
+	currency_id = @currency_id
+if @underlying_contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Underlying contract not found",
+		dealt_currency = @dealt_currency,
+		counter_currency = @counter_currency
+	return
+end
+
+select
+	@exchange_id = exchange_id
+from
+	exchanges
+where
+	name = "OTC"
+if @exchange_id = NULL
+begin
+	select
+		status = "Error",
+		message = "OTC exchange not found"
+	return
+end
+
+select
+	@exercise_style_id = exercise_style_id
+from
+	exercise_styles
+where
+	name = @exercise_style
+if @exercise_style_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Exercise style not found",
+		exercise_style = @exercise_style
+	return
+end
+
+
+select
+	@timezone_id = timezone_id,
+	@expiration_time = expiration_time
+from
+	timezones
+where
+	timezone = @timezone
+if @timezone_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Timezone not found",
+		timezone = @timezone
+	return
+end
+
+select
+	@expiration = convert(datetime, convert(varchar(11), @expiration) + " " + @expiration_time)
+
+
+select
+	@quantity = 1.0,
+	@tick_size = .0001
+
+select
+	@option_id = option_id
+from
+	options
+where
+	underlying_contract_id = @underlying_contract_id
+and
+	exchange_id = @exchange_id
+and
+	def_exercise_style_id = @exercise_style_id
+if @option_id = NULL
+begin
+	exec
+		j_nextkey
+			"options",
+			@option_id output
+
+	insert into
+		options(
+			option_id,
+			underlying_contract_id,
+			exchange_id,
+			def_exercise_style_id,
+			quantity,
+			tick_size)
+	values(
+		@option_id,
+		@underlying_contract_id,
+		@exchange_id,
+		@exercise_style_id,
+		@quantity,
+		@tick_size)
+end
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency) + " "  + rtrim(convert(varchar(11), @expiration, 1)) + " " + rtrim(@timezone)
+
+select
+	@option_expiration_id = option_expiration_id
+from
+	option_expirations
+where
+	symbol = @symbol
+if @option_expiration_id = NULL
+begin
+	exec
+		j_nextkey
+			"option_expirations",
+			@option_expiration_id output
+
+	insert into
+		option_expirations(
+			option_expiration_id,
+			option_id,
+			symbol,
+			expiration,
+			timezone_id)
+	values(
+		@option_expiration_id,
+		@option_id,
+		@symbol,
+		@expiration,
+		@timezone_id)
+end
+	
+
+
+go
+

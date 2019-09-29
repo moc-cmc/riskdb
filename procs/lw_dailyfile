@@ -1,0 +1,101 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_dailyfile
+go
+
+create procedure
+	lw_dailyfile
+		@login varchar(50),
+		@file_name varchar(50),
+		@trade_date datetime
+as
+
+
+create table
+	#output(
+		contract_id int,
+		file_name varchar(50),
+		symbol varchar(50),
+		trade_date datetime,
+		price float NULL)
+
+
+insert into
+	#output(
+		contract_id,
+		file_name,
+		symbol,
+		trade_date)
+select
+	a.contract_id,
+	file_name = @file_name,
+	b.symbol,
+	trade_date = @trade_date
+from
+	source_contracts a,
+	contracts b,
+	sources c
+where
+	a.contract_id = b.contract_id
+and
+	a.source_id = c.source_id
+and
+	c.name = @file_name
+
+create table
+	#prices(
+		contract_id int,
+		price_date datetime,
+		price float NULL)
+
+insert into
+	#prices(
+		contract_id,
+		price_date)
+select
+	a.contract_id,
+	max(b.price_date)
+from
+	#output a,
+	prices b
+where
+	a.contract_id = b.contract_id
+
+update
+	#prices
+set
+	a.price = b.price
+from
+	#prices a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	a.price_date = b.price_date
+
+update
+	#output
+set
+	a.price = b.price
+from
+	#output a,
+	#prices b
+where
+	a.contract_id = b.contract_id
+
+	
+
+select
+	file_name,
+	symbol,
+	trade_date = convert(varchar(11), trade_date, 1),
+	price
+from
+	#output
+
+
+go
+	

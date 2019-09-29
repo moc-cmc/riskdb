@@ -1,0 +1,61 @@
+drop procedure dtcc_generatelei
+go
+
+create procedure
+	dtcc_generatelei
+		@login varchar(50),
+		@lei char(20)=NULL output
+
+as
+
+declare @fund_id int
+declare @fund_trunc char(3)
+declare @fund_ocode char(4)
+declare @next_lei int
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund_trunc = convert(char(4), upper(name))
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@fund_ocode = o_code
+from
+	fund_regulatory_info
+where
+	fund_id = @fund_id
+if @fund_ocode = NULL
+begin
+	select
+		status = "Error",
+		msg = "Fund must have an ocode to generate unofficial LEI number. Set O-Code for fund"
+	return
+end
+
+exec
+	j_nextkey
+		"lei_keys",
+		@next_lei output
+
+select
+	@lei = @fund_ocode+convert(char(10), @next_lei)+@fund_trunc+"ETG"
+
+if len(@lei) != 20
+begin
+	select
+		status = "Error",
+		msg = "LEI is not 20 characters",
+		lei = @lei
+	select
+		@lei = NULL
+	return
+end
+
+go

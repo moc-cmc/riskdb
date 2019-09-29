@@ -1,0 +1,26 @@
+drop procedure r_markdailyopstask
+go
+
+create procedure
+	r_markdailyopstask
+		@login varchar(50),
+		@task_id int,
+		@mark_as varchar(50)=NULL,
+		@trade_date datetime=NULL
+
+as
+
+
+exec
+	api_markdailyopstask
+		@login = @login,
+		@task_id = @task_id,
+		@mark_as = @mark_as
+
+exec
+	cbo_operations
+		@login = @login,
+		@trade_date = @trade_date
+
+go
+

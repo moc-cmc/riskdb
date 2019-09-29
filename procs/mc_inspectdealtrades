@@ -1,0 +1,55 @@
+
+if object_id("mc_inspectdealtrades") != NULL
+    drop procedure
+        mc_inspectdealtrades
+go
+
+create procedure
+	mc_inspectdealtrades
+		@login varchar(50),
+		@deal_id int
+
+as
+
+select
+	a.trade_id,
+    a.deal_id,
+	a.trade_date,
+	trade_type = b.name,
+    external_account = c.symbol,
+    counterparty = d.name,
+	a.quantity,
+	symbol = e.symbol,
+	a.value_date,
+	a.price,
+	trader = f.symbol,
+	broker = g.symbol,
+	sales_code = h.name
+from
+	trades a,
+	trade_types b,
+	external_accounts c,
+	counterparties d,
+	contracts e,
+	traders f,
+	brokers g,
+	sales_codes h
+where
+	a.trade_type_id = b.trade_type_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.counterparty_id = d.counterparty_id
+and
+	a.contract_id = e.contract_id
+and
+	a.trader_id = f.trader_id
+and
+	a.broker_id = g.broker_id
+and
+	a.sales_code_id = h.sales_code_id
+and
+	deal_id = @deal_id
+
+go
+

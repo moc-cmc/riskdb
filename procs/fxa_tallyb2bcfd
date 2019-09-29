@@ -1,0 +1,192 @@
+
+if object_id("fxa_tallyb2bcfd") != NULL
+    drop procedure
+        fxa_tallyb2bcfd
+go
+
+create procedure
+	fxa_tallyb2bcfd
+		@login varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@cfd_symbol varchar(50),
+		@counterparty varchar(50),
+		@quantity numeric(30,2),
+		@client_price float,
+		@market_price float,
+		@trade_date datetime=NULL
+
+as
+
+declare @deal_id int
+declare @client_trade_id int
+declare @market_trade_id int
+declare @client_quantity numeric(30,4)
+declare @market_quantity numeric(30,4)
+declare @client_external_account varchar(50)
+declare @market_external_account varchar(50)
+declare @symbol varchar(50)
+declare @client_login varchar(50)
+declare @client_login_id int
+declare @val_date datetime
+declare @value_date datetime
+declare @tally_value_date datetime
+
+if @client_buys_sells = "Client Buys"
+begin
+	select
+		@client_quantity = abs(@quantity) * -1.0
+end
+if @client_buys_sells = "Client Sells"
+begin
+	select
+		@client_quantity = abs(@quantity)
+end
+
+select
+	@market_quantity = @client_quantity * -1.0
+
+select
+	@symbol = symbol
+from
+	contracts
+where
+	symbol = @cfd_symbol
+if @symbol = NULL
+begin
+	select
+		"error"="Error",
+		"msg"="Problem finding CFD symbol",
+		"cfd_symbol"=@cfd_symbol
+	return
+end
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+
+select
+	@val_date = convert(date, @trade_date)
+
+if @trade_date > convert(date, convert(varchar(8), @trade_date, 112)+ " 17:00")
+begin
+	exec
+		r_nextbusinessday
+			@val_date,
+			@value_date output
+end
+else
+begin
+	select
+		@value_date = @val_date
+end
+
+select
+	@tally_value_date = convert(date, @value_date)
+
+
+select
+	@client_external_account = a.symbol,
+	@client_login_id = b.tico_account_id
+from
+	external_accounts a,
+	traders b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @client_user
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Could not found account for client user",
+		client_user = @client_user
+	return
+end
+
+select
+	@client_login = login
+from
+	tico_accounts
+where
+	account_id = @client_login_id
+if @client_login = NULL
+begin
+	select
+		status = "Error",
+		message = "Could not find tico account for client user",
+		client_user = @client_user,
+		client_login_id = @client_login_id
+	return
+end
+
+
+select
+	@market_external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @counterparty
+	return
+end
+
+exec
+	fxa_tallytrade
+		@login=@client_login,
+		@source="MPT Manual Tally",
+		@trade_id=@client_trade_id output,
+		@deal_id=@deal_id output,
+		@tally_type="CFD",
+		@deal_type="B2B Forward",
+		@trade_type="CFD",
+		@external_account=@client_external_account,
+		@quantity=@client_quantity,
+		@symbol=@symbol,
+		@value_date=@tally_value_date,
+		@price=@client_price,
+		@trade_date=@trade_date,
+		@trader=@client_user
+
+
+	
+exec
+	fxa_tallytrade
+		@login=@login,
+		@source="MPT Manual Tally",
+		@trade_id=@market_trade_id output,
+		@deal_id=@deal_id output,
+		@tally_type="CFD",
+		@deal_type="B2B Forward",
+		@trade_type="CFD",
+		@external_account=@market_external_account,
+		@counterparty=@counterparty,
+		@quantity=@market_quantity,
+		@symbol=@symbol,
+		@value_date=@tally_value_date,
+		@price=@market_price,
+		@trade_date=@trade_date,
+		@sales_code="None"
+
+
+	
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+
+
+go

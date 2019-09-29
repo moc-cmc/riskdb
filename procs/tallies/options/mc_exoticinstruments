@@ -1,0 +1,16 @@
+drop procedure mc_exoticinstruments
+go
+
+create procedure
+	mc_exoticinstruments
+
+as
+
+select
+	name
+from
+	exotic_instruments
+order by 
+	name
+
+go

@@ -1,0 +1,205 @@
+
+drop procedure
+        api_tallyclientefp
+go
+
+create procedure
+        api_tallyclientefp
+		@login varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells_spot varchar(50),
+		@spot_quantity numeric(30,4),
+		@spot_symbol varchar(50),
+		@value_date datetime,
+		@spot_price float,
+		@client_buys_sells_future varchar(50),
+		@futures_quantity numeric(30,4),
+		@futures_symbol varchar(50),
+		@futures_price float,
+		@deal_id int output
+
+as
+
+declare @external_account varchar(50)
+declare @symbol varchar(50)
+declare @trade_date datetime
+declare @future_trade_type varchar(25)
+declare @spot_trade_type varchar(25)
+declare @contract_id int
+declare @spot_trade_id int
+declare @futures_trade_id int
+declare @fut_val_date datetime
+declare @deal_type_id int
+declare @status_id int
+
+
+if @client_buys_sells_spot = "Client Buys"
+begin
+	select
+		@spot_quantity = abs(@spot_quantity) * -1.0
+end
+if @client_buys_sells_spot = "Client Sells"
+begin
+	select
+		@spot_quantity = abs(@spot_quantity)
+end
+
+
+if @client_buys_sells_future = "Client Buys"
+begin
+	select
+		@futures_quantity = abs(@futures_quantity) * -1.0
+end
+if @client_buys_sells_future = "Client Sells"
+begin
+	select
+		@futures_quantity = abs(@futures_quantity)
+end
+
+
+select
+	@deal_type_id = deal_type_id
+from
+	deal_types
+where
+	name = "Client EFP"
+if @deal_type_id = NULL
+begin
+	insert into
+		deal_types(
+			name)
+	values(
+		"Client EFP")
+	select
+		@deal_type_id = deal_type_id
+	from
+		deal_types
+	where
+		name = "Client EFP"
+end
+
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @futures_symbol
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @futures_symbol
+
+	return
+end
+
+select
+	@fut_val_date = expiration
+from
+	future_contracts
+where
+	contract_id = @contract_id
+
+
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	traders b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @client_user
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Could not found account for client user",
+		client_user = @client_user
+	return
+end
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "User Reivew"
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "User review status not found"
+	return
+end
+
+exec
+	j_nextkey
+		"deals",
+		@deal_id output
+
+insert into
+	deals(
+		deal_id,
+		deal_type_id,
+		timestamp,
+		status_id)
+values(
+	@deal_id,
+	@deal_type_id,
+	getdate(),
+	@status_id)
+
+
+select
+	@future_trade_type = "EFP Future",
+	@spot_trade_type = "EFP Forward"
+
+select
+	@trade_date = getdate()
+
+
+/* tally the spot trade */
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @spot_trade_id output,
+		@deal_id = @deal_id,
+		@tally_type = @spot_trade_type,
+		@deal_type = "Client EFP",
+		@trade_type = @spot_trade_type,	
+		@external_account = @external_account,
+		@quantity = @spot_quantity,
+		@symbol = @spot_symbol,
+		@value_date = @value_date,
+		@price = @spot_price,
+		@trade_date = @trade_date,
+		@trader =@client_user
+
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @futures_trade_id output,
+		@deal_id = @deal_id,
+		@tally_type = @future_trade_type,
+		@deal_type = "Client EFP",
+		@trade_type = @future_trade_type,	
+		@external_account = @external_account,
+		@quantity = @futures_quantity,
+		@symbol = @futures_symbol,
+		@value_date = @fut_val_date,
+		@price = @futures_price,
+		@trade_date = @trade_date,
+		@trader =@client_user
+
+
+
+
+
+go

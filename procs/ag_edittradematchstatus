@@ -1,0 +1,275 @@
+create or replace procedure
+	ag_edittradematchstatus
+		@login varchar(50),
+		@trade_id int,
+		@matching_engine varchar(50),
+		@match_status varchar(100)
+
+as
+
+declare @tico_account_id int
+declare @match_status_id int
+declare @matching_engine_id int
+
+declare @trade_match_id int
+declare @client_trade_match_id int
+
+declare @client_trade_id int
+declare @booking_id int
+
+select
+        @booking_id = booking_id
+from
+        trade_bookings
+where
+        trade_id = @trade_id
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Could not find booking_id",
+		trade_id = @trade_id
+	return
+end	
+
+select
+        @client_trade_id = trade_id
+from
+        trade_bookings
+where
+        booking_id = @booking_id
+and
+        trade_id != @trade_id
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                message = "Could not find client_trade_id",
+                trade_id = @trade_id,
+		booking_id = @booking_id
+        return
+end
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = @matching_engine
+if @matching_engine_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Matching engine not found",
+		matching_engine = @matching_engine
+	return
+end
+
+select
+	@match_status_id = match_status_id
+from
+	match_statuses
+where
+	name = @match_status
+if @match_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Match status not found",
+		match_status = @match_status
+	return
+end
+
+/* LP Leg */
+select
+	@trade_match_id = trade_match_id
+from
+	trade_matches
+where
+        trade_id = @trade_id
+and
+        matching_engine_id = @matching_engine_id
+
+if @trade_match_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Could not find trade_match_id",
+		trade_id = @trade_id,
+		matching_engine_id = @matching_engine_id
+	return
+end
+
+
+begin tran
+	insert into
+		trade_matches_log(
+			trade_match_id,
+			trade_id,
+			matching_engine_id,
+			match_status_id,
+			edited_by,
+			timestamp)
+	select
+		trade_match_id,
+		trade_id,
+		matching_engine_id,
+		match_status_id,
+		edited_by = @tico_account_id,
+		timestamp = getdate()
+	from
+		trade_matches
+	where
+	        trade_id = @trade_id
+	and
+        	matching_engine_id = @matching_engine_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to archive existing trade match",
+			trade_match_id = @trade_match_id,
+			trade_id = @trade_id,
+			matching_engine = @matching_engine,
+			match_status = @match_status
+		rollback tran
+		return
+	end
+
+	update
+		trade_matches
+	set
+		match_status_id = @match_status_id
+	where
+		trade_id = @trade_id
+	and
+		matching_engine_id = @matching_engine_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Update of trade match status failed",
+			trade_id = @trade_id,
+			matching_engine = @matching_engine,
+			match_status = @match_status
+		rollback tran
+		return
+	end
+commit tran
+
+exec
+        r_insertmatchnotification
+                @trade_match_id = @trade_match_id
+
+select
+	status = "Success",
+	message = "Trade match status updated successfully",
+	trade_id = @trade_id,
+	matching_engine = @matching_engine,
+	match_status = @match_status
+
+
+/* Client leg */
+select
+        @client_trade_match_id = trade_match_id
+from
+        trade_matches
+where
+        trade_id = @client_trade_id
+and
+        matching_engine_id = @matching_engine_id
+
+if @client_trade_match_id = NULL
+begin
+        select
+                status = "Error",
+                msg = "Could not find client_trade_match_id",
+                trade_id = @client_trade_id,
+                matching_engine_id = @matching_engine_id
+        return
+end
+
+
+begin tran
+        insert into
+                trade_matches_log(
+			trade_match_id,
+                        trade_id,
+                        matching_engine_id,
+                        match_status_id,
+                        edited_by,
+                        timestamp)
+        select
+		trade_match_id,
+                trade_id,
+                matching_engine_id,
+                match_status_id,
+                edited_by = @tico_account_id,
+                timestamp = getdate()
+        from
+                trade_matches
+        where
+                trade_id = @client_trade_id
+        and
+                matching_engine_id = @matching_engine_id
+        if @@rowcount != 1
+        begin
+                select
+                        status = "Error",
+                        message = "Unable to archive existing trade match",
+                        trade_id = @client_trade_id,
+                        matching_engine = @matching_engine,
+                        match_status = @match_status
+                rollback tran
+                return
+        end
+
+        update
+                trade_matches
+        set
+                match_status_id = @match_status_id
+        where
+                trade_id = @client_trade_id
+        and
+                matching_engine_id = @matching_engine_id
+        if @@rowcount != 1
+        begin
+                select
+                        status = "Error",
+                        message = "Update of trade match status failed",
+                        trade_id = @client_trade_id,
+                        matching_engine = @matching_engine,
+                        match_status = @match_status
+                rollback tran
+                return
+        end
+commit tran
+
+exec
+        r_insertmatchnotification
+                @trade_match_id = @client_trade_match_id
+
+select
+        status = "Success",
+        message = "Trade match status updated successfully",
+        trade_id = @client_trade_id,
+        matching_engine = @matching_engine,
+        match_status = @match_status
+
+
+go
+

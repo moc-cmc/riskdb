@@ -1,0 +1,27 @@
+drop procedure
+	r_manageuserrunaccess
+go
+
+create procedure
+        r_manageuserrunaccess
+                @login char(50),
+                @manage_by char(50)
+
+as
+
+
+if @manage_by in("Account")
+        exec
+                r_manageaccountaccess
+                        @login
+
+if @manage_by in("Run")
+          exec
+                r_managerunaccess
+                        @login
+
+if @manage_by = NULL
+        select
+                error = "Error: Please select Account or Run"
+
+go

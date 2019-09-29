@@ -1,0 +1,160 @@
+drop procedure
+	ag_ticoreportshome
+go
+
+create procedure
+	ag_ticoreportshome
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"requests",
+	"Tico Report Requests",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_tico_report",
+	"Add Tico Report",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"next_action",
+	"Approve Next Request Action",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"enable_user",
+	"Enable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"disable_user",
+	"Disable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_admin_user",
+	"Add Approval User",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	style = @style,
+	add_tico_report = "Add New Tico Report"
+
+select
+	section = "Tico Reports",
+	style = @style,
+	tico_report = a.name,
+	run = b.name,
+	a.proc_name,
+	a.filename_tmpl, 
+	a.params_tmpl,
+	report_user = c.login,
+	status = d.name,
+	requests = "Requests"
+from
+	tico_reports a,
+	runs b,
+	tico_accounts c,
+	statuses d
+where
+	a.run_id = b.run_id
+and
+	a.report_user_id = c.account_id
+and
+	a.status_id = d.status_id
+order by
+	a.name
+
+go

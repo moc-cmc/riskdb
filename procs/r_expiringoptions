@@ -1,0 +1,326 @@
+use
+	risk_cc
+go
+
+drop procedure
+        xr_expiringoptions
+go
+
+create procedure
+	xr_expiringoptions
+		@login char(30),
+		@expiration char(30)=NULL
+as
+
+declare @exp_date datetime
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"create_closing_trades",
+	"Closing Option Trades",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"symbol",
+	"Expiring Positions",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	"#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"trading_volume",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+
+
+select
+	@exp_date = convert(datetime, @expiration)
+
+create table
+	#expiring_trades(
+		trade_id int,
+		underlying_contract_id int,
+		underlying_price float NULL)
+
+
+insert into
+	#expiring_trades
+select
+	a.trade_id,
+	d.underlying_contract_id,
+	e.price
+from
+	trades a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	current_prices e
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+and
+	d.underlying_contract_id *= e.contract_id
+and
+	c.expiration = @exp_date
+
+
+insert into
+	#expiring_trades
+select
+	a.trade_id,
+	d.underlying_contract_id,
+	e.price
+from
+	trades a,
+	exotic_contracts b,
+	option_expirations c,
+	options d,
+	current_prices e
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+/* and
+	b.ko_ki_date = NULL */
+and
+	d.underlying_contract_id *= e.contract_id
+and
+	c.expiration = @exp_date 
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(200) NULL,
+		trade_id int,
+		trade_date datetime,
+		contract_id int,
+		external_account_id int,
+		underlying_contract_id int,
+		strike float,
+		put_call varchar(10),
+		quantity numeric(30,4),
+		price float,
+		expiration datetime,
+		underlying_price float,
+		parity float NULL,
+		itm numeric(30,4))
+
+
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	trade_date = convert(char(22), min(a.trade_date), 0),
+	quantity = sum(a.quantity),
+	symbol = max(b.symbol),
+	begin_date = convert(char(22), @exp_date, 0),
+	underlying = convert(char(30), convert(numeric(30,6), max(f.underlying_price)))
+from
+	trades a,
+	contracts b,
+	traders c,
+	brokers d,
+	strategies e,
+	#expiring_trades f
+where
+	a.trade_id = f.trade_id
+and
+	a.contract_id = b.contract_id
+and
+	a.trader_id = c.trader_id
+and
+	a.broker_id = d.broker_id
+and
+	a.strategy_id = e.strategy_id
+group by
+	b.symbol
+order by
+	b.symbol
+	
+
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	create_closing_trades = "Prepare Closing Trades",
+	begin_date = @exp_date
+
+insert into
+	#output(
+		style,
+		trade_id,
+		trade_date,
+		contract_id,
+		external_account_id,
+		underlying_contract_id,
+		strike,
+		put_call,
+		quantity,
+		price,
+		expiration,
+		underlying_price,
+		itm)
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	a.trade_id,
+	a.trade_date,
+	a.contract_id,
+	a.external_account_id,
+	e.underlying_contract_id,
+	c.strike,
+	c.put_call,	
+	a.quantity,
+	a.price,
+	expiration = @exp_date,
+	b.underlying_price,
+	itm = 0.0
+from
+	trades a,
+	#expiring_trades b,
+	option_contracts c,
+	option_expirations d,
+	options e
+where
+	a.trade_id = b.trade_id
+and
+	a.contract_id = c.contract_id
+and
+	c.option_expiration_id = d.option_expiration_id
+and
+	d.option_id = d.option_id
+and
+	b.underlying_contract_id = e.underlying_contract_id
+
+delete
+
+from
+	#output
+where
+	quantity = 0.0
+
+update
+	#output
+set
+	parity = underlying_price - strike
+where
+	put_call = "C"
+
+update
+	#output
+set
+	parity = strike - underlying_price
+where
+	put_call = "P"
+
+update
+	#output
+set
+	parity = 0.0
+where
+	parity < 0.0
+
+update
+	#output
+set
+	style = "background:#E6F2EE;border: 1px solid white"
+where
+	parity > 0.0
+
+update
+	#output
+set
+	itm = quantity
+where
+	parity > 0
+and
+	put_call = "C"
+
+update
+	#output
+set
+	itm = quantity * -1.0
+where
+	parity > 0
+and
+	put_call = "P"
+	
+select
+	section = "Expiring Trades",
+	a.style,
+	a.trade_id,
+	a.trade_id,
+	account = b.symbol,
+	a.quantity,
+	underlying = c.symbol,
+	a.strike,
+	a.put_call,
+	a.price,
+	a.expiration,
+	a.underlying_price,
+	a.itm
+from
+	#output a,
+	external_accounts b,
+	contracts c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.underlying_contract_id = c.contract_id 
+order by
+	id
+
+	
+
+
+
+go

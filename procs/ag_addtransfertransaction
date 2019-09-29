@@ -1,0 +1,218 @@
+drop procedure
+	ag_addtransfertransaction
+go
+
+create procedure
+	ag_addtransfertransaction
+		@login varchar(50),
+		@debit_from varchar(50),
+		@credit_to varchar(50),
+		@transaction_type varchar(50),
+		@product varchar(50),
+		@amount numeric(30,4),
+		@note varchar(250)=NULL
+as
+
+declare @tico_account_id int
+declare @debit_account_id int
+declare @credit_account_id int
+declare @transaction_type_id int
+declare @product_id int
+declare @credit_amount numeric(30,4)
+declare @debit_amount numeric(30,4)
+declare @credit_transaction_id int
+declare @debit_transaction_id int
+declare @timestamp datetime
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@debit_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @debit_from
+if @debit_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Debit account not found",
+		debit_from = @debit_from
+	return
+end
+
+select
+	@credit_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @credit_to
+if @credit_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Credit account not found",
+		credit_account = @credit_to
+	return
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = @transaction_type
+if @transaction_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Transaction type not found",
+		transaction_type = @transaction_type
+	return
+end
+
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Product not found",
+		product = @product
+	return
+end
+
+select
+	@credit_amount = abs(@amount),
+	@debit_amount = abs(@amount) * -1.0
+
+
+select
+	@timestamp = convert(date, getdate())
+
+exec
+	j_nextkey
+		"account_transactions",
+		@credit_transaction_id output
+
+exec
+	j_nextkey
+		"account_transactions",
+		@debit_transaction_id output
+
+begin tran
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values(
+		@debit_transaction_id,
+		@tico_account_id,
+		@debit_account_id,
+		@transaction_type_id,
+		@timestamp,
+		@product_id,
+		@debit_amount,
+		@note)
+	if @@rowcount != 1
+	begin 
+		select
+			status = "Error",
+			messsage = "Unable to book debit. Transfer failed",
+			debit_account = @debit_from,
+			credit_account = @credit_to,
+			amount = @amount
+		rollback tran
+		return
+	end
+
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values(
+		@credit_transaction_id,
+		@tico_account_id,
+		@credit_account_id,
+		@transaction_type_id,
+		@timestamp,
+		@product_id,
+		@credit_amount,
+		@note)
+	if @@rowcount != 1
+	begin 
+		select
+			status = "Error",
+			messsage = "Unable to book credit. Transfer failed",
+			debit_account = @debit_from,
+			credit_account = @credit_to,
+			amount = @amount
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	a.account_transaction_id,
+	entered_by = b.login,
+	account = c.symbol,
+	transaction_type = d.name,
+	a.transaction_date,
+	product = e.symbol,
+	a.amount,
+	a.note
+from
+	account_transactions a,
+	tico_accounts b,
+	external_accounts c,
+	transaction_types d,
+	products e
+where
+	a.entered_by = b.account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.transaction_type_id = d.transaction_type_id
+and
+	a.currency_id = e.product_id
+and
+	a.account_transaction_id in(@debit_transaction_id, @credit_transaction_id)
+
+
+
+
+go
+
+
+

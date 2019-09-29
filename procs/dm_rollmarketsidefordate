@@ -1,0 +1,529 @@
+drop procedure dm_rollmarketsidefordate
+go
+
+create procedure
+	dm_rollmarketsidefordate
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+declare @near_date datetime
+declare @far_date datetime
+declare @value_date datetime
+declare @cadtry_near_date datetime
+declare @cadtry_far_date datetime
+declare @cadtry_trade_date datetime
+declare @cadtry_value_date datetime
+declare @id int
+declare @max_id int
+
+declare @pos_external_account_id int
+declare @pos_contract_id int
+declare @pos_product varchar(10)
+declare @pos_currency varchar(10)
+declare @pos_value_date datetime
+declare @pos_near_date datetime
+declare @pos_far_date datetime
+declare @pos_position numeric(30, 4)
+declare @pos_near_rate float
+declare @pos_far_rate float 
+declare @pos_buy_sell char(4) 
+declare @pos_counterparty varchar(50)
+
+
+select
+	@cadtry_trade_date = @trade_date,
+	@cadtry_near_date = @trade_date,
+	@cadtry_value_date = @trade_date
+
+exec 
+	r_nextbusinessday
+		@trade_date,
+		@cadtry_far_date output
+
+exec 
+	r_nextbusinessday
+		@trade_date,
+		@near_date output
+select
+	@value_date = @near_date 
+
+exec 
+	r_nextbusinessday
+		@near_date,
+		@far_date output
+
+create table
+        #cadtry_positions
+(
+        id int identity,
+	prime_broker_id int,
+	prime_broker varchar(50) NULL,
+	pb_counterparty varchar(50) NULL,
+	pb_ext_account_id int NULL,
+	pb_ext_account varchar(50) NULL,
+        contract_id int,
+        product varchar(10),
+        currency varchar(10),
+        value_date datetime,
+        near_date datetime,
+        far_date datetime,
+        position numeric(30, 4),
+        near_rate float,
+        far_rate float NULL,
+        buy_sell char(4) NULL
+)
+
+
+insert into
+        #cadtry_positions(
+		prime_broker_id,
+                contract_id,
+                product,
+                currency,
+                value_date,
+                near_date,
+                far_date,
+                position,
+                near_rate
+)
+select
+        e.prime_broker_id,
+        a.contract_id,
+        g.symbol,
+        h.symbol,
+        a.value_date,
+        @cadtry_near_date,
+        @cadtry_far_date,
+        sum(a.quantity),
+        b.price + (round((rand() * .001), 5))
+from
+        trades a,
+        prices b,
+        contracts c,
+        external_accounts d,
+        external_account_prime_brokers e,
+        forwards f,
+        products g,
+        products h
+where
+        a.contract_id = b.contract_id
+and
+        a.contract_id = c.contract_id
+and
+        a.value_date = @cadtry_value_date
+and
+        convert(date, b.price_date) = @cadtry_value_date
+and
+        a.external_account_id = d.external_account_id
+and
+        d.external_account_id = e.external_account_id
+and
+        a.contract_id = f.contract_id
+and
+        f.product_id = g.product_id
+and
+        f.currency_id = h.product_id
+and
+        c.symbol in("USDCAD", "USDTRY")
+group by
+        e.prime_broker_id,
+        a.contract_id,
+        g.symbol,
+        h.symbol,
+        a.value_date,
+        b.price
+
+
+delete from
+        #cadtry_positions
+where
+        position = 0
+
+
+update
+        #cadtry_positions
+set
+        far_rate = near_rate - round((rand() * .0001), 6),
+        buy_sell = "Buy"
+where
+        position < 0
+
+update
+        #cadtry_positions
+set
+        far_rate = near_rate + round((rand() * .0001), 6),
+        buy_sell = "Sell"
+where
+        position > 0
+
+update
+	#cadtry_positions
+set
+	prime_broker = c.name,
+	pb_ext_account_id = b.mkt_ext_account_id
+from
+	#cadtry_positions a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+
+delete 
+	#cadtry_positions
+from
+	#cadtry_positions a,
+	funds b
+where
+	a.prime_broker = b.name
+
+update
+	#cadtry_positions
+set
+	pb_counterparty = b.name
+from
+        #cadtry_positions a,
+        counterparties b,
+	counterparty_symbols c,
+	sources d
+where
+        a.pb_ext_account_id = b.external_account_id
+and
+	b.counterparty_id = c.counterparty_id
+and
+	c.source_id = d.source_id
+and
+	d.name = "MPT"
+
+/*
+update
+	#cadtry_positions
+set
+	pb_counterparty = b.name
+from
+	#cadtry_positions a,
+	counterparties b
+where
+	a.pb_ext_account_id = b.external_account_id
+and
+	b.counterparty_id = (select max(counterparty_id) from counterparties  where external_account_id = a.pb_ext_account_id and name not like "%RESID")
+*/
+	
+
+
+
+create table
+	#positions
+(
+	id int identity,
+        prime_broker_id int,
+        prime_broker varchar(50) NULL,
+        pb_counterparty varchar(50) NULL,
+        pb_ext_account_id int NULL,
+        pb_ext_account varchar(50) NULL,
+	contract_id int,
+	product varchar(10),
+	currency varchar(10),
+	value_date datetime,
+	near_date datetime,
+	far_date datetime,
+        position numeric(30, 4),
+	near_rate float,
+	far_rate float NULL,
+	buy_sell char(4) NULL
+)
+
+insert into
+	#positions(
+		prime_broker_id,
+        	contract_id,
+		product,
+		currency,
+        	value_date,
+        	near_date,
+        	far_date,
+        	position,
+        	near_rate
+)
+select
+	e.prime_broker_id,
+	a.contract_id,
+	g.symbol,
+	h.symbol,
+	a.value_date,
+	@near_date,
+	@far_date,
+	sum(a.quantity),
+	b.price
+from
+	trades a,
+	prices b,
+	contracts c,
+	external_accounts d,
+        external_account_prime_brokers e,
+	forwards f,
+	products g,
+	products h
+where
+	a.contract_id = b.contract_id
+and
+	a.contract_id = c.contract_id
+and
+	a.value_date = @value_date
+and
+	convert(date, b.price_date) = @value_date
+and
+	a.external_account_id = d.external_account_id
+and
+        d.external_account_id = e.external_account_id
+and
+	a.contract_id  = f.contract_id
+and
+	f.product_id = g.product_id
+and
+	f.currency_id = h.product_id
+and
+	c.symbol not in("USDCAD", "USDTRY")
+group by
+        e.prime_broker_id,
+        a.contract_id,
+        g.symbol,
+        h.symbol,
+        a.value_date,
+	b.price
+
+
+delete from
+	#positions
+where
+	position = 0
+
+update
+	#positions
+set
+	far_rate = near_rate - round((rand() * .0001), 6),
+	buy_sell = "Buy"
+where
+	position < 0
+
+update  
+        #positions
+set
+        far_rate = near_rate + round((rand() * .0001), 6),
+	buy_sell = "Sell"
+where
+        position > 0
+
+update
+        #positions
+set
+        prime_broker = c.name,
+        pb_ext_account_id = b.mkt_ext_account_id
+from
+        #positions a,
+        prime_brokers b,
+        sources c
+where
+        a.prime_broker_id = b.prime_broker_id
+and
+        b.source_id = c.source_id
+
+delete
+        #positions
+from
+        #positions a,
+        funds b
+where
+        a.prime_broker = b.name
+
+update
+        #positions
+set
+        pb_counterparty = b.name
+from
+        #positions a,
+        counterparties b,
+        counterparty_symbols c,
+        sources d
+where
+        a.pb_ext_account_id = b.external_account_id
+and
+        b.counterparty_id = c.counterparty_id
+and
+        c.source_id = d.source_id
+and
+        d.name = "MPT"
+
+
+select prime_broker, pb_counterparty, near_direction=buy_sell, pos=abs(position), near_date, near_rate, far_date, far_rate, near_rate-far_rate from #cadtry_positions order by prime_broker_id, contract_id
+select prime_broker, pb_counterparty, near_direction=buy_sell, pos=abs(position), near_date, near_rate, far_date, far_rate, near_rate-far_rate from #positions order by prime_broker_id, contract_id
+
+/*
+select * from #cadtry_positions order by prime_broker_id, contract_id
+select * from #positions order by prime_broker_id, contract_id
+*/
+
+select
+        @id = 0
+
+select
+        @max_id = max(id)
+from
+        #cadtry_positions
+
+while @id < @max_id
+begin
+        select
+                @id = min(id)
+        from
+                #cadtry_positions
+        where
+                id > @id
+
+        select
+                @pos_contract_id = NULL,
+                @pos_product = NULL,
+                @pos_currency = NULL,
+                @pos_position = NULL,
+                @pos_value_date = NULL,
+                @pos_near_date = NULL,
+                @pos_far_date = NULL,
+                @pos_near_rate = NULL,
+                @pos_far_rate = NULL,
+                @pos_buy_sell= NULL,
+		@pos_counterparty = NULL
+
+        select
+                @pos_contract_id = contract_id,
+                @pos_product = product,
+                @pos_currency = currency,
+                @pos_position = abs(position),
+                @pos_value_date = value_date,
+                @pos_near_date = near_date,
+                @pos_far_date = far_date,
+                @pos_near_rate = near_rate,
+                @pos_far_rate = far_rate,
+                @pos_buy_sell = buy_sell,
+		@pos_counterparty = pb_counterparty
+        from
+                #cadtry_positions
+        where
+                id = @id
+
+        select
+                pos_contract_id = @pos_contract_id,
+                pos_product = @pos_product,
+                pos_currency = @pos_currency,
+                pos_position = @pos_position,
+		trade_date = @trade_date,
+                pos_value_date = @pos_value_date,
+                pos_near_date = @pos_near_date,
+                pos_far_date = @pos_far_date,
+                pos_near_rate = @pos_near_rate,
+                pos_far_rate = @pos_far_rate,
+                pos_buy_sell = @pos_buy_sell,
+		pos_counterparty = @pos_counterparty
+        exec
+                fxa_tallymarketroll
+                        @login=@login,
+                        @trade_date=@trade_date,
+                        @buy_sell=@pos_buy_sell,
+                        @counterparty=@pos_counterparty,
+                        @quantity= @pos_position,
+                        @dealt_currency = @pos_product,
+                        @counter_currency= @pos_currency,
+                        @near_date = @pos_near_date,
+                        @near_price = @pos_near_rate,
+                        @far_date = @pos_far_date,
+                        @far_price = @pos_far_rate,
+			@inspect_deal = "N"
+end
+
+/* Handle non CAD & TRY balances next */
+select
+	@id = 0
+
+select 
+	@max_id = max(id)
+from
+	#positions
+
+while @id < @max_id
+begin
+	select
+		@id = min(id)
+	from
+		#positions
+	where
+		id > @id
+
+        select
+                @pos_contract_id = NULL,
+                @pos_product = NULL,
+                @pos_currency = NULL,
+                @pos_position = NULL,
+                @pos_value_date = NULL,
+                @pos_near_date = NULL,
+                @pos_far_date = NULL,
+                @pos_near_rate = NULL,
+                @pos_far_rate = NULL,
+                @pos_buy_sell= NULL,
+		@pos_counterparty = NULL
+
+	select
+		@pos_contract_id = contract_id,
+		@pos_product = product,
+		@pos_currency = currency,
+		@pos_position = abs(position),
+		@pos_value_date = value_date,
+		@pos_near_date = near_date,
+		@pos_far_date = far_date,
+		@pos_near_rate = near_rate,
+		@pos_far_rate = far_rate,
+		@pos_buy_sell = buy_sell,
+		@pos_counterparty = pb_counterparty
+	from 
+		#positions
+	where
+		id = @id
+
+	select
+                pos_contract_id = @pos_contract_id,
+                pos_product = @pos_product,
+                pos_currency = @pos_currency,
+                pos_position = @pos_position,
+		trade_date = @trade_date,
+                pos_value_date = @pos_value_date,
+                pos_near_date = @pos_near_date,
+                pos_far_date = @pos_far_date,
+                pos_near_rate = @pos_near_rate,
+                pos_far_rate = @pos_far_rate,
+                pos_buy_sell = @pos_buy_sell,
+		pos_counterparty = @pos_counterparty
+
+	exec
+		fxa_tallymarketroll
+			@login=@login,
+			@trade_date=@trade_date,
+			@buy_sell=@pos_buy_sell,
+			@counterparty=@pos_counterparty,
+			@quantity= @pos_position,
+			@dealt_currency = @pos_product,
+			@counter_currency= @pos_currency,
+			@near_date = @pos_near_date,
+			@near_price = @pos_near_rate,
+			@far_date = @pos_far_date,
+			@far_price = @pos_far_rate,
+			@inspect_deal = "N"
+
+
+
+end
+go
+
+	
+
+

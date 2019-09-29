@@ -1,0 +1,90 @@
+drop procedure
+	r_revokerun
+go
+
+create procedure
+	r_revokerun
+		@run_name char(50),
+		@user_name char(50)
+
+as
+
+declare @account_id int
+declare @run_id int
+
+select
+	@account_id = account_id
+from	
+	tico_accounts
+where
+	login = @user_name
+if @@rowcount != 1
+begin
+        select
+        	status = -1,
+                error = "Problem deterimining login"
+        return
+end
+
+select 
+	@run_id = run_id
+from	
+	runs
+where
+	name = @run_name
+if @@rowcount != 1
+begin
+        select
+                status = -1,
+                error = "Problem deterimining run",
+		run = @run_name
+        return
+end
+
+begin tran
+
+	if exists (select run_id from user_run_favorites where run_id=@run_id and tico_account_id=@account_id)
+	begin
+		delete from
+			user_run_favorites
+		where
+			tico_account_id = @account_id
+		and
+			run_id = @run_id
+
+		if @@rowcount != 1
+		begin
+			select
+				status=-1,
+				error="Problem deleting run from user_run_favorites"
+			
+			rollback tran
+			return
+		end
+	end
+	
+	delete from
+		user_runs
+	where
+		tico_account_id = @account_id
+	and
+		run_id = @run_id
+
+	if @@rowcount != 1
+	begin
+		select
+        		status = -1,
+                	error = "Problem deleteing run from user_runs"
+        	
+		rollback tran
+		return
+	end
+
+commit tran
+
+exec
+	r_managerunaccessdetails
+		@user_name,
+		@run_name
+
+go

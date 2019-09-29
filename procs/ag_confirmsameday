@@ -1,0 +1,29 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_confirmsameday
+go
+
+create procedure
+	ag_confirmsameday
+		@login varchar(50),
+		@account varchar(50),
+		@product varchar(50),
+		@value_date datetime,
+		@same_day_settlement numeric(30,4)
+as
+
+
+exec
+	ag_addpbwiresignoff
+		@login = @login,
+		@account = @account,
+		@product = @product,
+		@confirmation_type = "Same Day",
+		@value_date = @value_date,
+		@amount = @same_day_settlement
+
+
+go

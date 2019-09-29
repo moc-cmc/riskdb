@@ -1,0 +1,136 @@
+drop procedure
+	r_batchcommitagencydates	
+go
+
+create procedure
+	r_batchcommitagencydates	
+		@begin_date datetime,
+		@end_date datetime = NULL
+
+as
+
+declare @total_volume float
+declare @total_pl float
+declare @run_agency_commit_id int
+declare @run_id int
+declare @run_name varchar(200)
+declare @count int
+declare @trade_date datetime
+declare @num_commits int
+declare @stop_commit int
+
+select @num_commits = 0
+select @trade_date = @begin_date
+
+if(@end_date = NULL)
+begin
+	select @end_date = @begin_date
+end
+
+while @trade_date <= @end_date
+begin
+
+	select 
+		@stop_commit=count(*)
+	from
+		stop_agency_commit
+
+	if(@stop_commit > 0)
+	begin
+		select
+			msg="Stop commit "
+			break
+	end
+	
+	declare run_cursor cursor for
+		select
+			run_id,
+			name
+		from
+			runs
+		order by
+			run_id
+
+	open run_cursor
+	fetch run_cursor into @run_id, @run_name
+
+	while(@@sqlstatus = 0)
+	begin
+
+		select 
+			@count=count(*) 
+		from
+			run_agency_commits
+		where
+			run_id=@run_id and
+			convert(varchar(8),trade_date,112)=convert(varchar(8),@trade_date,112)
+
+		if(@count > 0)
+		begin
+			select "Run ", @run_name, "exists for date ", @trade_date
+			fetch run_cursor into @run_id, @run_name
+			continue
+		end
+		else
+		begin
+			select "Committing Run for ", @run_name
+		end
+	
+		select
+			@total_volume = NULL,
+			@total_pl = NULL
+
+		exec
+			xcbo_agencyrunpl
+ 				"markr",
+				@run_name,
+				@trade_date,
+				NULL,
+ 				@total_pl output,
+ 				@total_volume output,
+ 				"N"
+
+		if @total_volume = NULL and @total_pl = NULL
+		begin
+			select @total_volume = 0, @total_pl = 0
+		end
+
+		exec
+			j_nextkey
+				"run_agency_commits",
+				@run_agency_commit_id output
+
+		
+		insert into
+			run_agency_commits
+		(run_agency_commit_id,
+		run_id,
+		trade_date,
+		total_volume,
+		total_pl)
+		values(
+			@run_agency_commit_id,
+			@run_id,
+			@trade_date,
+			@total_volume,
+			@total_pl)
+
+		select @num_commits = @num_commits + 1
+		
+		fetch run_cursor into @run_id, @run_name
+
+	end
+	close run_cursor
+	deallocate run_cursor
+
+exec 
+	r_nextbusinessday
+		@trade_date,
+		@trade_date output
+
+end
+
+
+select Message="Agency commits finished. ", @num_commits, " Runs committed where trade_date between ", @begin_date, @end_date
+
+go

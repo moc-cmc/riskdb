@@ -1,0 +1,158 @@
+drop procedure mc_tallymarketoption
+go
+
+create procedure
+	mc_tallymarketoption
+		@login char(25),
+		@buy_sell varchar(20),
+		@counterparty varchar(50),
+		@quantity numeric(30,4),
+		@biproduct varchar(50),
+		@timezone varchar(25),
+		@expiration datetime,
+		@option_settledate datetime,
+		@strike numeric(30,4),
+		@call_put varchar(5),
+		@implied_volatility float,
+		@spot_reference float,
+		@price float,
+		@price_format varchar(10),
+		@total_premium float,
+		@premium_currency varchar(25),
+		@premium_settle datetime,
+		@strategy varchar(50)=NULL,
+		@trade_note varchar(255)=NULL,
+		@trade_date datetime = NULL
+as
+
+declare @external_account varchar(50)
+declare @pips_price float
+declare @pct_price float
+declare @contract_id int
+declare @symbol varchar(50)
+declare @trade_id int
+declare @deal_id int
+declare @tally_type varchar(20)
+declare @sales_code varchar(50)
+
+select
+	@tally_type = "Option",
+	@sales_code = "None"
+
+if @call_put in('c','C', '0', 'CALL')
+	select
+		@call_put = 'C'
+
+if @call_put in('p', 'P', '1', 'PUT')
+	select
+		@call_put = 'P'
+
+if @trade_date= NULL
+select
+	@trade_date = getdate()
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @counterparty
+	return
+end
+
+if @price_format = "Pct"
+begin
+	select
+		@pips_price = (@price / 100.00)  * @spot_reference,
+		@pct_price = @price / 100.00
+end
+else
+begin
+	select
+		@pips_price = @price,
+		@pct_price = NULL
+end
+
+
+if @buy_sell = "Buy"
+begin
+	select
+		@quantity = abs(@quantity)
+end
+if @buy_sell = "Sell"
+begin
+	select
+		@quantity = abs(@quantity) * -1.0
+end
+
+exec
+	r_spotoptioncontract
+		@biproduct,
+		@timezone,
+		@expiration,
+		@call_put,
+		@strike,
+		@option_settledate,
+		@contract_id output
+
+select
+	@symbol = symbol
+from
+	contracts
+where
+	contract_id = @contract_id
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "Market Option",
+		@trade_type = "Option",
+		@external_account = @external_account,
+		@counterparty = @counterparty,
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @option_settledate,
+		@price = @pips_price,
+		@trade_date = @trade_date,
+		@sales_code = @sales_code,
+		@premium = @total_premium,
+		@premium_currency = @premium_currency,
+		@prem_settle_date = @premium_settle,
+		@pct_price = @pct_price,
+		@spot_reference = @spot_reference,
+		@strategy = @strategy,
+		@trade_note = @trade_note,
+		@trade_date = @trade_date
+
+exec r_inserttradenotification @trade_id
+
+select
+	@implied_volatility = @implied_volatility / 100.00
+
+exec
+	r_initializeoptcontract
+		@symbol,
+		@implied_volatility
+
+
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+go

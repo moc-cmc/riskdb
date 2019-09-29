@@ -1,0 +1,43 @@
+
+if object_id("r_defaultfundforlogin") != NULL
+    drop procedure
+        r_defaultfundforlogin
+go
+
+create procedure
+	r_defaultfundforlogin
+		@login char(30),
+		@fund_id int output
+as
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount = 0
+begin
+	select
+		@fund_id = NULL
+	return
+end
+
+select
+	@fund_id = fund_id
+from
+	fund_tico_accounts
+where
+	tico_account_id = @tico_account_id
+and
+	priority = (
+		select
+			min(priority)
+		from
+			fund_tico_accounts
+		where
+			tico_account_id = @tico_account_id)
+
+go

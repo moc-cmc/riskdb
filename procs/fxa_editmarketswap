@@ -1,0 +1,205 @@
+drop procedure
+	fxa_editmarketswap
+go
+
+create procedure
+	fxa_editmarketswap
+		@login char(25),
+		@deal_id int,
+		@buy_sell varchar(50),
+		@counterparty varchar(50),
+		@quantity numeric(30,4),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@near_date datetime,
+		@near_fixing_date datetime = NULL,
+		@near_price float,
+		@far_date datetime,
+		@far_fixing_date datetime,
+		@far_price float
+as
+
+
+
+declare @tally_type varchar(20)
+declare @external_account varchar(50)
+declare @symbol varchar(50)
+declare @near_trade_id int
+declare @far_trade_id int
+declare @trade_date datetime
+declare @near_quantity numeric(30,4)
+declare @far_quantity numeric(30,4)
+declare @sales_code varchar(50)
+
+select
+	@sales_code = "None"
+
+select
+	@tally_type = "Swap"
+
+if @buy_sell = "Buy"
+begin
+	select
+		@near_quantity = abs(@quantity)
+end
+if @buy_sell = "Sell"
+begin
+	select
+		@near_quantity = abs(@quantity) * -1.0
+end
+
+select
+	@far_quantity = @near_quantity * -1.0
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @counterparty
+	return
+end
+
+select
+	@trade_date = getdate()
+
+select
+	@near_trade_id = trade_id
+from
+	trades
+where
+	deal_id = @deal_id
+and
+	value_date = (
+		select
+			min(value_date)
+		from
+			trades
+		where
+			deal_id = @deal_id)
+
+select
+	@far_trade_id = trade_id
+from
+	trades
+where
+	deal_id = @deal_id
+and
+	value_date = (
+		select
+			max(value_date)
+		from
+			trades
+		where
+			deal_id = @deal_id)
+
+exec
+	r_inserttradeedit @near_trade_id
+
+exec
+	fxa_edittrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @near_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "Market Swap",
+		@trade_type="Swap Near",
+		@internal_account = NULL,
+		@external_account = @external_account,
+		@counterparty = @counterparty,
+		@quantity = @near_quantity,
+		@symbol = @symbol,
+		@value_date = @near_date,
+		@fixing_date = @near_fixing_date,
+		@price = @near_price,
+		@trade_date = @trade_date,
+		@trader = NULL,
+		@strategy = NULL,
+		@status = NULL,
+		@broker = NULL,
+		@identifier = NULL,
+		@sales_code = @sales_code,
+		@premium = NULL,
+		@premium_currency = NULL,
+		@prem_settle_date = NULL,
+		@pct_price = NULL,
+		@spot_reference = NULL
+
+if (@quantity = 0)
+begin
+    exec
+        r_updatetradenotification @near_trade_id, "Cancelled"
+end
+else
+begin
+
+    exec
+        r_updatetradenotification @near_trade_id, "Edit"
+end
+
+exec
+	r_inserttradeedit @far_trade_id
+	
+exec
+	fxa_edittrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @far_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "Market Swap",
+		@trade_type = "Swap Far",
+		@internal_accont = NULL,
+		@external_account = @external_account,
+		@counterparty = @counterparty,
+		@quantity = @far_quantity,
+		@symbol = @symbol,
+		@value_date = @far_date,
+		@fixing_date = @far_fixing_date,
+		@price = @far_price,
+		@trade_date = @trade_date,
+		@trader = NULL,
+		@strategy = NULL,
+		@status = NULL,
+		@broker = NULL,
+		@identifier = NULL,
+		@sales_code = @sales_code,
+		@premium = NULL,
+		@premium_currency = NULL,
+		@prem_settle_date = NULL,
+		@pct_price = NULL,
+		@spot_reference = NULL 
+
+if (@quantity = 0)
+begin
+    exec
+        r_updatetradenotification @far_trade_id, "Cancelled"
+end
+else
+begin
+
+    exec
+        r_updatetradenotification @far_trade_id, "Edit"
+end
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+go
+
+

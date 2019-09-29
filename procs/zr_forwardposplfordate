@@ -1,0 +1,99 @@
+
+if object_id("zr_forwardposplfordate") != NULL
+    drop procedure
+        zr_forwardposplfordate
+go
+
+
+create procedure
+	zr_forwardposplfordate
+		@contract_id int,
+		@value_date datetime,
+		@quantity numeric(30,2),
+		@begin_date datetime,
+		@end_date datetime,
+		@open_price float output,
+		@begin_value float output,
+		@close_price float output,
+		@end_value float output,
+		@p_l float output
+		
+as
+
+declare @multiplier float
+declare @inverted_contract_id int
+/* Adding support for forwards */
+declare @days float
+declare @spot_price float
+declare @give_product_rate float
+declare @get_product_rate float
+/* end forward variable additions */
+
+
+exec
+	r_forwardpriceasof
+		@contract_id,
+		@begin_date,
+		@value_date,
+		@days output,
+		@spot_price output,
+		@open_price output, /* The forward price */
+		@give_product_rate output,
+		@get_product_rate output
+
+select
+	@days = NULL,
+	@spot_price = NULL,
+	@give_product_rate = NULL,
+	@get_product_rate = NULL
+
+exec
+	r_forwardpriceasof
+		@contract_id,
+		@end_date,
+		@value_date,
+		@days output,
+		@spot_price output,
+		@close_price output, /* The forward price */
+		@give_product_rate output,
+		@get_product_rate output
+
+if @open_price = NULL
+begin
+	exec
+		r_invertedcontract
+			@contract_id,
+			@inverted_contract_id output
+
+	exec
+		r_posprices
+			@inverted_contract_id,
+			@begin_date,
+			@end_date,
+			@open_price output,
+			@close_price output
+
+	select
+		@open_price = 1 / @open_price,
+		@close_price = 1 / @close_price
+end
+	
+
+
+select
+	@multiplier = quantity
+from
+	forwards b
+where
+	contract_id = @contract_id
+
+select
+	@begin_value = @close_price * @quantity * @multiplier,
+	@end_value = @open_price * @quantity * @multiplier
+
+select
+	@p_l = (@close_price * @quantity * @multiplier) - (@open_price * @quantity * @multiplier)
+
+return
+
+go

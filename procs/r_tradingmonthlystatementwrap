@@ -1,0 +1,19 @@
+create or replace procedure
+	r_tradingmonthlystatementwrap
+                @login varchar(50),
+                @account varchar(255),
+                @month varchar(20),
+                @year varchar(10)
+
+as
+
+
+exec
+	bn_tradingmonthlystatement
+                @login=@login,
+                @account=@account,
+                @month=@month,
+                @year=@year
+
+
+go

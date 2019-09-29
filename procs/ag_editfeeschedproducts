@@ -1,0 +1,155 @@
+use
+	risk_jeff
+go
+
+drop procedure
+	ag_editfeeschedproducts
+go
+
+create procedure
+	ag_editfeeschedproducts
+		@login varchar(50),
+		@fee_schedule varchar(200)
+as
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @fee_schedule_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_product",
+        "Edit Fee Schedule Product",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "total_spread_pl",
+        "Number",
+        "#,##0.00")
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#FFFFFF;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+select
+	@fee_schedule_id = fee_schedule_id
+from
+	fee_schedules
+where
+	name = @fee_schedule
+if @fee_schedule_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Fee schedule not found",
+		fee_schedule = @fee_schedule
+	return
+end
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		fee_schedule_id int NULL,
+		fee_schedule varchar(200) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		multiplier float NULL,
+		min_size float NULL)
+
+insert into
+	#output(
+		style,
+		fee_schedule_id,
+		fee_schedule,
+		product_id,
+		product)
+select
+	style = @style,
+	fee_schedule_id = @fee_schedule_id,
+	fee_schedule = @fee_schedule,
+	a.product_id,
+	a.symbol
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+and
+	b.name = "Currency"
+order by
+	a.symbol
+
+update
+	#output
+set
+	a.multiplier = b.multiplier,
+	a.min_size = b.min_size
+from
+	#output a,
+	fee_schedule_products b
+where
+	a.product_id = b.product_id
+and
+	a.fee_schedule_id = b.fee_schedule_id
+
+
+select
+	style,
+	fee_schedule,
+	product,
+	multiplier,
+	min_size,
+	edit_product = "EDIT"
+from
+	#output
+order by
+	id
+
+
+
+
+go

@@ -1,0 +1,69 @@
+
+if object_id("r_didsendswaptradenotification") != NULL
+    drop procedure
+        r_didsendswaptradenotification
+go
+
+create procedure
+	r_didsendswaptradenotification
+		@deal_id int, 
+		@swap_symbol varchar(50),
+		@source varchar(50),
+        	@status varchar(25),
+        	@error varchar(250)
+as
+
+declare @status_id int
+declare @source_id int
+declare @sent_status_id int
+
+select
+    @sent_status_id = status_id
+from
+    statuses
+where
+    name = 'Sent'
+if @sent_status_id = null
+begin
+    select
+        id = -1,
+        err = "No status named, 'Sent'"
+    return
+end
+
+select 
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem determining source",
+		source = @source
+	return
+end
+
+update
+       trade_notifications
+set
+       status_id = @sent_status_id,
+       error = @error,
+       notify_date = getdate()
+from
+	trade_notifications a,
+	swap_symbol_trades b,
+	swap_symbols c
+where
+	a.trade_id = b.trade_id
+and
+	b.swap_symbol_id = c.swap_symbol_id
+and
+	a.source_id = @source_id
+and
+	c.symbol = @swap_symbol
+
+
+go

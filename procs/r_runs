@@ -1,0 +1,17 @@
+create or replace procedure
+	r_runs
+		
+as
+
+
+
+select
+	name
+from 
+	runs
+order by
+	name
+
+
+
+go 

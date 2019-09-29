@@ -1,0 +1,133 @@
+drop procedure
+	r_suppressionsymbols
+go
+
+create procedure
+	r_suppressionsymbols
+		@login varchar(50)
+
+as
+
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+
+declare @mc_desktop_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"delete_symbol",
+	"Delete Suppression Symbol",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_symbol",
+	"Edit Suppression Symbol",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_suppression_symbol",
+        "Add Suppression Symbol",
+        NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"parity_value",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+create table
+	#suppression_symbols(
+		id int identity,
+		source_id int,
+		source varchar(50) NULL,
+		symbol varchar(50),
+		style varchar(50)
+	)
+
+insert into
+	#suppression_symbols(
+		source_id,
+		symbol,
+		style)
+select
+	source_id,
+	symbol,
+	@style
+from
+	suppression_symbols
+
+
+update
+	#suppression_symbols
+set
+	source = a.name
+from
+	sources a,
+	#suppression_symbols b
+where
+	a.source_id = b.source_id		
+
+
+/* Header */
+select
+	style = @style,
+	add_suppression_symbol = "Add Suppression Symbol"
+
+select
+	source,
+	symbol,
+	style,
+	delete_symbol = "DELETE"
+from
+	#suppression_symbols
+
+go

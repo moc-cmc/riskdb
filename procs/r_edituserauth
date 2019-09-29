@@ -1,0 +1,18 @@
+
+if object_id("r_edituserauth") != NULL
+    drop procedure
+        r_edituserauth
+go
+
+create procedure
+    r_edituserauth
+        @login varchar(50),
+        @auth_type varchar(25),
+        @user varchar(75),
+        @name varchar(75) = NULL,
+        @pass varchar(150) = NULL,
+        @status varchar(25) = NULL,
+        @user_auth_id int = NULL out
+as
+
+go

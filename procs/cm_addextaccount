@@ -1,0 +1,185 @@
+
+if object_id("cm_addextaccount") != NULL
+    drop procedure
+        cm_addextaccount
+go
+
+create procedure
+	cm_addextaccount
+		@login varchar(30),
+		@account varchar(50),
+		@account_type varchar(50),
+		@sales_code varchar(50),
+		@aggregation_style varchar(50),
+		@prime_broker varchar(50),
+		@nop_type varchar(50),
+		@nop_limit float,
+		@dsl_type varchar(50),
+		@dsl_limit float,
+		@notional_amount float,
+		@trader varchar(50)=NULL,
+		@user_name varchar(50)=NULL,
+		@user_password varchar(50)=NULL,
+		@tally_default_counterparty varchar(50)=NULL,
+		@inbound_mapping_source varchar(50)=NULL,
+		@inbound_mapping_symbol varchar(50)=NULL,
+		@inbound_mapping_source2 varchar(50)=NULL,
+		@inbound_mapping_symbol2 varchar(50)=NULL,
+		@outbound_mapping_source varchar(50)=NULL,
+		@outbound_mapping_symbol varchar(50)=NULL,
+		@outbound_mapping_source2 varchar(50)=NULL,
+		@outbound_mapping_symbol2 varchar(50)=NULL,
+                @client_give_up_source varchar(50)=NULL,
+	        @client_give_up_symbol varchar(50)=NULL
+
+as
+
+declare @date datetime
+declare @external_account_id int
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @credit_limit float
+
+select
+	@date = convert(datetime, convert(char(11), dateadd(day, 1, dateadd(day, datepart(day, getdate()) * -1, getdate())), 1))
+
+
+select
+	@credit_limit = @nop_limit
+
+
+if @account_type = "Agency Client Spot"
+begin
+	exec
+		cm_addexternalspotaccount
+			@login,
+			@account,
+			"Client",	
+			@sales_code,
+			@aggregation_style,
+			@prime_broker,
+			@nop_type,
+			@nop_limit,
+			@dsl_type,
+			@dsl_limit,
+			@trader,
+			@user_name,
+			@user_password,
+			@tally_default_counterparty,
+                	@inbound_mapping_source,
+			@inbound_mapping_symbol,
+                	@inbound_mapping_source2,
+                	@inbound_mapping_symbol2,
+                	@outbound_mapping_source,
+                	@outbound_mapping_symbol,
+                	@outbound_mapping_source2,
+                	@outbound_mapping_symbol2,
+                	@client_give_up_source,
+		        @client_give_up_symbol
+
+
+end
+
+if @account_type = "Agency Counterparty Spot"
+begin
+	exec
+		cm_addexternalspotaccount
+			@login,
+                        @account,
+                        "Counterparty",
+                        @sales_code,
+                        @aggregation_style,
+                        @prime_broker,
+                        @nop_type,
+                        @nop_limit,
+                        @dsl_type,
+                        @dsl_limit,
+			@trader,
+                        @user_name,
+                        @user_password,
+                        @inbound_mapping_source,
+                        @inbound_mapping_symbol,
+                        @inbound_mapping_source2,
+                        @inbound_mapping_symbol2,
+                        @outbound_mapping_source,
+                        @outbound_mapping_symbol,
+                        @outbound_mapping_source2,
+                        @outbound_mapping_symbol2,
+                        @client_give_up_source,
+                        @client_give_up_symbol
+
+end
+
+if @account_type = "FX Spot"
+begin
+	exec
+		cm_addextallocatedspotacct
+			@login,
+			@account,
+			"Counterparty",
+			@aggregation_style,
+			@prime_broker,
+			@credit_limit
+end
+if @account_type = "Futures"
+begin
+	select 
+		"Problem creating Futures account"
+	return
+end
+			
+
+exec
+	s_addintaccounttrans
+		@login,
+		@account,
+		"Deposit",
+		@date,
+		@notional_amount,
+		"Initial Notional Amount"
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+if @external_account_id = NULL and @evaluation_currency_id != NULL
+begin
+	insert into
+		ext_account_limits(
+			external_account_id,
+			currency_id,
+			dsl_limit,
+			notice_level,
+			warning_level,
+			blocked_level)
+	values(
+		@external_account_id,
+		@evaluation_currency_id,
+		@credit_limit,
+		.50,
+		.75,
+		1.00)
+end
+		
+
+exec
+	r_accountoverview
+		@login,
+		@account
+
+go

@@ -1,0 +1,201 @@
+create or replace procedure
+	r_managelegalentityotclinks
+		@login varchar(100),
+		@legal_entity varchar(150)
+
+as
+
+declare @tico_account_id int
+declare @legal_entity_id int
+declare @whitelisted_accounts int
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+   @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+   @subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+   @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+   @style = "background:#FFFFFF;border: 1px solid white",
+   @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+   @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+   #meta(
+           meta_type char(200),
+           name char(50) NULL,
+           action char(100) NULL,
+           value char(200) NULL)
+insert into
+   #meta
+values(
+   "Row Style",
+   "style",
+   NULL,
+   NULL)
+
+insert into
+   #meta
+values (
+   "Column Group",
+   "section",
+   NULL,
+   NULL)
+
+
+insert into
+   #meta
+values (
+   "Column Hidden",
+   "entering_legal_entity",
+   NULL,
+   NULL)
+
+insert into
+   #meta
+values (
+   "Column Hidden",
+   "remove_legal_entity",
+   NULL,
+   NULL)
+
+
+insert into
+   #meta
+values (
+   "Column Link",
+   "grant_access",
+   "Add Legal Entity to Whitelist",
+   NULL)
+
+insert into
+   #meta
+values (
+   "Column Link",
+   "revoke_access",
+   "Remove Legal Entity from Whitelist",
+   NULL)
+
+insert into
+   #meta
+values (
+   "Column Link",
+   "legal_entities_home",
+   "Legal Entities Home",
+   NULL)
+
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+
+select
+	@legal_entity_id = a.legal_entity_id
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @legal_entity
+if @legal_entity_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Legal entity does not exist or user does not have permission"
+	return
+end
+
+
+create table
+	#legal_entity_whitelist(
+		legal_entity_whitelist_id int identity,
+		entering_legal_entity_id int,
+		other_legal_entity_id int,
+		other_legal_entity_name varchar(150),
+		whitelisted char(1),
+		grant_access varchar(20) NULL,
+		revoke_access varchar(20) NULL
+)
+		
+insert into
+	#legal_entity_whitelist(
+		entering_legal_entity_id,
+		other_legal_entity_id,
+		other_legal_entity_name,
+		whitelisted,
+		grant_access)
+select
+	@legal_entity_id,
+	a.legal_entity_id,
+	a.name,
+	"N",
+	"Grant Access"
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = @tico_account_id
+
+update
+	#legal_entity_whitelist
+set
+	whitelisted = "Y",
+	grant_access = NULL,
+	revoke_access = "Revoke Access"
+from
+	#legal_entity_whitelist a,
+	legal_entity_otc_links b
+where
+	a.entering_legal_entity_id = b.entering_legal_entity_id
+and
+	a.other_legal_entity_id = b.available_legal_entity_id
+select
+	@whitelisted_accounts = @@rowcount
+
+
+select * from #meta
+
+select
+	legal_entities_home = "< Back to Legal Entities Home",
+	legal_entity = @legal_entity,
+	whitelisted_accounts = @whitelisted_accounts,
+	style = @style
+
+	
+select
+	section = "Legal Entity Whitelist",
+	legal_entity = @legal_entity,
+	entering_legal_entity = @legal_entity,
+	available_legal_entity = other_legal_entity_name,
+	remove_legal_entity = other_legal_entity_name,
+	whitelisted,
+	grant_access,
+	revoke_access,
+	style = @style
+from
+	#legal_entity_whitelist
+order by
+	other_legal_entity_name
+	
+	
+go	

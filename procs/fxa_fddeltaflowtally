@@ -1,0 +1,740 @@
+drop procedure fxa_fddeltaflowtally
+go
+
+create procedure
+	fxa_fddeltaflowtally
+       		@agent varchar(50),
+       		@source varchar(50),
+       		@client_source varchar(50),
+       		@executing_firm varchar(50),
+       		@contra_firm varchar(50),	/* Counterparty for Market. Trader for Client */
+       		@sponsoring_firm varchar(50),
+		@person varchar(50),
+		@trd_type int,
+		@trade_sub_type int,	        /* Determines client or market */ 
+       		@trade_date datetime,
+       		@trading_day datetime,
+		@trade_link_id varchar(100),	/* Links market and client trades */
+       		@trade_report_id varchar(100),
+       		@order_id varchar(100),
+       		@client_order_id varchar(100),
+       		@execution_id varchar(100),
+       		@symbol varchar(50),
+       		@ccy1 varchar(10),
+       		@ccy2 varchar(10),
+       		@value_date datetime,
+       		@side varchar(10),
+       		@qty1 float,
+       		@price float,
+		@account varchar(50)=NULL
+
+
+as
+
+declare @inverted char(1)
+declare @lookup_cpty varchar(50)
+declare @lookup_mkt_trdr varchar(50)
+declare @trader varchar(50)
+declare @user varchar(50)
+declare @user_account_id int
+declare @counterparty varchar(50)
+declare @counterparty_id int
+declare @trade_identifier varchar(100)
+declare @deal_exec_symbol varchar(100)
+declare @deal_alias varchar(100)
+declare @source_id int
+declare @broker varchar(50)
+declare @external_account varchar(50)
+declare @internal_account varchar(50)
+
+declare @trader_id int
+declare @tico_account_id int
+declare @external_account_id int
+declare @deal_id int
+declare @trade_id int
+declare @suppressed_deal_id int
+declare @suppressed_trade_id int
+declare @external_account_type varchar(30)
+declare @contract_id int
+declare @inverted_price_style_id int
+declare @strategy_id int
+declare @status_id int
+declare @broker_id int
+declare @trade_status_id int
+declare @deal_exec_symbol_id int
+declare @notification_source varchar(50)
+declare @notification_source_id int
+declare @active_status_id int
+declare @msg varchar(200)
+
+declare @trade_type varchar(25)
+declare @deal_type varchar(25)
+declare @deal_type_id int
+declare @deal_status_id int
+declare @trd_spot_ref float
+
+declare @sales_code_id int
+declare @do_not_tally_salescode_id int
+
+declare @fund_agency_counterparty_id int
+
+declare @suppress_client_trade char(1)
+
+/* Identifiers are only unique per day */
+declare @yyyymmdd char(8)
+select
+	@yyyymmdd = convert(char(8), @trading_day, 112)
+
+select
+	@execution_id = rtrim(@execution_id)+"."+@yyyymmdd
+
+select
+	@trade_type = "Spot",
+	@deal_type = "B2B Forward",
+	@trd_spot_ref = @price,
+	@suppress_client_trade = "N"
+
+select
+	@do_not_tally_salescode_id = sales_code_id
+from
+	sales_codes
+where 
+	name = "DONT TALLY"
+
+select
+    @deal_status_id = status_id
+from
+    statuses
+where
+    name = "User Review"
+if @deal_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No status found named, 'User Review'"
+	return
+end
+
+select
+	@deal_type_id = deal_type_id
+from
+	deal_types
+where
+	name = @deal_type
+if @deal_type_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "No deal type found for",
+		deal_type = @deal_type
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+/*
+ * DETERMINE @external_account_type, @counterparty, @trader based on @trade_sub_type
+ */
+   /*-------------------------------------------------------------------------------,
+   | Client vs Counterparty Flow
+   | 
+   | if @trade_sub_type = 1, it's a market trade.
+   | if @trade_sub_type = 2, it's a client trade.
+   | 
+   | If market --> @counterparty is determined by @contra_firm
+   |           --> @trader is determined by @executing_firm
+   |           --> @external_account is determined from @counterparty
+   |  
+   | If client --> @counterparty is determinged by @executing_firm
+   |           --> @trader is determined by @contrafirm
+   |           --> @external_account is determined from @trader
+   '-------------------------------------------------------------------------------*/
+
+if @trade_sub_type = 1		/* INTERNAL_TRANSFER_OR_ADJUSTMENT */
+begin
+	/* This is a market/street trade */
+	if @account != NULL
+	begin
+		select 
+			@lookup_cpty = @account
+	end
+	else
+	begin
+		select
+			@lookup_cpty = @contra_firm
+	end
+
+	if @person != NULL
+	begin
+		select
+			@lookup_mkt_trdr = @person
+	end
+	else
+	begin
+		select
+			@lookup_mkt_trdr = @executing_firm	
+	end
+
+
+	select 
+		@counterparty = b.name,
+		@counterparty_id = b.counterparty_id
+	from
+		counterparty_symbols a,
+		counterparties b
+	where
+		a.counterparty_id = b.counterparty_id 
+	and
+		a.source_id = @source_id
+	and
+		a.symbol = @lookup_cpty
+	if @counterparty = NULL
+	begin
+		select
+			@counterparty = name,
+			@counterparty_id = counterparty_id
+		from
+			counterparties
+		where
+			name = @lookup_cpty
+		if @counterparty = NULL
+		begin
+			select
+				status = "Error",
+				message = "Couldn't find counterparty for market trade with @contra_firm, '" + @contra_firm + "'",	
+				contra_firm = @contra_firm
+			return
+		end
+	end
+
+	select
+		@trader_id = a.trader_id,
+		@trader = a.symbol,
+		@user_account_id = a.tico_account_id,
+		@sales_code_id = a.sales_code_id
+	from
+		traders a,
+		trader_symbols b
+	where
+		a.trader_id = b.trader_id
+	and
+		b.source_id = @source_id
+	and
+		b.symbol = @lookup_mkt_trdr
+
+	if @trader = NULL
+	begin
+		select
+			@trader_id = a.trader_id,
+			@trader = a.symbol,
+			@user_account_id = a.tico_account_id,
+			@sales_code_id = a.sales_code_id
+		from
+			traders a
+		where
+			a.symbol = @lookup_mkt_trdr
+		if @trader = NULL
+		begin
+			select
+				status = "Error",
+				message = "Couldn't find trader and user for @lookup_mkt_trdr, '" + @lookup_mkt_trdr + "'",
+				lookup_mkt_trdr = @lookup_mkt_trdr,
+				executing_firm = @executing_firm,
+				person = @person,
+				trader = @trader
+			return
+		end
+	end
+
+	select
+		@user = login
+	from
+		tico_accounts
+	where
+		account_id = @user_account_id
+	if @user = NULL
+	begin
+		select 
+			status = "Error",
+			message = "Problem determining login from trader",
+			trader = @trader
+		return
+	end
+
+	select
+		@external_account = a.symbol,
+		@external_account_id = a.external_account_id
+	from
+		external_accounts a,
+		counterparties b
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.name = @counterparty
+	if @external_account = NULL
+	begin
+	        select
+                     	status = "Error",
+                       	message = "Couldn't find market account for @external_account from @counterparty, '" + @counterparty + "'",
+                       	trader = @counterparty
+               	return
+	end
+end /* market trade details */
+
+if @trade_sub_type = 2		/* EXTERNAL_TRANSFER_OR_TRANSFER_OF_ACCOUNT */
+begin
+	/* This is a client trade */
+	select
+		@suppress_client_trade = "Y"
+	from
+		suppression_symbols
+	where
+		source_id = @source_id 
+	and
+		symbol = @contra_firm
+
+	select 
+		@counterparty = b.name,
+		@counterparty_id = b.counterparty_id
+	from
+		counterparty_symbols a,
+		counterparties b
+	where
+		a.counterparty_id = b.counterparty_id 
+	and
+		a.source_id = @source_id
+	and
+		a.symbol = @executing_firm
+	if @counterparty = NULL
+	begin
+		select
+			@counterparty = name,
+			@counterparty_id = counterparty_id
+		from
+			counterparties
+		where
+			name = @executing_firm
+		if @counterparty = NULL
+		begin
+			select
+				status = "Error",
+				message = "Couldn't find counterparty for client trade with @executing_firm, '" + @executing_firm + "'",
+				executing_firm = @executing_firm
+			return
+		end
+	end
+
+	select
+		@trader_id = a.trader_id,
+		@trader = a.symbol,
+		@user_account_id = a.tico_account_id,
+		@sales_code_id = a.sales_code_id
+	from
+		traders a,
+		trader_symbols b
+	where
+		a.trader_id = b.trader_id
+	and
+		b.source_id = @source_id
+	and
+		b.symbol = @contra_firm
+
+	if @trader = NULL
+	begin
+		select
+			@trader_id = a.trader_id,
+			@trader = a.symbol,
+			@user_account_id = a.tico_account_id,
+			@sales_code_id = a.sales_code_id
+		from
+			traders a
+		where
+			a.symbol = @contra_firm
+		if @trader = NULL
+		begin
+			select
+				status = "Error",
+				message = "Couldn't find trader and user for @contra_firm, '" + @contra_firm + "'",
+				contra_firm = @contra_firm,
+				trader = @trader
+			return
+		end
+	end
+
+	select
+		@user = login
+	from
+		tico_accounts
+	where
+		account_id = @user_account_id
+	if @user = NULL
+	begin
+		select 
+			status = "Error",
+			message = "Problem determining login from trader",
+			trader = @trader
+		return
+	end
+
+	select
+		@external_account = a.symbol,
+		@external_account_id = a.external_account_id
+	from
+		external_accounts a,
+		traders b
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.trader_id = @trader_id
+	if @external_account = NULL
+	begin
+	        select
+                     	status = "Error",
+                       	message = "Couldn't find client account for @external_account from @trader, '" + @trader + "'",
+                       	trader = @trader
+               	return
+	end
+end /* client trade details */
+if @trade_sub_type not in(1, 2)
+begin
+	select
+		status = "Error",
+		message = "Recieved unexpected @trade_sub_type, '" + convert(varchar(10),  @trade_sub_type) + "'",
+                trade_sub_type = @trade_sub_type
+	select
+		note = "Note: @trade_sub_type determines if a trade is client or market"
+	return
+end
+
+select
+	@external_account_type = a.name
+from
+	external_account_types a,
+	external_accounts b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.external_account_id = @external_account_id
+
+select
+	@fund_agency_counterparty_id = counterparty_id
+from
+	fund_agency_counterparties
+if @@rowcount != 1
+begin
+	select
+		"error" = "Error",
+		"message" = "Problem determining a single fund_agency_counterparty"
+	return
+end
+
+	
+if @counterparty_id = @fund_agency_counterparty_id
+begin
+	select
+		@trade_identifier = rtrim(@execution_id) + ".C"
+end
+else /* @external_account_type = "Counterparty" */
+begin
+    select
+		@trade_identifier = rtrim(@execution_id) + ".M"
+end
+if @trade_identifier = NULL
+begin
+	select
+		status = "Error",
+		message = "Account type is not Client or Counterparty"
+	return
+end
+
+/*
+ *   Suppress Client Trade 
+ */
+if @suppress_client_trade = "Y"
+begin
+	select
+		id = 1,
+		msg = "Trader salescode forces pass suppressing trade",
+		trader = @trader,
+		identifier = @trade_identifier+":suppress"
+        select
+		@trade_identifier = @trade_identifier+":suppress"
+end
+
+select
+	@trade_id = trade_id
+from
+	trades
+where
+	identifier = @trade_identifier
+if @trade_id !=NULL
+begin
+	select
+		status = "Dupe",
+		message = "Trade is already tallied",
+		trade_identifier = @trade_identifier
+	return
+end
+
+/* 
+ * If the dealt currency is CCY2 (eg. dealt JPY for symbol USDJPY), then look up
+ * the CCY2CCY1 symbol (eg. JPYUSD). Price and quantity are in terms of this.
+ */
+if @ccy1 != NULL and @ccy2 != NULL and @symbol = @ccy2 + @ccy1
+begin
+    select
+        @symbol = @ccy1 + @ccy2,
+	/*@price = 1 / @price,*/
+	@inverted = 'Y'
+
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+if @inverted = 'Y'
+begin
+	select 
+		@inverted_price_style_id = c.price_style_id
+	from
+		contracts a,
+		contract_price_styles b,
+		price_styles c
+	where
+		a.contract_id = b.contract_id
+	and
+		b.price_style_id = c.price_style_id
+	and
+		a.contract_id = @contract_id
+	and
+		c.name = "Inverted"
+
+	if @inverted_price_style_id = NULL
+	begin
+		insert into
+        		contract_price_styles (
+            			contract_id,
+            			price_style_id,
+            			factor
+        			)
+		values(
+        		@contract_id,
+			@inverted_price_style_id,
+			1.0
+			)
+	end
+end
+
+
+
+select
+	@broker = symbol
+from
+	brokers
+where
+	symbol = @source
+if @@rowcount != 1
+begin
+	select
+		@broker = NULL		
+end
+
+
+if lower(rtrim(@side)) = "sell"
+begin
+	select
+		@qty1 = abs(@qty1) * -1.0
+end
+else
+begin
+	select
+		@qty1 = abs(@qty1)
+end
+
+select
+	@deal_exec_symbol = @trade_link_id
+
+select
+	@deal_id = deal_id
+from
+	deal_exec_symbols
+where
+	symbol = @deal_exec_symbol
+
+
+if @deal_id = NULL
+begin
+    select
+        @deal_id = deal_id
+    from
+        deal_aliases
+    where
+        source_id = @source_id
+    and
+        alias = @order_id
+end
+
+
+if @deal_id = NULL and @suppress_client_trade = "N"
+begin
+	select
+		msg = "Creating new deal"
+
+	exec
+		j_nextkey
+			"deals",
+			@deal_id output
+
+	insert into
+		deals(
+			deal_id,   
+			deal_type_id,
+			timestamp,  
+			status_id  
+		 	)      
+		values( 
+			@deal_id,
+			@deal_type_id,
+			getdate(),
+			@deal_status_id
+			)
+    
+    insert into
+		deal_exec_symbols
+	values(
+		@deal_id,
+		@deal_exec_symbol
+    )
+end
+else if @deal_id != NULL and @suppress_client_trade = "N"
+begin
+	select
+		msg = "Appending to existing deal"
+end
+
+if @suppress_client_trade = "Y"
+begin
+	
+	exec
+		fxa_suppresstrade	
+                	@login = @user,
+                	@source = @source,
+                	@suppressed_trade_id = @suppressed_trade_id out,
+                	@deal_id = @suppressed_deal_id out,
+			@deal_identifier = @deal_exec_symbol,
+			@deal_alias = @deal_alias,
+                	@tally_type = @trade_type,
+                	@deal_type = @deal_type,
+                	@trade_type = @trade_type,
+                	@external_account = @external_account,
+                	@counterparty = @counterparty,
+                	@quantity = @qty1,
+                	@symbol = @symbol,
+                	@value_date = @value_date,
+                	@price = @price,
+                	@trade_date = @trade_date,
+                	@trader = @trader,
+                	@broker = @broker,
+                	@identifier = @trade_identifier,
+                	@spot_reference = @trd_spot_ref
+
+
+	if @suppressed_trade_id = NULL
+        begin
+                select
+                        status = "Error",
+                        message = "Failed to suppress trade"
+        end
+
+        select
+                status = "Suppressed",
+                message = "Trade successfully suppressed",
+                trade_id = @suppressed_trade_id,
+                deal_id = @suppressed_deal_id,
+                account = @contra_firm,
+                symbol = @symbol,
+                side = @side,
+                quantity = @qty1,
+                price = @price,
+                val_date = @value_date
+
+
+        return
+end	
+else
+begin
+   	
+	exec
+		fxa_tallytrade
+			@login = @user,
+			@source = @source,
+			@trade_id = @trade_id out,
+			@deal_id = @deal_id out,
+			@tally_type = @trade_type,
+			@deal_type = @deal_type,
+			@trade_type = @trade_type,
+			@external_account = @external_account,
+			@counterparty = @counterparty,
+			@quantity = @qty1,
+			@symbol = @symbol,
+			@value_date = @value_date,
+			@price = @price,
+			@trade_date = @trade_date,
+			@trader = @trader,
+			@broker = @broker,
+			@identifier = @trade_identifier,
+			@spot_reference = @trd_spot_ref
+	
+	if @trade_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "Failed to tally market trade"
+			return
+		end
+	
+	exec
+		r_inserttradenotification
+					@trade_id
+	
+
+	select
+		status = "Tallied",
+		message = "Trade successfully tallied",
+    		trade_id = @trade_id,
+    		deal_id = @deal_id,
+		account = @contra_firm,
+		trader = @trader,
+		symbol = @symbol,
+		side = @side,
+		quantity = @qty1,
+		price = @price,
+		val_date = @value_date
+end
+
+go

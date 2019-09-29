@@ -1,0 +1,948 @@
+drop procedure fix_deliverytrades128FXCM
+go
+
+create procedure
+	fix_deliverytrades128FXCM
+        @login varchar(50),
+        @source varchar(25),
+        @begin_date datetime = NULL,
+        @end_date datetime = NULL,
+        @status varchar(25) = NULL,
+        @trade_notification_id int = NULL
+as
+
+declare @status_id int
+declare @source_id int
+declare @spot_trade_type_id int
+declare @forward_trade_type_id int
+declare @swap_n_trade_type_id int
+declare @swap_f_trade_type_id int
+declare @opt_trade_type_id int
+declare @rebook_status_id int
+
+/* ----------------------------- MARK: Defaults ----------------------------- */
+
+/* MARK: DEFAULT @source
+ */
+if @status = NULL
+    select
+        @status = "Active"
+        
+/* MARK: EXEC r_normalizedaterange
+ */
+/*
+exec
+    r_normalizedaterange
+        @begin_date out,
+        @end_date out
+ */
+
+/* ------------------------------ MARK: Lookup ------------------------------ */
+
+/* MARK: LOOKUP @source_id
+ */
+select
+    @source_id = source_id
+from
+    sources
+where
+    name = @source
+
+if @source_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Couldn't find the source, '" + @source + "'",
+        source = @source
+    return
+end
+
+select
+    @rebook_status_id = status_id
+from
+    statuses
+where
+    name = "Rebook"
+
+select
+    @spot_trade_type_id = trade_type_id
+from
+    trade_types
+where
+    name = "Spot"
+
+select
+    @forward_trade_type_id = trade_type_id
+from
+    trade_types
+where
+    name = "Forward"
+
+select
+    @swap_n_trade_type_id = trade_type_id
+from
+    trade_types
+where
+    name = "Swap Near"
+
+select
+    @swap_f_trade_type_id = trade_type_id
+from
+    trade_types
+where
+    name = "Swap Far"
+
+select
+    @opt_trade_type_id = trade_type_id
+from
+    trade_types
+where
+    name = "Option"
+
+
+
+
+
+/* MARK: LOOKUP @status_id
+ */
+select
+    @status_id = status_id
+from
+    statuses
+where
+    name = @status
+
+if @status_id = NULL and @status not in ("Any", "*")
+begin
+    select
+        status = "Error",
+        message = "Couldn't find the status, '" + @status + "'",
+        name = @status
+    return
+end
+
+
+create table
+	#trade_notifications(
+		trade_notification_id int,
+		trade_id int,
+		source_id int,
+		status_id int,
+		notify_date datetime NULL
+		)
+
+create nonclustered index
+        tn_tid
+on
+        #trade_notifications(trade_id)
+
+
+declare @active_status_id int
+declare @edit_status_id int
+declare @cancelled_status_id int
+declare @cancelling_src_status_id int
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+select
+        @edit_status_id = status_id
+from
+        statuses 
+where
+        name = "Edit"
+select
+        @cancelled_status_id = status_id
+from
+        statuses 
+where
+        name = "Cancelled"
+
+if @trade_notification_id != NULL
+begin
+	insert into
+        	#trade_notifications
+	select
+        	trade_notification_id,
+        	trade_id,
+        	source_id,
+        	status_id,
+		notify_date
+	from
+        	trade_notifications
+	where
+		trade_notification_id = @trade_notification_id
+        and 
+		status_id in(@active_status_id)
+               /* status_id in(@active_status_id, @cancelled_status_id) */
+end
+else
+begin
+	/*
+	| Insert into #trade_notifications anything with status_id "Active", "Edit", "Cancelled"
+	*/
+	insert into
+		#trade_notifications
+	select
+		trade_notification_id,
+		trade_id,
+		source_id,
+		status_id,
+		notify_date
+	from
+		trade_notifications
+	where
+		status_id in(@active_status_id)
+      		/*status_id in(@active_status_id,  @cancelled_status_id) */
+      		/*status_id in(@active_status_id, @edit_status_id, @cancelled_status_id)*/
+	and
+		source_id = @source_id
+end
+
+
+
+/* ------------------------------- MARK: Query ------------------------------ */
+
+/* @MARK: CREATE #notify_trades
+ */
+create table
+    #notify_trades (
+        trade_notification_id int,
+        notification_status varchar(15) NULL,
+	notification_status_id int,
+        notify_date datetime NULL,
+        deal_id int,
+        order_id varchar(50),
+        secondary_order_id varchar(50) NULL,
+        trade_id int,
+        trade_status_id int NULL,
+        exec_id varchar(50),
+        secondary_exec_id varchar(50) NULL,
+        trade_date datetime,
+        trade_day datetime NULL,
+        trade_type varchar(25) NULL,
+	trade_type_id int,
+        contract_id int,
+        inverted char(1) NULL,
+        symbol varchar(10) NULL,
+        value_date datetime,
+	fixing_date datetime NULL,
+        side varchar(5),
+        quantity numeric(30,4),
+        price float,
+        spot_reference float NULL,
+        forward_points float NULL,
+        external_account_id int,
+        executing_firm varchar(50) NULL,
+        trader_id int,
+        executing_trader varchar(50) NULL,
+        counterparty_id int,
+        contra_firm varchar(50) NULL,
+        broker_id int,
+        executing_system varchar(50) NULL,
+	prime_broker_id int NULL,
+	clearing_firm varchar(50) NULL,
+        account varchar(50) NULL,
+        currency varchar(5) NULL,
+        settl_curr_amt float NULL,
+        settl_currency varchar(5) NULL,
+	swap_symbol varchar(30) NULL,
+	rebook_link_id int NULL,
+	mid_mark float NULL,
+        account_type varchar(30) NULL,
+	/*- Option info -*/
+	option_premium float NULL,
+	option_premium_ccy_id int NULL,
+	option_premium_ccy varchar(50) NULL,
+        premium_settle_date datetime NULL,
+	option_settle_date datetime NULL,
+	optcon_exercise_style_id int NULL,
+	optcon_exercise_style varchar(30) NULL,
+	optcon_strike float NULL,
+	optcon_put_call varchar(4) NULL,
+        option_expiration_id int NULL,
+	optexp_symbol varchar(30) NULL,
+	optexp_expiration datetime NULL,
+	optexp_timezone_id int NULL,
+	optexp_time_zone varchar(30) NULL,
+	optexp_tz_symbol varchar(30) NULL,
+	optexp_tz_expiration_time varchar(30) NULL,
+	optexp_tz_display_value varchar(25) NULL,
+	optexp_tz_status int NULL,
+	option_id int NULL,
+	opt_underlying_contract_id int NULL,
+	opt_underlying_contract varchar(50) NULL,
+	opt_exchange_id int NULL,
+	opt_exchange varchar(25) NULL,
+	opt_def_exercise_style_id int NULL,
+	opt_def_exercise_style varchar(30) NULL,
+	opt_quantity float NULL,
+	opt_tick_size float NULL,
+	/*- Exotic Info -*/
+        /*  n/a */
+
+	
+    )
+
+/* @MARK: INSERT #notify_trades from trades
+ */
+insert into
+    #notify_trades (
+        trade_notification_id,
+	notification_status_id,
+        notify_date,
+        deal_id,
+        order_id,
+        trade_id,
+	trade_status_id,
+        exec_id,
+        secondary_exec_id,
+        trade_date,
+	trade_type_id,
+        contract_id,
+        inverted,
+        value_date,
+	fixing_date,
+        side,
+        quantity,
+        price,
+        spot_reference,
+        external_account_id,
+        trader_id,
+        counterparty_id,
+        broker_id,
+        settl_curr_amt
+    )
+select
+    a.trade_notification_id,
+    a.status_id, 
+    a.notify_date,
+    b.deal_id,
+    order_id = convert(varchar(30), b.deal_id),
+    b.trade_id,
+    b.status_id,
+    exec_id = convert(varchar(30), b.trade_id),
+    b.identifier,
+    b.trade_date,
+    b.trade_type_id,
+    b.contract_id,
+    inverted = "N",
+    b.value_date,
+    b.fixing_date,
+    side = "Sell",
+    b.quantity,
+    b.price,
+    b.spot_reference,
+    b.external_account_id,
+    b.trader_id,
+    b.counterparty_id,
+    b.broker_id,
+    settl_curr_amt = -b.quantity * b.price
+from
+    #trade_notifications a,
+    trades b
+where
+    a.trade_id = b.trade_id
+and
+    b.quantity != 0
+and
+    b.trade_type_id in(	@spot_trade_type_id,
+			@forward_trade_type_id,
+			@swap_n_trade_type_id,
+			@swap_f_trade_type_id,
+			@opt_trade_type_id
+			)
+
+
+/* ------------------------------ MARK: Refine ------------------------------ */
+
+update
+    #notify_trades
+set
+    notification_status = a.name
+from
+    statuses a,
+    #notify_trades b
+where
+    a.status_id = b.notification_status_id
+
+update
+    #notify_trades
+set
+    notification_status = "Rebook"
+where
+    trade_status_id = @rebook_status_id
+and
+    notification_status_id = @active_status_id
+ 
+
+/* @MARK: UPDATE #notify_trades: secondary_order_id */
+update
+    #notify_trades
+set
+    trade_type = b.name
+from
+    #notify_trades a,
+    trade_types b
+where
+    a.trade_type_id = b.trade_type_id
+
+update
+    #notify_trades
+set
+    trade_type = "Swap_Near"
+where
+    trade_type_id = @swap_n_trade_type_id
+
+update
+    #notify_trades
+set
+    trade_type = "Swap_Far"
+where
+    trade_type_id = @swap_f_trade_type_id
+    
+
+
+/* @MARK: UPDATE #notify_trades: secondary_order_id */
+update
+    #notify_trades
+set
+    secondary_order_id = b.symbol
+from
+    #notify_trades a,
+    deal_exec_symbols b
+where
+    a.deal_id = b.deal_id
+
+
+/* @MARK: UPDATE #notify_trades: trade_day   ************OLD*************
+update
+    #notify_trades
+set
+    trade_day = case datepart(weekday, dateadd(hour, 7, trade_date))
+        when 7 then
+            dateadd(day, 2, dateadd(hour, 7, trade_date))
+        when 1 then 
+            dateadd(day, 1, dateadd(hour, 7, trade_date))
+        else
+            dateadd(hour, 7, trade_date)
+    end
+*/
+
+
+
+declare @trade_day datetime
+
+update 
+	#notify_trades
+set
+	trade_day = trade_date
+
+select
+        @trade_day = trade_day
+from
+        #notify_trades
+
+if datepart(hour, @trade_day) >= 17
+begin
+        update
+                #notify_trades
+        set
+                trade_day = dateadd(hour, 7, trade_day)
+end
+
+/* @MARK: UPDATE #notify_trades: trade_day */
+update
+    #notify_trades
+set
+    trade_day = case datepart(weekday, dateadd(hour, 7, trade_day))
+        when 7 then
+            dateadd(day, 2, dateadd(hour, 0, trade_day))
+        when 1 then
+            dateadd(day, 1, dateadd(hour, 0, trade_day))
+        else
+            dateadd(hour, 0, trade_day)
+    end
+
+
+    
+/* @MARK: UPDATE #notify_trades: executing_firm, account = external_account by symbol */
+update
+    #notify_trades
+set
+    executing_firm = b.symbol,
+    account = b.symbol
+from
+    #notify_trades a,
+    external_accounts b
+where
+    a.external_account_id = b.external_account_id
+    
+
+/* @MARK: UPDATE #notify_trades: executing_firm, account = external_account by @source_id */
+update
+    #notify_trades
+set
+    executing_firm = b.symbol,
+    account = b.symbol
+from
+    #notify_trades a,
+    external_account_symbols b
+where
+    a.external_account_id = b.external_account_id
+and
+    b.source_id = @source_id
+
+
+    
+/* @MARK: UPDATE #notify_trades: executing_trader = trader by symbol */
+update
+    #notify_trades
+set
+    executing_trader = b.symbol
+from
+    #notify_trades a,
+    traders b
+where
+    a.trader_id = b.trader_id
+
+/* @MARK: UPDATE #notify_trades: executing_trader = trader by @source_id */
+update
+    #notify_trades
+set
+    executing_trader = b.symbol
+from
+    #notify_trades a,
+    trader_symbols b
+where
+    a.trader_id = b.trader_id
+and
+    b.source_id = @source_id
+    
+
+    
+/* @MARK: UPDATE #notify_trades: contra_firm = counterparty by symbol */
+update
+    #notify_trades
+set
+    contra_firm = b.name
+from
+    #notify_trades a,
+    counterparties b
+where
+    a.counterparty_id = b.counterparty_id
+
+/* @MARK: UPDATE #notify_trades: contra_firm = counterparty by @source_id */
+update
+    #notify_trades
+set
+    contra_firm = b.symbol
+from
+    #notify_trades a,
+    counterparty_symbols b
+where
+    a.counterparty_id = b.counterparty_id
+and
+    b.source_id = @source_id
+
+update
+	#notify_trades
+set
+	prime_broker_id = b.prime_broker_id
+from
+	external_account_prime_brokers b,
+	#notify_trades c
+where
+	c.external_account_id = b.external_account_id
+
+update
+	#notify_trades
+set
+	clearing_firm = c.name
+from
+	#notify_trades a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+	
+update
+	#notify_trades
+set
+	clearing_firm = b.symbol
+from
+	#notify_trades a,
+	prime_broker_symbols b
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = @source_id
+    
+    
+/* @MARK: UPDATE #notify_trades: executing_system = broker  by symbol */
+update
+    #notify_trades
+set
+    executing_system = b.symbol
+from
+    #notify_trades a,
+    brokers b
+where
+    a.broker_id = b.broker_id
+
+/* @MARK: UPDATE #notify_trades: executing_system = broker by @source_id */
+update
+    #notify_trades
+set
+    executing_system = b.symbol
+from
+    #notify_trades a,
+    broker_symbols b
+where
+    a.broker_id = b.broker_id
+and
+    b.source_id = @source_id
+
+    
+/* @MARK: UPDATE #notify_trades: currency, settl_currency */
+update
+    #notify_trades
+set
+    symbol = rtrim(ba.symbol) + "/" + rtrim(bb.symbol),
+    currency = ba.symbol,
+    settl_currency = bb.symbol
+from
+    #notify_trades a,
+    forwards b,
+    products ba,
+    products bb
+where
+    a.contract_id = b.contract_id
+and
+    b.product_id = ba.product_id
+and
+    b.currency_id = bb.product_id
+
+/* @MARK: UPDATE #notify_trades: forward_points, trim for non-Forwards */
+update
+    #notify_trades
+set
+    forward_points = price - spot_reference
+where
+    trade_type = "Forward"
+
+
+
+/* @MARK: UPDATE #notify_trades: inverted contracts as necesary */
+update
+    #notify_trades
+set
+    inverted = "Y",
+    symbol = rtrim(ea.symbol) + "/" + rtrim(eb.symbol),
+    currency = eb.symbol,
+    settl_currency = ea.symbol,
+    price = 1 / a.price /*, *** SENDING PER MATT"S INSTRUCTIONS 5/20/2014. DOES NOT WANT THIS FLIPPED FOR INVERTED ***
+    quantity = a.settl_curr_amt,
+    settl_curr_amt = a.quantity */
+from
+    #notify_trades a,
+    contract_price_styles b,
+    price_styles c,
+    forwards d,
+    forwards e,
+    products ea,
+    products eb
+where
+    a.contract_id = b.contract_id
+and
+    b.price_style_id = c.price_style_id
+and
+    a.contract_id = d.contract_id
+and
+    d.product_id = e.currency_id
+and
+    d.currency_id = e.product_id
+and
+    e.product_id = ea.product_id
+and
+    e.currency_id = eb.product_id
+and
+    c.name = "Inverted"
+    
+/* @MARK: UPDATE #notify_trades: side */
+update
+    #notify_trades
+set
+    side = "Buy"
+where
+    quantity > 0
+
+/* @MARK: UPDATE #notify_trades: abs(quantity), abs(settl_curr_amt) */
+update
+    #notify_trades
+set
+    quantity = abs(quantity),
+    settl_curr_amt = abs(settl_curr_amt)
+
+/* @MARK: UPDATE #notify_trades: swap_symbol */
+update
+    #notify_trades
+set
+    swap_symbol = c.symbol
+from
+    #notify_trades a,
+    swap_symbol_trades b,
+    swap_symbols c
+where
+    a.trade_id = b.trade_id
+and
+    b.swap_symbol_id = c.swap_symbol_id
+and
+    a.trade_type_id in(@swap_n_trade_type_id, @swap_f_trade_type_id)
+
+update
+	#notify_trades
+set
+	rebook_link_id = b.rebook_trade_id
+from
+	#notify_trades a,
+	cancel_rebook_trades b
+where
+	a.trade_id = b.cancel_trade_id
+
+
+/*
+| Query option details
+*/
+update
+	#notify_trades
+set
+	optcon_exercise_style_id = b.exercise_style_id,
+	optcon_exercise_style = c.name,
+	optcon_strike = b.strike,
+	optcon_put_call = b.put_call,
+	option_expiration_id = b.option_expiration_id
+from
+	#notify_trades a,
+	option_contracts b,
+	exercise_styles c
+where
+        a.contract_id = b.contract_id
+
+update
+	#notify_trades
+set
+	option_id = b.option_id,
+	optexp_symbol = b.symbol,
+	optexp_expiration = b.expiration,
+	optexp_timezone_id = b.timezone_id
+from
+        #notify_trades a,
+	option_expirations b
+where
+	a.option_expiration_id = b.option_expiration_id
+
+update
+	#notify_trades
+set
+	value_date = optexp_expiration
+where
+	trade_type_id = @opt_trade_type_id
+
+update 
+	#notify_trades
+set
+	optexp_time_zone = b.timezone,
+	optexp_tz_symbol = b.symbol,
+	optexp_tz_expiration_time = b.expiration_time,
+	optexp_tz_display_value = b.display_value,
+	optexp_tz_status = b.status
+from
+	#notify_trades a,
+	timezones b
+where
+	a.optexp_timezone_id = b.timezone_id
+
+update
+	#notify_trades
+set
+	opt_underlying_contract_id = b.underlying_contract_id,
+	opt_exchange_id = b.exchange_id,
+	opt_exchange = c.name,
+	opt_def_exercise_style_id = b.def_exercise_style_id,
+	opt_def_exercise_style = d.name,
+	opt_quantity = b.quantity,
+	opt_tick_size = b.tick_size
+from
+	#notify_trades a,
+	options b,
+	exchanges c,
+	exercise_styles d
+where
+	a.option_id = b.option_id
+and
+	b.exchange_id = c.exchange_id
+and
+	b.def_exercise_style_id = d.exercise_style_id
+
+update
+	#notify_trades 
+set
+	opt_underlying_contract = b.symbol
+from
+	#notify_trades a,
+	contracts b
+where
+	a.opt_underlying_contract_id = b.contract_id
+
+update
+        #notify_trades
+set
+	symbol = rtrim(g.symbol) + "/" + rtrim(f.symbol), /* WD 8/11/14 */
+        currency = g.symbol,
+        settl_currency = f.symbol
+from
+        #notify_trades a,
+        contracts b,
+        forwards e,
+        products f,
+        products g
+where
+        a.opt_underlying_contract_id = b.contract_id
+and
+        b.contract_id=e.contract_id
+and
+        e.currency_id=f.product_id
+and
+        e.product_id=g.product_id
+
+update
+	#notify_trades
+set
+	option_premium = b.amount,
+	option_premium_ccy_id = b.currency_id,
+	premium_settle_date = b.transaction_date
+from
+	#notify_trades a,
+	account_transactions b,
+	account_transaction_trades c
+where
+	a.trade_id = c.trade_id
+and
+	c.account_transaction_id = b.account_transaction_id
+
+update
+	#notify_trades
+set
+	option_premium_ccy = b.symbol
+from
+	#notify_trades a,
+	products b
+where
+	a.option_premium_ccy_id = b.product_id
+
+update
+	#notify_trades
+set
+	option_settle_date = b.settledate
+from
+	#notify_trades a,
+	option_settledates b
+where
+	a.contract_id = b.contract_id
+
+/* end option lookups */
+
+update
+	#notify_trades
+set
+	mid_mark = b.mid_mark
+from
+	#notify_trades a,
+	trade_attributes b
+where
+	a.trade_id = b.trade_id
+	
+update
+	#notify_trades
+set
+	a.account_type = "Reg Reporting Required"
+from
+	#notify_trades a,
+	reg_reporting_ext_accounts b
+where
+	a.external_account_id = b.external_account_id 
+and
+	a.trade_type != "Spot"
+
+/* @MARK: SHOW #notify_trades: header */
+select
+    source = @source,
+    source_id = @source_id,
+    begin_date = @begin_date,
+    end_date = @end_date,
+    status = @status,
+    status_id = @status_id,
+    trade_notification_id = @trade_notification_id,
+    notification_count = count(*)
+from    
+    #notify_trades
+
+/* @MARK: SHOW #notify_trades: output */
+select
+    trade_notification_id,
+    notification_status,
+    notify_date,
+    deal_id,
+    order_id,
+    secondary_order_id,
+    trade_id,
+    trade_report_id = convert(varchar(30), trade_notification_id),
+    trade_link_id = convert(varchar(30), deal_id),
+    exec_id,
+    secondary_exec_id,
+    transact_time = trade_date,
+    symbol_sfx = trade_type,
+    symbol,
+    value_date,
+    fixing_date,
+    side,
+    quantity,
+    price,
+    last_spot_rate = spot_reference,
+    forward_points,
+    trade_day,
+    leg_ref_id = convert(varchar(30), trade_id),
+    executing_firm,
+    executing_trader,
+    contra_firm,
+    executing_system,
+    clearing_firm,
+    account,
+    account_type,
+    currency,
+    settl_curr_amt,
+    settl_currency,
+    swap_symbol,
+    rebook_link_id,
+    mid_mark, 
+    opt_premium=abs(option_premium),
+    opt_premium_ccy=option_premium_ccy,
+    opt_premium_settl_date=premium_settle_date,
+    opt_settl_date = option_settle_date,
+    opt_strike = optcon_strike,
+    opt_put_call = optcon_put_call,
+    opt_underlying = opt_underlying_contract,
+    opt_time_zone_loc = optexp_tz_symbol,
+    opt_time_zone_time = optexp_tz_expiration_time
+from
+    #notify_trades
+order by
+    trade_notification_id
+
+go

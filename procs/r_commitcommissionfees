@@ -1,0 +1,453 @@
+drop procedure
+	r_commitcommissionfees
+go
+
+create procedure
+	r_commitcommissionfees
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+declare @last_commit_date datetime
+declare @commit_transaction_type_id int
+declare @commit varchar(1)
+declare @begin_date datetime
+declare @end_date datetime
+declare @external_account_id int
+declare @id int
+declare @ids int
+declare @trade_id int
+declare @trades int
+declare @tico_account_id int
+declare @transaction_type_id int
+declare @currency_id int
+declare @external_account varchar(50)
+declare @total_quantity float
+declare @converted_amount float
+declare @account_transaction_id int
+declare @total_breaks float
+declare @fx_settlement_amount float
+declare @transaction_type_fxs_id int
+declare @fee_schedule_id int
+declare @fee_schedule varchar(100)
+declare @fee_currency varchar(50)
+declare @fee_currency_id int
+declare @fee_type varchar(50)
+declare @transaction_date datetime
+declare @book_to_ext_account_id int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "login not found"
+	return
+end
+
+
+exec
+       r_daterangefordate
+	       @trade_date,
+	       @begin_date output,
+	       @end_date output
+
+select
+	@commit_transaction_type_id =transaction_type_id
+from
+	transaction_types
+where
+	name="Front Office Commit"
+if(@@rowcount != 1)
+begin
+	return
+end
+
+
+select
+	@last_commit_date = max(transaction_date)
+from
+	int_account_transactions
+where
+	transaction_type_id = @commit_transaction_type_id
+
+
+if(@last_commit_date >= @trade_date)
+begin
+	select
+		@commit = "Y"
+end
+if(@last_commit_date < @trade_date)
+begin
+	select
+		@commit = "N"
+end
+
+
+if @commit = "Y"
+begin
+	create table
+		#trades(
+			trade_id int,
+			external_account_id int)
+	insert into 
+		#trades
+	select
+		trade_id,
+		external_account_id
+	from
+		trades
+	where
+		trade_date >= @begin_date
+	and
+		trade_date <= @end_date
+
+	select
+		@trade_id = 0
+	select
+		@trades = count(*)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+
+	while @trades > 0
+	begin
+		select
+			@trade_id = min(trade_id)
+		from
+			#trades
+		where
+			trade_id > @trade_id
+		exec
+			r_insertfeefromfeeschedule
+				@login,
+				@trade_id
+
+		select
+			@trades = count(*)
+		from
+			#trades
+		where
+			trade_id > @trade_id
+	end
+
+
+	create table
+		#external_accounts
+			(external_account_id int)
+	insert into
+		#external_accounts
+	select
+		distinct(external_account_id)
+	from
+		#trades
+		
+	create table
+		#fee_schedules(
+			id int identity,
+			fee_schedule_id int,
+			external_account_id int,
+			book_to_ext_account_id int)
+	insert into
+		#fee_schedules(
+			fee_schedule_id,
+			external_account_id,
+			book_to_ext_account_id)
+	select
+		a.fee_schedule_id,
+		a.external_account_id,
+		a.book_to_ext_account_id
+	from
+		fee_schedules a,
+		#external_accounts b
+	where
+		a.external_account_id = b.external_account_id
+
+	select
+		@id = 0
+	select
+		@ids = count(*)
+	from
+		#fee_schedules
+	where
+		id > @id
+	while @ids > 0
+	begin
+		select
+			@id = min(id)
+		from
+			#fee_schedules
+		where
+			id > @id
+
+		select
+			@total_quantity = NULL,
+			@total_breaks = NULL,
+			@fee_schedule_id = NULL,
+			@external_account_id = NULL,
+			@currency_id = NULL,
+			@fee_currency = NULL,
+			@fee_currency_id = NULL,
+			@converted_amount = NULL,
+			@book_to_ext_account_id = NULL
+
+		select
+			@fee_schedule_id = fee_schedule_id,
+			@external_account_id = external_account_id,
+			@book_to_ext_account_id = book_to_ext_account_id
+		from
+			#fee_schedules
+		where
+			id = @id
+
+		select
+			@external_account = symbol,
+			@currency_id = evaluation_currency_id
+		from
+			external_accounts
+		where
+			external_account_id = @external_account_id
+
+		select
+			@fee_schedule = name
+		from
+			fee_schedules
+		where
+			fee_schedule_id = @fee_schedule_id
+
+		exec
+			cbo_extaccountfees    
+       				@login,
+       				@external_account,
+				@fee_schedule,
+       				@trade_date,
+       				@total_quantity output,
+       				@total_breaks output,
+				@fee_currency output,
+				@fee_type output
+		
+		if @total_quantity != NULL and @total_quantity != 0
+		begin	
+
+			select
+				@fee_currency_id = product_id
+			from
+				products
+			where
+				symbol = @fee_currency
+			if @fee_currency_id = NULL
+			begin
+				select
+					status = "Fee currency not found",
+					fee_currency = @fee_currency
+				return
+			end
+
+			if @fee_currency_id != @currency_id
+			begin
+				exec
+					bo_conversionvalue
+						@fee_currency_id,
+						@currency_id,
+						@trade_date,
+						@total_quantity,
+						@converted_amount output
+
+				if @converted_amount = NULL
+				begin
+					select
+						status = "Error",
+						message = "Unable to convert to account evaluation currency"
+						return
+				end
+			end
+			else
+			begin
+				select
+					@converted_amount = @total_quantity
+			end
+
+                        select
+                                @transaction_type_id = NULL
+			select
+				@transaction_type_id = transaction_type_id
+			from
+				transaction_types
+			where
+				name = @fee_type
+					
+			exec
+				j_nextkey
+					"account_transactions",
+					@account_transaction_id output
+	
+			select
+				@transaction_date = convert(date, @end_date)
+
+			insert into
+				account_transactions
+						(
+						account_transaction_id,
+						entered_by,
+						external_account_id,
+						transaction_type_id,
+						transaction_date,
+						currency_id,
+						amount,
+						note)
+
+			values(
+				@account_transaction_id,
+				@tico_account_id,
+				@book_to_ext_account_id,
+				@transaction_type_id,
+				@transaction_date,
+				@currency_id,
+				@converted_amount,
+				@fee_schedule)
+                
+			insert into
+                        	account_product_trans_trades(
+                                        account_transaction_id,
+                                        trade_id)
+                	select
+                        	account_transaction_id = @account_transaction_id,
+                        	trade_id = b.trade_id
+                	from
+                        	product_transactions a,
+                        	fs_product_transactions b
+                	where
+                        	a.product_transaction_id = b.product_transaction_id
+                	and
+                        	a.external_account_id = @book_to_ext_account_id
+                	and
+                        	a.transaction_date > @begin_date
+                	and
+                        	a.transaction_date <= @end_date
+                	and
+                        	b.fee_schedule_id = @fee_schedule_id
+	
+		end
+
+		select
+			@account_transaction_id = NULL
+
+
+		if @total_breaks != NULL and @total_breaks != 0
+		begin
+			select
+				@fee_currency_id = product_id
+			from
+				products
+			where
+				symbol = @fee_currency
+			if @fee_currency_id = NULL
+			begin
+				select
+					status = "Fee currency not found",
+					fee_currency = @fee_currency
+				return
+			end
+
+			if @fee_currency_id != @currency_id
+			begin
+				exec
+					bo_conversionvalue
+						@fee_currency_id,
+						@currency_id,
+						@trade_date,
+						@total_quantity,
+						@converted_amount output
+
+				if @converted_amount = NULL
+				begin
+					select
+						status = "Error",
+						message = "Unable to convert to account evaluation currency"
+						return
+				end
+			end
+			else
+			begin
+				select
+					@converted_amount = @total_quantity
+			end
+
+
+                        select
+                                @transaction_type_id = NULL
+                        select
+                                @transaction_type_id = transaction_type_id
+                        from
+                                transaction_types
+                        where
+                                name = @fee_type
+			
+			select
+				@transaction_date = convert(date, @end_date)
+
+		 	exec
+				j_nextkey
+					"account_transactions",
+					@account_transaction_id output
+			insert into
+				account_transactions
+						(
+						account_transaction_id,
+						entered_by,
+						external_account_id,
+						transaction_type_id,
+						transaction_date,
+						currency_id,
+						amount,
+						note)
+			values(
+				@account_transaction_id,
+				@tico_account_id,
+				@book_to_ext_account_id,
+				@transaction_type_id,
+				@transaction_date,
+				@currency_id,
+				@converted_amount,
+				@fee_schedule)
+		
+			insert into
+                        	account_product_trans_trades(
+                                        account_transaction_id,
+                                        trade_id)
+                	select
+                        	account_transaction_id = @account_transaction_id,
+                        	trade_id = b.trade_id
+                	from
+                        	product_transactions a,
+                        	fs_product_transactions b
+                	where
+                        	a.product_transaction_id = b.product_transaction_id
+                	and
+                        	a.external_account_id = @book_to_ext_account_id
+                	and
+                        	a.transaction_date > @begin_date
+                	and
+                        	a.transaction_date <= @end_date
+                	and
+                        	b.fee_schedule_id = @fee_schedule_id
+		end
+
+		select
+			@ids = count(*)
+		from
+			#fee_schedules
+		where
+			id > @id
+	end
+end
+
+go

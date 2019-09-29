@@ -1,0 +1,20 @@
+drop procedure cbo_dailyxfersettlements
+go
+
+create procedure 
+	cbo_dailyxfersettlements
+		@login varchar(50),
+		@commit_date datetime
+
+as
+
+exec
+	cbo_xferfxtrades
+		@login,
+		@commit_date
+exec
+	cbo_xferedgeboa
+		@login,
+		@commit_date
+
+go

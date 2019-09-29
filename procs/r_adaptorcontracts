@@ -1,0 +1,135 @@
+use
+	risk_sales
+go
+
+drop procedure
+	r_adaptorcontracts
+go
+
+
+
+create procedure
+	r_adaptorcontracts
+		@login char(30),
+		@broker char(10)=NULL
+as
+
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"remove_contract",
+	"Remove Adaptor Contract",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"add_contract",
+	"Add Adaptor Contract",
+	"suppressAutoexecute=YES",
+	NULL)
+
+select * from #links
+
+select
+	add_contract = "ADD ADAPTOR CONTRACT"
+
+if @broker != NULL and @broker != ""
+begin
+	select
+		a.adaptor_contract_id,
+		broker = c.symbol,
+		b.symbol,
+		perspective_contracts = g.symbol,
+		instrument = d.name,
+		a.price_scale,
+		price_tick_size = convert(char(30), convert(numeric(30,6), a.price_tick_size)),
+		broker_symbol = f.symbol,
+		remove_contract = "REMOVE"
+	from
+		adaptor_contracts a,
+		contracts b,
+		brokers c,
+		instruments d,
+		contract_symbols f,
+		contracts g
+	where
+		a.contract_id = b.contract_id
+	and
+		b.instrument_id = d.instrument_id
+	and
+		a.broker_id = c.broker_id
+	and
+		a.perspective_contract_id = g.contract_id
+	and
+		a.contract_id *= f.contract_id
+	and
+		c.source_id *= f.source_id
+	and
+		c.symbol = @broker
+end
+else
+begin
+	select
+		a.adaptor_contract_id,
+		broker = c.symbol,
+		b.symbol,
+		perspective_contract = g.symbol,
+		instrument = d.name,
+		a.price_scale,
+		price_tick_size = convert(char(30), convert(numeric(30,6), a.price_tick_size)),
+		broker_symbol = f.symbol,
+		remove_contract = "REMOVE"
+	from
+		adaptor_contracts a,
+		contracts b,
+		brokers c,
+		instruments d,
+		contract_symbols f,
+		contracts g
+	where
+		a.contract_id = b.contract_id
+	and
+		b.instrument_id = d.instrument_id
+	and
+		a.broker_id = c.broker_id
+	and
+		a.perspective_contract_id = g.contract_id
+	and
+		a.contract_id *= f.contract_id
+	and
+		c.source_id *= f.source_id
+	
+end
+/*
+create table #contracts
+(
+	symbol varchar(15)
+)
+insert into #contracts values("EURJPY")
+insert into #contracts values("USDJPY")
+insert into #contracts values("EURUSD")
+insert into #contracts values("AUDUSD")
+insert into #contracts values("EURGBP")
+insert into #contracts values("USDSEK")
+insert into #contracts values("USDCHF")
+insert into #contracts values("GBPUSD")
+insert into #contracts values("USDMXN")
+insert into #contracts values("NZDUSD")
+
+select * from #contracts
+	*/
+
+go

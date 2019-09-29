@@ -1,0 +1,36 @@
+drop procedure
+        r_processeodcfds
+go
+
+create procedure
+        r_processeodcfds
+                @login varchar(50),
+                @trade_date datetime=NULL
+
+as
+
+if @trade_date = NULL
+begin
+        select
+                @trade_date = convert(date, getdate())
+end
+
+
+exec
+        ag_processtradedatefifo
+                @login,
+                @trade_date
+exec
+        ag_rollcfds
+                @login,
+                @trade_date
+exec
+        ag_bookcfdsettlements
+                @login,
+                @trade_date
+exec
+        ag_cfdrollreport
+                @login,
+                @trade_date
+
+go

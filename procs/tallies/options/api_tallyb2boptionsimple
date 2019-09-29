@@ -1,0 +1,137 @@
+drop procedure api_tallyb2boptionsimple
+go
+
+create procedure
+	api_tallyb2boptionsimple
+		@login varchar(50)=NULL,
+		@client_user varchar(50)=NULL,
+		@client_buy_sell varchar(1)=NULL,
+		@counterparty varchar(50)=NULL,
+		@dealt_ccy varchar(10)=NULL,
+		@counter_ccy varchar(10)=NULL,
+		@strike varchar(20)=NULL,
+		@call_put varchar(5)=NULL,
+		@timezone varchar(50)=NULL,
+		@expiration datetime=NULL,
+		@option_settle datetime=NULL,
+		@quantity varchar(20)=NULL,
+		@premium_settle datetime=NULL,
+		@client_premium_ccy varchar(10)=NULL,
+		@client_premium_amount varchar(20)=NULL,
+		@market_premium_ccy varchar(10)=NULL,
+		@market_premium_amount varchar(20)=NULL,
+		@strategy varchar(50)=NULL,
+		@client_trade_note varchar(255)=NULL,
+		@market_trade_note varchar(255)=NULL,
+		@trade_date datetime=NULL,
+		@deal_id int=NULL output,
+		@cl_trade_id int=NULL output,
+		@mkt_trade_id int=NULL output,
+		@fixing_date datetime=NULL
+
+
+as
+
+declare @cl_or_lp char(2)
+declare @deal_type varchar(50)
+declare @deal_status varchar(50)
+
+
+if @cl_trade_id != NULL or  @mkt_trade_id != NULL
+begin
+	select
+		status = "Warn",
+		msg = "Can not provide trade id. It is used for output only. Trade not tallied"
+	return
+end
+
+
+select
+	@deal_type = "B2B Option",
+	@deal_status = "User Review"
+
+exec
+	r_newdeal
+		@deal_type=@deal_type,
+		@deal_status=@deal_status,
+		@deal_id=@deal_id output
+		
+if @deal_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Could not create deal in tally market option. Contact support@elysiumtechgroup.com and provide this error message"
+	return
+end	
+
+
+
+
+exec
+        api_tallyoptionsimple
+                @login = @login,
+                @buy_sell = @client_buy_sell, /* still pass in client buy sell since reversal logic in api_tallyoptionsimple */
+                @dealt_ccy = @dealt_ccy,
+                @counter_ccy = @counter_ccy,
+                @strike = @strike,
+                @call_put = @call_put,
+                @timezone = @timezone,
+                @expiration = @expiration,
+                @option_settle = @option_settle,
+                @quantity = @quantity,
+                @premium_ccy = @market_premium_ccy,
+                @premium_amount = @market_premium_amount,
+                @premium_settle = @premium_settle,
+                @cl_or_lp = "LP",
+                @trader = NULL, /* trader null so it defaults to whoever booked the trade */
+                @counterparty = @counterparty,
+                @vol = NULL,
+                @spot_reference = NULL,
+                @conversion_rate = NULL,
+                @strategy = @strategy,
+                @trade_note = @market_trade_note,
+                @trade_date = @trade_date,
+                @deal_type = @deal_type,
+                @deal_id = @deal_id output,
+		@trade_id = @mkt_trade_id output,
+		@fixing_date = @fixing_date
+
+if @mkt_trade_id = NULL
+begin
+	select 
+		status = "Error",
+		msg = "Could not tally market option for B2B. Not tallying client side"
+	return
+end
+
+exec
+        api_tallyoptionsimple
+                @login = @login,
+                @buy_sell = @client_buy_sell,
+                @dealt_ccy = @dealt_ccy,
+                @counter_ccy = @counter_ccy,
+                @strike = @strike,
+                @call_put = @call_put,
+                @timezone = @timezone,
+                @expiration = @expiration,
+                @option_settle = @option_settle,
+                @quantity = @quantity,
+                @premium_ccy = @client_premium_ccy,
+                @premium_amount = @client_premium_amount,
+                @premium_settle = @premium_settle,
+                @cl_or_lp = "CL",
+                @trader = @client_user,
+                @counterparty = NULL, /* counterparty null so it defaults based on trader's default tally accounts */
+                @vol = NULL,
+                @spot_reference = NULL,
+                @conversion_rate = NULL,
+                @strategy = @strategy,
+                @trade_note = @client_trade_note,
+                @trade_date = @trade_date,
+                @deal_type = @deal_type,
+                @deal_id = @deal_id output,
+		@trade_id = @cl_trade_id output,
+		@fixing_date = @fixing_date
+
+
+go

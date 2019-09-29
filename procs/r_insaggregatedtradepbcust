@@ -1,0 +1,242 @@
+drop procedure
+	r_insaggregatedtradepbcust
+go
+
+create procedure
+	r_insaggregatedtradepbcust
+		@trade_id int,
+		@aggregate_trade_id int,
+		@remove_trade char(1)=NULL,
+		@client_aggregate_trade_id int=NULL
+
+as
+
+
+declare @client_trade_id int
+declare @booking_id int
+
+select
+	@booking_id = booking_id
+from
+	trade_bookings
+where
+	trade_id = @trade_id
+
+select 
+	@client_trade_id = trade_id
+from
+	trade_bookings
+where
+	booking_id = @booking_id
+and
+	trade_id != @trade_id
+
+
+/* if remove_trade is not provided as "N", it is assumed we should remove the trade. Default is to remove the trade */
+if @remove_trade != "N"
+begin
+	select
+		@remove_trade = "Y"
+end
+
+insert into
+	aggregated_trades (
+		aggregate_trade_id,
+		trade_id,
+		deal_id,
+		user_id,
+		trade_type_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		contract_id,
+		value_date,
+		fixing_date,
+		price,
+		trade_date,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		sales_code_id,
+		identifier,
+		pct_price,
+		spot_reference
+		)
+select
+	@aggregate_trade_id,
+	@trade_id,
+	deal_id,
+	user_id,
+	trade_type_id,
+	internal_account_id,
+	external_account_id,
+	counterparty_id,
+	quantity,
+	contract_id,
+	value_date,
+	fixing_date,
+	price,
+	trade_date,
+	trader_id,
+	strategy_id,
+	status_id,
+	broker_id,
+	sales_code_id,
+	identifier,
+	pct_price,
+	spot_reference
+from
+	trades 
+where
+	trade_id = @trade_id
+if @@rowcount = 1
+begin
+	if @remove_trade = "Y"
+	begin
+		/* DELETE THE TRADE */
+		delete from
+			trades 
+		where
+			trade_id = @trade_id
+		if @@rowcount = 1
+		begin
+			select
+				status = "Success",
+				msg = "Micro trade aggregated",
+				trade_id = @trade_id,
+				aggregated_trade_id = @aggregate_trade_id
+		end
+		else
+		begin
+			select
+				status = "Error",
+				msg = "Inserted aggregate trade but did not delete from trades",
+				trade_id = @trade_id,
+				aggregate_trade_id = @aggregate_trade_id
+		end
+	end
+	else
+	begin
+                select
+                         status = "Success",
+                         msg = "Micro trade aggregated, trade not removed from trades",
+                         trade_id = @trade_id,
+                         aggregated_trade_id = @aggregate_trade_id
+	end
+end
+else
+begin
+	select
+		status = "Error",
+		msg = "Did not insert aggregate, did not delete trade from trades",
+		trade_id = @trade_id,
+		aggregate_trade_id = @aggregate_trade_id
+end
+
+
+insert into
+	aggregated_trades (
+		aggregate_trade_id,
+		trade_id,
+		deal_id,
+		user_id,
+		trade_type_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		contract_id,
+		value_date,
+		fixing_date,
+		price,
+		trade_date,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		sales_code_id,
+		identifier,
+		pct_price,
+		spot_reference
+		)
+select
+	@client_aggregate_trade_id,
+	@client_trade_id,
+	deal_id,
+	user_id,
+	trade_type_id,
+	internal_account_id,
+	external_account_id,
+	counterparty_id,
+	quantity,
+	contract_id,
+	value_date,
+	fixing_date,
+	price,
+	trade_date,
+	trader_id,
+	strategy_id,
+	status_id,
+	broker_id,
+	sales_code_id,
+	identifier,
+	pct_price,
+	spot_reference
+from
+	trades 
+where
+	trade_id = @client_trade_id
+if @@rowcount = 1
+begin
+	if @remove_trade = "Y"
+	begin
+		/* DELETE THE TRADE */
+		delete from
+			trades 
+		where
+			trade_id = @client_trade_id
+		if @@rowcount = 1
+		begin
+			select
+				status = "Success",
+				msg = "Micro trade aggregated",
+				trade_id = @client_trade_id,
+				aggregated_trade_id = @client_aggregate_trade_id
+			return
+		end
+		else
+		begin
+			select
+				status = "Error",
+				msg = "Inserted aggregate trade but did not delete from trades",
+				trade_id = @client_trade_id,
+				aggregate_trade_id = @client_aggregate_trade_id
+			return
+		end
+	end
+	else
+	begin
+                select
+                         status = "Success",
+                         msg = "Micro trade aggregated, trade not removed from trades",
+                         trade_id = @client_trade_id,
+                         aggregated_trade_id = @client_aggregate_trade_id
+                return
+	end
+
+		
+end
+else
+begin
+	select
+		status = "Error",
+		msg = "Did not insert aggregate, did not delete trade from trades",
+		trade_id = @client_trade_id,
+		aggregate_trade_id = @client_aggregate_trade_id
+end
+
+
+
+go

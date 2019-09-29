@@ -1,0 +1,105 @@
+use
+	risk_walrus
+go
+
+drop procedure
+	ag_importdefinedresidrates
+go
+
+create procedure
+	ag_importdefinedresidrates
+		@login varchar(50),
+		@pair varchar(50)=NULL,
+		@trade_date varchar(50)=NULL,
+		@value_date varchar(50)=NULL,
+		@rate varchar(50)=NULL,
+		@row_index int,
+		@row_count int
+
+
+as
+
+declare @contract_id int
+declare @tico_account_id int
+declare @v_date datetime
+declare @price float
+declare @defined_resid_rate_id int
+
+
+
+if @pair = "Pair"
+	return
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @pair
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @pair
+	return
+end
+
+select
+	@v_date = convert(datetime, @value_date),
+	@price = convert(float, @rate)
+
+
+
+
+update
+	defined_resid_rates
+set
+	rate = @price
+where
+	convert(date, value_date)  = convert(date, @v_date)
+and
+	contract_id = @contract_id
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"defined_resid_rates",
+			@defined_resid_rate_id output
+	
+
+	insert into
+		defined_resid_rates(
+			defined_resid_rate_id,
+			contract_id,
+			value_date,
+			rate)
+	values(
+		@defined_resid_rate_id,
+		@contract_id,
+		@v_date,
+		@price)
+end
+
+
+
+if @row_count = @row_index + 1
+	select * from defined_resid_rates
+
+
+
+go

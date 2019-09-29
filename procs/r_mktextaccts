@@ -1,0 +1,25 @@
+create or replace procedure
+	r_mktextaccts
+
+as
+
+declare @counterparty_account_type_id int
+
+select
+	@counterparty_account_type_id=external_account_type_id
+from
+	external_account_types
+where
+	name="Counterparty"
+
+
+select
+	name
+from
+	external_accounts
+where
+	external_account_type_id=@counterparty_account_type_id
+order by
+	name
+
+go

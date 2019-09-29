@@ -1,0 +1,162 @@
+drop procedure
+	fxa_appendmarkettrade
+go
+
+create procedure
+	fxa_appendmarkettrade
+		@login varchar(25),
+		@deal_id int,
+		@tally_type varchar(25),
+		@buy_sell varchar(5),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@counterparty_account varchar(25),
+		@quantity numeric(30,2),
+		@price float,
+		@value_date datetime = NULL,
+		@fixing_date datetime = NULL
+as
+
+declare @symbol varchar(50)
+declare @trade_id int
+declare @trade_date datetime
+declare @external_account varchar(50)
+declare @sales_code varchar(50)
+declare @trade_type varchar(25)
+declare @deal_type_id int
+declare @deal_type varchar(50)
+
+if @buy_sell = "Sell"
+begin
+	select
+		@quantity = abs(@quantity) * -1.0
+end
+if @buy_sell = "Buy"
+begin
+	select
+		@quantity = abs(@quantity)
+end
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty_account
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @counterparty_account
+	return
+end
+
+
+select
+	@sales_code = "None"
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
+
+select
+	@trade_date = getdate()
+
+
+select
+	@trade_type = @tally_type
+
+select
+	@deal_type = a.name
+from
+	deal_types a,
+	deals b
+where
+	a.deal_type_id = b.deal_type_id
+and
+	b.deal_id = @deal_id
+
+if @deal_type in(
+	"B2B Forward",
+	"B2B Option",
+	"B2B Swap",
+	"Client Forward",
+	"Client Option",
+	"Client Swap",
+	"Market Forward",
+	"Market Option",
+	"Market Swap")
+begin
+	select
+		@deal_type = rtrim(@deal_type) + "+"
+end
+
+select
+	@deal_type_id = deal_type_id
+from
+	deal_types
+where
+	name = @deal_type
+if @deal_type_id = NULL
+begin
+	insert into
+		deal_types(
+			name)
+	values(
+		@deal_type)
+	select
+		@deal_type_id = @@identity
+end
+
+update
+	deals
+set
+	deal_type_id = @deal_type_id
+where
+	deal_id = @deal_id
+
+exec
+	fxa_tallytrade
+		@login,
+		"MPT Manual Tally",
+		@trade_id output,
+		@deal_id output,
+		@tally_type,
+		"Market Forward",
+		@trade_type,	
+		NULL,
+		@external_account,
+		@counterparty_account,
+		@quantity,
+		@symbol,
+		@value_date,
+		@price,
+		@trade_date,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		@sales_code,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		@fixing_date
+
+exec
+	r_inserttradenotification @trade_id
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+go
+
+
+

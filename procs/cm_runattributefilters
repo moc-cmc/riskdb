@@ -1,0 +1,65 @@
+
+if object_id("cm_runattributefilters") != NULL
+    drop procedure
+        cm_runattributefilters
+go
+
+create procedure
+	cm_runattributefilters
+		@login varchar(30),
+		@run_name varchar(50),
+		@trade_attribute varchar(30)
+as
+
+
+if @trade_attribute = "External Account"
+begin
+	exec
+		cm_runextaccountfilters
+			@login,
+			@run_name
+end
+
+if @trade_attribute = "Internal Account"
+begin
+	exec
+		cm_runintaccountfilters
+			@login,
+			@run_name
+end
+
+if @trade_attribute = "Trader"
+begin
+	exec
+		cm_runtraderfilters
+			@login,
+			@run_name
+end
+
+if @trade_attribute = "Strategy"
+begin
+	exec
+		cm_runstrategyfilters
+			@login,
+			@run_name
+end
+
+if @trade_attribute = "Broker"
+begin
+	exec
+		cm_runbrokerfilters
+			@login,
+			@run_name
+end
+
+if @trade_attribute = "Counterparties"
+begin
+	exec
+		cm_runcounterpartyfilters
+			@login,
+			@run_name
+end
+
+
+
+go

@@ -1,0 +1,74 @@
+
+if object_id("r_riskserverruns") != NULL
+    drop procedure
+        r_riskserverruns
+go
+
+create procedure
+	r_riskserverruns
+		@login char(100)
+as
+
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_run",
+        "Add MC Dropdown Run",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "remove_run",
+        "Remove MC Dropdown Run",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+        @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+        @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+        @subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+        @style = "background:#FFFFFF;border: 1px solid white",
+        @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+select
+        style = @style,
+	add_run = "Add Dropdown"
+
+select
+	style = @style,
+	run = a.name,
+	remove_run = "REMOVE"
+from
+	runs a,
+	risk_server_runs b
+where
+	a.run_id = b.run_id
+order by
+	name
+
+go

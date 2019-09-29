@@ -1,0 +1,341 @@
+
+drop procedure
+	ag_tallyfeeschedfee
+go
+
+create procedure
+	ag_tallyfeeschedfee
+		@login varchar(50),
+		@fee_schedule varchar(100),
+		@transaction_date datetime,
+		@debit_account varchar(50),
+		@credit_account varchar(50),
+		@amount numeric(30,4),
+		@currency varchar(50),
+		@trade_id int=NULL,
+		@scheduled_fee_id int output
+as
+
+
+declare @tico_account_id int
+declare @fee_schedule_id int
+declare @debit_account_id int
+declare @debit_transaction_id int
+declare @credit_account_id int
+declare @credit_transaction_id int
+declare @currency_id int 
+declare @transaction_type_id int
+declare @debit_amount numeric(30,4)
+declare @credit_amount numeric(30,4)
+declare @note varchar(200)
+declare @fee_schedule_type varchar(50)
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login 
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+if @trade_id != NULL
+begin
+	select
+		@note = convert(varchar(30), @trade_id)
+end
+
+	
+select
+	@debit_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @debit_account
+if @debit_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Debit account not found",
+		debit_account = @debit_account
+	return
+end
+
+
+select
+	@credit_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @credit_account
+if @credit_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Credit account not found",
+		credit_account = @credit_account
+	return
+end
+
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+
+
+
+select
+	@fee_schedule_id = fee_schedule_id,
+	@transaction_type_id = fee_type_id
+from
+	fee_schedules
+where
+	name = @fee_schedule
+if @fee_schedule_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Fee schedule not found",
+		fee_schedule = @fee_schedule
+	return
+end
+
+select
+	@fee_schedule_type = a.name
+from
+	fee_schedule_types a,
+	fee_schedules b
+where
+	a.fee_schedule_type_id = b.fee_schedule_type_id
+and
+	b.fee_schedule_id = @fee_schedule_id
+
+
+select
+	@debit_amount = abs(@amount) * -1.0,
+	@credit_amount = abs(@amount)
+
+
+if @fee_schedule_type = "Pip Spread"
+begin
+	select
+		@debit_transaction_id = a.account_transaction_id
+	from
+		account_transactions a,
+		scheduled_fee_transactions b,
+		scheduled_fees c
+	where
+		a.account_transaction_id = b.account_transaction_id
+	and
+		b.scheduled_fee_id = c.scheduled_fee_id
+	and
+		c.fee_schedule_id = @fee_schedule_id
+	and
+		note = @note
+	if @debit_transaction_id != NULL
+	begin
+		select
+			status = "Dupe",
+			message = "Scheduled fee already booked",
+			fee_schedule_type = @fee_schedule_type,	
+			fee_schedule = @fee_schedule,
+			debit_transaction_id = @debit_transaction_id
+		return
+	end
+end
+else
+begin
+	select
+		@scheduled_fee_id = scheduled_fee_id
+	from
+		scheduled_fees
+	where
+		fee_schedule_id = @fee_schedule_id
+	and
+		trade_date = @transaction_date
+	if @scheduled_fee_id != NULL
+	begin
+		select
+			status = "Dupe",
+			message = "Scheduled fee already booked",
+			fee_schedule_type = @fee_schedule_type,
+			fee_schedule = @fee_schedule,
+			scheduled_fee_id = @scheduled_fee_id
+		return
+	end
+end
+
+exec
+	j_nextkey
+		"scheduled_fees",
+		@scheduled_fee_id output
+
+exec
+	j_nextkey
+		"account_transactions",
+		@debit_transaction_id output
+
+exec
+	j_nextkey
+		"account_transactions",
+		@credit_transaction_id output
+
+begin tran
+	insert into
+		scheduled_fees(
+			scheduled_fee_id,
+			fee_schedule_id,
+			trade_date)
+	values(
+		@scheduled_fee_id,
+		@fee_schedule_id,
+		@transaction_date)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to book scheduled fee",
+			fee_schedule = @fee_schedule,
+			debit_account = @debit_account,
+			credit_account = @credit_account
+		rollback tran
+		return
+	end
+
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values(
+		@debit_transaction_id,
+		@tico_account_id,
+		@debit_account_id,
+		@transaction_type_id,
+		@transaction_date,
+		@currency_id,
+		@debit_amount,
+		@note)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to book debit transaction",
+			fee_schedule = @fee_schedule,
+			debit_account = @debit_account,
+			credit_account = @credit_account
+		rollback tran
+		return
+	end
+
+
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values(
+		@credit_transaction_id,
+		@tico_account_id,
+		@credit_account_id,
+		@transaction_type_id,
+		@transaction_date,
+		@currency_id,
+		@credit_amount,
+		@note)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to book credit transaction",
+			fee_schedule = @fee_schedule,
+			debit_account = @debit_account,
+			credit_account = @credit_account
+		rollback tran
+		return
+	end
+		
+	insert into
+		scheduled_fee_transactions(
+			scheduled_fee_id,
+			account_transaction_id,
+			trade_id)
+	values(
+		@scheduled_fee_id,
+		@debit_transaction_id,
+		@trade_id)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to assign debit transaction to fee schedule",
+			fee_schedule = @fee_schedule,
+			debit_account = @debit_account,
+			credit_account = @credit_account
+		rollback tran
+		return
+	end
+
+
+	insert into
+		scheduled_fee_transactions(
+			scheduled_fee_id,
+			account_transaction_id,
+			trade_id)
+	values(
+		@scheduled_fee_id,
+		@credit_transaction_id,
+		@trade_id)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to assign credit transaction to fee schedule",
+			fee_schedule = @fee_schedule,
+			debit_account = @debit_account,
+			credit_account = @credit_account
+		rollback tran
+		return
+	end
+
+commit tran
+
+
+go
+
+
+
+
+
+
+
+
+
+

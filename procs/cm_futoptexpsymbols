@@ -1,0 +1,26 @@
+
+if object_id("cm_futoptexpsymbols") != NULL
+    drop procedure
+        cm_futoptexpsymbols
+go
+
+create procedure
+	cm_futoptexpsymbols
+as
+
+
+select
+	a.symbol
+from
+	option_expirations a,
+	options b,
+	future_contracts c
+where
+	a.option_id = b.option_id
+and
+	b.underlying_contract_id = c.contract_id
+and
+	a.expiration >= dateadd(day, -1, getdate())
+
+
+go

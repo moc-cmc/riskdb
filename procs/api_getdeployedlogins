@@ -1,0 +1,107 @@
+
+drop procedure
+	api_getdeployedlogins
+go
+
+create procedure 
+	api_getdeployedlogins @login varchar(25)
+as
+
+create table #output (
+	last_name varchar(50),
+	first_name varchar(100),
+	login varchar(25),
+	password varchar(20),
+	login_type varchar(20),
+	email varchar(100) NULL
+)
+
+insert into 
+	#output	
+	(last_name,
+	 first_name,
+	 login,
+	 password,
+	 login_type)
+select
+	a.surname,
+	a.given_names,
+	a.login,
+	a.password,
+	c.name
+from
+	tico_accounts a,
+	tico_account_types b,
+	login_types c
+where
+	a.account_id=b.tico_account_id
+and
+	b.login_type_id=c.login_type_id
+and
+	c.name in ('Standard', 'Client')
+
+declare @etg_login varchar(20)
+
+select
+	@etg_login = lower(fund_code)
+from
+	funds
+
+select
+	@etg_login = rtrim(@etg_login) + rtrim(suffix)
+from
+	login_types
+where
+	name='Elysium'
+
+insert into
+	#output
+	(last_name,
+         first_name,
+         login,
+         password,
+         login_type)
+select
+	surname,
+	given_names,
+	login,
+	password,
+	'Elysium'
+from
+	tico_accounts
+where
+	login=@etg_login
+
+update 
+	#output
+set
+	email=d.email
+from
+	#output a,
+	tico_accounts b,
+	user_emails c,
+	emails d 
+where
+	a.login=b.login
+and
+	b.account_id=c.tico_account_id
+and
+	c.email_id=d.email_id	
+
+select
+	login,
+	password,
+	email,
+	first_name,
+	last_name,
+	login_type
+from
+	#output
+order by
+	login_type desc, 
+	login	
+
+go
+
+
+

@@ -1,0 +1,218 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	ag_approvaladminhome
+go
+
+create procedure
+	ag_approvaladminhome
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"permissions",
+	"Approver Permissions",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"enable_user",
+	"Enable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"disable_user",
+	"Disable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_admin_user",
+	"Add Approval User",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@admin_level = admin_level
+from
+	approval_users
+where
+	tico_account_id = @tico_account_id
+
+if @admin_level != 0
+begin
+	select
+		status = "Restricted Access",
+		message = "Senior Admin level status required for login to access this page"
+		return
+end
+
+select
+	style = @style,
+	add_admin_user = "Add New Admin User"
+
+create table
+	#output(
+		id int identity,
+		style varchar(250),
+		given_names varchar(100),
+		surname varchar(100),
+		login varchar(50),
+		enabled_by varchar(50),
+		admin_level int NULL,
+		timestamp datetime,
+		disable_user varchar(20) NULL,
+		enable_user varchar(20) NULL,
+		permissions varchar(20) NULL)
+insert into
+	#output(
+		style,
+		given_names,
+		surname,
+		login,
+		enabled_by,
+		admin_level,
+		timestamp)
+select
+	style = @style,
+	b.given_names,
+	b.surname,
+	login = b.login,
+	enabled_by = c.login,
+	a.admin_level,
+	a.timestamp
+from
+	approval_users a,
+	tico_accounts b,
+	tico_accounts c
+where
+	a.tico_account_id = b.account_id
+and
+	a.enabled_by = c.account_id
+order by
+	b.login
+
+update
+	#output
+set
+	disable_user = "DISABLE"
+where
+	admin_level > 0
+
+update
+	#output
+set
+	enable_user = "ENABLE"
+where
+	admin_level = NULL
+
+update
+	#output
+set
+	permissions = "PERMISSIONS"
+
+select
+	style,
+	given_names,
+	surname,
+	user_name = login,
+	enabled_by,
+	admin_level,
+	timestamp,
+	disable_user,
+	enable_user,
+	permissions
+from
+	#output
+order by
+	id
+
+
+select * from ledger_requests
+
+
+go

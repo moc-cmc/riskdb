@@ -1,0 +1,83 @@
+drop procedure
+	ma_margins
+go
+
+create procedure
+	ma_margins
+		@login varchar(50),
+		@as_of_date datetime=NULL
+as
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_margin",
+	"Set Margin",
+	NULL)
+
+
+select * from #meta
+
+
+if @as_of_date = NULL
+	select
+		@as_of_date = getdate()
+
+create table
+	#futures_margins(
+		future_id int,
+		margin_date datetime,
+		futures_margin float NULL)
+
+insert into
+	#futures_margins(
+		future_id,
+		margin_date)
+select
+	future_id,
+	max(margin_date)
+from
+	futures_margins
+where
+	margin_date <= @as_of_date
+group by
+	future_id
+
+update
+	#futures_margins
+set
+	a.futures_margin = b.futures_margin
+from
+	#futures_margins a,
+	futures_margins b
+where
+	a.future_id = b.future_id
+and
+	a.margin_date = b.margin_date
+
+
+select
+	future = a.name,
+	b.futures_margin,
+	as_of_date = b.margin_date,
+	set_margin = "UPDATE"
+from
+	futures a,
+	#futures_margins b
+where
+	a.future_id *= b.future_id
+order by
+	a.name
+
+
+
+
+go

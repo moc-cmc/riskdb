@@ -1,0 +1,73 @@
+drop procedure
+	r_createlogin
+go
+
+create procedure
+	r_createlogin
+		@login varchar(50),
+                @first_name varchar(50),
+                @last_name varchar(50),
+                @email varchar(50)=NULL,
+                @user_password varchar(25)=NULL,
+                @login_type varchar(50)
+
+as
+
+declare @pass_length int
+
+
+if @first_name = NULL
+begin
+	select
+		error = "Must provie first name"
+	return
+end
+
+if @last_name = NULL
+begin
+        select
+                error = "Must provide last name"
+        return
+end
+
+if @email = NULL
+begin
+	select
+		error = "Must provide email address"
+	return
+end
+
+if @user_password = NULL
+begin
+        select
+                @pass_length = 8
+        exec
+                r_genrandompassword
+                        @pass_length,
+                        @user_password output
+end
+
+if @login_type = NULL
+begin
+	select
+		error = "Must provide user type"
+	return
+end
+
+
+exec
+	api_createlogin
+                @login,
+                @first_name,
+                @last_name,
+                @email,
+                @user_password,
+                @login_type
+
+
+exec
+	r_managelogins
+		@login
+
+
+go

@@ -1,0 +1,46 @@
+drop procedure
+	bo_conversionvalue
+go
+
+create procedure
+	bo_conversionvalue
+		@product_id int,
+		@currency_id int,
+		@bo_trade_date datetime,
+		@amount float,
+		@converted_amount float output
+as
+
+select
+	@converted_amount = @amount * a.price
+from
+	bo_spot_settles a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	b.product_id = @product_id
+and
+	b.currency_id = @currency_id
+and
+	convert(date, a.price_date) = convert(date, @bo_trade_date)
+
+if @converted_amount = NULL
+begin
+	select
+		@converted_amount = @amount * (1.0 / a.price)
+	from
+		bo_spot_settles a,
+		forwards b
+	where
+		a.contract_id = b.contract_id
+	and
+		b.product_id = @currency_id
+	and
+		b.currency_id = @product_id
+	and
+		convert(date, a.price_date) = convert(date, @bo_trade_date)
+end
+
+
+go

@@ -1,0 +1,176 @@
+use
+	risk_stad
+go
+
+drop procedure
+	ag_eodprices
+go
+
+create procedure
+	ag_eodprices
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"old_value_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pb_products",
+	"Prime Broker Products",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_queued_settlements",
+	"Tally Queued Settlements",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_clients",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_market",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closed_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"unsettled_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"settled_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+
+select
+	section = "Prices for " + rtrim(@trade_date),
+	style = @style,
+	b.symbol,
+	a.price_date,
+	a.price
+from
+	prices a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, a.price_date) = convert(date, @trade_date)
+order by
+	b.symbol
+
+
+
+	
+
+
+
+
+go

@@ -1,0 +1,14 @@
+create or replace procedure
+	mc4_cancelledgerrequestcli
+		@login varchar(50),
+		@ledger_request_id int
+
+as
+
+
+select
+	status = "Success",
+	message = "Cancelled ledger request"
+
+
+go	

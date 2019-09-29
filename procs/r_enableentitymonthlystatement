@@ -1,0 +1,135 @@
+create or replace procedure 
+	r_enableentitymonthlystatement
+		@login varchar(50),
+		@pdf_login varchar(50),
+		@run_name varchar(50)
+
+
+as
+
+
+declare @tico_report_id int
+declare @name varchar(150)
+declare @run_id int
+declare @proc_name varchar(150)
+declare @filename_tmpl varchar(150)
+declare @params_tmpl varchar(150)
+declare @report_user_id int
+declare @status_id int
+
+
+
+select
+	@name = "Entity Monthly Statement",
+	@proc_name = "Entity Monthly Statement",
+	@filename_tmpl = 'Entity Monthly Statement ${run} ${month} ${year}',
+	@params_tmpl = 'legalEntity=${run}&month=${month}&year=${year}'
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	a.name = @run_name
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+
+select
+	@report_user_id = account_id
+from
+	tico_accounts
+where
+	login = @pdf_login
+if @report_user_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for pdf login",
+		pdf_login = @pdf_login
+	return
+end
+
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding status 'New'"
+	return
+end
+
+
+
+select
+	@tico_report_id = tico_report_id
+from
+	tico_reports		
+where
+	name = @name
+and
+	run_id = @run_id
+
+if @tico_report_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Report already exists for run",
+		tico_report_id = @tico_report_id
+	return
+end
+
+exec
+	j_nextkey
+		"tico_reports",
+		@tico_report_id output
+
+insert into
+	tico_reports(
+		tico_report_id,
+		name,
+		run_id,
+		proc_name,
+		filename_tmpl,
+		params_tmpl,
+		report_user_id,
+		status_id)
+values(
+	@tico_report_id,
+	@name,
+	@run_id,
+	@proc_name,
+	@filename_tmpl,
+	@params_tmpl,
+	@report_user_id,
+	@status_id)
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		messaage = "Problem creating tico report for run"
+end
+
+select
+	status = "Success",
+	message = "Successfully creaated tico report for run",
+	run_naame = @run_name
+go

@@ -1,0 +1,1480 @@
+use
+	risk_untl
+go
+
+drop procedure
+	ag_sourcenettings
+go
+
+create procedure
+	ag_sourcenettings
+		@login varchar(50),
+		@source varchar(50)=NULL,
+		@trade_date datetime=NULL,
+		@identifier varchar(200)=NULL
+
+
+as
+
+declare @source_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+
+declare @client_long_netted int
+declare @client_long_tickets int
+declare @client_short_netted int
+declare @client_short_tickets int
+
+declare @lp_long_netted int
+declare @lp_long_tickets int
+declare @lp_short_netted int
+declare @lp_short_tickets int
+declare @total_tickets int
+declare @total_netted int
+declare @fund_id int
+
+declare @net_ticket_batch_id int
+declare @min_trade_id int
+declare @max_trade_id int
+declare @sat_id int
+
+declare @id int
+declare @ids int
+declare @folder varchar(50)
+declare @folder_id int
+declare @sub_folder varchar(50) /* chriso */
+declare @sub_folder_id int /* chriso */
+declare @strategy_id int
+declare @contract_id int
+declare @value_date datetime
+declare @quantity numeric(30,4)
+declare @price float
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"source",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"identifier",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tickets",
+	"Netted Positions For Source",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"change_day",
+	"Netted Positions For Source",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"compression",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"avg_price",
+	"Number",
+	 "#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"parity_value",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+if @source = NULL
+	select
+		@source = "GlobeOp FTP"
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	style = @style,
+	change_day = "Change Date"
+
+if @trade_date = NULL
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source name not found",
+		source = @source
+	return
+end
+
+create table
+	#external_account_symbols(
+		external_account_id int,
+		external_account_type varchar(50),
+		prime_broker_id int NULL,
+		symbol varchar(100) NULL)
+insert into
+	#external_account_symbols(
+		external_account_id,
+		external_account_type,
+		symbol)
+select
+	a.external_account_id,
+	c.name,
+	a.symbol
+from
+	external_account_symbols a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+and
+	a.source_id = @source_id
+and
+	c.name = "Client"
+
+	
+create table
+	#counterparty_symbols(
+		counterparty_id int,
+		external_account_type varchar(50),
+		prime_broker_id int NULL,
+		symbol varchar(100) NULL)
+insert into
+	#counterparty_symbols(
+		counterparty_id,
+		external_account_type,
+		prime_broker_id,
+		symbol)
+select
+	a.counterparty_id,
+	d.name,
+	e.prime_broker_id,
+	a.symbol
+from
+	counterparty_symbols a,
+	counterparties b,
+	external_accounts c,
+	external_account_types d,
+	external_account_prime_brokers e
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.external_account_id = c.external_account_id
+and
+	c.external_account_type_id = d.external_account_type_id
+and
+	c.external_account_id = e.external_account_id
+and
+	a.source_id = @source_id
+
+exec
+	j_nextkey
+		"net_ticket_batches",
+		@net_ticket_batch_id output
+
+/* exec
+	ag_nextnetticketbatch
+		@login = @login,
+		@net_ticket_batch_id = @net_ticket_batch_id output,
+		@source = @source,
+		@trade_date = @trade_date,
+		@min_trade_id = @min_trade_id output,
+		@max_trade_id = @max_trade_id output MARKR */
+
+
+create table
+	#ag_trades(
+		id int identity,
+		folder varchar(50),
+		sub_folder varchar(50), /* chriso */
+		strategy_id int,
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4),
+		price float)
+
+
+/* put the trades in a temp table */
+create table
+	#trades(
+		id int identity,
+		style varchar(200) NULL,
+		identifier varchar(200) NULL,
+		trade_id int NULL,
+		deal_id int NULL,
+		trade_date datetime NULL,
+		contract_id int NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		counterparty_symbol varchar(50) NULL,
+		external_account_id int NULL,
+		external_account varchar(50) NULL,
+		external_account_symbol varchar(50) NULL,
+		external_account_type varchar(50) NULL,
+		client_give_up varchar(50) NULL, /* chriso */
+		strategy_id int NULL,
+		strategy varchar(50) NULL,
+		quantity numeric(30,4) NULL,
+		price float NULL)
+insert into
+	#trades(
+		trade_id,
+		deal_id,
+		trade_date,
+		contract_id,
+		product_id,
+		currency_id,
+		value_date,
+		counterparty_id,
+		external_account_id,
+		strategy_id,
+		quantity,
+		price)
+select
+	a.trade_id,
+	a.deal_id,
+	a.trade_date,
+	a.contract_id,
+	b.product_id,
+	b.currency_id,	
+	a.value_date,
+	a.counterparty_id,
+	a.external_account_id,
+	a.strategy_id,
+	a.quantity,
+	a.price
+from
+	trades a,
+	forwards b,
+	#external_account_symbols c
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	a.external_account_id = c.external_account_id
+and
+	abs(a.quantity) > 0.0
+
+insert into
+	#trades(
+		trade_id,
+		deal_id,
+		trade_date,
+		contract_id,
+		product_id,
+		currency_id,
+		value_date,
+		counterparty_id,
+		external_account_id,
+		strategy_id,
+		quantity,
+		price)
+select
+	a.trade_id,
+	a.deal_id,
+	a.trade_date,
+	a.contract_id,
+	b.product_id,
+	b.currency_id,	
+	a.value_date,
+	a.counterparty_id,
+	a.external_account_id,
+	a.strategy_id,
+	a.quantity,
+	a.price
+from
+	trades a,
+	forwards b,
+	#counterparty_symbols c
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	a.counterparty_id = c.counterparty_id
+and
+	abs(a.quantity) > 0.0
+
+
+update
+	#trades
+set
+	style = @style
+
+update
+	#trades
+set
+	a.symbol = b.symbol
+from
+	#trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.counterparty = b.name
+from
+	#trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+update
+	#trades
+set
+	a.external_account = b.symbol,
+	a.external_account_type = c.name
+from
+	#trades a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+
+update
+	#trades
+set
+	a.external_account_symbol = b.symbol
+from
+	#trades a,
+	external_account_symbols b
+where
+	a.external_account_id = b.external_account_id 
+and
+	b.source_id = @source_id
+
+/* chriso */
+update 
+	#trades
+set
+	a.client_give_up = b.symbol
+from
+	#trades a,
+	client_give_ups b
+where
+	a.external_account_id = b.external_account_id 
+and
+	b.source_id = @source_id
+	
+
+update
+	#trades
+set
+	a.counterparty_symbol = b.symbol
+from
+	#trades a,
+	counterparty_symbols b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.source_id = @source_id
+
+update
+	#trades
+set
+	a.strategy = b.name
+from
+	#trades a,
+	strategies b
+where
+	a.strategy_id = b.strategy_id
+
+update
+	#trades
+set
+	identifier = rtrim(external_account_symbol) + rtrim(symbol) + convert(varchar(11), value_date) + rtrim(counterparty) + rtrim(strategy) + "Cl"
+
+where
+	external_account_type = "Client"
+
+update
+	#trades
+set
+	identifier = rtrim(counterparty_symbol) + rtrim(symbol) + convert(varchar(11), value_date) + rtrim(counterparty) + rtrim(strategy) + "Co"
+where
+	external_account_type = "Counterparty"
+
+create table
+	#trade_balances(
+		product_id int,
+		value_date datetime,
+		amount float)
+insert into
+	#trade_balances(
+		product_id,
+		value_date,
+		amount)
+select
+	product_id,
+	value_date,
+	sum(quantity)
+from
+	#trades
+group by
+	product_id,
+	value_date
+
+
+insert into
+	#trade_balances(
+		product_id,
+		value_date,
+		amount)
+select
+	currency_id,
+	value_date,
+	sum(quantity * price * -1.0)
+from
+	#trades
+group by
+	currency_id,
+	value_date
+
+create table
+	#trade_nets(
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#trade_nets(
+		product_id,
+		value_date,
+		balance)
+select
+	product_id,
+	value_date,
+	sum(amount)
+from
+	#trade_balances
+group by
+	product_id,
+	value_date
+
+
+create table
+	#client_longs(
+		id int identity,
+		style varchar(200) NULL,
+		identifier varchar(200) NULL,
+		counterparty_id int NULL,
+		external_account_symbol varchar(50) NULL,
+		client_give_up varchar(50) NULL, /* chriso */
+		prime_broker_id int NULL,
+		strategy_id int NULL,
+		contract_id int NULL,
+		value_date datetime NULL,
+		tickets int NULL,
+		amount numeric(30,4) NULL,
+		counter_amount numeric(30,4) NULL,
+		avg_price float NULL)
+
+insert into
+	#client_longs(
+		counterparty_id,
+		external_account_symbol,
+		client_give_up, /* chriso */
+		prime_broker_id,
+		strategy_id,
+		contract_id,
+		value_date,
+		tickets,
+		amount,
+		counter_amount,
+		avg_price)
+select
+	a.counterparty_id,
+	b.symbol,
+	a.client_give_up, /* chriso */
+	b.prime_broker_id,
+	a.strategy_id,
+	a.contract_id,
+	a.value_date,
+	count(a.trade_id),
+	sum(a.quantity),
+	sum(a.quantity * a.price * -1.0),
+	sum(a.quantity * price) / sum(a.quantity)
+from
+	#trades a,
+	#external_account_symbols b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	b.external_account_type = "Client"
+and
+	a.quantity > 0.0
+group by
+	a.counterparty_id,
+	b.symbol,
+	a.client_give_up, /* chriso */
+	b.prime_broker_id,
+	a.strategy_id,
+	a.contract_id,
+	a.value_date,
+	sign(a.quantity)
+
+
+
+update
+	#client_longs
+set
+	style = @style
+
+update
+	#client_longs
+set
+	a.identifier = rtrim(a.external_account_symbol) + rtrim(b.symbol) + convert(varchar(11), a.value_date) + rtrim(c.name) + rtrim(d.name) + "Cl"
+from
+	#client_longs a,
+	contracts b,
+	counterparties c,
+	strategies d
+where
+	a.contract_id = b.contract_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	a.strategy_id = d.strategy_id
+
+update
+	#client_longs
+set
+	style = @selected_style
+where
+	identifier = @identifier
+
+create table
+	#client_shorts(
+		id int identity,
+		style varchar(200) NULL,
+		identifier varchar(200) NULL,
+		counterparty_id int NULL,
+		external_account_symbol varchar(100) NULL,
+		client_give_up varchar(50) NULL, /* chriso */
+		prime_broker_id int NULL,
+		strategy_id int NULL,
+		contract_id int NULL,
+		value_date datetime NULL,
+		tickets int NULL,
+		amount numeric(30,4) NULL,
+		counter_amount numeric(30,4) NULL,
+		avg_price float NULL)
+
+insert into
+	#client_shorts(
+		counterparty_id,
+		external_account_symbol,
+		client_give_up, /* chriso */
+		prime_broker_id,
+		strategy_id,
+		contract_id,
+		value_date,
+		tickets,
+		amount,
+		counter_amount,
+		avg_price)
+select
+	a.counterparty_id,
+	b.symbol,
+	a.client_give_up, /* chriso */
+	b.prime_broker_id,
+	a.strategy_id,
+	a.contract_id,
+	a.value_date,
+	count(a.trade_id),
+	sum(a.quantity),
+	sum(a.quantity * a.price * -1.0),
+	sum(a.quantity * price) / sum(a.quantity)
+from
+	#trades a,
+	#external_account_symbols b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	b.external_account_type = "Client"	
+and
+	a.quantity < 0.0
+group by
+	a.counterparty_id,
+	b.symbol,
+	a.client_give_up, /* chriso */
+	b.prime_broker_id,
+	a.strategy_id,
+	a.contract_id,
+	a.value_date
+
+
+update
+	#client_shorts
+set
+	style = @style
+
+update
+	#client_shorts
+set
+	a.identifier = rtrim(a.external_account_symbol) + rtrim(b.symbol) + convert(varchar(11), a.value_date) + rtrim(c.name) + rtrim(d.name) + "Cl"
+from
+	#client_shorts a,
+	contracts b,
+	counterparties c,
+	strategies d
+where
+	a.contract_id = b.contract_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	a.strategy_id = d.strategy_id
+
+update
+	#client_shorts
+set
+	style = @selected_style
+where
+	identifier = @identifier
+
+/***************************************************************************/
+create table
+	#lp_longs(
+		id int identity,
+		style varchar(200) NULL,
+		identifier varchar(200) NULL,
+		counterparty_id int NULL,
+		counterparty_symbol varchar(50) NULL,
+		client_give_up varchar(50) NULL, /* chriso */
+		prime_broker_id int NULL,
+		strategy_id int NULL,
+		contract_id int NULL,
+		value_date datetime NULL,
+		tickets int NULL,
+		amount numeric(30,4) NULL,
+		counter_amount numeric(30,4) NULL,
+		avg_price float NULL)
+
+insert into
+	#lp_longs(
+		counterparty_id,
+		counterparty_symbol,
+		client_give_up, /* chriso */
+		prime_broker_id,
+		strategy_id,
+		contract_id,
+		value_date,
+		tickets,
+		amount,
+		counter_amount,
+		avg_price)
+select
+	a.counterparty_id,
+	b.symbol,
+	a.client_give_up, /* chriso */
+	b.prime_broker_id,
+	a.strategy_id,
+	a.contract_id,
+	a.value_date,
+	count(a.trade_id),
+	sum(a.quantity),
+	sum(a.quantity * a.price * -1.0),
+	sum(a.quantity * price) / sum(a.quantity)
+from
+	#trades a,
+	#counterparty_symbols b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	b.external_account_type = "Counterparty"
+and
+	a.quantity > 0.0
+group by
+	a.counterparty_id,
+	b.symbol,
+	a.client_give_up, /* chriso */
+	b.prime_broker_id,
+	a.strategy_id,
+	a.contract_id,
+	a.value_date,
+	sign(a.quantity)
+
+update
+	#lp_longs
+set
+	style = @style
+
+update
+	#lp_longs
+set
+	a.identifier = rtrim(a.counterparty_symbol) + rtrim(b.symbol) + convert(varchar(11), a.value_date) + rtrim(c.name) + rtrim(d.name) + "Co"
+from
+	#lp_longs a,
+	contracts b,
+	counterparties c,
+	strategies d
+where
+	a.contract_id = b.contract_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	a.strategy_id = d.strategy_id
+
+update
+	#lp_longs
+set
+	style = @selected_style
+where
+	identifier = @identifier
+
+
+create table
+	#lp_shorts(
+		id int identity,
+		style varchar(200) NULL,
+		identifier varchar(200) NULL,
+		counterparty_id int NULL,
+		counterparty_symbol varchar(100) NULL,
+		client_give_up varchar(50) NULL, /* chriso */
+		prime_broker_id int NULL,
+		strategy_id int NULL,
+		contract_id int NULL,
+		value_date datetime NULL,
+		tickets int NULL,
+		amount numeric(30,4) NULL,
+		counter_amount numeric(30,4) NULL,
+		avg_price float NULL)
+
+insert into
+	#lp_shorts(
+		counterparty_id,
+		counterparty_symbol,
+		client_give_up, /* chriso */
+		prime_broker_id,
+		strategy_id,
+		contract_id,
+		value_date,
+		tickets,
+		amount,
+		counter_amount,
+		avg_price)
+select
+	a.counterparty_id,
+	b.symbol,
+	a.client_give_up, /* chriso */
+	b.prime_broker_id,
+	a.strategy_id,
+	a.contract_id,
+	a.value_date,
+	count(a.trade_id),
+	sum(a.quantity),
+	sum(a.quantity * a.price * -1.0),
+	sum(a.quantity * price) / sum(a.quantity)
+from
+	#trades a,
+	#counterparty_symbols b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	b.external_account_type = "Counterparty"	
+and
+	a.quantity < 0.0
+group by
+	a.counterparty_id,
+	b.symbol,
+	a.client_give_up,
+	b.prime_broker_id,
+	a.strategy_id,
+	a.contract_id,
+	a.value_date
+
+update
+	#lp_shorts
+set
+	style = @style
+
+update
+	#lp_shorts
+set
+	a.identifier = rtrim(a.counterparty_symbol) + rtrim(b.symbol) + convert(varchar(11), a.value_date) + rtrim(c.name) + rtrim(d.name) + "Co"
+from
+	#lp_shorts a,
+	contracts b,
+	counterparties c,
+	strategies d
+where
+	a.contract_id = b.contract_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	a.strategy_id = d.strategy_id
+
+update
+	#lp_shorts
+set
+	style = @selected_style
+where
+	identifier = @identifier
+
+create table
+	#stats(
+		id int identity,
+		style varchar(250) NULL,
+		description varchar(100) NULL,
+		tickets float NULL,
+		netted float NULL,
+		compression float NULL)
+select
+	@client_long_netted = count(*),
+	@client_long_tickets = sum(tickets)
+from
+	#client_longs
+
+insert into
+	#stats(
+		style,
+		description,
+		tickets,
+		netted)
+values(
+	@style,
+	"Client Long",
+	@client_long_tickets,
+	@client_long_netted)
+
+
+select
+	@client_short_netted = count(*),
+	@client_short_tickets = sum(tickets)
+from
+	#client_shorts
+
+insert into
+	#stats(
+		style,
+		description,
+		tickets,
+		netted)
+values(
+	@style,
+	"Client Short",
+	@client_short_tickets,
+	@client_short_netted)
+
+
+select
+	@lp_long_netted = count(*),
+	@lp_long_tickets = sum(tickets)
+from
+	#lp_longs
+
+insert into
+	#stats(
+		style,
+		description,
+		tickets,
+		netted)
+values(
+	@style,
+	"LP Long",
+	@lp_long_tickets,
+	@lp_long_netted)
+
+
+
+select
+	@lp_short_netted = count(*),
+	@lp_short_tickets = sum(tickets)
+from
+	#lp_shorts
+
+insert into
+	#stats(
+		style,
+		description,
+		tickets,
+		netted)
+values(
+	@style,
+	"LP Short",
+	@lp_short_tickets,
+	@lp_short_netted)
+
+select
+	@total_tickets = sum(tickets),
+	@total_netted = sum(netted)
+from
+	#stats
+
+insert into
+	#stats(
+		style,
+		description,
+		tickets,
+		netted)
+values(
+	@total_style,
+	"Total",
+	@total_tickets,
+	@total_netted)
+
+
+update
+	#stats
+set
+	compression = 1.0 - (netted / tickets)
+where
+	tickets != 0.0
+
+
+
+
+/********************************** select the output ************************/
+select
+	section = "Stats",
+	style,
+	description,
+	total_tickets = tickets,
+	netted,
+	compression
+from
+	#stats
+order by
+	id
+select
+	section = "Client Longs",
+	a.style,
+	a.identifier,
+	counterparty = b.name,
+	a.external_account_symbol,
+	a.client_give_up, /* chriso */
+	strategy = c.name,
+	d.symbol,
+	a.value_date,
+	a.tickets,
+	a.amount,
+	a.avg_price
+from
+	#client_longs a,
+	counterparties b,
+	strategies c,
+	contracts d
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.strategy_id = c.strategy_id
+and
+	a.contract_id = d.contract_id
+order by
+	d.symbol,
+	a.value_date
+
+insert into
+	#ag_trades(
+		folder,
+		sub_folder, /* chriso */
+		strategy_id,
+		contract_id,
+		value_date,
+		quantity,
+		price)
+select
+	external_account_symbol,
+	client_give_up, /* chriso */
+	strategy_id,
+	contract_id,
+	value_date,
+	amount,
+	avg_price
+from
+	#client_longs
+order by
+	id
+
+select
+	section = "Client Long Tickets",
+	style = @selected_style,
+	identifier,
+	trade_id,
+	deal_id,
+	external_account,
+	client_give_up, /* chriso */
+	symbol,
+	value_date,
+	counterparty,
+	strategy,
+	quantity,
+	price
+from
+	#trades
+where
+	external_account_type = "Client"
+and
+	identifier = @identifier
+and
+	quantity > 0.0
+
+select
+	section = "Client Shorts",
+	a.style,
+	a.identifier,
+	counterparty = b.name,
+	a.external_account_symbol,
+	a.client_give_up, /* chriso */
+	strategy = c.name,
+	d.symbol,
+	a.value_date,
+	a.tickets,
+	a.amount,
+	a.avg_price
+from
+	#client_shorts a,
+	counterparties b,
+	strategies c,
+	contracts d
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.strategy_id = c.strategy_id
+and
+	a.contract_id = d.contract_id
+order by
+	d.symbol,
+	a.value_date
+
+insert into
+	#ag_trades(
+		folder,
+		sub_folder,
+		strategy_id,
+		contract_id,
+		value_date,
+		quantity,
+		price)
+select
+	external_account_symbol,
+	client_give_up, /* chriso */
+	strategy_id,
+	contract_id,
+	value_date,
+	amount,
+	avg_price
+from
+	#client_shorts
+order by
+	id
+
+select
+	section = "Client Short Tickets",
+	style = @selected_style,
+	identifier,
+	trade_id,
+	deal_id,
+	external_account,
+	client_give_up, /* chriso */
+	symbol,
+	value_date,
+	counterparty,
+	strategy,
+	quantity,
+	price
+from
+	#trades
+where
+	external_account_type = "Client"
+and
+	identifier = @identifier
+and
+	quantity < 0.0
+
+
+select
+	section = "LP Longs",
+	a.style,
+	a.identifier,
+	counterparty = b.name,
+	a.counterparty_symbol,
+	a.client_give_up, /* chriso */	
+	strategy = c.name,
+	d.symbol,
+	a.value_date,
+	a.tickets,
+	a.amount,
+	a.avg_price
+from
+	#lp_longs a,
+	counterparties b,
+	strategies c,
+	contracts d
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.strategy_id = c.strategy_id
+and
+	a.contract_id = d.contract_id
+order by
+	d.symbol,
+	a.value_date
+
+insert into
+	#ag_trades(
+		folder,
+		sub_folder, /* chriso */
+		strategy_id,
+		contract_id,
+		value_date,
+		quantity,
+		price)
+select
+	counterparty_symbol,
+	client_give_up, /* chriso */
+	strategy_id,
+	contract_id,
+	value_date,
+	amount,
+	avg_price
+from
+	#lp_longs
+order by
+	id
+
+select
+	section = "LP Long Tickets",
+	style = @selected_style,
+	identifier,
+	trade_id,
+	deal_id,
+	external_account,
+	client_give_up, /* chriso */
+	symbol,
+	value_date,
+	counterparty,
+	strategy,
+	quantity,
+	price
+from
+	#trades
+where
+	external_account_type = "Counterparty"
+and
+	identifier = @identifier
+and
+	quantity > 0.0
+
+
+
+select
+	section = "LP Shorts",
+	a.style,
+	a.identifier,
+	counterparty = b.name,
+	a.counterparty_symbol,
+	a.client_give_up, /* chriso */
+	strategy = c.name,
+	d.symbol,
+	a.value_date,
+	a.tickets,
+	a.amount,
+	a.avg_price
+from
+	#lp_shorts a,
+	counterparties b,
+	strategies c,
+	contracts d
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.strategy_id = c.strategy_id 
+and
+	a.contract_id = d.contract_id
+order by
+	d.symbol,
+	a.value_date
+
+insert into
+	#ag_trades(
+		folder,
+		sub_folder,  /* chriso */
+		strategy_id,
+		contract_id,
+		value_date,
+		quantity,
+		price)
+select
+	counterparty_symbol,
+	client_give_up, /* chriso */
+	strategy_id,
+	contract_id,
+	value_date,
+	amount,
+	avg_price
+from
+	#lp_shorts
+order by
+	id
+
+select
+	section = "LP Short Tickets",
+	style = @selected_style,
+	identifier,
+	trade_id,
+	deal_id,
+	external_account,
+	client_give_up, /* chriso */
+	symbol,
+	value_date,
+	counterparty,
+	strategy,
+	quantity,
+	price
+from
+	#trades
+where
+	external_account_type = "Counterparty"
+and
+	identifier = @identifier
+and
+	quantity < 0.0
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#ag_trades
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#ag_trades
+	where
+		id > @id
+
+	select
+		@sat_id = NULL,
+		@folder = NULL,
+		@folder_id = NULL,
+		@sub_folder = NULL, /* chriso */
+		@sub_folder_id = NULL, /* chriso */
+		@strategy_id = NULL,
+		@contract_id = NULL,
+		@value_date = NULL,
+		@quantity = NULL,
+		@price = NULL
+
+	select
+		@folder = folder,
+		@sub_folder = sub_folder, /* chriso */
+		@strategy_id = strategy_id,
+		@contract_id = contract_id,
+		@value_date = value_date,
+		@quantity = quantity,
+		@price = price
+	from
+		#ag_trades
+	where
+		id = @id
+
+	select
+		@folder_id = folder_id
+	from
+		folders
+	where
+		name = @folder
+	if @folder_id = NULL
+	begin
+		exec
+			j_nextkey
+				"folders",
+				@folder_id output
+
+		insert into
+			folders(
+				folder_id,
+				name)
+		values(
+			@folder_id,
+			@folder)
+	end
+
+	/* chriso */
+	select
+		@sub_folder_id = folder_id
+	from
+		folders
+	where
+		name = @sub_folder
+	if @sub_folder_id = NULL
+	begin
+		exec
+			j_nextkey
+				"folders",
+				@sub_folder_id output
+
+		insert into
+			folders(
+				folder_id,
+				name)
+		values(
+			@sub_folder_id,
+			@sub_folder)
+	end
+
+
+	exec
+		j_nextkey
+			"source_aggregate_trades",
+			@sat_id output
+
+	insert into
+		source_aggregate_trades(
+			sat_id,
+			net_ticket_batch_id,
+			source_id,
+			trade_date,
+			folder_id,
+			sub_folder_id, /* chriso */
+			strategy_id,
+			contract_id,
+			value_date,
+			quantity,
+			price)
+	values(
+		@sat_id,
+		@net_ticket_batch_id,
+		@source_id,
+		@trade_date,
+		@folder_id,
+		@sub_folder_id, /* chriso */
+		@strategy_id,
+		@contract_id,
+		@value_date,
+		@quantity,
+		@price)
+
+
+	select
+		@ids = count(*)
+	from
+		#ag_trades
+	where
+		id > @id
+end
+
+
+select * from source_aggregate_trades where net_ticket_batch_id = @net_ticket_batch_id
+
+go

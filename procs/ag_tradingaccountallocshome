@@ -1,0 +1,158 @@
+use
+	risk_sjm_dev
+go
+
+drop procedure
+	ag_tradingaccountallocshome
+go
+
+create procedure
+	ag_tradingaccountallocshome
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_alloc_request",
+	"Add Allocation Request",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"enable_user",
+	"Enable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"disable_user",
+	"Disable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_admin_user",
+	"Add Approval User",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	style = @style,
+	add_alloc_request = "Add New Allocation Request"
+
+select
+	style = @style,
+	a.allocation_request_id,
+	requestor = b.login,
+	status = c.name,
+	sub_account = e.symbol,
+	product = f.symbol,
+	a.amount,
+	a.request_date,
+	a.respond_timestamp
+from
+	allocation_requests a,
+	tico_accounts b,
+	statuses c,
+	fo_sub_accounts d,
+	external_accounts e,
+	products f
+where
+	a.requestor_id = b.account_id
+and
+	a.status_id = c.status_id
+and
+	a.fo_sub_account_id = d.fo_sub_account_id
+and
+	d.external_account_id = e.external_account_id
+and
+	a.product_id = f.product_id
+
+
+
+
+
+
+
+go
+

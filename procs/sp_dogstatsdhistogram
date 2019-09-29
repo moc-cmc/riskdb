@@ -1,0 +1,26 @@
+drop procedure	
+	sp_dogstatsdhistogram
+go
+
+create procedure
+	sp_dogstatsdhistogram
+		@metric_name varchar(200),
+		@start_time datetime,
+		@end_time datetime,
+		@tags varchar(255),
+		@sample_rate varchar(10)="1.0"
+
+as
+
+/* chriso: 2018-07-07 - https://docs.datadoghq.com/developers/dogstatsd/datagram_shell/#metrics */
+
+
+declare @result int
+
+select
+	@result = syb_sendmsg("localhost", 8125,
+            rtrim(@metric_name) +":"+ rtrim(@value) +"|h|"+ rtrim(@sample_rate) +"|"+ rtrim(@tags)
+        )
+
+
+go

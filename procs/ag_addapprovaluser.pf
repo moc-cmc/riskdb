@@ -1,0 +1,5 @@
+use
+	tico_agency_dev
+go
+exec ti_manageprocfield "add", "ag_addapprovaluser", "userName", "Select Button", "ag_standardusers", "Editable", "USER NAME", NULL, NULL
+go

@@ -1,0 +1,19 @@
+
+drop procedure
+	r_creditprofiles
+go
+
+create procedure
+	r_creditprofiles
+as
+
+	select
+		name
+	from
+		credit_profiles
+	order by
+		name
+
+go
+
+

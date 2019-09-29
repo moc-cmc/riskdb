@@ -1,0 +1,16 @@
+drop procedure r_reportingdomains
+go
+
+create procedure
+	r_reportingdomains
+
+as
+
+select
+	name
+from
+	reporting_domains
+order by
+	name
+
+go

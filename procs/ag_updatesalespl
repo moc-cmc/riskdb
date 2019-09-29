@@ -1,0 +1,65 @@
+use
+	risk_faros
+go
+
+drop procedure
+	ag_updatesalespl
+go
+
+create procedure
+	ag_updatesalespl
+		@login varchar(50),
+		@run_name varchar(50),
+		@account varchar(50),
+		@trade_date datetime,
+		@trade_id int,
+		@quantity numeric(30,4),
+		@symbol varchar(50),
+		@value_date datetime,
+		@price float,
+		@sales_pl float
+as
+
+
+declare @external_account_id int
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @account = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+update
+	trade_attributes
+set
+	a.sales_pl = @sales_pl
+from
+	trade_attributes a,
+	trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = @external_account_id
+and
+	a.trade_id = @trade_id
+
+
+exec
+	fo_salespl
+		@login,
+		@run_name,
+		@trade_date,
+		@account
+
+
+go

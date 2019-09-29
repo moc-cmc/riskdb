@@ -1,0 +1,38 @@
+drop procedure cl_fxallblotterlinks
+go
+
+create procedure
+	cl_fxallblotterlinks
+
+as
+	
+
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+
+insert into
+        #links
+values(
+        "Format Number",
+        "spot_rate",
+        NULL,
+        NULL,
+        "#,##0.00####")
+insert into
+	#links
+values(
+	"Format Number",
+	"all_in_rate",
+	NULL,
+	NULL,
+	"#,##0.00####")
+
+select * from #links
+
+go

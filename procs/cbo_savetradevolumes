@@ -1,0 +1,319 @@
+drop procedure cbo_savetradevolumes
+go
+
+create procedure
+	cbo_savetradevolumes
+		@login varchar(50),
+		@trade_date datetime,
+		@run_status varchar(10)=NULL output
+
+as
+
+
+declare @volume_date datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @has_volume char(1)
+declare @missing_prices char(1)
+
+select
+	@run_status = "OK"
+
+select
+	@volume_date = convert(date, @trade_date)
+
+exec
+	r_daterangefordate
+		@volume_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@has_volume = "Y"
+from
+	trade_volumes
+where
+	volume_date = @volume_date
+
+if @has_volume = "Y"
+begin
+	select
+		status = "Error",
+		msg = "Volume already exists for date, can not recalculate. Uncommit date."
+	select 
+		@run_status = "Error"
+	return
+end
+
+
+create table
+	#trades
+(
+	trade_id int,
+	contract_id int,
+	quantity numeric(30, 4),
+	product_id int NULL,
+	currency_id int NULL,
+	opt_underlying_contract_id int NULL,
+)
+
+insert into
+	#trades(
+		trade_id,
+		contract_id,
+		quantity)
+select
+	a.trade_id,
+	a.contract_id,
+	a.quantity
+from
+	trades a
+where
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+update
+	#trades
+set
+	product_id = b.product_id,
+	currency_id = b.currency_id
+from
+	#trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+/* Get the product and currency id for the underlying contract of the option*/
+update
+	#trades
+set
+	opt_underlying_contract_id = d.underlying_contract_id
+from
+	#trades a,
+	option_contracts b,
+	option_expirations c,
+	options d
+where
+	a.contract_id = b.contract_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.option_id = d.option_id
+
+/* overwrite the contract_id of the trade to the underlying contract id
+   because its easier for queries later*/
+update
+        #trades
+set
+	contract_id = b.contract_id,
+        product_id = b.product_id,
+        currency_id = b.currency_id
+from
+        #trades a,
+        forwards b
+where
+        a.opt_underlying_contract_id = b.contract_id
+
+
+/* The only conversion rates that matter are those of the evaluation ccys, so only get those */
+create table
+        #eval_ccys(
+                product_id int,
+                symbol varchar(10) NULL
+)
+insert into
+        #eval_ccys(
+                product_id)
+select
+        distinct(evaluation_currency_id)
+from
+        funds
+
+
+/* DEBUG
+ insert into #eval_ccys(product_id) select product_id from products where symbol = "EUR"
+*/
+/*----
+   Right now, lets just use the distinct eval ccy of the fund (above)
+   If we want to start saving down volume in other ccys, uncomment the below
+insert into
+        #eval_ccys(
+                product_id)
+select
+        distinct(a.evaluation_currency_id)
+from
+        external_accounts a
+where
+        a.evaluation_currency_id not in(select product_id from #eval_ccys)
+---------*/
+
+update
+        #eval_ccys
+set
+        symbol = a.symbol
+from
+        products a,
+        #eval_ccys b
+where
+        a.product_id = b.product_id
+
+create table
+	#traded_products(
+		product_id int
+)
+
+insert into
+	#traded_products
+select
+	distinct(product_id)
+from
+	#trades
+
+create table
+	#conversion_contracts
+(
+	contract_id int NULL,
+	product_id int,
+	currency_id int,
+	inverse_contract_id int NULL,
+	standard_price float NULL,
+	conversion_price float NULL
+)
+
+
+insert into 
+	#conversion_contracts(
+		contract_id,
+		product_id,
+		currency_id
+	)
+select
+	a.contract_id,
+	a.product_id,
+	a.currency_id
+from
+	forwards a,
+	#traded_products b,
+	#eval_ccys c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = c.product_id
+
+update
+	#conversion_contracts
+set
+	inverse_contract_id = a.contract_id
+from
+	forwards a,
+	#conversion_contracts b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+
+
+/* bo_spot_settles should never contain a price for an inverted contract */
+update
+	#conversion_contracts
+set
+	standard_price = a.price,
+	conversion_price = a.price
+from
+	bo_spot_settles a,
+	#conversion_contracts b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, a.price_date) = convert(date, @volume_date)
+
+update
+        #conversion_contracts
+set
+        standard_price = a.price,
+	conversion_price = 1/a.price
+from
+        bo_spot_settles a,
+        #conversion_contracts b
+where
+        a.contract_id = b.inverse_contract_id
+and
+        convert(date, a.price_date) = convert(date, @volume_date)
+and
+	b.standard_price = NULL
+
+insert into
+	#conversion_contracts
+(
+	product_id,
+	currency_id,
+	conversion_price
+)
+select
+	product_id,
+	product_id,
+	1.0
+from
+	#eval_ccys
+
+
+select
+	@missing_prices = "Y"
+from
+	#conversion_contracts
+where
+	conversion_price = NULL
+if @missing_prices = "Y"
+begin
+	select
+		status = "Error",
+		msg = "Missing conversion price. Not saving any volumes"
+	select
+		contract = a.symbol,
+		price_date = @trade_date,
+		standard_price = b.standard_price,
+		conversion_price = b.conversion_price
+	from
+		contracts a,
+		#conversion_contracts b
+	where
+		a.contract_id = b.contract_id
+	
+	select 
+		@run_status = "Error"
+	
+	return
+end
+
+
+/* debug
+select * from #traded_products
+select * from #conversion_contracts
+*/
+
+insert into
+	trade_volumes(
+		trade_id,
+		volume_date,
+		product_id,
+		volume)
+select
+	a.trade_id,
+	@volume_date,
+	b.currency_id,
+	abs(a.quantity * b.conversion_price)
+from
+	#trades a,
+	#conversion_contracts b
+where
+	a.product_id = b.product_id
+
+
+
+go	
+	
+
+
+	

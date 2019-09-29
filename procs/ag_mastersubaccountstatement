@@ -1,0 +1,742 @@
+create or replace procedure
+	ag_subaccountstatement
+		@login varchar(50),
+		@account varchar(100),
+		@begin_date datetime,
+		@end_date datetime
+
+as
+
+
+declare @fund_id int
+declare @tico_account_id int
+declare @external_account_id int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @evaluation_currency_id int
+
+declare @id int
+declare @ids int
+declare @product_id int
+declare @product varchar(50)
+declare @begin_balance float
+declare @end_balance float
+
+declare @xact_id int
+declare @xacts int
+declare @running_balance float
+declare @amount float
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"example_column_name",
+	"Tico Proc Title",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"beginning_balance", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"deposits", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"withdrawals", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"accruals", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"fees", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ending_balance", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"id", 
+ 	"Number",
+	"###0")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FFFFFF;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+if @end_date < @begin_date
+begin
+	select
+		status = "Error",
+		message = "Begin date is after end date",
+		begin_date = @begin_date,
+		end_date = @end_date
+	return
+end
+
+select
+	@begin_date = convert(datetime, convert(date, @begin_date))
+exec
+	r_prevbusinessday
+		@begin_date,
+		@begin_date output
+
+select
+	@begin_date = convert(datetime, convert(date, @begin_date))
+select
+	@begin_date = dateadd(hour, 17, @begin_date)
+
+select
+	@end_date = convert(datetime, convert(date, @end_date))
+select
+	@end_date = dateadd(hour, 17, @end_date)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+
+create table
+	#begin_balances(
+		product_id int,
+		balance float NULL)
+insert into
+	#begin_balances(
+		product_id,
+		balance)
+select
+	a.currency_id,
+	sum(a.amount)
+from
+	account_transactions a,
+	products b
+where
+	a.currency_id = b.product_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.transaction_date < @begin_date
+group by
+	a.currency_id
+
+
+create table
+	#account_transactions(
+		account_transaction_id int,
+		entered_by int,
+		external_account_id int,
+		transaction_type_id int,
+		transaction_date datetime,
+		currency_id int,
+		amount float,
+		note varchar(250) NULL)
+insert into
+	#account_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		note)
+select
+	account_transaction_id,
+	entered_by,
+	external_account_id,
+	transaction_type_id,
+	transaction_date,
+	currency_id,
+	amount,
+	note
+from
+	account_transactions a
+where
+	external_account_id = @external_account_id
+and
+	transaction_date >= @begin_date
+and
+	transaction_date < @end_date
+
+update
+	#account_transactions
+set
+	a.amount = round(a.amount, 2)
+from
+	#account_transactions a,
+	products b,
+	origination_types b
+where
+	a.currency_id = b.product_id
+and
+	b.origination_type_id = b.origination_type_id
+and
+	b.name = "Fiat"
+
+
+update
+	#account_transactions
+set
+	a.amount = round(a.amount, 8)
+from
+	#account_transactions a,
+	products b,
+	origination_types b
+where
+	a.currency_id = b.product_id
+and
+	b.origination_type_id = b.origination_type_id
+and
+	b.name = "Digital"
+
+
+create table
+	#all_products(
+		product_id int)
+insert into
+	#all_products
+select
+	distinct(product_id)
+from
+	#begin_balances
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(currency_id)
+from
+	#account_transactions
+where
+	currency_id not in(
+		select
+			product_id
+		from
+			#all_products)
+create table
+	#ordered_products(
+		id int identity,
+		product_id int NULL,
+		product varchar(50) NULL)
+insert into
+	#ordered_products(
+		product_id,
+		product)
+select
+	a.product_id,
+	a.symbol
+from
+	products a,
+	#all_products b
+where
+	a.product_id = b.product_id
+order by
+	a.symbol
+
+
+
+create table
+	#summary(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		beginning_balance float NULL,
+		deposits float NULL,
+		withdrawals float NULL,
+		accruals float NULL,
+		fees float NULL,
+		ending_balance float NULL)
+insert into
+	#summary(
+		style,
+		product_id,
+		product,
+		beginning_balance,
+		deposits,
+		withdrawals,
+		accruals,
+		fees,
+		ending_balance)
+select
+	style = @style,
+	a.product_id,
+	a.symbol,
+	beginning_balance = 0.0,
+	deposits = 0.0,
+	withdrawals = 0.0,
+	accruals = 0.0,
+	fees = 0.0,
+	ending_balance = 0.0
+from
+	products a,
+	#all_products b
+where
+	a.product_id = b.product_id
+order by
+	a.symbol
+
+update
+	#summary
+set
+	a.beginning_balance = b.balance
+from
+	#summary a,
+	#begin_balances b
+where
+	a.product_id = b.product_id
+
+create table
+	#activity(
+		product_id int,
+		transaction_type_id int,
+		amount float)
+insert into
+	#activity(
+		product_id,
+		transaction_type_id,
+		amount)
+select
+	currency_id,
+	transaction_type_id,
+	sum(amount)
+from
+	#account_transactions
+group by
+	currency_id,
+	transaction_type_id
+
+update
+	#summary
+set
+	a.deposits = b.amount
+from
+	#summary a,
+	#activity b,
+	transaction_types c
+where
+	a.product_id = b.product_id
+and
+	b.transaction_type_id = c.transaction_type_id
+and
+	c.name = "Deposit"
+
+update
+	#summary
+set
+	a.withdrawals = b.amount
+from
+	#summary a,
+	#activity b,
+	transaction_types c
+where
+	a.product_id = b.product_id
+and
+	b.transaction_type_id = c.transaction_type_id
+and
+	c.name = "Withdrawal"
+
+
+update
+	#summary
+set
+	a.accruals = b.amount
+from
+	#summary a,
+	#activity b,
+	transaction_types c
+where
+	a.product_id = b.product_id
+and
+	b.transaction_type_id = c.transaction_type_id
+and
+	b.amount > 0.0
+and
+	c.name not in("Withdrawal", "Deposit")
+
+
+update
+	#summary
+set
+	a.fees = b.amount
+from
+	#summary a,
+	#activity b,
+	transaction_types c
+where
+	a.product_id = b.product_id
+and
+	b.transaction_type_id = c.transaction_type_id
+and
+	b.amount < 0.0
+and
+	c.name not in("Withdrawal", "Deposit")
+
+update
+	#summary
+set
+	ending_balance = beginning_balance + deposits + withdrawals + accruals + fees
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		prod varchar(50) NULL,
+		account varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		account_transaction_id int NULL,
+		transaction_type_id int NULL,
+		transaction_type varchar(50) NULL,
+		transaction_date datetime NULL,
+		amount float NULL,
+		balance float NULL)
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#ordered_products
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#ordered_products
+	where
+		id > @id
+
+	select
+		@product_id = NULL,
+		@product = NULL,
+		@begin_balance = NULL,
+		@end_balance = NULL
+	
+	select
+		@product_id = product_id
+	from
+		#ordered_products
+	where
+		id = @id
+
+	select
+		@product = symbol
+	from
+		products
+	where
+		product_id = @product_id
+
+	select
+		@begin_balance = balance
+	from
+		#begin_balances
+	where
+		product_id = @product_id
+	if @begin_balance = NULL
+		select
+			@begin_balance = 0.0
+
+	insert into
+		#output(
+			style,
+			prod)
+	values(
+		@total_style,
+		@product)
+
+	insert into
+		#output(
+			style,
+			transaction_type,
+			transaction_date,
+			product,
+			balance)
+	values(
+		@subtotal_style,
+		"Beginning balance",
+		@begin_date,
+		@product,
+		@begin_balance)
+
+	insert into
+		#output(
+			style,
+			external_account_id,
+			account,
+			product_id,
+			product,
+			account_transaction_id,
+			transaction_type_id,
+			transaction_type,
+			transaction_date,
+			amount,
+			balance)
+	select
+		style = @style,
+		external_account_id = @external_account_id,
+		account = @account,
+		a.currency_id,
+		product = @product,
+		a.account_transaction_id,
+		a.transaction_type_id,
+		b.name,
+		a.transaction_date,
+		a.amount,
+		balance = 0.0
+	from
+		#account_transactions a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.currency_id = @product_id
+	order by
+		a.transaction_date,
+		a.account_transaction_id
+
+	select
+		@xact_id = 0
+	select
+		@xacts = count(*)
+	from
+		#output
+	where
+		product_id = @product_id
+	and
+		id > @xact_id
+
+	select
+		@running_balance = @begin_balance
+
+	while @xacts > 0
+	begin
+		select
+			@xact_id = min(id)
+		from
+			#output
+		where
+			product_id = @product_id
+		and
+			id > @xact_id
+
+		select
+			@amount = NULL
+		select
+			@amount = amount
+		from
+			#output
+		where
+			id = @xact_id
+		
+		select
+			@running_balance = @running_balance + @amount
+
+		update
+			#output
+		set
+			balance = @running_balance
+		where 
+			id = @xact_id
+
+		select
+			@xacts = count(*)
+		from
+			#output
+		where
+			product_id = @product_id
+		and
+			id > @xact_id
+	end
+		
+        insert into
+                #output(
+                        style,
+                        transaction_type,
+                        transaction_date,
+                        product_id,
+                        product,
+                        balance)
+        values(
+                @subtotal_style,
+                "Ending balance",
+                @end_date,
+                @product_id,
+                @product,
+		@running_balance)	
+
+	select
+		@ids = count(*)
+	from
+		#ordered_products
+	where
+		id > @id
+end		
+
+
+
+
+
+select
+	section = rtrim(@account),
+	style,
+	product,
+	beginning_balance,
+	deposits,
+	withdrawals,
+	accruals,
+	fees,
+	ending_balance
+from
+	#summary
+order by
+	id
+
+select
+	section = rtrim(@account) + " Transactions",
+	style,
+	prod,
+	transaction_id = account_transaction_id,
+	transaction_type,
+	transaction_date,
+	product,
+	amount,
+	balance
+from
+	#output
+order by
+	id
+
+
+
+go

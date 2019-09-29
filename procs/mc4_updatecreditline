@@ -1,0 +1,35 @@
+create or replace procedure
+	mc4_updatecreditline
+		@login varchar(50),
+		@credit_profile varchar(100),
+		@nop_limit numeric(30,4)=NULL,
+		@dsl_limit numeric(30,4)=NULL
+
+as
+
+declare @successful_update char(1)
+
+
+exec
+	r_updatecreditprofilelimit
+		@login=@login,
+		@credit_profile_name = @credit_profile,
+		@nop_limit = @nop_limit,
+		@dsl_limit = @dsl_limit,
+		@timestamp = NULL,
+		@successful_update = @successful_update output
+
+if @successful_update != "Y"
+begin
+	select
+		status = "Error",
+		message = "Problem setting credit line"
+	return
+end
+
+select
+	status = "Success",	
+	messaage = "Successfully updated credit line"
+
+go
+

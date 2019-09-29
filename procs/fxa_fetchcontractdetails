@@ -1,0 +1,220 @@
+drop procedure 
+	fxa_fetchcontractdetails
+go
+
+create procedure
+        fxa_fetchcontractdetails
+		@symbol varchar(30),
+		@contract_id                 int=NULL output,
+		@source_database             varchar(25)=NULL output,
+		@instrument_id               int=NULL output,   
+		@instrument_name           varchar(25)=NULL output,   
+		@quantity                    float=NULL output,   
+		@price_style_id              int=NULL output,   
+		@factor                      float=NULL output,   
+		@expiration                  datetime=NULL output,   
+		@product_id                  int=NULL output,   
+		@currency_id                 int=NULL output,   
+		@def_perspective_contract_id int=NULL output,   
+		@forward_id                  int=NULL output,   
+		@forward_exchange_id         int=NULL output,   
+		@forward_quantity            int=NULL output,   
+		@future_id                   int=NULL output,   
+		@future_exchange_id          int=NULL output,   
+		@future_symbol               varchar(30)=NULL output,   
+		@future_quantity             float=NULL output,   
+		@future_expiration           datetime=NULL output,   
+		@option_id                   int=NULL output,   
+		@option_underlying_id        int=NULL output,   
+		@option_exchange_id          int=NULL output,   
+		@option_exchange_name        varchar(30)=NULL output,
+		@option_quantity             numeric=NULL output,
+		@option_tick_size            float=NULL output,   
+		@option_expiration_symbol    char(25)=NULL output,   
+		@option_expiration           datetime=NULL output,   
+		@option_expiration_id        int=NULL output,
+		@option_exercise_style_id    int=NULL output,   
+		@option_put_call             varchar(50)=NULL output,
+		@option_strike               float=NULL output,   
+		@option_barrier              float=NULL output,   
+		@option_ko_ki_date           datetime=NULL output,   
+		@ex_option_underlying_id        int=NULL output,
+		@ex_option_exchange_id          int=NULL output,
+		@ex_option_quantity             numeric=NULL output,
+		@ex_option_tick_size            float=NULL output,
+		@ex_option_expiration_symbol    char(25)=NULL output,
+		@ex_option_expiration           datetime=NULL output,
+		@ex_option_expiration_id        int=NULL output,
+		@ex_option_exercise_style_id    int=NULL output,
+		@ex_option_put_call             varchar(50)=NULL output,
+		@ex_option_strike               float=NULL output,
+		@ex_option_barrier              float=NULL output,
+		@ex_option_ko_ki_date           datetime=NULL output,
+		@product_symbol              varchar(50)=NULL output,
+		@product_type                varchar(50)=NULL output,
+		@currency_symbol             varchar(50)=NULL output,
+		@currency_type               varchar(50)=NULL output,
+		@forward_exchange_symbol     varchar(50)=NULL output,
+		@def_perspective_contract    varchar(50)=NULL output,
+		@forward_symbol              varchar(50)=NULL output,
+		@future_exchange_symbol      varchar(50)=NULL output,
+		@future_tick_size            float=NULL output,
+		@future_price_scale          float=NULL output,
+		@option_underlying           varchar(50)=NULL output,
+		@option_exchange_symbol      varchar(50)=NULL output,
+		@option_exercise_style       varchar(50)=NULL output 	
+
+as
+
+select
+	@contract_id = contract_id,
+	@instrument_id = instrument_id
+from
+	contracts
+where
+	symbol = @symbol
+
+select
+	@instrument_name = name
+from
+	instruments
+where
+	instrument_id = @instrument_id
+
+
+select
+	@currency_id = currency_id,
+	@product_id = product_id,
+	@forward_exchange_id = exchange_id,
+	@forward_quantity = quantity
+from
+	forwards
+where
+	contract_id = @contract_id
+if @@rowcount = 0
+begin
+	select
+		@currency_id = NULL,
+		@product_id = NULL,
+		@forward_exchange_id = NULL,
+		@forward_quantity = NULL
+end
+
+select
+	@future_id = future_id,
+	@future_expiration = expiration
+from
+	future_contracts
+where
+	contract_id = @contract_id
+if @@rowcount = 0
+begin
+	select 
+		@future_id = NULL,
+		@future_expiration = NULL
+end
+
+select
+	@future_exchange_id = exchange_id,
+	@future_symbol = symbol,
+	@future_quantity = quantity,
+	@forward_id = forward_id
+from
+	futures
+where
+	future_id = @future_id
+if @@rowcount = 0
+begin
+	select
+		@future_exchange_id = NULL,
+		@future_symbol = NULL,
+		@future_quantity = NULL,
+		@forward_id = NULL
+end
+
+/*
+select
+	@exchange_symbol = name
+from
+	exchanges
+where
+	exchange_id = @exchange_id
+*/
+
+select
+	@price_style_id = price_style_id,
+	@factor = factor
+from
+	contract_price_styles
+where
+	contract_id = @contract_id
+if @@rowcount = 0
+begin
+	select
+		@price_style_id = NULL,
+        	@factor = NULL
+end
+
+select
+	@option_expiration_id = option_expiration_id,
+	@option_exercise_style_id = exercise_style_id,
+	@option_strike = strike,
+	@option_put_call = put_call
+from
+	option_contracts
+where
+	contract_id = @contract_id
+if @@rowcount = 0
+begin
+	select
+		@option_expiration_id = NULL,
+	        @option_exercise_style_id = NULL,
+        	@option_strike = NULL,
+       	 	@option_put_call = NULL
+end
+
+select
+	@option_id = option_id,
+	@option_expiration = expiration
+from
+	option_expirations
+where
+	option_expiration_id = @option_expiration_id
+if @@rowcount = 0
+begin
+	select
+		@option_id = NULL,
+        	@option_expiration = NULL
+end
+
+
+select
+        @ex_option_expiration_id = option_expiration_id,
+        @ex_option_exercise_style_id = exercise_style_id,
+        @ex_option_strike = strike,
+        @ex_option_put_call = put_call,
+	@ex_option_barrier = barrier,
+	@ex_option_ko_ki_date = ko_ki_date
+from
+        exotic_contracts
+where
+        contract_id = @contract_id
+if @@rowcount = 0
+begin
+        select
+                @ex_option_expiration_id = NULL,
+                @ex_option_exercise_style_id = NULL,
+                @ex_option_strike = NULL,
+                @ex_option_put_call = NULL
+end
+
+select
+        @option_id = option_id,
+        @ex_option_expiration = expiration
+from 
+        option_expirations
+where
+        option_expiration_id = @ex_option_expiration_id
+
+
+go

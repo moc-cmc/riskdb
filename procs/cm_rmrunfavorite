@@ -1,0 +1,79 @@
+
+drop procedure
+	cm_rmrunfavorite
+go
+
+create procedure
+	cm_rmrunfavorite
+			@login varchar(25),
+			@account_name varchar(50),
+			@run_name varchar(200)
+as
+
+declare @tico_account_id int
+declare @run_id int
+
+select
+	@tico_account_id=account_id
+from
+	tico_accounts
+where
+	login=@login
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Login not found",
+		login=@login
+
+	return
+end
+
+select
+	@run_id=run_id
+from
+	runs
+where
+	name=@run_name
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Run name not found",
+		run=@run_name
+	
+	return
+end
+
+begin tran
+
+	delete from 
+		user_run_favorites
+	where
+		tico_account_id=@tico_account_id
+	and
+		run_id=@run_id
+
+	if @@rowcount !=1
+	begin
+		select 
+			status="Error",
+			msg="Could not remove run favorite",
+			run=@run_name
+
+		rollback tran
+		return
+	end
+
+
+commit tran
+
+exec
+        r_manageaccountaccessdetails @login, @account_name
+
+return
+
+go
+

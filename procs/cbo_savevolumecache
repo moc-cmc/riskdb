@@ -1,0 +1,742 @@
+drop procedure cbo_savevolumecache
+go
+
+create procedure
+	cbo_savevolumecache
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @fund_id int
+declare @evaluation_ccy_id int
+declare @min_ticket_size numeric(30, 4)
+
+select
+	@fund_id = fund_id,
+	@evaluation_ccy_id = evaluation_currency_id,
+	@min_ticket_size = min_ticket_size
+from
+	funds
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		msg = "More than 1 fund exists. Logic not supported"
+	return
+end
+
+select
+	@trade_date = convert(date, @trade_date)
+
+exec
+	r_daterangefordate 
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+create table
+	#trades
+(
+	trade_id int,
+	trade_type_id int,
+ 	external_account_id int,
+	counterparty_id int,
+	contract_id int,
+	trader_id int,
+	strategy_id int,
+	broker_id int,
+	sales_code_id int
+)
+
+insert into
+	#trades(
+		trade_id,
+		trade_type_id,
+		external_account_id,
+		counterparty_id,
+		contract_id,
+		trader_id,
+		strategy_id,
+		broker_id,
+		sales_code_id)
+select
+	trade_id,
+	trade_type_id,
+	external_account_id,
+	counterparty_id,
+	contract_id,
+	trader_id,
+	strategy_id,
+	broker_id,
+	sales_code_id
+from
+	trades
+where
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+
+/* doing multiple joins on trade_id, so add index */
+create nonclustered index
+	utmp
+on
+	#trades(trade_id)
+	
+	
+
+create table
+	#adj_trade_type_volumes(
+		trade_type_id int,
+		product_id int,
+		volume_date datetime,
+		volume numeric(30, 4),
+		trade_count int
+)
+
+if @min_ticket_size != 0 or @min_ticket_size !=NULL
+begin
+	insert into
+        	#adj_trade_type_volumes(
+                	trade_type_id,
+                	product_id,
+                	volume_date,
+                	volume,
+                	trade_count
+        	)
+	select
+        	a.trade_type_id,
+        	b.product_id,
+        	@trade_date,
+        	sum(@min_ticket_size - b.volume),
+        	count(a.trade_id)
+	from
+        	#trades a,
+        	trade_volumes b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.volume_date = @trade_date
+	and
+		b.volume < @min_ticket_size
+	group by
+        	a.trade_type_id,
+        	b.product_id
+end
+
+insert into
+	trade_type_volumes(
+		trade_type_id,
+		product_id,
+		volume_date,
+		volume,
+		trade_count
+	)
+select
+	a.trade_type_id,
+	b.product_id,
+	@trade_date,
+	sum(b.volume),
+	count(a.trade_id)
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date = @trade_date
+group by
+	a.trade_type_id,
+	b.product_id
+
+update
+	trade_type_volumes
+set
+	volume_adj = b.volume,
+	adj_count = b.trade_count
+from
+	trade_type_volumes a,
+	#adj_trade_type_volumes b
+where
+	a.trade_type_id = b.trade_type_id
+and
+	a.product_id = b.product_id
+and
+	a.volume_date = b.volume_date
+
+
+create table
+	#adj_account_volumes(
+		external_account_id int,
+		product_id int,
+		volume_date datetime,
+		volume numeric(30, 4),
+		trade_count int
+)
+
+if @min_ticket_size != 0 or @min_ticket_size !=NULL
+begin
+	insert into
+        	#adj_account_volumes(
+                	external_account_id,
+                	product_id,
+                	volume_date,
+                	volume,
+                	trade_count
+        	)
+	select
+        	a.external_account_id,
+        	b.product_id,
+        	@trade_date,
+        	sum(@min_ticket_size - b.volume),
+        	count(a.trade_id)
+	from
+        	#trades a,
+        	trade_volumes b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.volume_date = @trade_date
+	and
+		b.volume < @min_ticket_size
+	group by
+        	a.external_account_id,
+        	b.product_id
+end
+
+insert into
+	account_volumes(
+		external_account_id,
+		product_id,
+		volume_date,
+		volume,
+		trade_count
+	)
+select
+	a.external_account_id,
+	b.product_id,
+	@trade_date,
+	sum(b.volume),
+	count(a.trade_id)
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date = @trade_date
+group by
+	a.external_account_id,
+	b.product_id
+
+update
+        account_volumes
+set
+        volume_adj = b.volume,
+        adj_count = b.trade_count
+from
+        account_volumes a,
+        #adj_account_volumes b
+where
+        a.external_account_id = b.external_account_id
+and
+        a.product_id = b.product_id
+and
+        a.volume_date = b.volume_date
+
+
+
+create table
+	#adj_counterparty_volumes(
+		counterparty_id int,
+		product_id int,
+		volume_date datetime,
+		volume numeric(30, 4),
+		trade_count int
+)
+
+if @min_ticket_size != 0 or @min_ticket_size !=NULL
+begin
+	insert into
+        	#adj_counterparty_volumes(
+                	counterparty_id,
+                	product_id,
+                	volume_date,
+                	volume,
+                	trade_count
+        	)
+	select
+        	a.counterparty_id,
+        	b.product_id,
+        	@trade_date,
+        	sum(@min_ticket_size - b.volume),
+        	count(a.trade_id)
+	from
+        	#trades a,
+        	trade_volumes b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.volume_date = @trade_date
+	and
+		b.volume < @min_ticket_size
+	group by
+        	a.counterparty_id,
+        	b.product_id
+end
+
+insert into
+	counterparty_volumes(
+		counterparty_id,
+		product_id,
+		volume_date,
+		volume,
+		trade_count
+	)
+select
+	a.counterparty_id,
+	b.product_id,
+	@trade_date,
+	sum(b.volume),
+	count(a.trade_id)
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date = @trade_date
+group by
+	a.counterparty_id,
+	b.product_id
+
+update
+        counterparty_volumes
+set
+        volume_adj = b.volume,
+        adj_count = b.trade_count
+from
+        counterparty_volumes a,
+        #adj_counterparty_volumes b
+where
+        a.counterparty_id = b.counterparty_id
+and
+        a.product_id = b.product_id
+and
+        a.volume_date = b.volume_date
+
+
+create table
+	#adj_contract_volumes(
+		contract_id int,
+		product_id int,
+		volume_date datetime,
+		volume numeric(30, 4),
+		trade_count int
+)
+
+if @min_ticket_size != 0 or @min_ticket_size !=NULL
+begin
+	insert into
+        	#adj_contract_volumes(
+                	contract_id,
+                	product_id,
+                	volume_date,
+                	volume,
+                	trade_count
+        	)
+	select
+        	a.contract_id,
+        	b.product_id,
+        	@trade_date,
+        	sum(@min_ticket_size - b.volume),
+        	count(a.trade_id)
+	from
+        	#trades a,
+        	trade_volumes b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.volume_date = @trade_date
+	and
+		b.volume < @min_ticket_size
+	group by
+        	a.contract_id,
+        	b.product_id
+end
+insert into
+	contract_volumes(
+		contract_id,
+		product_id,
+		volume_date,
+		volume,
+		trade_count
+	)
+select
+	a.contract_id,
+	b.product_id,
+	@trade_date,
+	sum(b.volume),
+	count(a.trade_id)
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date = @trade_date
+group by
+	a.contract_id,
+	b.product_id
+
+update
+        contract_volumes
+set
+        volume_adj = b.volume,
+        adj_count = b.trade_count
+from
+        contract_volumes a,
+        #adj_contract_volumes b
+where
+        a.contract_id = b.contract_id
+and
+        a.product_id = b.product_id
+and
+        a.volume_date = b.volume_date
+
+
+create table
+	#adj_trader_volumes(
+		trader_id int,
+		product_id int,
+		volume_date datetime,
+		volume numeric(30, 4),
+		trade_count int
+)
+
+if @min_ticket_size != 0 or @min_ticket_size !=NULL
+begin
+	insert into
+        	#adj_trader_volumes(
+                	trader_id,
+                	product_id,
+                	volume_date,
+                	volume,
+                	trade_count
+        	)
+	select
+        	a.trader_id,
+        	b.product_id,
+        	@trade_date,
+        	sum(@min_ticket_size - b.volume),
+        	count(a.trade_id)
+	from
+        	#trades a,
+        	trade_volumes b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.volume_date = @trade_date
+	and
+		b.volume < @min_ticket_size
+	group by
+        	a.trader_id,
+        	b.product_id
+end
+insert into
+	trader_volumes(
+		trader_id,
+		product_id,
+		volume_date,
+		volume,
+		trade_count
+	)
+select
+	a.trader_id,
+	b.product_id,
+	@trade_date,
+	sum(b.volume),
+	count(a.trade_id)
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date = @trade_date
+group by
+	a.trader_id,
+	b.product_id
+
+update
+        trader_volumes
+set
+        volume_adj = b.volume,
+        adj_count = b.trade_count
+from
+        trader_volumes a,
+        #adj_trader_volumes b 
+where
+        a.trader_id = b.trader_id
+and
+        a.product_id = b.product_id
+and
+        a.volume_date = b.volume_date
+
+
+create table
+	#adj_strategy_volumes(
+		strategy_id int,
+		product_id int,
+		volume_date datetime,
+		volume numeric(30, 4),
+		trade_count int
+)
+
+if @min_ticket_size != 0 or @min_ticket_size !=NULL
+begin
+	insert into
+        	#adj_strategy_volumes(
+                	strategy_id,
+                	product_id,
+                	volume_date,
+                	volume,
+                	trade_count
+        	)
+	select
+        	a.strategy_id,
+        	b.product_id,
+        	@trade_date,
+        	sum(@min_ticket_size - b.volume),
+        	count(a.trade_id)
+	from
+        	#trades a,
+        	trade_volumes b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.volume_date = @trade_date
+	and
+		b.volume < @min_ticket_size
+	group by
+        	a.strategy_id,
+        	b.product_id
+end
+insert into
+	strategy_volumes(
+		strategy_id,
+		product_id,
+		volume_date,
+		volume,
+		trade_count
+	)
+select
+	a.strategy_id,
+	b.product_id,
+	@trade_date,
+	sum(b.volume),
+	count(a.trade_id)
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date = @trade_date
+group by
+	a.strategy_id,
+	b.product_id
+
+update
+        strategy_volumes
+set
+        volume_adj = b.volume,
+        adj_count = b.trade_count
+from
+        strategy_volumes a,
+        #adj_strategy_volumes b
+where
+        a.strategy_id = b.strategy_id
+and
+        a.product_id = b.product_id
+and
+        a.volume_date = b.volume_date
+
+
+create table
+	#adj_broker_volumes(
+		broker_id int,
+		product_id int,
+		volume_date datetime,
+		volume numeric(30, 4),
+		trade_count int
+)
+
+if @min_ticket_size != 0 or @min_ticket_size !=NULL
+begin
+	insert into
+        	#adj_broker_volumes(
+                	broker_id,
+                	product_id,
+                	volume_date,
+                	volume,
+                	trade_count
+        	)
+	select
+        	a.broker_id,
+        	b.product_id,
+        	@trade_date,
+        	sum(@min_ticket_size - b.volume),
+        	count(a.trade_id)
+	from
+        	#trades a,
+        	trade_volumes b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.volume_date = @trade_date
+	and
+		b.volume < @min_ticket_size
+	group by
+        	a.broker_id,
+        	b.product_id
+end
+insert into
+	broker_volumes(
+		broker_id,
+		product_id,
+		volume_date,
+		volume,
+		trade_count
+	)
+select
+	a.broker_id,
+	b.product_id,
+	@trade_date,
+	sum(b.volume),
+	count(a.trade_id)
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date = @trade_date
+group by
+	a.broker_id,
+	b.product_id
+
+update
+        broker_volumes
+set
+        volume_adj = b.volume,
+        adj_count = b.trade_count
+from
+        broker_volumes a,
+        #adj_broker_volumes b 
+where
+        a.broker_id = b.broker_id
+and
+        a.product_id = b.product_id
+and
+        a.volume_date = b.volume_date
+
+
+create table
+	#adj_sales_code_volumes(
+		sales_code_id int,
+		product_id int,
+		volume_date datetime,
+		volume numeric(30, 4),
+		trade_count int
+)
+
+if @min_ticket_size != 0 or @min_ticket_size !=NULL
+begin
+	insert into
+        	#adj_sales_code_volumes(
+                	sales_code_id,
+                	product_id,
+                	volume_date,
+                	volume,
+                	trade_count
+        	)
+	select
+        	a.sales_code_id,
+        	b.product_id,
+        	@trade_date,
+        	sum(@min_ticket_size - b.volume),
+        	count(a.trade_id)
+	from
+        	#trades a,
+        	trade_volumes b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.volume_date = @trade_date
+	and
+		b.volume < @min_ticket_size
+	group by
+        	a.sales_code_id,
+        	b.product_id
+end
+insert into
+	sales_code_volumes(
+		sales_code_id,
+		product_id,
+		volume_date,
+		volume,
+		trade_count
+	)
+select
+	a.sales_code_id,
+	b.product_id,
+	@trade_date,
+	sum(b.volume),
+	count(a.trade_id)
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date = @trade_date
+group by
+	a.sales_code_id,
+	b.product_id
+
+update
+        sales_code_volumes
+set
+        volume_adj = b.volume,
+        adj_count = b.trade_count
+from
+        sales_code_volumes a,
+        #adj_sales_code_volumes b
+where
+        a.sales_code_id = b.sales_code_id
+and
+        a.product_id = b.product_id
+and
+        a.volume_date = b.volume_date
+
+
+go
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+

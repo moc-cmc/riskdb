@@ -1,0 +1,17 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_collectionevents
+go
+
+create procedure
+	lw_collectionevents
+as
+
+select
+	name
+from
+	collection_events
+go

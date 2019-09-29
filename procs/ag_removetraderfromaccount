@@ -1,0 +1,25 @@
+create or replace procedure
+	ag_removetraderfromaccount
+		@login varchar(100),
+		@legal_entity varchar(100),
+		@account varchar(100),
+		@trader varchar(50)
+
+as
+
+exec
+	api_removetraderfromaccount
+		@login = @login,
+		@account = @account,
+		@trader = @trader
+
+exec
+	ag_legalentitieshome
+		@login = @login,
+		@legal_entity = @legal_entity
+
+go
+		
+
+
+

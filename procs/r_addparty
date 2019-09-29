@@ -1,0 +1,251 @@
+drop procedure r_addparty
+go
+
+create procedure
+	r_addparty
+		@login varchar(50),
+		@party_name varchar(50),
+		@party_type varchar(50),
+		@pb_party varchar(50)=NULL,
+		@settlement_location varchar(50)=NULL,
+		@org varchar(50)=NULL,
+		@ext_account_symbol varchar(50)=NULL,
+		@counterparty_symbol varchar(50)=NULL,
+		@clearing_party varchar(50)=NULL
+
+as
+
+declare @party_id int
+declare @party_type_id int
+declare @pb_party_id int
+declare @settlement_location_id int
+declare @external_account_id int
+declare @counterparty_id int
+declare @org_id int
+declare @clearing_party_id int
+
+
+select
+	@party_type_id = party_type_id
+from
+	party_types
+where
+	name = @party_type
+if @party_type_id = NULL
+begin
+	insert into
+		party_types(
+			name
+		)
+	values(
+		@party_type
+	)
+	select
+		@party_type_id = party_type_id
+	from
+		party_types
+	where
+		name = @party_type
+end
+
+if @settlement_location = NULL and @pb_party = NULL
+begin
+	select
+		"error"="Error",
+		"msg"="Must provide either settlement location or pb party",
+		settlement_location = @settlement_location,
+		pb_party = @pb_party
+	return
+end
+
+if @settlement_location != NULL and @pb_party != NULL
+begin
+	select
+		"error"="Error",
+		"msg"="Must provide either settlement location or pb party, not both",
+		settlement_location = @settlement_location,
+		pb_party = @pb_party
+	return
+end
+
+if @org != NULL
+begin
+	select
+		@org_id = org_id
+	from
+		orgs
+	where
+		name = @org
+	if @org_id = NULL
+	begin
+		insert into
+			orgs(
+				name
+			)
+		values(
+			@org
+		)
+		select
+			@org_id = org_id
+		from
+			orgs
+		where
+			name = @org
+	end
+end
+
+if @settlement_location != NULL
+begin
+	select
+		@settlement_location_id = settlement_location_id
+	from
+		settlement_locations
+	where
+		name = @settlement_location
+	if @settlement_location_id = NULL
+	begin
+		insert into
+			settlement_locations(
+				name,
+				org_id
+			)
+		values(
+			@settlement_location,
+			@org_id
+		)
+		select
+			@settlement_location_id = settlement_location_id
+		from
+			settlement_locations
+		where
+			name = @settlement_location
+	end
+end
+
+if @pb_party != NULL
+begin
+	select
+		@pb_party_id = party_id
+	from
+		parties
+	where
+		name = @pb_party
+	if @pb_party_id = NULL
+	begin
+		select
+			error="Error",
+			msg ="Problem finding party for PB",
+			pb_party = @pb_party
+		return
+	end
+end
+if @clearing_party != NULL
+begin
+	
+	select
+		@clearing_party_id = party_id
+	from
+		parties
+	where
+		name = @clearing_party
+	if @clearing_party_id = NULL and @ext_account_symbol=NULL and @counterparty_symbol = NULL
+	begin
+		select
+			error="Error",
+			msg ="Problem finding party for clearing party",
+			clearing_party = @clearing_party
+		return
+	end
+end
+
+
+select
+	@party_id = party_id
+from
+	parties
+where
+	name = @party_name
+if @party_id = NULL
+begin
+	insert into
+		parties(
+			name,
+			party_type_id,
+			pb_party_id,
+			settlement_location_id
+		)
+	values(
+		@party_name,
+		@party_type_id,
+		@pb_party_id,
+		@settlement_location_id
+	)
+	select
+		@party_id = party_id
+	from
+		parties
+	where
+		name = @party_name
+end
+
+
+if @counterparty_symbol != NULL
+begin
+	select
+		@counterparty_id = counterparty_id
+	from
+		counterparties
+	where
+		name = @counterparty_symbol
+	if @counterparty_id = NULL
+	begin
+		select
+			error = "Error",
+			msg="Problem finding counterparty",
+			@counterparty_symbol
+		return
+	end
+	insert into
+		party_counterparties(
+			party_id,
+			counterparty_id,
+			clearing_party_id
+		)
+	values(
+		@party_id,
+		@counterparty_id,
+		@clearing_party_id
+	)
+end
+
+if @ext_account_symbol != NULL
+begin
+	select
+		@external_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = @ext_account_symbol
+	if @external_account_id = NULL
+	begin
+		select
+			error = "Error",
+			msg="Problem determining external account",
+			ext_account_symbol = @ext_account_symbol
+		return
+	end
+	insert into
+		party_ext_accounts(
+			party_id,
+			external_account_id,
+			clearing_party_id
+		)
+	values(
+		@party_id,
+		@external_account_id,
+		@clearing_party_id
+	)
+end
+
+
+go

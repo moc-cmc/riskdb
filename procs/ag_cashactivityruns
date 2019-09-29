@@ -1,0 +1,46 @@
+use
+	risk_admis
+go
+
+drop procedure
+        ag_cashactivityruns
+go
+
+create procedure
+	ag_cashactivityruns
+		@login char(100)
+as
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Column Link",
+	"run_name",
+	"Cash Activity",
+	NULL) 
+
+select * from #meta
+
+
+select
+	run_name = a.name
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+order by
+	a.name
+
+go

@@ -1,0 +1,264 @@
+if object_id("r_spotoptioncontract") != NULL
+    drop procedure
+        r_spotoptioncontract
+go
+
+create procedure
+	r_spotoptioncontract
+		@underlying_contract varchar(50),
+		@timezone varchar(25),
+		@expiration datetime,
+		@put_call char(1),
+		@strike numeric(30,4),
+		@option_settledate datetime,
+		@contract_id int output
+
+as
+
+
+declare @underlying_contract_id int
+declare @option_id int
+declare @otc_exchange_id int
+declare @exercise_style_id int
+declare @option_exp_symbol varchar(50)
+declare @option_expiration_id int
+declare @contract_symbol varchar(50)
+declare @instrument_id int
+declare @expiration_time varchar(12)
+declare @timezone_id	int
+declare @tz_sym varchar(12)
+
+if @put_call = NULL
+begin
+	select
+		status = "Error",
+		message = "Put Call not specified"
+	return
+end
+
+if @timezone = NULL
+begin
+	select
+		status = "Error",
+		message = "Timezone not specified"
+	return
+end
+
+select
+        @expiration = convert(datetime, convert(char(11), @expiration, 1))
+
+select
+	@timezone_id=timezone_id,
+	@expiration_time = expiration_time
+from
+	timezones
+where
+	timezone=@timezone
+
+if(@@rowcount != 1)
+begin
+	select
+		status = "Error",
+		message = "Could not locate timezone ", @timezone
+	return
+end
+
+select
+	@expiration = convert(datetime, convert(varchar(11), @expiration) + " " + rtrim(@expiration_time))
+
+select
+	@underlying_contract_id = contract_id
+from
+	contracts
+where
+	symbol = @underlying_contract
+if @underlying_contract_id = NULL
+begin
+	select
+		id = -1,
+		error = "Underlying contract not found",
+		underlying_contract = @underlying_contract
+	return
+end
+
+
+select
+	@option_id = option_id
+from
+	options
+where
+	underlying_contract_id = @underlying_contract_id
+
+if @@rowcount != 1
+begin
+	select
+		@otc_exchange_id = exchange_id
+	from
+		exchanges
+	where
+		name = "OTC"
+	if @@rowcount != 1
+	begin
+		exec
+			j_nextkey
+				"exchanages",
+				@otc_exchange_id
+
+		insert into
+			exchanges
+		values(
+			@otc_exchange_id,
+			"OTC")
+	end
+
+	select
+		@exercise_style_id = exercise_style_id
+	from
+		exercise_styles
+	where
+		name = "European"
+	if @exercise_style_id = NULL
+	begin
+		exec
+			j_nextkey
+				"exercise_styles",
+				@exercise_style_id output
+		insert into
+			exercise_styles
+		values(
+			@exercise_style_id,
+			"European")
+	end
+
+
+	exec
+		j_nextkey
+			"options",
+			@option_id output
+
+	insert into
+		options
+	values(
+		@option_id,
+		@underlying_contract_id,
+		@otc_exchange_id,
+		@exercise_style_id,
+		1,
+		.0001)
+end
+
+select
+	@option_expiration_id = option_expiration_id
+from
+	option_expirations
+where
+	option_id = @option_id
+and
+	expiration = @expiration
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"option_expirations",
+			@option_expiration_id output
+
+	select 
+		@tz_sym=symbol
+	from
+		timezones
+	where
+		timezone_id=@timezone_id
+
+	select
+		@option_exp_symbol = rtrim(@underlying_contract) + " " + rtrim(convert(char(11), @expiration, 1)) + " " + rtrim(@tz_sym)
+
+	insert into
+		option_expirations
+	values(
+		@option_expiration_id,
+		@option_id,
+		@option_exp_symbol,
+		@expiration,
+		@timezone_id)
+end
+
+select
+	@contract_id = contract_id
+from
+	option_contracts
+where
+	option_expiration_id = @option_expiration_id
+and
+	strike = @strike
+and
+	put_call = upper(@put_call)
+if @@rowcount = 0
+begin
+	select
+		@instrument_id = instrument_id
+	from
+		instruments
+	where
+		name = "Option"
+	if @@rowcount != 1
+	begin
+		exec
+			j_nextkey
+				"instruments",
+				@instrument_id output
+
+		insert into
+			instruments
+		values(
+			@instrument_id,
+			"Option")
+	end
+
+	select
+		@exercise_style_id = def_exercise_style_id
+	from
+		options
+	where
+		option_id = @option_id
+		
+	select
+		@option_exp_symbol = symbol
+	from
+		option_expirations
+	where
+		option_expiration_id = @option_expiration_id
+
+	exec
+		j_nextkey
+			"contracts",
+			@contract_id output
+	
+	select
+		@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(convert(varchar(30), @strike)) + " " + upper(@put_call)
+
+	insert into
+		option_contracts
+	values(
+		@contract_id,
+		@option_expiration_id,
+		@exercise_style_id,
+		@strike,
+		upper(@put_call))
+
+	
+	insert into
+		contracts
+	values(
+		@contract_id,
+		@contract_symbol,
+		@instrument_id)
+
+	insert into
+		option_settledates
+	values(
+		@contract_id,
+		@option_settledate)
+end
+
+
+go

@@ -1,0 +1,19 @@
+drop procedure
+	r_addcounterparty
+go
+
+create procedure
+	r_addcounterparty
+
+as
+
+select
+	a.symbol
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id and
+	b.name = "Counterparty" 
+	
+go

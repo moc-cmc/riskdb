@@ -1,0 +1,54 @@
+drop procedure
+	r_insertcommittedvolumefordate
+go
+
+create procedure
+	r_insertcommittedvolumefordate
+                @external_account_id int,
+                @bo_trade_date datetime,
+                @min_ticket_size float=NULL,
+                @commit_status varchar(50) ,
+                @evaluation_currency varchar(30) ,
+                @spot_trades int ,
+                @spot_volume float ,
+                @forward_trades int ,
+                @forward_volume float ,
+                @forward_option_trades int ,
+                @forward_option_volume float ,
+                @exotic_trades int ,
+                @exotic_volume float ,
+                @forward_swap_trades int ,
+                @forward_swap_volume float ,
+                @futures_trades int ,
+                @futures_volume float ,
+                @futures_option_trades int ,
+                @futures_option_volume float
+	
+as
+
+
+insert into
+        risk_commit_aggregates
+values(
+                @external_account_id,
+                @bo_trade_date,
+                @min_ticket_size, 
+                @commit_status,
+                @evaluation_currency,
+                @spot_trades,
+                @spot_volume,
+                @forward_trades,
+                @forward_volume,
+                @forward_option_trades,
+                @forward_option_volume,
+                @exotic_trades,
+                @exotic_volume,
+                @forward_swap_trades,
+                @forward_swap_volume,
+                @futures_trades,
+                @futures_volume,
+                @futures_option_trades,
+                @futures_option_volume 
+)
+
+go

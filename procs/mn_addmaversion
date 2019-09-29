@@ -1,0 +1,114 @@
+drop procedure
+	mn_addmaversion
+go
+
+create procedure
+	mn_addmaversion
+		@login varchar(50),	
+		@master_allocation varchar(50),
+		@allocation_mode varchar(50)
+as
+
+declare @status_id int
+declare @allocation_mode_id int
+declare @master_allocation_id int
+declare @ma_version_id int
+declare @version int
+declare @creation_date datetime
+
+
+select
+	@master_allocation_id = master_allocation_id
+from
+	master_allocations
+where
+	name = @master_allocation
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Master allocation not found",
+		master_allocation = @master_allocation
+	return
+end
+
+select
+	@version = max(version)
+from
+	ma_versions
+where
+	master_allocation_id = @master_allocation_id
+if @version = NULL
+	select
+		@version = 0
+
+select
+	@version = @version + 1,
+	@creation_date = getdate()
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Queued"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@status_id output
+
+	insert into
+		statuses
+	values(
+		@status_id,
+		"Queued")
+end
+
+select
+	@allocation_mode_id = allocation_mode_id
+from
+	allocation_modes
+where
+	name = @allocation_mode
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Allocation Mode not found",
+		allocation_mode = @allocation_mode
+	return
+end
+
+exec
+	j_nextkey
+		"ma_versions",
+		@ma_version_id output
+
+insert into
+	ma_versions(
+		ma_version_id,
+		master_allocation_id,
+		version,
+		allocation_mode_id,
+		status_id,
+		creation_date)
+values(
+	@ma_version_id,
+	@master_allocation_id,
+	@version,
+	@allocation_mode_id,
+	@status_id,
+	@creation_date)
+
+
+exec
+	mn_maversions
+		@login,
+		@master_allocation
+
+go
+	
+
+

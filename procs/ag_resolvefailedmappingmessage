@@ -1,0 +1,86 @@
+
+drop procedure
+	ag_resolvefailedmappingmessage
+go
+
+create procedure 
+	ag_resolvefailedmappingmessage
+			@login varchar(25),
+			@mapping_error_id int
+
+as
+
+declare @message_id int
+declare @message varchar(250)
+declare @subject varchar(40)
+
+select
+	@message=a.content
+from
+	messages a,
+	mapping_error_messages b
+where
+	a.message_id=b.message_id
+and
+	b.mapping_error_id=@mapping_error_id
+
+insert into
+	resolved_mapping_errors(
+			mapping_error_id,
+			broker_id,
+			identifier,
+			mapping_error_type_id,
+			timestamp,
+			resolved_at)
+	select
+		mapping_error_id,
+		broker_id,
+		identifier,	
+		mapping_error_type_id,
+		timestamp,
+		getdate()
+	from
+		mapping_errors
+	where
+		mapping_error_id=@mapping_error_id
+
+if (@@rowcount = 1)
+begin
+	delete from
+		mapping_errors
+	where
+		mapping_error_id=@mapping_error_id
+end
+
+/*select @message = "Resolved " + @message*/
+select
+	@subject = "Resolved Mapping #"+rtrim(convert(varchar(20), @mapping_error_id))
+
+exec
+        api_sendchannelmessage
+                @login=@login,
+                @channel="Inbound STP",
+                @message_type="Mapping",
+                @subject=@subject,
+                @content=@message,
+		@priority="High",
+                @message_id=@message_id output
+
+if(@message_id != NULL)
+begin
+	insert into
+		mapping_error_messages (
+			mapping_error_id,
+			message_id)
+	values(
+		@mapping_error_id,
+		@message_id)
+
+end
+
+return
+
+go
+
+ 
+

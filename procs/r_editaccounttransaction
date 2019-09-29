@@ -1,0 +1,83 @@
+
+if object_id("r_editaccounttransaction") != NULL
+    drop procedure
+        r_editaccounttransaction
+go
+
+create procedure
+	r_editaccounttransaction
+		@transaction_id int,
+		@account char(50),
+		@transaction_type char(50),
+		@settle_date datetime,
+		@amount float,
+		@note char(255)=NULL
+as
+
+declare @external_account_id int
+declare @transaction_type_id int
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding account",
+		account = @account
+	return
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = @transaction_type
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding transaction type",
+		transaction_type = @transaction_type
+	return
+end
+
+
+begin tran
+	update
+		account_transactions
+	set
+		external_account_id = @external_account_id,
+		amount = @amount,
+		transaction_type_id = @transaction_type_id,
+		transaction_date = @settle_date,
+		note = @note
+	where
+		account_transaction_id = @transaction_id
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem editing transaction",
+			transaction_id = @transaction_id,
+			amount = @amount, 
+			note = @note
+		rollback tran
+		return
+	end
+commit tran
+
+select
+	id = 0,
+	msg = "Successfully edited transaction amount",
+	transaction_id = @transaction_id,
+	amount = @amount,
+	transaction_date = @settle_date,
+	note = @note
+
+go

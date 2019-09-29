@@ -1,0 +1,13 @@
+
+if object_id("fix_checksessionstatus") != NULL
+    drop procedure
+        fix_checksessionstatus
+go
+create procedure fix_checksessionstatus 
+@trading_session_id int, @trading_session_status int
+
+as
+
+
+return
+go

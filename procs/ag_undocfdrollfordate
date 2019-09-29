@@ -1,0 +1,187 @@
+use
+	risk_finotec_test
+go
+
+drop procedure
+	ag_undocfdrollfordate
+go
+
+create procedure
+	ag_undocfdrollfordate
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+
+declare @tico_account_id int
+declare @trade_type_id int
+declare @transaction_type_id int
+declare @roll_trade_date datetime
+declare @delete_begin_date datetime
+declare @delete_end_date datetime
+declare @violations int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = "CFD Roll"
+if @trade_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "CFD Roll trade type not found"
+	return
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "CFD Settlement"
+if @transaction_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "CFD Settlement transaction type not found"
+	return
+end
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+exec
+	r_nextbusinessday
+		@trade_date,
+		@roll_trade_date output
+
+exec
+	r_daterangefordate
+		@roll_trade_date,
+		@delete_begin_date output,
+		@delete_end_date output
+
+select
+	@violations = count(*)
+from
+	trades
+where
+	trade_date >= @delete_end_date
+and
+	trade_type_id = @trade_type_id
+if @violations > 0
+begin
+	select
+		status = "Error",
+		message = "Trades later than date found, cannot undo this date",
+		trade_date = @trade_date
+	return
+end
+
+select
+	@violations = count(*)
+from
+	round_turns
+where
+	convert(date, trade_date) > convert(date, @trade_date)
+if @violations > 0
+begin
+	select
+		status = "Error",
+		message = "Round turns later than date found, cannot undo this date",
+		trade_date = @trade_date
+	return
+end
+
+select
+	@violations = count(*)
+from
+	open_trades
+where
+	convert(date, trade_date) > convert(date, @trade_date)
+if @violations > 0
+begin
+	select
+		status = "Error",
+		message = "Open trades later than date found, cannot undo this date",
+		trade_date = @trade_date
+	return
+end
+
+
+select
+	@violations = count(*)
+from
+	account_transactions
+where
+	transaction_type_id = @transaction_type_id
+and
+	convert(date, transaction_date) > convert(date, @trade_date)
+if @violations > 0
+begin
+	select
+		status = "Error",
+		message = "CFD Settlements later than date found, cannot undo this date",
+		trade_date = @trade_date
+	return
+end
+
+
+begin tran
+	delete
+
+	from
+		account_transactions
+	where
+		convert(date, transaction_date) = convert(date, @trade_date)
+
+	delete
+
+	from
+		round_turns
+	where
+		convert(date, trade_date) = convert(date, @trade_date)
+
+	delete
+
+	from
+		open_trades
+	where
+		convert(date, trade_date) = convert(date, @trade_date)
+
+
+	delete
+
+	from
+		trades
+	where
+		trade_type_id = @trade_type_id
+	and
+		trade_date >= @delete_begin_date
+	and
+		trade_date < @delete_end_date
+commit tran
+
+
+go
+
+
+

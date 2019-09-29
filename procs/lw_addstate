@@ -1,0 +1,59 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_addstate
+go
+
+create procedure
+	lw_addstate
+		@login varchar(50),
+		@name varchar(50),
+		@code varchar(50)
+as
+
+declare @state_id int
+
+select
+	@state_id = state_id
+from
+	states
+where
+	code = @code
+if @state_id != NULL
+begin
+	select
+		status = "Error",
+		message = "State already exists",
+		state = @name
+	return
+end
+
+exec
+	j_nextkey
+		"states",
+		@state_id output
+
+insert into
+	states
+values(
+	@state_id,
+	@name,
+	@code)
+
+
+select
+	status = "Success",
+	message = "State added",
+	state = @name
+
+
+go
+
+
+
+
+
+
+

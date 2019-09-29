@@ -1,0 +1,26 @@
+create or replace procedure
+	ag_addletostanardlogins
+		@login varchar(50),
+		@legal_entity varchar(150)
+
+as
+
+exec
+	api_addletostanardlogins
+		@login = @login,
+		@legal_entity = @legal_entity
+
+
+exec
+        ag_legalentitieshome
+                @login=@login,
+		@legal_entity=@legal_entity
+
+go
+			
+		
+
+
+
+		
+		

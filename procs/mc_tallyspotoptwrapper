@@ -1,0 +1,234 @@
+
+if object_id("mc_tallyspotoptwrapper") != NULL
+    drop procedure
+        mc_tallyspotoptwrapper
+go
+
+create procedure
+	mc_tallyspotoptwrapper
+		@login char(25),
+		@buy_sell varchar(20),
+		@counterparty varchar(50),
+		@quantity numeric(30,4),
+		@biproduct varchar(50),
+		@expiration datetime,
+		@option_settledate datetime,
+		@strike numeric(30,4),
+		@call_put varchar(5),
+		@implied_volatility float,
+		@spot_reference float,
+		@price float,
+		@price_format varchar(10),
+		@total_premium float,
+		@premium_currency varchar(25),
+		@premium_settle datetime
+
+as
+
+declare @tally_type varchar(50)
+declare @contract_id int
+declare @fund_id int
+declare @symbol varchar(50)
+declare @trade_id int
+declare @trade_date datetime
+declare @deal_id int
+declare @external_account varchar(50)
+declare @sales_code varchar(50)
+declare @trade_type varchar(25)
+declare @external_account_id int
+declare @percentage float
+declare @trade_quantity numeric(30,4)
+declare @id int
+declare @ids int
+
+select
+	@tally_type = "Option",
+	@trade_date = getdate()
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+create table
+	#allocs(
+		id int identity,
+		external_account_id int,
+		percentage float)
+
+insert into
+	#allocs(
+		external_account_id,
+		percentage)
+select
+	external_account_id,
+	percentage
+from
+	external_spot_allocations
+where	
+	fund_id = @fund_id
+
+
+select
+	@external_account_id = remainder_ext_account_id
+from
+	external_spot_allocations
+where
+	fund_id = @fund_id
+
+
+select
+	@percentage = sum(percentage)
+from
+	#allocs
+
+select
+	@percentage = 1.0 - @percentage
+
+insert into
+	#allocs(
+		external_account_id,
+		percentage)
+values(
+	@external_account_id,
+	@percentage)
+
+
+if @buy_sell = "Sell"
+begin
+	select
+		@quantity = abs(@quantity) * -1.0
+end
+if @buy_sell = "Buy"
+begin
+	select
+		@quantity = abs(@quantity)
+end
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @counterparty
+	return
+end
+
+
+select
+	@sales_code = "None"
+
+
+exec
+	r_spotoptioncontract
+		@biproduct,
+		@expiration,
+		@call_put,
+		@strike,
+		@option_settledate,
+		@contract_id output
+
+select
+	@symbol = symbol
+from
+	contracts
+where
+	contract_id = @contract_id
+
+
+select
+	@trade_type = @tally_type
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#allocs
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#allocs
+	where
+		id > @id
+
+	select
+		@external_account_id = external_account_id,
+		@percentage = percentage
+	from
+		#allocs
+	where
+		id = @id
+
+	select
+		@trade_quantity = @quantity * @percentage
+
+	select
+		@external_account = symbol
+	from
+		external_accounts
+	where
+		external_account_id = @external_account_id
+
+	select
+		@trade_id = NULL
+
+	exec
+		fxa_tallytrade
+			@login = @login,
+			@source = "MPT Manual Tally",
+			@trade_id = @trade_id output,
+			@deal_id = @deal_id output,
+			@tally_type = @tally_type,
+			@deal_type = "Market Option",
+			@trade_type = @trade_type,	
+			@external_account = @external_account,
+			@counterparty = @counterparty,
+			@quantity = @trade_quantity,
+			@symbol = @symbol,
+			@value_date = @option_settledate,
+			@price = @price,
+			@trade_date = @trade_date,
+			@sales_code = sales_code,
+			@premium = @total_premium,
+			@premium_currency = @premium_currency,
+			@prem_settle_date = @premium_settle
+	
+	select
+		@ids = count(*)
+	from
+		#allocs
+	where
+		id > @id
+end
+select
+	@implied_volatility = @implied_volatility / 100.00
+
+exec
+	r_initializeoptcontract
+		@symbol,
+		@implied_volatility
+
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+
+go

@@ -1,0 +1,46 @@
+drop procedure tt_expreport
+go
+
+create procedure 
+	tt_expreport 
+		@run_name varchar(50) = NULL, 
+		@start_date datetime = NULL, 
+		@days int = NULL, 
+		@source varchar(50) = NULL 
+
+as
+
+declare @end_date datetime
+
+if @start_date = NULL
+begin
+        select
+                @start_date = getdate()
+end
+
+if @days = NULL
+begin
+	select
+		@days = 365
+end
+
+
+select
+	@end_date = dateadd(day, @days, @start_date)
+
+if @run_name = NULL
+begin
+	select
+		@run_name = name
+	from
+		funds
+end
+
+exec
+	tt_expiryreport 
+		@run_name=@run_name, 
+		@begin_date=@start_date, 
+		@end_date=@end_date, 
+		@source=@source
+
+go

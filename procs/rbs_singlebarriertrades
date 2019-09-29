@@ -1,0 +1,577 @@
+drop procedure rbs_singlebarriertrades
+go
+
+create procedure 
+	rbs_singlebarriertrades
+		@source varchar(50)
+
+as
+
+declare @source_id int
+declare @client_account_type_id int
+declare @cpty_account_type_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Source not found",
+		source = @source
+	return
+end
+
+select 
+	@cpty_account_type_id = external_account_type_id
+from
+	external_account_types
+where
+	name = "Counterparty"
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "Problem finding external account type",
+                type = "Counterparty"
+        return
+end
+
+select 
+        @client_account_type_id = external_account_type_id 
+from
+        external_account_types
+where
+        name = "Client"
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "Problem finding external account type",
+                type = "Client"
+        return
+end
+
+
+/*
+| #newoptions is a temp table for all option_trades that need to be notified
+| uses group by to remove duplicate data
+*/
+
+create table #newoptions(
+		trade_id		int,
+		contract_id  int,
+		price_style	varchar(20) NULL)
+
+insert into
+	#newoptions
+select
+	a.trade_id,
+	a.contract_id,
+	NULL 
+from
+	trades a,
+	exotic_contracts b,
+	exotic_instruments c,
+	trade_notifications d,
+	statuses e
+where
+	a.contract_id=b.contract_id 
+and
+	b.exotic_instrument_id=c.exotic_instrument_id 
+and
+	c.name="Single Barrier" 
+and
+	a.trade_id=d.trade_id
+and
+	d.status_id=e.status_id 
+and
+	d.source_id=@source_id
+and
+	e.name in ("Active","Edit","Cancelled")
+/*
+group by
+	a.trade_id,
+	a.contract_id
+*/
+
+select count(*) from #newoptions
+
+/*
+| update price_style for contract
+| if still NULL, set to "Standard"
+*/
+update
+	#newoptions
+set
+	price_style=a.name
+from
+	price_styles a,
+	contract_price_styles b,
+	#newoptions c
+where
+	c.contract_id=b.contract_id and
+	b.price_style_id=a.price_style_id 	
+
+update
+	#newoptions
+set
+	price_style="Standard"
+where
+	price_style=NULL	
+
+
+/*-----------------------------------------------------------------------,
+| Counterparty determination for Client & Market trades                  |
+|                                                                        |
+| Summary:                                                               |
+| The counterparty reported in the traiana record is defined differently |
+| for a Client and Market Trade. The counterparty for a client trade is  |
+| the external account for the trade. The counterparty for a  market     |
+| trade is the counterparty for the trade                                |
+|                                                                        |
+| Initially Set:                                                         |
+| Client Trade Cpty = external_accounts.symbol                           |
+| Market Trade Cpty = external_accounts.symbol                           |
+|                                                                        |
+| Update:                                                                |
+| Market Trade Cpty = counterparties.name                                |
+|                                                                        |
+| If Applicable:                                                         |
+| Update counterparties.name to counterparty_symbols.symbol              |
+| Update external_accounts.symbol to external_account_symbols.symbol     |
+'-----------------------------------------------------------------------*/
+
+
+/*-----------------------------------------------------------------------------------------------------,
+| Prime Broker determination for all trades                                                            |
+|                                                                                                      |
+| Summary:                                                                                             |
+| A trade's prime broker is initially set to the default prime broker for the fund. However, if        |
+| the trade's external account is defined in external_account_prime_brokers and that prime             |
+| broker is defined in the symbols table for the source, then that PB symbol overrides the fund default| 
+|                                                                                                      |
+| Initially Set:                                                                                       |
+| prime_broker_symbols.symbol                                                                          |
+|    where prime_broker_symbols.prime_broker_id = funds.prime_broker_id                                |
+|                                                                                                      |
+| A trade's fund_id is determined from the trade's external_account via                                |
+| fund_external_accounts                                                                               |
+|                                                                                                      |
+|                                                                                                      |
+| If Applicable:                                                                                       |
+| Update prime_broker to prime_broker_symbols.symbol                                                   |
+|     where external_accounts.external_account_id = external_account_prime_brokers.external_account_id |
+|           and                                                                                        |
+|           external_account_prime_brokers.prime_broker_id = prime_broker_symbols.prime_broker_id      |
+'-----------------------------------------------------------------------------------------------------*/
+
+create table
+	#option_trades(
+		product_group varchar(10),
+		action varchar(10),
+		message_type varchar(10),
+		process varchar(10) NULL,
+		trade_ref int,
+		entity varchar(10),
+		portfolio varchar(50),
+		reporting_system varchar(5),
+		reporter_ticket_number int,
+		trader_name varchar(50),
+		counterparty varchar(50) NULL,
+		prime_broker varchar(50),
+		trade_date datetime,
+		product_type varchar(10),
+        putcall varchar(10),
+        style varchar(25),
+        underlying_product varchar(10),
+		traded_currency varchar(10),
+		counter_currency varchar(10),
+		traded_amount numeric(30,4),
+        counter_amount numeric(30,4),
+		trade_price numeric(30,4),
+		value_date varchar(15),
+		settle_date varchar(15),
+        pct_price float NULL,
+		spot_reference float NULL,
+		strike float,
+        price_style varchar(15),
+        expiration datetime,
+        premium_currency varchar(10),
+        premium_amount numeric(30, 2),
+        premium_payment_date varchar(15),
+        fixing_date datetime NULL,
+		expiration_time varchar(5) NULL,
+		expiration_zone varchar(5) NULL,
+		timezone_id int,
+		barrier_type varchar(30),
+		barrier float,	
+		trade_notification_id int)
+
+insert into 
+	#option_trades
+select 
+	"product_group"="FXOPT",
+	"action"="REPORT",
+	"message_type"="REGULAR",
+	"process"=n.status_symbol,
+	"trade_ref"=a.trade_id,
+	"entity"="CLIENT",
+	"portfolio"= t.name, 
+	"reporting_system"="ETG",
+	"reporter_ticket_number"=a.trade_id,
+	"trader_name"=b.symbol,
+	"counterparty"=c.name,
+	"prime_broker"=w.symbol,
+	"trade_date"=convert(varchar(15),a.trade_date,110),
+	"product_type"="Vanilla",
+	"putcall"=e.put_call,
+	(case when f.name='European'
+	Then "E"
+	else "A" end) as "style",
+	"underlying_product"="FX",
+	"traded_currency"=h.symbol,
+	"counter_currency"=g.symbol,
+	"traded_amount"=convert(numeric(30,2),a.quantity),
+	"counter_amount"=convert(numeric(30,2),a.quantity * e.strike),
+	"trade_price" = a.price,
+	"value_date"= convert(varchar(15),a.value_date,110),
+	"settle_date"=convert(varchar(15),s.settledate,110),	
+	"pct_price"=a.pct_price,
+	"spot_reference"=a.spot_reference,
+	"strike"=e.strike,
+	"price_style"="",	
+	/* (case when o.price_style = "Standard"
+	Then rtrim(g.symbol) + "-" + rtrim(h.symbol)
+	else rtrim(h.symbol) + "-" + rtrim(g.symbol) end) as "price_style", */
+	"expiration"= i.expiration,  /* convert(varchar(15),i.expiration,110), */
+	"premium_currency"="USD",
+	"premium_amount"=q.amount,
+	"premium_payment_date"=convert(varchar(15),q.transaction_date,110), 
+	a.fixing_date,
+	NULL,
+	NULL,
+	"timezone_id"=i.timezone_id,
+	"barrier_type"=j.barrier,
+	"barrier"=e.barrier,
+	"trade_notification_id"=m.trade_notification_id
+from
+	trades  a,
+	traders b,
+	external_accounts  c,
+	exotic_instruments d,
+	exotic_contracts e,
+	exercise_styles f,
+	products g,
+	products h,
+	option_expirations i,
+	barrier_types j,
+	options k,
+	forwards l,
+	trade_notifications m,
+	status_symbols n,
+	#newoptions o,
+	account_transaction_trades p,
+	account_transactions q,
+	transaction_types r,
+	option_settledates s,
+	strategies t,
+    funds u,
+    fund_external_accounts v,
+    prime_broker_symbols w
+
+where
+	o.trade_id=a.trade_id 
+and
+	a.trader_id=b.trader_id 
+and
+	a.external_account_id=c.external_account_id 
+and
+	a.contract_id=e.contract_id 
+and
+	e.option_expiration_id=i.option_expiration_id 
+and
+	e.exercise_style_id=f.exercise_style_id 
+and	
+	i.option_id=k.option_id 
+and
+	k.underlying_contract_id=l.contract_id 
+and
+	l.currency_id=g.product_id 
+and
+	l.product_id=h.product_id 
+and 
+	a.trade_id=m.trade_id 
+and
+	m.status_id=n.status_id 
+and
+	a.trade_id=p.trade_id 
+and
+	p.account_transaction_id=q.account_transaction_id 
+and
+	q.transaction_type_id=r.transaction_type_id 
+and
+	m.source_id = @source_id
+and
+	r.name="Option Premium" 
+and
+	a.contract_id=s.contract_id 
+and
+	a.strategy_id=t.strategy_id 
+and
+    c.external_account_id = v.external_account_id
+and
+    v.fund_id = u.fund_id
+and
+    u.prime_broker_id = w.prime_broker_id
+and
+	e.exotic_instrument_id=d.exotic_instrument_id
+and
+	d.name="Single Barrier"
+and
+	e.barrier_type_id=j.barrier_type_id
+
+
+
+/*
+|  Update traiana counterparty to counterparties.name for Market Trades
+|  Update traiana trader to "" for Market Trades
+*/
+update
+	#option_trades
+set
+	trader_name = "",
+	counterparty = e.name
+from
+	#option_trades a,
+	trades b,
+	external_accounts c,
+	external_account_types d,
+        counterparties e
+where
+	a.trade_ref = b.trade_id
+and
+    b.counterparty_id = e.counterparty_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    d.name = "Counterparty"
+
+/*
+|  Update traiana counterparty to counterparty_symbols.symbol for Market Trades
+|  for counterparties that have a counterparty_symbols.symbol for source
+*/
+update
+        #option_trades
+set
+        counterparty = e.symbol
+from
+        #option_trades a,
+        trades b,
+        external_accounts c,
+        external_account_types d,
+        counterparty_symbols e
+where
+        a.trade_ref = b.trade_id
+and
+    b.counterparty_id = e.counterparty_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    e.source_id = @source_id
+and
+    d.name = "Counterparty"
+
+/*
+|  Update traiana counterparty to external_account_symbols.symbol for Client Trades
+|  for external_accounts that have an external_account_symbols.symbol for source
+*/
+update
+        #option_trades
+set
+        counterparty = e.symbol
+from
+        #option_trades a,
+        trades b,
+        external_accounts c,
+        external_account_types d,
+        external_account_symbols e
+where
+        a.trade_ref = b.trade_id
+and
+    b.external_account_id = e.external_account_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    e.source_id = @source_id
+and
+    d.name = "Client"
+
+/*
+|  Update traiana trader to trader_symbols.symbol for Client Trades
+|  for traders that have a trader_symbols.symbol for source
+*/
+update
+        #option_trades
+set
+        trader_name = e.symbol
+from
+        #option_trades a,
+        trades b,
+        external_accounts c,
+        external_account_types d,
+        trader_symbols e
+where
+        a.trade_ref = b.trade_id
+and
+    b.trader_id = e.trader_id
+and
+    b.external_account_id = c.external_account_id
+and
+    c.external_account_type_id = d.external_account_type_id
+and
+    e.source_id = @source_id
+and
+    d.name = "Client"
+
+/*
+|  Update traiana prime_broker to prime_broker_symbols.symbol for all trades
+|  for external_accounts who have an entry in external_account_prime_brokers
+*/
+
+update
+	#option_trades
+set
+	prime_broker = e.symbol
+from
+	#option_trades a,
+        trades b,
+        external_accounts c,
+	external_account_prime_brokers d,
+	prime_broker_symbols e
+where
+	a.trade_ref = b.trade_id
+and
+	b.external_account_id = c.external_account_id 
+and
+	c.external_account_id = d.external_account_id
+and
+	d.prime_broker_id = e.prime_broker_id
+and
+	e.source_id = @source_id
+
+/*
+ * update the premium currency
+ */
+update
+	#option_trades
+set
+	a.premium_currency =  d.symbol
+from
+	#option_trades a,
+	account_transaction_trades b,
+	account_transactions c,
+	products d
+where
+	a.trade_ref = b.trade_id
+and
+	b.account_transaction_id = c.account_transaction_id
+and
+	c.currency_id = d.product_id
+
+/*
+update
+	#option_trades
+set
+	expiration_zone="NYC",
+	expiration_time=1000
+where
+	datepart(hh,expiration) = 10
+
+update
+	#option_trades
+set
+	expiration_zone="TKY",
+	expiration_time=1500
+where
+	datepart(hh,expiration) = 15
+*/
+
+update
+	#option_trades
+set
+	expiration_zone=b.symbol,
+	expiration_time=b.display_value
+from
+	#option_trades a,
+	timezones b
+where
+	a.timezone_id=b.timezone_id
+
+update
+	#option_trades
+set
+	counter_amount = a.traded_amount * 1/a.strike
+from
+	#option_trades a,
+	#newoptions b
+where
+	a.trade_ref=b.trade_id 
+and
+	b.price_style="Inverted"
+	
+select
+	product_group,
+	action,
+	message_type,
+	process,
+	trade_ref,
+	entity,
+	portfolio,
+	reporting_system,
+	reporter_ticket_number,
+	trader_name,
+	counterparty,
+	prime_broker,
+	"trade_date" = convert(varchar(15), trade_date, 110),
+	product_type,
+	putcall,
+	style,
+	underlying_product,
+	traded_currency,
+	counter_currency,
+	traded_amount,
+	counter_amount,
+	trade_price,
+	value_date,
+	settle_date,
+	pct_price,
+	spot_reference,
+	strike,
+	price_style,
+	"expiration" = convert(varchar(15),expiration,110),
+	premium_currency,
+	premium_amount,
+	premium_payment_date,
+	fixing_date,
+	expiration_time,
+	expiration_zone,
+	barrier_type,
+	barrier,
+	trade_notification_id
+from
+	#option_trades
+order by
+	trade_ref
+
+go

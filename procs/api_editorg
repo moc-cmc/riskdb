@@ -1,0 +1,52 @@
+create or replace procedure	
+	api_editorg
+		@org_id int,
+		@name varchar(50)
+
+as
+
+declare @orig_name varchar(50)
+
+select
+	@orig_name = name
+from
+	orgs
+where
+	org_id = @org_id
+if @@rowcount != 1
+begin
+	select
+		status = "error",
+		message = "Problem finding org for org_id",
+		org_id = @org_id
+	return
+end
+
+if @name = @orig_name
+begin
+	select
+		status = "ok",
+		message = "No change in org",
+		org_id = @org_id
+	return
+end
+
+begin tran
+	update
+		orgs
+	set
+		name = @name
+	where
+		org_id = @org_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "error",
+			message = "Problem updating org. Aborting edit",
+			org_id = @org_id
+		rollback tran
+		return
+	end
+commit tran
+
+go

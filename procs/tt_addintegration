@@ -1,0 +1,80 @@
+create or replace procedure
+	tt_addintegration
+		@login varchar(50),
+		@name varchar(50),
+		@org varchar(50)=NULL
+
+as
+
+declare @integration_id int 
+declare @org_id int
+
+select 
+	@integration_id = integration_id
+from
+	integrations
+where
+	name = @name
+if @integration_id != NULL
+begin
+	select
+		status = "error",
+		message = "Integration with name already exists",
+		name = @name,
+		integration_id = @integration_id
+	return
+end
+
+
+select
+	@org_id = org_id
+from
+	orgs
+where
+	name = @org
+if @org_id = NULL
+begin
+	/* Autocreate the organization */
+	exec
+		api_addorg
+			@name=@org,
+			@org_id = @org_id output
+	if @org_id = NULL
+	begin
+		select
+			status = "warning",
+			message = "Could not autocreate org. Still creating integration but will not assign an org."
+	end
+end
+
+exec
+	j_nextkey
+		"integrations",
+		@integration_id output
+
+insert into
+	integrations(
+		integration_id,
+		name,
+		org_id)
+values(
+	@integration_id,
+	@name,
+	@org_id
+)
+if @@rowcount != 1
+begin
+	select
+		status = "error",
+		message = "Problem adding an integration"
+	return
+end
+
+select
+	status = "Success",
+	message = "Successfully created integration",
+	name = @name,
+	org = @org
+
+go
+			

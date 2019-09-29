@@ -1,0 +1,245 @@
+drop procedure
+	ag_tallyqueuedsettlements
+go
+
+create procedure
+	ag_tallyqueuedsettlements
+		@login varchar(50),
+		@value_date datetime,
+		@batch_id int
+as
+
+declare @id int
+declare @ids int
+declare @tico_account_id int
+declare @external_account varchar(50)
+declare @transaction_type varchar(50)
+declare @transaction_type_id int
+declare @amount numeric(30,2)
+declare @product varchar(50)
+declare @product_id int
+declare @payment_request_id int
+
+declare @settlement_account_id int
+declare @settlement_account varchar(50)
+declare @payments_pb_id int
+declare @account_id int
+declare @account_pb_id int
+declare @fund_id int
+
+declare @payer_account varchar(50)
+declare @payee_account varchar(50)
+
+declare @account_transaction_id int
+declare @offset_account_transaction_id int
+declare @offset_amount numeric(30, 2)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@settlement_account_id = settlement_ext_account_id
+from
+	funds
+where
+	fund_id = @fund_id 
+
+select
+	@settlement_account = symbol
+from
+	external_accounts
+where
+	external_account_id = @settlement_account_id
+
+select
+	@payments_pb_id = prime_broker_id
+from
+	external_account_prime_brokers
+where
+	external_account_id = @settlement_account_id
+
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "FX Settlement"
+if @@rowcount != 1
+begin
+	select
+		error = "transaction type not found",
+		type = "FX Settlement"
+	return
+end
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	queued_settlements
+where
+	batch_id = @batch_id
+and
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		queued_settlements
+	where
+		batch_id = @batch_id
+	and
+		id > @id
+
+	select
+		@external_account = NULL,
+		@account_id = NULL,
+		@account_pb_id = NULL,
+		@amount = NULL,
+		@product = NULL,
+		@product_id = NULL,
+		@account_transaction_id = NULL
+
+	select
+		@external_account = b.symbol,
+		@account_id = b.external_account_id,
+		@amount = a.quantity,
+		@product = c.symbol
+	from
+		queued_settlements a,
+		external_accounts b,
+		products c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.product_id = c.product_id
+	and
+		a.product_id = c.product_id
+	and
+		a.batch_id = @batch_id
+	and
+		a.id = @id
+
+
+	select
+		@account_pb_id = prime_broker_id
+	from
+		external_account_prime_brokers
+	where
+		external_account_id = @account_id
+
+	select
+		@product_id = product_id
+	from
+		products
+	where
+		symbol = @product
+
+	select
+		@amount = @amount * -1
+	from
+		external_account_directions
+	where
+		external_account_id = @account_id
+	and
+		direction = -1
+
+
+
+	begin tran
+		exec
+			j_nextkey
+				"account_transactions",
+				@account_transaction_id output
+	
+		insert into
+			account_transactions(
+				account_transaction_id,
+				entered_by,
+				external_account_id,
+				transaction_type_id,
+				transaction_date,
+				currency_id,
+				amount)
+		values(
+			@account_transaction_id,
+			@tico_account_id,
+			@account_id,
+			@transaction_type_id,
+			@value_date,
+			@product_id,
+			@amount)
+	
+		if @settlement_account_id != NULL	
+		begin
+			exec
+				j_nextkey
+					"account_transactions",
+					@offset_account_transaction_id output
+			select
+				@offset_amount = @amount * -1
+		
+			insert into
+				account_transactions(
+					account_transaction_id,
+					entered_by,
+					external_account_id,
+					transaction_type_id,
+					transaction_date,
+					currency_id,
+					amount)
+			values(
+				@offset_account_transaction_id,
+				@tico_account_id,
+				@settlement_account_id,
+				@transaction_type_id,
+				@value_date,
+				@product_id,
+				@offset_amount)
+		end
+	commit tran
+
+	select
+		@ids = count(*)
+	from
+		queued_settlements
+	where
+		batch_id = @batch_id
+	and
+		id > @id
+end
+
+delete
+
+from
+	queued_settlements
+where
+	batch_id = @batch_id
+
+exec
+	ag_managesettlements
+		@login = @login,
+		@value_date = @value_date
+
+
+go

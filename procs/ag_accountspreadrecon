@@ -1,0 +1,422 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_accountspreadrecon
+go
+
+create procedure
+	ag_accountspreadrecon
+		@login varchar(50),
+		@account varchar(50),
+		@trade_date datetime
+as
+
+
+declare @external_account_id int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"run_name", 
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"book_fees",
+	"Book Queued Fees",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "rate",
+	 "Number",
+	"#,##0.000000;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "unreported_amount",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "booked_amount",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "reported_amount",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "amount",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select
+	*
+from
+	#meta
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@subtotal_style = "background:#FFFFFF;border: 1px solid white;font-style:italic;font-color:grey",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+
+create table
+	#account_transactions(
+		id int identity,
+		style varchar(250) NULL,
+		account_transaction_id int NULL,
+		entered_by int NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		transaction_type_id int NULL,
+		transaction_type varchar(100) NULL,
+		transaction_date datetime NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		amount numeric(30,4) NULL,
+		note varchar(250) NULL,
+		scheduled_fee_id int NULL,
+		fee_schedule_id int NULL,
+		fee_schedule varchar(200) NULL,
+		account_trans_notification_id int NULL,
+		status_id int NULL,
+		status varchar(50) NULL,
+		capture_date datetime NULL,
+		notify_date datetime NULL)
+insert into
+	#account_transactions(	
+		style,
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		note)
+select
+	style = @style,
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	a.amount,
+	a.note
+from
+	account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.external_account_id = @external_account_id
+and
+	convert(date, a.transaction_date) = convert(date, @trade_date)
+and
+	b.name = "Spread Payout"
+
+delete
+	#account_transactions
+from
+	#account_transactions a,
+	acct_trans_notifier_exclusions b
+where
+	a.transaction_type_id = b.transaction_type_id
+
+update
+	#account_transactions
+set
+	a.scheduled_fee_id = b.scheduled_fee_id
+from
+	#account_transactions a,
+	scheduled_fee_transactions b
+where
+	a.account_transaction_id = b.account_transaction_id
+
+		
+update
+	#account_transactions
+set
+	a.account = b.symbol
+from
+	#account_transactions a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#account_transactions
+set
+	a.transaction_type = b.name
+from
+	#account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+
+update
+	#account_transactions
+set
+	a.currency = b.symbol
+from
+	#account_transactions a,
+	products b
+where
+	a.currency_id = b.product_id
+
+update
+	#account_transactions
+set
+	a.fee_schedule_id = b.fee_schedule_id
+from
+	#account_transactions a,
+	scheduled_fees b
+where
+	a.scheduled_fee_id = b.scheduled_fee_id
+	
+update
+	#account_transactions
+set
+	a.fee_schedule = b.name
+from
+	#account_transactions a,
+	fee_schedules b
+where
+	a.fee_schedule_id = b.fee_schedule_id
+
+update
+	#account_transactions
+set
+	a.account_trans_notification_id = b.account_trans_notification_id,
+	a.status_id = b.status_id,
+	a.capture_date = b.capture_date,
+	a.notify_date = b.notify_date
+from
+	#account_transactions a,
+	account_trans_notifications b
+where
+	a.account_transaction_id = b.account_transaction_id
+update
+	#account_transactions
+set
+	a.status = b.name
+from
+	#account_transactions a,
+	statuses b
+where
+	a.status_id = b.status_id
+
+
+create table
+	#booked(
+		transaction_type varchar(100),
+		currency varchar(50),
+		amount numeric(30,4))
+insert into
+	#booked(
+		transaction_type,
+		currency,
+		amount)
+select
+	transaction_type,
+	currency,
+	sum(amount)
+from
+	#account_transactions
+group by
+	transaction_type,
+	currency
+
+
+create table
+	#reported(
+		transaction_type varchar(100),
+		currency varchar(50),
+		amount numeric(30,4))
+insert into
+	#reported(
+		transaction_type,
+		currency,
+		amount)
+select
+	transaction_type,
+	currency,
+	sum(amount)
+from
+	#account_transactions
+where
+	status = "Sent"
+group by
+	transaction_type,
+	currency
+
+
+create table
+	#summary(
+		id int identity,
+		style varchar(250) NULL,
+		label varchar(250),
+		transaction_type varchar(100) NULL,
+		currency varchar(50) NULL,
+		reported_amount numeric(30,4) NULL,
+	 	booked_amount numeric(30,4) NULL,
+		difference numeric(30,4) NULL)
+insert into
+	#summary(
+		label)
+select
+	distinct(transaction_type + currency)
+from
+	#account_transactions
+
+update
+	#summary
+set
+	style = @style,
+	reported_amount = 0.0,
+	booked_amount = 0.0,
+	difference = 0.0
+
+
+update
+	#summary
+set
+	a.transaction_type = b.transaction_type,
+	a.currency = b.currency,
+	a.reported_amount = b.amount
+from
+	#summary a,
+	#reported b
+where
+	a.label = b.transaction_type + b.currency
+
+update
+	#summary
+set
+	a.transaction_type = b.transaction_type,
+	a.currency = b.currency,
+	a.booked_amount = b.amount
+from
+	#summary a,
+	#booked b
+where
+	a.label = b.transaction_type + b.currency
+
+update
+	#summary
+set
+	difference = booked_amount - reported_amount
+
+
+
+/* select the output */
+select
+	style,
+	transaction_type,
+	currency,
+	booked_amount,
+	reported_amount,
+	unreported = difference
+from
+	#summary
+order by
+	currency,	
+	transaction_type
+
+select
+	style,
+	account_transaction_id,
+	entered_by,
+	account,
+	transaction_type,
+	transaction_date,
+	currency,
+	amount,
+	note,
+	fee_schedule,
+	status,
+	capture_date,
+	notify_date
+from
+	#account_transactions
+order by
+	id
+	
+
+
+go
+

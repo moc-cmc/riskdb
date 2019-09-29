@@ -1,0 +1,76 @@
+use
+	risk_jeff
+go
+
+drop procedure
+	ag_addaccountprodmargin
+go
+
+create procedure
+	ag_addaccountprodmargin
+		@login varchar(50),
+		@account varchar(50),
+		@product varchar(50),
+		@margin float=NULL
+as
+
+declare @external_account_id int
+declare @product_id int
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Product not found",
+		product = @product
+	return
+end
+
+
+delete
+
+from
+	account_product_margins
+where
+	external_account_id = @external_account_id
+and
+	product_id = @product_id
+
+if @margin != NULL
+	insert into
+		account_product_margins
+	values(
+		@product_id,
+		@margin,
+		@external_account_id)
+
+
+exec
+	ag_accountmargins
+		@login = @login,
+		@account = @account
+
+	
+go

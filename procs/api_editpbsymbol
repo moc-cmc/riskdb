@@ -1,0 +1,96 @@
+
+drop procedure
+	api_editpbsymbol	
+go
+
+create procedure
+	api_editpbsymbol	
+			@login varchar(25),
+			@name varchar(50),
+			@source_name varchar(100),
+			@mapping varchar(50),
+			@new_mapping varchar(50)
+
+as
+
+declare @prime_broker_id int
+declare @source_id int
+
+select
+	@prime_broker_id = prime_broker_id
+from
+	prime_brokers a,
+	sources b,
+	source_types c	
+where
+	b.name=@name
+and
+	b.source_id=a.source_id
+and
+	b.source_type_id=c.source_type_id
+and
+	c.name="Prime Broker"
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Cannot find Prime Broker",
+		name=@name
+	return
+end
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name=@source_name
+
+if (@@rowcount !=1)
+begin
+	select
+		status="Error",
+		msg="Source does not exist",
+		source=@source_name
+	return
+end
+
+begin tran
+	update
+		prime_broker_symbols
+	set
+		symbol=@new_mapping
+	where
+		prime_broker_id=@prime_broker_id	
+	and
+		source_id=@source_id
+	and
+		symbol=@mapping
+
+	if (@@rowcount !=1)
+	begin
+		select
+			status="Error",
+			msg="Could not edit Prime Broker Mapping",
+			mapping=@mapping
+	
+		rollback tran
+
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Prime Broker Mapping Edited",
+	name=@name
+
+exec
+	r_mappingoverview @login
+
+return
+
+go
+		

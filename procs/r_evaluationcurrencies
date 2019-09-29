@@ -1,0 +1,25 @@
+
+if object_id("r_evaluationcurrencies") != NULL
+    drop procedure
+        r_evaluationcurrencies
+go
+
+create procedure
+	r_evaluationcurrencies 
+
+
+as
+
+select "symbol" = "USD"
+/*
+select
+	"symbol" = a.symbol
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id and
+	b.name = 'Currency' and
+*/
+
+go

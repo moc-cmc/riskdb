@@ -1,0 +1,58 @@
+
+drop procedure
+	ag_editreportingdomain
+go
+
+create procedure
+	ag_editreportingdomain
+		@login varchar(50),
+		@old_name varchar(50),
+		@new_name varchar(50)
+as
+
+
+declare @reporting_domain_id int
+
+
+select
+	@reporting_domain_id = reporting_domain_id
+from
+	reporting_domains
+where
+	name = @new_name
+if @reporting_domain_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Account Type already exists",
+		account_type = @new_name
+	return
+end
+
+select
+	@reporting_domain_id = reporting_domain_id
+from
+	reporting_domains
+where
+	name = @old_name
+if @reporting_domain_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account Type not found",
+		account_type = @old_name
+	return
+end
+
+update
+	reporting_domains
+set
+	name = @new_name
+where
+	reporting_domain_id = @reporting_domain_id
+
+exec
+	ag_reportingdomains
+		@login
+
+go

@@ -1,0 +1,374 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	ag_bankclienthome
+go
+
+create procedure
+	ag_bankclienthome
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+exec
+	ag_clientrequests
+		@login = @login
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"request_deposit",
+	"Add Client Deposit Request",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"request_withdrawal",
+	"Add Client Withdrawal Request",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"disable_user",
+	"Disable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_admin_user",
+	"Add Approval User",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+create table
+	#bo_master_accounts(
+		bo_master_account_id int,
+		external_account_id int NULL,
+		legal_entity_id int NULL,
+		symbol varchar(50) NULL)
+insert into
+	#bo_master_accounts(
+		bo_master_account_id,
+		external_account_id,
+		legal_entity_id,
+		symbol)
+select
+	a.bo_master_account_id,
+	a.external_account_id,
+	a.legal_entity_id,
+	b.symbol
+from
+	bo_master_accounts a,
+	external_accounts b,
+	legal_entity_tico_accounts c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.legal_entity_id = c.legal_entity_id
+and
+	c.tico_account_id = @tico_account_id
+		
+create table
+	#fiat_outside_accounts(
+		outside_account_id int,
+		outside_account_type_id int,
+		provider_id int,
+		name varchar(100))
+insert into
+	#fiat_outside_accounts(
+		outside_account_id,
+		outside_account_type_id,
+		provider_id,
+		name)
+select
+	a.outside_account_id,
+	a.outside_account_type_id,
+	a.provider_id,
+	a.name
+from
+	outside_accounts a,
+	legal_entity_tico_accounts b,
+	outside_account_types c
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	a.outside_account_type_id = c.outside_account_type_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	c.name = "Fiat"
+
+create table
+	#dig_outside_accounts(
+		outside_account_id int,
+		outside_account_type_id int,
+		provider_id int,
+		name varchar(100))
+insert into
+	#dig_outside_accounts(
+		outside_account_id,
+		outside_account_type_id,
+		provider_id,
+		name)
+select
+	a.outside_account_id,
+	a.outside_account_type_id,
+	a.provider_id,
+	a.name
+from
+	outside_accounts a,
+	legal_entity_tico_accounts b,
+	outside_account_types c
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	a.outside_account_type_id = c.outside_account_type_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	c.name = "Fiat"
+
+create table
+	#fiat_custodian_accounts(
+		external_account_id int,
+		symbol varchar(100) NULL)
+insert into
+	#fiat_custodian_accounts(
+		external_account_id,
+		symbol)
+select
+	a.external_account_id,
+	a.symbol
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	a.instrument_type = "S"
+and
+	b.name = "Custody"
+
+
+create table
+	#dig_custodian_accounts(
+		external_account_id int,
+		symbol varchar(100) NULL)
+insert into
+	#dig_custodian_accounts(
+		external_account_id,
+		symbol)
+select
+	a.external_account_id,
+	a.symbol
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	a.instrument_type = "D"
+and
+	b.name = "Custody"
+
+
+create table
+	#fiat_products(
+		product_id int,
+		symbol varchar(50))
+insert into
+	#fiat_products(
+		product_id,
+		symbol)
+select
+	a.product_id,
+	a.symbol
+from
+	products a,
+	origination_types b
+where
+	a.origination_type_id = b.origination_type_id
+and
+	b.name = "Fiat"
+order by
+	a.symbol
+
+
+create table
+	#dig_products(
+		product_id int,
+		symbol varchar(50))
+insert into
+	#dig_products(
+		product_id,
+		symbol)
+select
+	a.product_id,
+	a.symbol
+from
+	products a,
+	origination_types b
+where
+	a.origination_type_id = b.origination_type_id
+and
+	b.name = "Digital"
+order by
+	a.symbol
+
+
+select
+	section = "Fiat Deposits",
+	style = @style,
+	request_deposit = "Enter Deposit Request",
+	product = d.symbol,
+	from_account = a.name,
+	to_account = b.symbol,
+	to_custodian = c.symbol
+from
+	#fiat_outside_accounts a,
+	#bo_master_accounts b,
+	#fiat_custodian_accounts c,
+	#fiat_products d
+order by
+	a.name,
+	b.symbol,
+	c.symbol,
+	d.symbol
+
+
+select
+	section = "Digital Deposits",
+	style = @style,
+	request_deposit = "Enter Deposit Request",
+	product = d.symbol,
+	from_account = a.name,
+	to_account = b.symbol,
+	to_custodian = c.symbol
+from
+	#dig_outside_accounts a,
+	#bo_master_accounts b,
+	#dig_custodian_accounts c,
+	#dig_products d
+order by
+	a.name,
+	b.symbol,
+	c.symbol,
+	d.symbol
+
+select
+	section = "Fiat Withdrawals",
+	style = @style,
+	request_withdrawal = "Enter Withdrawal Request",
+	product = d.symbol,
+	from_account = b.symbol,
+	to_account = a.name
+from
+	#fiat_outside_accounts a,
+	#bo_master_accounts b,
+	#fiat_products d
+order by
+	a.name,
+	b.symbol,
+	d.symbol
+
+
+select
+	section = "Digital Withdrawals",
+	style = @style,
+	request_withdrawal = "Enter Withdrawal Request",
+	product = d.symbol,
+	from_account = b.symbol,
+	to_account = a.name
+from
+	#dig_outside_accounts a,
+	#bo_master_accounts b,
+	#dig_products d
+order by
+	a.name,
+	b.symbol,
+	d.symbol
+
+
+
+go

@@ -1,0 +1,133 @@
+drop procedure r_rollfileimportinks
+go
+
+create procedure
+	r_rollfileimportinks
+		@login varchar(50)
+
+as
+
+declare @roll_fi_type_id int
+declare @file_import_id int
+declare @tico_title varchar(50)
+declare @meta_header varchar(50)
+declare @alter_table_sql varchar(200)
+declare @update_table_sql varchar(200)
+declare @final_select_columns varchar(200)
+declare @final_select_sql varchar(200)
+
+select
+	@roll_fi_type_id = file_import_type_id
+from
+	file_import_types
+where
+	name = "Roll"
+
+/* If the file_type doesn't exist, don't error, just return */
+if @roll_fi_type_id = NULL
+	return
+
+create table
+	#file_imports
+(
+	file_import_id int,	
+	tico_title varchar(50),
+	meta_header varchar(50) NULL,
+	file_import_type_id int
+)
+
+insert into
+	#file_imports(
+		file_import_id,
+		tico_title,
+		meta_header,
+		file_import_type_id
+	)
+select
+	file_import_id,
+	tico_title,
+	meta_header,
+	file_import_id
+from
+	file_imports
+where
+	file_import_type_id = @roll_fi_type_id
+/* if there are no roll importes defined, return w/o error */
+if @@rowcount = 0
+begin
+	return
+end
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+/* #roll_imports is a one row table that will be altered to add report links horizontally */
+create table
+	#roll_imports
+(
+	section varchar(10)
+)
+insert into #roll_imports values ("Imports")
+select
+	@final_select_columns = "section"
+
+declare file_import_cursor cursor for
+	select 
+		file_import_id
+	from
+		#file_imports
+
+open file_import_cursor
+fetch file_import_cursor into @file_import_id
+
+while @@sqlstatus = 0
+begin
+	select
+		@tico_title = NULL,
+		@meta_header = NULL
+
+	select
+		@tico_title = tico_title,
+		@meta_header = meta_header
+	from
+		#file_imports
+	where
+		file_import_id = @file_import_id
+
+	select 
+		@alter_table_sql = "alter table #roll_imports ADD "+rtrim(@meta_header)+" varchar(50) NULL",
+		@update_table_sql = "update #roll_imports set "+rtrim(@meta_header)+"='"+rtrim(@tico_title)+"'",
+		@final_select_columns = rtrim(@final_select_columns)+", "+rtrim(@meta_header)
+
+
+	exec(@alter_table_sql)
+	exec(@update_table_sql)
+	
+	
+	insert into
+		#meta
+	values(
+		"Column Link",
+		@meta_header,
+		@tico_title,
+		NULL)
+
+	fetch file_import_cursor into @file_import_id
+end
+
+close file_import_cursor
+deallocate file_import_cursor
+
+select * from #meta
+select
+	@final_select_sql = "select "+rtrim(@final_select_columns)+" from #roll_imports"
+exec(@final_select_sql)
+
+go
+
+
+

@@ -1,0 +1,129 @@
+drop procedure
+	r_setblotterloginforaccount
+go
+
+create procedure
+	r_setblotterloginforaccount
+		@login varchar(50),
+		@external_account varchar(50),
+		@client_blotter_login varchar(50)
+
+as
+
+declare @tico_account_id int
+declare @external_account_id int
+declare @client_login_config_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = -1,
+		error = "Problem deterimining login"
+	return
+end
+
+select
+        @external_account_id = external_account_id
+from
+        external_accounts
+where
+        symbol = @external_account
+if @@rowcount != 1
+begin
+        select
+                status = -1,
+                error = "Problem deterimining external_account",
+                external_account = @external_account
+        return
+end
+
+select
+        @client_login_config_id = a.id
+from
+        client_login_configs a,
+        tico_accounts b
+where
+        a.tico_account_id = b.account_id
+and
+        b.login = @client_blotter_login
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                msg = "Problem finding blotter for login",
+                login = @client_blotter_login
+        return
+end
+
+
+
+if exists(select external_account_id from client_transfer_details where external_account_id = @external_account_id)
+begin
+	begin tran
+		update
+			client_transfer_details
+		set
+			client_login_config_id = @client_login_config_id
+		where
+			external_account_id = @external_account_id
+		if @@rowcount != 1 
+		begin
+			select
+				id = -1,
+				error = "Problem setting client login for account",
+				external_account = @external_account
+			rollback
+			return
+		end
+	
+	commit tran
+end
+else
+begin
+	insert into
+                 client_transfer_details
+        (
+                external_account_id,
+                protocol_credential_id,
+                dist_list_id,
+		client_login_config_id
+        )
+        values(
+                @external_account_id,
+                NULL,
+                NULL,
+		@client_login_config_id
+        )
+
+end
+
+create table
+    #meta (
+        meta_type char(50),
+        name char(50) NULL,
+        action char(100) NULL,
+        value char(200) NULL
+    )
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+select
+	id = 1,
+	message = "Successfully set client login for external account",
+	external_account = @external_account
+
+
+exec
+	r_manageclientnotifications
+			@login
+
+
+go
+

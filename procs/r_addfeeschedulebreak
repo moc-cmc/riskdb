@@ -1,0 +1,63 @@
+drop procedure
+	r_addfeeschedulebreak
+go
+
+
+create procedure
+	r_addfeeschedulebreak
+		@login varchar(50),
+		@fee_schedule_id int,
+		@break_name varchar(50),
+		@break_description varchar(200),
+		@break_period varchar(50),
+		@start_level float,
+		@end_level float,
+		@break_price float,
+		@direction int
+as
+
+declare @created_by int
+declare @created_at datetime
+declare @break_period_id int
+
+
+select
+	@break_period_id = break_period_id
+from
+	break_periods
+where
+	name = @break_period
+
+select
+        @created_by = account_id
+from
+        tico_accounts
+where
+        login = @login
+
+select
+        @created_at = getdate()
+
+
+insert into
+	fee_schedule_breaks
+values(
+	@fee_schedule_id,
+        @break_name,
+        @break_description,
+	@break_period_id,
+        @start_level,
+        @end_level,
+        @break_price,
+        @direction,
+	@created_at,
+	@created_by)
+
+
+exec
+	r_viewfeeschedule
+                @login
+
+
+go
+	

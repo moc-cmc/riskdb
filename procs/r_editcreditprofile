@@ -1,0 +1,99 @@
+drop procedure
+	r_editcreditprofile
+go
+
+create procedure
+	r_editcreditprofile
+		@login varchar(50),
+		@cpid int,
+		@name varchar(50),
+		@currency varchar(10),
+		@nop_type varchar(25),
+		@nop_limit numeric(30,4),
+		@dsl_type varchar(25),
+		@dsl_limit numeric(30,4),
+		@notice_level float,
+		@warning_level float,
+		@blocked_level float
+
+as
+
+declare @credit_profile_id int
+declare @nop_type_id int
+declare @dsl_type_id int
+declare @currency_id int
+
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @currency_id = NULL
+begin
+	select
+		error="Error",
+		msg="Currency not found", @currency
+	return
+end
+
+select
+	@nop_type_id=nop_type_id
+from
+	nop_types
+where
+	name=@nop_type
+if @nop_type_id = NULL
+begin
+	select
+		error="Error",
+		msg="NOP Type not found ", @nop_type
+	return
+end
+
+select
+	@dsl_type_id=dsl_type_id
+from
+	dsl_types
+where
+	name=@dsl_type
+if @dsl_type_id = NULL
+begin
+	select
+		error="Error",
+		msg="DSL Type not found", @dsl_type
+	return
+end
+
+
+update
+	credit_profiles
+set
+	name = @name,
+	currency_id = @currency_id,
+	nop_type_id = @nop_type_id,
+	nop_limit = @nop_limit,
+	dsl_type_id = @dsl_type_id,
+	dsl_limit = @dsl_limit,
+	notice_level = @notice_level,
+	warning_level = @warning_level,
+	blocked_level = @blocked_level
+where
+	credit_profile_id = @cpid
+
+if @@rowcount = 1
+begin
+	select
+		status = "Successfully edited Credit Profile"
+end
+
+exec
+	r_viewcreditprofile
+		@login,
+		@name
+
+
+go
+
+	

@@ -1,0 +1,15 @@
+create or replace procedure
+	r_tradingdailystatementwrap
+                @login varchar(50),
+                @account varchar(255),
+		@trade_date datetime = NULL
+
+as
+
+exec
+	bn_tradingdailystatement
+		@login = @login,
+		@account = @account,
+		@trade_date = @trade_date
+
+go

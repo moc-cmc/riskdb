@@ -1,0 +1,236 @@
+use
+	risk_edgewater
+go
+
+drop procedure
+	ag_riskclassruns
+go
+
+create procedure
+	ag_riskclassruns
+		@login varchar(50),
+		@risk_class varchar(50)
+as
+
+
+declare @risk_class_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"risk_class",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"include",
+	"Toggle Risk Class Run",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"exclude",
+	"Toggle Risk Class Run",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"runs",
+	"Risk Class Runs",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	"Column Format",
+	"trading_volume",
+	"Number",
+	"#,##0")
+
+insert into
+	 #meta
+values(
+	"Column Format",
+	"total_equity",
+	"Number",
+	"#,##0.00")
+
+insert into
+	 #meta
+values(
+	"Column Format",
+	"unrealized_pl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	 #meta
+values(
+	"Column Format",
+	"other",
+	"Number",
+	"#,##0.00")
+
+insert into
+	 #meta
+values(
+	"Column Format",
+	"fx_settlement",
+	"Number",
+	"#,##0.00")
+
+insert into
+	 #meta
+values(
+	"Column Format",
+	"fees",
+	"Number",
+	"#,##0.00")
+
+insert into
+	 #meta
+values(
+	"Column Format",
+	"withdrawals",
+	"Number",
+	"#,##0.00")
+
+insert into
+	 #meta
+values(
+	"Column Format",
+	"deposits",
+	"Number",
+	"#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "equiv",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "activity",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "change",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "begin_balance",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "cash_balance",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+
+select
+	@risk_class_id = risk_class_id
+from
+	risk_classes
+where
+	name = @risk_class
+if @risk_class_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Risk class not found",
+		risk_class = @risk_class
+	return
+end
+
+select
+	section = "Included Runs",
+	style = "background:#FFFFFF;border: 1px solid white",
+	risk_class = @risk_class,
+	run_name = c.name,
+	exclude = "Exclude"
+from
+	risk_classes a,
+	risk_class_runs b,
+	runs c
+where
+	a.risk_class_id = b.risk_class_id
+and
+	b.run_id = c.run_id
+and
+	a.name = @risk_class
+order by
+	c.name
+
+
+select
+	section = "Excluded Runs",
+	style = "background:#FFFFFF;border: 1px solid white",
+	risk_class = @risk_class,
+	run_name = name,
+	include = "Include"
+from
+	runs
+where
+	run_id not in(
+		select
+			run_id
+		from
+			risk_class_runs
+		where
+			risk_class_id = @risk_class_id)
+order by
+	name
+
+	
+
+go

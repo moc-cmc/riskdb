@@ -1,0 +1,135 @@
+drop procedure
+	cn_addsubaccount
+go
+
+create procedure
+	cn_addsubaccount
+		@login varchar(50),
+		@master_allocation varchar(50),
+		@version int,
+		@sub_account varchar(50),
+		@allocation float
+as
+
+
+declare @sub_account_id int
+declare @master_allocation_id int
+declare @external_account_id int
+declare @tico_account_id int
+declare @status varchar(50)
+declare @status_id int
+declare @ma_version_id int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+
+select
+	@master_allocation_id = master_allocation_id
+from
+	master_allocations
+where
+	name = @master_allocation
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Master allocation not found"
+	return
+end
+
+select
+	@ma_version_id = ma_version_id,
+	@status_id = status_id
+from
+	ma_versions
+where
+	master_allocation_id = @master_allocation_id
+and
+	version = @version
+
+select
+	@status = name
+from
+	statuses
+where
+	status_id = @status_id
+
+if @status != "Queued"
+begin
+	select
+		status = "Error",
+		message = "Edit failed. Only Queued templates can be edited"
+	return
+end
+
+	
+select
+	@external_account_id = a.external_account_id
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	a.symbol = @sub_account
+and
+	b.name = "Managed"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Managed account type not found"
+	return
+end
+
+select
+	@sub_account_id = sub_account_id
+from
+	sub_accounts
+where
+	external_account_id = @external_account_id
+and
+	ma_version_id = @ma_version_id
+if @@rowcount != 0
+begin
+	select
+		status = "Error",
+		message = "Account already has an allocation for this template version"
+	return
+end
+
+exec
+	j_nextkey
+		"sub_accounts",
+		@sub_account_id output
+
+insert into
+	sub_accounts
+values(
+	@sub_account_id,
+	@ma_version_id,
+	@external_account_id,
+	@allocation)
+	
+	
+exec
+	mn_inspectsubaccounts
+		@login,
+		@master_allocation,
+		@version
+
+go
+

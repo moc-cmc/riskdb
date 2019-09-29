@@ -1,0 +1,38 @@
+create or replace procedure 
+	r_togglecommit
+		@login varchar(50),
+		@cpid int,
+		@enable varchar(10)=NULL,
+		@disable varchar(10)=NULL
+
+
+as
+
+
+if @enable != NULL
+begin
+	update
+		commit_procs
+	set
+		should_run = "Y"
+	where
+		commit_proc_id  = @cpid
+end
+
+if @disable != NULL
+begin
+	update
+		commit_procs
+	set
+        	should_run = "N"
+	where
+		commit_proc_id  = @cpid
+end
+
+
+exec
+	r_managecommits
+		@login
+
+go
+

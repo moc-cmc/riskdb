@@ -1,0 +1,864 @@
+drop procedure
+	r_inspectpricingdeal
+go
+
+create procedure
+	r_inspectpricingdeal
+		@login varchar(50),
+		@identifier varchar(100)
+as
+
+declare @internal_account_id int
+declare @deal_id int
+declare @id int
+declare @ids int
+declare @contract_id int
+declare @value_date datetime
+declare @pmc_id int
+declare @instrument varchar(50)
+declare @forward_id int
+declare @expiration datetime
+declare @days float
+declare @spot_price float
+declare @forward_price float
+declare @currency_rate float
+declare @product_rate float
+declare @now datetime
+declare @strike float
+declare @vol float
+declare @label varchar(50)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"deal_leg",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"perspective_contract",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"deal_id",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"identifier",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_vol",
+	"Set Pricing Vol",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"price_option",
+	"Price Option",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"rmv_leg",
+	"Delete Pricing Deal Leg",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_future",
+	"Futures For Perspective Contract",
+	NULL)
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "tv",
+	 "Number",
+	 "#,##0.000000")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "rho",
+	 "Number",
+	 "#,##0.0000")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "tau",
+	 "Number",
+	 "#,##0.0000")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "theta",
+	 "Number",
+	 "#,##0.0000")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "gamma",
+	 "Number",
+	 "#,##0.0000")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "delta",
+	 "Number",
+	 "#,##0.0000")
+
+insert into
+     #meta
+values(
+     "Column Format",
+     "posdelta",
+     "Number",
+     "#,##0.00")
+
+insert into
+     #meta
+values(
+     "Column Format",
+     "Total Delta",
+     "Number",
+     "#,##0.00")
+
+insert into
+     #meta
+values(
+     "Column Format",
+     "delta",
+     "Number",
+     "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "days",
+	 "Number",
+	 "#,##0.00")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "atm",
+	 "Number",
+	 "#,##0.000000")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "forward_price",
+	 "Number",
+	 "#,##0.000000")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "spot_price",
+	 "Number",
+	 "#,##0.000000")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "vol",
+	 "Number",
+	 "#,##0.00%")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "product_rate",
+	 "Number",
+	 "#,##0.00%")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "currency_rate",
+	 "Number",
+	 "#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_fwd",
+	"Forwards For Perspective Contract",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"details",
+	"Pricing Deal Inspector",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_forward",
+	"Add Pricing Forward",
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"deal",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+select
+	@internal_account_id = a.internal_account_id
+from
+	default_tally_accounts a,
+	tico_accounts b,
+	tally_types c
+where
+	a.tico_account_id = b.account_id
+and
+	a.tally_type_id = c.tally_type_id
+and
+	b.login = @login
+and
+	c.name = "Pricing"
+
+select
+	@deal_id = deal_id
+from
+	pricing_deals
+where
+	internal_account_id = @internal_account_id
+and
+	identifier = @identifier
+
+
+create table
+	#overview(
+		id int identity,
+		label varchar(50) NULL,
+		style varchar(250) NULL,
+		deal_id int NULL,
+		timestamp datetime NULL,
+		identifier varchar(50) NULL,
+		book varchar(50) NULL,
+		status varchar(50) NULL,
+		forward varchar(50) NULL,
+		perspective_contract varchar(50) NULL,
+		deal_leg int NULL,
+		quantity numeric(30,4) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		value_date varchar(11) NULL,
+		spot_ref float NULL,
+		rmv_leg varchar(50) NULL,
+		add_fwd varchar(50) NULL,
+		add_future varchar(50) NULL)
+select
+	add_forward = "ADD FORWARD TO PRICING DEAL",
+	identifier = @identifier
+
+insert into
+	#overview(
+		style,
+		deal_id,
+		timestamp,
+		identifier,
+		book,
+		status)
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	a.deal_id,
+	a.timestamp,
+	a.identifier,
+	book = b.symbol,
+	status = c.name
+from
+	pricing_deals a,
+	internal_accounts b,
+	statuses c
+where
+	a.internal_account_id = b.internal_account_id
+and
+	a.status_id = c.status_id
+and
+	a.deal_id = @deal_id
+
+
+insert into
+	#overview(
+		label,
+		style,
+		deal_id,
+		forward,
+		perspective_contract,
+		identifier,
+		spot_ref)
+select
+	b.symbol,
+	style = "background:#FFFFFF;border: 1px solid white",
+	a.deal_id,
+	b.symbol,
+	c.symbol,
+	identifier = @identifier,
+	a.spot_reference
+from
+	pricing_deal_forwards a,
+	contracts b,
+	contracts c
+where
+	a.forward_id = b.contract_id
+and
+	a.perspective_contract_id = c.contract_id
+and
+	a.deal_id = @deal_id
+order by
+	c.symbol,
+	b.symbol
+
+insert into
+	#overview(
+		style,
+		identifier,
+		deal_id,
+		deal_leg,
+		quantity,
+		contract_id,
+		symbol,
+		value_date)
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	identifier = @identifier,
+	a.deal_id,
+	a.id,
+	a.quantity,
+	a.contract_id,
+	b.symbol,
+	convert(varchar(11), a.value_date, 1)
+from
+	pricing_deal_legs a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	a.deal_id = @deal_id
+
+
+update
+	#overview
+set
+	add_fwd = "ADD FWD",
+	add_future = "ADD FUTURE"
+where
+	forward != NULL
+
+update
+	#overview
+set
+	rmv_leg = "REMOVE"
+where
+	symbol != NULL
+
+/* Find model calcs. populate if necessary */
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	pricing_deal_legs
+where
+	deal_id = @deal_id
+and
+	id > @id
+select
+	@now = getdate()
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		pricing_deal_legs
+	where
+		deal_id = @deal_id
+	and
+		id > @id
+
+	select
+		@contract_id = contract_id,
+		@value_date = value_date
+	from
+		pricing_deal_legs
+	where
+		id = @id
+
+	select
+		@pmc_id = NULL,
+		@forward_id = NULL,
+		@expiration = NULL,
+		@days = NULL,
+		@spot_price = NULL,
+		@forward_price = NULL,
+		@currency_rate = NULL,
+		@product_rate = NULL
+
+	select
+		@instrument = a.name
+	from
+		instruments a,
+		contracts b
+	where
+		a.instrument_id = b.instrument_id
+	and
+		b.contract_id = @contract_id
+
+	if @instrument = "Forward"
+	begin
+		select
+			@forward_id = @contract_id,
+			@expiration = @value_date
+	end
+	if @instrument = "Future"
+	begin
+		select
+			@forward_id = a.forward_id,
+			@value_date = b.expiration,
+			@expiration = b.expiration
+		from
+			futures a,
+			future_contracts b
+		where
+			a.future_id = b.future_id
+		and
+			b.contract_id = @contract_id
+	end
+	if @instrument = "Option"
+	begin
+		select
+			@forward_id = e.forward_id,
+			@expiration = b.expiration,
+			@strike = a.strike
+		from
+			option_contracts a,
+			option_expirations b,
+			options c,
+			future_contracts d,
+			futures e
+		where
+			a.option_expiration_id = b.option_expiration_id
+		and
+			b.option_id = c.option_id
+		and
+			c.underlying_contract_id = d.contract_id
+		and
+			d.future_id = e.future_id
+		and
+			a.contract_id = @contract_id
+		if @forward_id = NULL
+			select
+				@forward_id = d.contract_id,
+				@expiration = b.expiration,
+				@strike = a.strike
+			from
+				option_contracts a,
+				option_expirations b,
+				options c,
+				forwards d
+			where
+				a.option_expiration_id = b.option_expiration_id
+			and
+				b.option_id = c.option_id
+			and
+				c.underlying_contract_id = d.contract_id
+			and
+				a.contract_id = @contract_id
+	end
+				
+
+	select
+		@pmc_id = pmc_id
+	from
+		pricing_model_calcs
+	where
+		contract_id = @forward_id
+	and
+		deal_id = @deal_id
+	and
+		value_date = @expiration
+
+	if @pmc_id = NULL
+	begin
+		exec
+			r_forwardpriceasof
+				@forward_id,
+				@now,
+				@expiration,
+				@days output,
+				@spot_price output,
+				@forward_price output,
+				@currency_rate output,
+				@product_rate output
+	
+		exec
+			j_nextkey
+				"pricing_model_calcs",
+				@pmc_id output
+		insert into
+			pricing_model_calcs(
+				pmc_id,
+				deal_id,
+				contract_id,
+				value_date,
+				days,
+				spot_price,
+				currency_rate,
+				product_rate,
+				forward_price)
+		values(
+			@pmc_id,
+			@deal_id,
+			@forward_id,
+			@expiration,
+			@days,
+			@spot_price,
+			@currency_rate,
+			@product_rate,
+			@forward_price)
+
+		if @instrument = "Option"
+			insert into
+				pricing_model_vols(
+					pmc_id,
+					strike)
+			values(
+				@pmc_id,
+				@strike)
+	end
+
+	select
+		@label = symbol
+	from
+		contracts
+	where
+		contract_id = @forward_id
+
+	update
+		#overview
+	set
+		label = @label
+	where
+		contract_id = @contract_id
+
+	select
+		@ids = count(*)
+	from
+		pricing_deal_legs 
+	where
+		deal_id = @deal_id
+	and
+		id > @id
+end
+
+
+exec
+	r_refreshpricingdeal
+		@login,
+		@identifier
+
+/* Display overview */
+select
+	deal = identifier,
+	style,
+	book,
+	timestamp,
+	status,
+	forward,
+	perspective_contract,
+	identifier,
+	deal_leg,
+	quantity,
+	symbol,
+	value_date,
+	spot_ref,
+	rmv_leg,
+	add_fwd,
+	add_future
+from
+	#overview
+order by
+	label,
+	id
+
+
+/* Display model calc info */
+select
+	section = "Rate Details",
+	style = "background:#FFFFFF;border: 1px solid white",
+	identifier = @identifier,
+	b.symbol,
+	value_date = convert(varchar(11), a.value_date, 1),
+	a.days,
+	a.spot_price,
+	a.forward_price,
+	a.currency_rate,
+	a.product_rate
+from
+	pricing_model_calcs a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	a.deal_id = @deal_id
+order by
+	b.symbol,
+	a.value_date
+
+
+select
+	section = "Volatility Details",
+	style = "background:#FFFFFF;border: 1px solid white",
+	identifier = @identifier,
+	b.symbol,
+	value_date = convert(varchar(11), a.value_date, 1),
+	atm = a.forward_price,
+	c.strike,
+	c.vol,
+	set_vol = "SET VOL"
+from
+	pricing_model_calcs a,
+	contracts b,
+	pricing_model_vols c
+where
+	a.contract_id = b.contract_id
+and
+	a.pmc_id = c.pmc_id
+and
+	a.deal_id = @deal_id
+order by
+	b.symbol,
+	a.value_date
+
+select
+	section = "Evaluation",
+	style = "background:#FFFFFF;border: 1px solid white",
+	identifier = @identifier,
+	a.symbol,
+	b.quantity,
+	c.tv,
+	c.delta,
+	c.gamma,
+	c.theta,
+	c.tau,
+	c.rho,
+	posdelta=c.delta * b.quantity
+from
+	contracts a,
+	pricing_deal_legs b,
+	pricing_leg_calcs c
+where
+	a.contract_id = b.contract_id
+and
+	b.id = c.id
+and
+	b.deal_id = @deal_id
+
+/*
+declare @total_pos_delta float
+
+select
+	@total_pos_delta=sum(c.delta * b.quantity)
+from
+	contracts a,
+	pricing_deal_legs b,
+	pricing_leg_calcs c
+where
+	a.contract_id = b.contract_id
+and
+	b.id=c.id
+and
+	b.deal_id = @deal_id
+*/
+
+declare @delta float
+declare @forward_sym varchar(50)
+
+create table #deltas (
+	contract_id	int,
+	symbol	varchar(50),
+	delta	float)
+
+declare delta_cursor cursor for 
+
+	select
+		contract_id
+	from
+		pricing_deal_legs
+	where
+		deal_id=@deal_id
+	order by
+		contract_id
+
+open delta_cursor
+fetch delta_cursor into @contract_id
+
+while @@sqlstatus = 0
+begin
+	
+	exec r_contractforward @contract_id, @forward_id output
+
+	select
+		@forward_sym=symbol 
+	from
+		contracts
+	where
+		contract_id=@forward_id
+
+	select
+		@delta =  b.delta * a.quantity
+	from
+		pricing_deal_legs a,
+		pricing_leg_calcs b
+	where
+		a.contract_id=@contract_id
+	and
+		a.id=b.id
+	and
+		a.deal_id=@deal_id
+
+	insert into
+		#deltas
+	values
+		(@forward_id,
+		 @forward_sym,
+		 @delta)
+
+	fetch delta_cursor into @contract_id
+
+end
+close delta_cursor
+deallocate delta_cursor
+
+select
+	section = "Total Position Deltas",
+    style = "background:#FFFFFF;border: 1px solid white",
+	"Forward"=symbol,
+	"Total Delta"=sum(delta)
+from
+	#deltas
+group by
+	symbol
+
+select
+	section = "Pricing",
+    style = "background:#FFFFFF;border: 1px solid white",
+    identifier = @identifier,
+	symbol = b.symbol,
+	underlying = f.spot_price,
+	strike = c.strike,
+	vol = e.vol,
+	expiration = d.expiration,
+	interest_rate = f.currency_rate,
+	carry_cost = 0.0,
+	exercise_style=g.name,
+	price_option="Price Option"
+from
+	contracts b,
+	option_contracts c,
+	option_expirations d,
+	pricing_model_vols e,
+	pricing_model_calcs f,
+	exercise_styles g,
+	pricing_deal_legs i
+
+where
+	f.deal_id=@deal_id 
+and
+	f.deal_id=i.deal_id
+and
+	i.contract_id=c.contract_id
+and
+	f.contract_id=b.contract_id   
+and
+	c.exercise_style_id=g.exercise_style_id 
+and			
+	c.option_expiration_id=d.option_expiration_id
+and
+	f.pmc_id=e.pmc_id
+
+
+go
+
+
+

@@ -1,0 +1,55 @@
+
+drop procedure
+	fxa_setclientviewstyle
+go
+
+create procedure
+	fxa_setclientviewstyle
+		@login varchar(50),
+		@user_name varchar(50),
+		@blotter_view_style varchar(50)=NULL
+as
+
+declare @blotter_view_style_id int
+declare @tico_account_id int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @user_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "user name not found",
+		user_name = @user_name
+	return
+end
+
+select
+	@blotter_view_style_id = blotter_view_style_id
+from
+	blotter_view_styles
+where
+	name = @blotter_view_style
+	
+
+update
+	client_login_configs
+set
+	blotter_view_style_id = @blotter_view_style_id
+where
+	tico_account_id = @tico_account_id
+
+exec
+	fxa_clientblotterviews
+		@login,
+		@user_name
+
+
+go
+
+

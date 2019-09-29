@@ -1,0 +1,1818 @@
+use
+	risk_cantorny
+go
+
+if object_id("bls_runagencyreport") != NULL
+	drop procedure
+		bls_runagencyreport
+go
+
+create procedure
+	bls_runagencyreport
+		@login varchar(50),
+		@run varchar(50),
+		@begin_date datetime = NULL,
+		@end_date datetime = NULL,
+		@deal_id int = NULL
+as
+
+declare @start_bench datetime
+declare @last_bench datetime
+declare @run_id int
+declare @fo_commit_type_id int
+declare @last_commit_date datetime
+declare @deal_begin_date datetime
+declare @deal_end_date datetime
+declare @bo_prev_date datetime
+declare @bo_begin_date datetime
+declare @bo_end_date datetime
+
+/* MARK: CREATE TABLE #meta */
+create table
+	#meta (
+		meta_type varchar(25),
+		name varchar(25),
+		action varchar(25) NULL,
+		value varchar(25) NULL,
+	)
+
+/* MARK: CREATE TABLE #messages */
+create table
+	#messages (
+		id int identity,
+		subject varchar(50),
+		message varchar(50)
+	)
+select @start_bench = getdate(), @last_bench = getdate()
+
+/* MARK: FIND @run_id */
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run
+	
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No such run",
+		run = @run
+	return
+end
+
+/* MARK: FIND @last_commit_date */
+select
+	@fo_commit_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Front Office Commit"
+
+select
+	@last_commit_date = max(transaction_date)
+from
+	int_account_transactions
+where
+	transaction_type_id = @fo_commit_type_id
+	
+
+/* MARK: CALC @begin_date and @end_date */
+
+/* Default @begin_date and @end_date to deal range */
+if @deal_id != NULL
+begin
+
+	select
+		@deal_begin_date = min(trade_date),
+		@deal_end_date = max(value_date)
+	from
+		trades
+	where
+		deal_id = @deal_id
+	and
+		quantity != 0
+
+	if @begin_date = NULL or @begin_date < @deal_begin_date
+		select
+			@begin_date =  @deal_begin_date
+
+	if @end_date = NULL or @end_date < @deal_end_date
+		select
+			@end_date =  @deal_end_date
+	
+end
+
+/* Default @begin_date and @end_date to @last_commit_date */
+if @begin_date = NULL
+	select
+		@begin_date = @last_commit_date,
+		@end_date = @last_commit_date
+if @end_date = NULL
+	select
+		@end_date = @begin_date
+
+/* Coerce @begin_date and @end_date into days */
+select
+	@begin_date = convert(datetime, convert(varchar(10),
+		dateadd(hour, 7, @begin_date), 102)),
+	@end_date = convert(datetime, convert(varchar(10),
+		dateadd(hour, 7, @end_date), 102))
+
+/* Calculate @bo_begin_date and @bo_end_date as trading days */
+select
+	@bo_begin_date = dateadd(day, case datepart(weekday, @begin_date)
+		when 1 then 1 when 7 then 2 else 0 end, @begin_date),
+	@bo_end_date = dateadd(day, case datepart(weekday, @end_date)
+		when 1 then 1 when 7 then 2 else 0 end, @end_date)
+
+/* Calculate @begin_date and @end_date as date range */
+select
+	@begin_date = dateadd(hour, 17,
+		dateadd(day, case datepart(weekday, @begin_date)
+			when 2 then -3 else -1 end, @begin_date)),
+	@end_date = dateadd(hour, 17, @bo_end_date)
+
+select
+	run = @run,
+	bo_begin_date = @bo_begin_date,
+	bo_end_date = @bo_end_date,
+	begin_date = @begin_date,
+	end_date = @end_date
+
+/* Date Debug
+select
+	bo_begin_date = @bo_begin_date,
+	begin_date = @begin_date,
+	bo_end_date = @bo_end_date,
+	end_date = @end_date
+*/
+
+/* BENCH */
+insert into #messages select "Set up", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+/* MARK: CREATE TABLE #run_traders, #run_strategies, etc. */
+
+create table
+	#run_traders(
+		trader_id int)
+insert into
+	#run_traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+insert into #messages select "Run Filter", "Trader: " + b.symbol from #run_traders a, traders b where a.trader_id = b.trader_id order by b.symbol
+if @@rowcount = 0
+begin
+	insert into #messages select "Run Filter", "Trader: ALL"
+	insert into
+		#run_traders
+	select
+		trader_id
+	from
+		traders	
+end
+
+create table
+	#run_strategies(
+		strategy_id int)
+insert into
+	#run_strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+insert into #messages select "Run Filter", "Strategy: " + b.name from #run_strategies a, strategies b where a.strategy_id = b.strategy_id order by b.name
+if @@rowcount = 0
+begin
+	insert into #messages select "Run Filter", "Strategy: ALL"
+	insert into
+		#run_strategies
+	select
+		strategy_id
+	from
+		strategies	
+end
+
+create table
+	#run_external_accounts(
+		external_account_id int)
+insert into
+	#run_external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+insert into #messages select "Run Filter", "External Account: " + b.symbol from #run_external_accounts a, external_accounts b where a.external_account_id = b.external_account_id order by b.symbol
+if @@rowcount = 0
+begin
+	insert into #messages select "Run Filter", "External Account: ALL"
+	insert into
+		#run_external_accounts
+	select
+		external_account_id
+	from
+		external_accounts	
+end
+
+create table
+	#run_internal_accounts(
+		internal_account_id int)
+insert into
+	#run_internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+insert into #messages select "Run Filter", "Internal Account: " + b.symbol from #run_internal_accounts a, internal_accounts b where a.internal_account_id = b.internal_account_id order by b.symbol
+if @@rowcount = 0
+	insert into #messages select "Run Filter", "Internal Account: ALL"
+	insert into
+		#run_internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts	
+
+create table
+	#run_counterparties(
+		counterparty_id int)
+insert into
+	#run_counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+insert into #messages select "Run Filter", "Counterparty: " + b.name from #run_counterparties a, counterparties b where a.counterparty_id = b.counterparty_id order by b.name
+if @@rowcount = 0
+	insert into #messages select "Run Filter", "Counterparty: ALL"
+	insert into
+		#run_counterparties
+	select
+		counterparty_id
+	from
+		counterparties	
+
+create table
+	#run_brokers(
+		broker_id int)
+insert into
+	#run_brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+insert into #messages select "Run Filter", "Broker: " + b.symbol from #run_brokers a, brokers b where a.broker_id = b.broker_id order by b.symbol
+if @@rowcount = 0
+	insert into #messages select "Run Filter", "Broker: ALL"
+	insert into
+		#run_brokers
+	select
+		broker_id
+	from
+		brokers	
+
+/* BENCH */
+insert into #messages select "Set up run filters", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+/* MARK: CREATE TABLE #deal_ids */
+create table
+	#deal_ids (
+		deal_id int
+	)
+
+/* MARK: FIND #deal_ids from trades */
+if @deal_id != NULL
+begin
+	insert into
+		#deal_ids
+	select distinct
+		deal_id
+	from
+		trades a,
+		#run_internal_accounts c,
+		#run_external_accounts d,
+		#run_traders e,
+		#run_counterparties f,
+		#run_brokers g,
+		#run_strategies h
+	where
+		a.quantity != 0
+	and
+		a.internal_account_id = c.internal_account_id
+	and
+		a.external_account_id = d.external_account_id
+	and
+		a.trader_id = e.trader_id
+	and
+		a.counterparty_id = f.counterparty_id
+	and
+		a.broker_id = g.broker_id
+	and
+		a.strategy_id = h.strategy_id
+	and
+		a.trade_date < @end_date
+	and
+		a.value_date >= @begin_date
+	and
+		a.deal_id = @deal_id
+end
+else
+begin
+	insert into
+		#deal_ids
+	select distinct
+		deal_id
+	from
+		trades a,
+		#run_internal_accounts c,
+		#run_external_accounts d,
+		#run_traders e,
+		#run_counterparties f,
+		#run_brokers g,
+		#run_strategies h
+	where
+		a.quantity != 0
+	and
+		a.internal_account_id = c.internal_account_id
+	and
+		a.external_account_id = d.external_account_id
+	and
+		a.trader_id = e.trader_id
+	and
+		a.counterparty_id = f.counterparty_id
+	and
+		a.broker_id = g.broker_id
+	and
+		a.strategy_id = h.strategy_id
+	and
+		a.trade_date < @end_date
+	and
+		a.value_date >= @begin_date
+end
+
+/* DEBUG
+select deal_id from #deal_ids order by deal_id
+return */
+
+/* BENCH */
+insert into #messages select "Search for #deal_ids", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)" 
+select @last_bench = getdate()
+
+/* MARK: CREATE #trades from trades */
+create table
+	#trades (
+		trade_id int,
+		deal_id int,
+		trade_type_id int,
+		internal_account_id int,
+		external_account_id int,
+		counterparty_id int,
+		agency_counterparty char(1) NULL,
+		trader_id int,
+		agency_trader char(1) NULL,
+		broker_id int,
+		strategy_id int,
+		sales_code_id int,
+		none_salescode char(1) NULL,
+		contract_id int NULL,
+		value_date datetime,
+		quantity numeric(30,4),
+		price float,
+		trade_date datetime,
+		begin_pl float NULL,
+		end_pl float NULL,
+		trade_pl float NULL,
+		position_pl float NULL,
+		notional_value float NULL,
+		perspective_contract_id int NULL,
+		taker_notional float NULL,
+		taker_attribution float NULL,
+		taker_trade_pl float NULL,
+		taker_position_pl float NULL,
+		maker_notional float NULL,
+		maker_attribution float NULL,
+		maker_trade_pl float NULL,
+		maker_position_pl float NULL,
+		sales_code_notional float NULL,
+		sales_code_attribution float NULL,
+		sales_code_trade_pl float NULL,
+		sales_code_position_pl float NULL,
+		/* merged from #committed_daily_revals */
+		evaluation_notional float null,
+		bo_trade_date datetime null,
+		volume float NULL,
+		is_valid char(1) NULL,
+		reason varchar(200) NULL
+	)
+
+/* MARK: INSERT #trades from trades, #deal_ids */
+insert into
+	#trades (
+		trade_id,
+		deal_id,
+		trade_type_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		trader_id,
+		broker_id,
+		strategy_id,
+		sales_code_id,
+		contract_id,
+		value_date,
+		perspective_contract_id,
+		quantity,
+		price,
+		trade_date,
+		begin_pl,
+		end_pl,
+		trade_pl,
+		taker_notional,
+		maker_notional,
+		sales_code_notional,
+		agency_trader,
+		agency_counterparty,
+		none_salescode,
+		volume,
+		is_valid
+	)
+select
+	a.trade_id,
+	a.deal_id,
+	a.trade_type_id,
+	a.internal_account_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.trader_id,
+	a.broker_id,
+	a.strategy_id,
+	a.sales_code_id,
+	a.contract_id,
+	a.value_date,
+	perspective_contract_id = NULL,
+	a.quantity,
+	a.price,
+	a.trade_date,
+	begin_pl = 0,
+	end_pl = 0,
+	trade_pl = 0,
+	taker_notional = 0,
+	maker_notional = 0,
+	sales_code_notional = 0,
+	agency_trader = 'n',
+	agency_counterparty = 'n',
+	none_salescode = 'n',
+	volume = 0,
+	is_valid = 'y'
+from
+	trades a,
+	#deal_ids b
+where
+	a.deal_id = b.deal_id
+and
+	a.quantity != 0
+
+/* DEBUG
+select trade_id from #trades order by trade_id
+return */
+
+/* BENCH */
+insert into #messages select "Search for #trades", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)" 
+select @last_bench = getdate()
+
+/* MARK: CREATE #trades from trades */
+create nonclustered index 
+	n_t
+on
+	#trades (trade_id)
+
+/* BENCH */
+insert into #messages select "Created index on #trades(trade_id)", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+/*
+ | Set validation fields for agency trader, agency counterparty, and sales code
+ */
+update
+	#trades
+set
+	agency_counterparty = 'y'
+from
+	#trades a,
+	fund_agency_counterparties c
+where
+	a.counterparty_id = c.counterparty_id
+				
+/* BENCH */
+insert into #messages select "Annotated #trades with agency counterparty", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)" 
+select @last_bench = getdate()
+
+update
+	#trades
+set
+	agency_trader = 'y'
+from
+	#trades a,
+	fund_agency_traders c
+where
+	a.trader_id = c.trader_id
+
+/* BENCH */
+insert into #messages select "Annotated #trades with agency trader", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)" 
+select @last_bench = getdate()
+
+update
+	#trades
+set
+	none_salescode = 'y'
+from
+	#trades a,
+	sales_codes b
+where
+	a.sales_code_id = b.sales_code_id 
+and
+	b.name = 'None'
+
+/* BENCH */
+insert into #messages select "Annotated #trades with none sales code", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)" 
+select @last_bench = getdate()
+
+/* MARK: CREATE #committed_daily_revals from trades */
+create table
+	#committed_daily_revals (
+		trade_daily_reval_id int,
+		trade_id int,
+		bo_trade_date datetime,
+		source_id int,
+		status_id int,
+		contract_id int NULL,
+		contract_qty int null,
+		value_date datetime,
+		reval_date datetime,
+		close_price float null,
+		native_value float null,
+		forward_id int null,
+		delta float null,
+		gamma float null,
+		theta float null,
+		tau float null,
+		native_currency_id int null,
+		product_id int null,
+		evaluation_currency_id int null,
+		evaluation_value float null,
+		price_change_to_date float null,
+		native_realized_pl_to_date float null,
+		native_unrealized_pl_to_date float null,
+		realized_pl_to_date float null,
+		unrealized_pl_to_date float null,
+		premium_ccy_id int null,
+		premium float null,
+		evaluation_premium float null,
+		premium_settle_date datetime null,
+		notional_amount float null,
+		evaluation_notional float null
+	)
+
+/*
+ *  Cases:  . . . B . . . E . .
+ *  1:      -___-_x_x_x
+ *  2:      -___-_x_x_x_x_x____
+ *  3:              x_x_x
+ *  4:              x_x_x_x____
+ *  5:      -_-                   - Both trade_date and value_date are before @begin_date
+ *          ^   ^ ^^^^^^^^^
+ *  ->      ^^^^^^^^^^^^^^^
+ *
+ *
+ *                           [4]
+ *                1   2   3   4   5   6   7
+ *  client: ABC   |---|---|---|---|---|---|   <-- Case 2
+ *  street: BOA   |---|---|   |   |   |   |   <-- Case 5:  begin_pl = 0, end_pl = 0
+ *  street: JPM   |---|---|   |   |   |   |   <-- Case 5:  begin_pl = 0, end_pl = 0
+ *
+ */
+
+/* MARK: INSERT #committed_daily_revals */
+insert into
+	#committed_daily_revals
+(
+	trade_daily_reval_id,
+	trade_id,
+	bo_trade_date,
+	source_id,
+	status_id,
+	contract_id,
+	contract_qty,
+	value_date,
+	reval_date,
+	close_price,
+	native_value,
+	delta,
+	gamma,
+	theta,
+	tau,
+	native_currency_id,
+	product_id,
+	evaluation_currency_id,
+	evaluation_value,
+	price_change_to_date,
+	native_realized_pl_to_date,
+	native_unrealized_pl_to_date,
+	realized_pl_to_date,
+	unrealized_pl_to_date,
+	premium_ccy_id,
+	premium,
+	evaluation_premium,
+	premium_settle_date,
+	notional_amount,
+	evaluation_notional,
+	forward_id
+)
+select
+	b.trade_daily_reval_id,
+	b.trade_id,
+	b.bo_trade_date,
+	b.source_id,
+	b.status_id,
+	b.contract_id,
+	b.contract_qty,
+	b.value_date,
+	b.reval_date,
+	b.close_price,
+	b.native_value,
+	b.delta,
+	b.gamma,
+	b.theta,
+	b.tau,
+	b.native_currency_id,
+	b.product_id,
+	b.evaluation_currency_id,
+	b.evaluation_value,
+	b.price_change_to_date,
+	b.native_realized_pl_to_date,
+	b.native_unrealized_pl_to_date,
+	b.realized_pl_to_date,
+	b.unrealized_pl_to_date,
+	b.premium_ccy_id,
+	b.premium,
+	b.evaluation_premium,
+	b.premium_settle_date,
+	b.notional_amount,
+	b.evaluation_notional,
+	b.forward_id
+from
+	#trades a,
+	committed_daily_revals b
+where 
+	a.trade_id = b.trade_id
+and
+	b.reval_date <= @end_date
+and
+	convert(date, b.reval_date) in (
+		convert(date, b.bo_trade_date),
+		convert(date, b.value_date),
+		convert(date, @bo_begin_date),
+		convert(date, @bo_end_date)
+	)
+
+/* BENCH */
+insert into #messages select "Found revals", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)" 
+select @last_bench = getdate()
+
+/* DEBUG
+select subject, message from #messages order by id
+return */
+
+
+update
+	#trades
+set
+	evaluation_notional = abs(b.evaluation_notional),
+	bo_trade_date = b.bo_trade_date
+from
+	#trades a,
+	#committed_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	convert(date, b.reval_date) = convert(date, b.bo_trade_date)
+	
+
+update
+	#trades
+set
+	volume = evaluation_notional
+where
+	bo_trade_date >= @bo_begin_date
+and
+	bo_trade_date <= @bo_end_date
+
+/*update
+	#trades
+set
+	evaluation_notional = 0
+where
+	trade_date < @begin_date */
+
+/* BENCH */
+insert into #messages select "Annotating trades with reval information", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)" 
+select @last_bench = getdate()
+
+/* MARK: - CALC #trades: Trades and positions P&L */
+
+/* 
+ *  Cases:  . . . B . . . E . .
+ *  1:      -___-_x_x_x            
+ *                A   B              -> { trade_pl = 0, position_pl = B - A }
+ *  2:      -___-_x_x_x_x_x____
+ *                A       B          -> { trade_pl = 0, position_pl = B - A }
+ *  3:              x_x_x
+ *                  A   B            -> { trade_pl = A, position_pl = B - A }
+ *  4:              x_x_x_x____
+ *                  A     B          -> { trade_pl = A, position_pl = B - A }
+ *  5:       
+ */
+
+/* MARK: . Cases 3, 4: Calculate A */
+update
+	#trades
+set
+	begin_pl = realized_pl_to_date + unrealized_pl_to_date
+from
+	#trades a,
+	#committed_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	convert(date, b.reval_date) = convert(date, b.bo_trade_date)
+and
+	b.bo_trade_date >= @bo_begin_date
+
+/* BENCH */
+insert into #messages select "P&L: Calc A Case 3, 4", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* MARK: . Cases 1, 2: Calculate A */
+update
+	#trades
+set
+	begin_pl = realized_pl_to_date + unrealized_pl_to_date
+from
+	#trades a,
+	#committed_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	convert(date, b.reval_date) = convert(date, @bo_begin_date)
+and
+	b.bo_trade_date < @bo_begin_date
+and
+	b.value_date > @begin_date
+
+/* BENCH */
+insert into #messages select "P&L: Calc A Case 1, 2", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* MARK: . Case 5: Use default begin_pl = 0 */
+
+
+/* MARK: . Cases 1, 3: Calculate B */
+
+/* chriso: we only want position pl that was accrued during the range. let's
+ * exclude position pl where the reval_date is not in the @bo_begin_date and
+ * @bo_end date range */
+update
+	#trades
+set
+	end_pl = b.realized_pl_to_date + b.unrealized_pl_to_date
+from
+	#trades a,
+	#committed_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	convert(date, b.reval_date) = convert(date, b.value_date)
+and
+	b.value_date <= @end_date
+and
+	b.value_date > @begin_date
+
+/* BENCH */
+insert into #messages select "P&L: Calc B Case 1, 3", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* MARK: . Cases 2, 4: Calculate B */
+update
+	#trades
+set
+	end_pl = b.realized_pl_to_date + b.unrealized_pl_to_date
+from
+	#trades a,
+	#committed_daily_revals b
+where
+	a.trade_id = b.trade_id
+and
+	convert(date, b.reval_date) = convert(date, @bo_end_date)
+and
+	b.value_date > @bo_end_date
+
+/* BENCH */
+insert into #messages select "P&L: Calc B Case 2, 4", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* MARK: . Case 5: Use default end_pl = 0 */
+update
+	#trades
+set
+	trade_pl = begin_pl
+where
+	/* chriso: i think this makes us miss 5pm-12am prev day
+	trade_date >= @bo_begin_date*/
+	trade_date >= @begin_date
+
+/* BENCH */
+insert into #messages select "P&L: Calc B case 5", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* MARK: . Total up position_pl */
+update
+	#trades
+set
+	position_pl = end_pl - begin_pl
+
+/* BENCH */
+insert into #messages select "Calculated trade P&L", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/*
+ | Mark perspective contract for trades
+ */ 
+update
+	#trades
+set
+	perspective_contract_id = b.perspective_contract_id
+from
+	#trades a,
+	def_perspective_contracts b
+where
+	a.contract_id = b.contract_id
+
+
+/*
+ | Override perspective contract for if exist for run
+ */
+update 
+	#trades
+set
+	perspective_contract_id = b.perspective_contract_id
+from   
+	#trades a,
+	run_perspective_contracts b
+where  
+	a.contract_id = b.contract_id
+and
+	b.run_id = @run_id
+
+/*
+ | Default to its own contract
+ */
+update 
+	#trades
+set
+	perspective_contract_id = contract_id
+where  
+	perspective_contract_id = NULL
+
+/* MARK: UPDATE #trades: set taker notional */
+update
+	#trades
+set
+	taker_notional = evaluation_notional
+where
+	agency_trader = 'n'
+
+update
+	#trades
+set
+	is_valid = "n",
+	reason = "Taker volume not saved to revals"
+where
+	taker_notional = NULL
+
+
+/* BENCH */
+insert into #messages select "Annotating taker_notional", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* MARK: UPDATE #trades: set maker notional */
+update
+	#trades
+set
+	maker_notional = evaluation_notional
+where
+	agency_counterparty = 'n'
+
+/* BENCH */
+insert into #messages select "Annotating maker notional", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* MARK: UPDATE #trades: set sales code notional */
+update
+	#trades
+set
+	sales_code_notional = evaluation_notional
+where
+	none_salescode = 'n'
+
+
+update
+	#trades
+set
+	is_valid = "n",
+	reason = "Salescode volume not saved to revals"
+where
+	sales_code_notional = NULL
+
+
+
+/* BENCH */
+insert into #messages select "Annotating sales cod notional", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* Also handle the case when there is no non-agency_trader */
+/* Find deals where the taker sum = 0 */
+create table
+	#deal_notional_totals
+(
+	deal_id int,
+	trade_count int,
+	total_taker_notional float NULL,
+	total_maker_notional float NULL,
+	total_sales_code_notional float NULL
+)
+
+insert into
+	#deal_notional_totals
+select
+	deal_id,
+	count(*),	
+	sum(taker_notional),
+	sum(maker_notional),
+	sum(sales_code_notional)
+from
+	#trades
+group by
+	deal_id
+
+/* BENCH */
+insert into #messages select "Calculated deal notional totals", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+update 
+	#trades
+set
+	taker_notional = evaluation_notional
+from
+	#trades a,
+	#deal_notional_totals b
+where
+	a.deal_id = b.deal_id
+and
+	b.total_taker_notional = 0
+
+/* BENCH */
+insert into #messages select "Bumping up taker notional", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+update
+	#trades
+set
+	maker_notional = evaluation_notional
+from
+	#trades a,
+	#deal_notional_totals b
+where
+	a.deal_id = b.deal_id
+and
+	b.total_maker_notional = 0
+
+/* BENCH */
+insert into #messages select "Bumping up maker notional", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+update
+	#trades
+set
+	sales_code_notional = evaluation_notional
+from
+	#trades a,
+	#deal_notional_totals b
+where
+	a.deal_id = b.deal_id
+and
+	b.total_sales_code_notional = 0
+
+/* BENCH */
+insert into #messages select "Bumping up sales code notional", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* MAKER: CREATE #deals */
+create table
+	#deals (
+		deal_id int,
+		trade_count int,
+		total_trade_pl float NULL,
+		total_position_pl float NULL,
+		total_notional float NULL,
+		total_taker_notional float NULL,
+		total_maker_notional float NULL,
+		total_sales_code_notional float NULL
+	)
+
+/* MAKER: INSERT #deals: from #trades */
+insert into 
+	#deals
+select
+	deal_id,
+	count(*),
+	total_trade_pl = sum(trade_pl),
+	total_position_pl = sum(position_pl),
+	total_notional = sum(abs(evaluation_notional)),
+	total_trakers_notional = sum(taker_notional),
+	total_maker_notional = sum(maker_notional),
+	total_sales_code_notional = sum(sales_code_notional)
+from
+	#trades
+group by
+	deal_id
+
+/* BENCH */
+insert into #messages select "Calculated deal totals", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+/* DEBUG 
+select
+	deal_id,
+	trade_id,
+	evaluation_notional,
+	taker_notional,
+	maker_notional,
+	sales_code_notional
+from
+	#trades
+order by
+	deal_id,
+	trade_id */
+
+/* MAKER: UPDATE #trades: attribution */
+update 
+	#trades
+set
+	/* notional percentage */
+	taker_attribution = a.taker_notional / b.total_taker_notional,
+	maker_attribution = a.maker_notional / b.total_maker_notional,
+	sales_code_attribution = a.sales_code_notional / b.total_sales_code_notional,
+	/* trade pl */
+	taker_trade_pl = b.total_trade_pl * (a.taker_notional / b.total_taker_notional),
+	maker_trade_pl = b.total_trade_pl * (a.maker_notional / b.total_maker_notional),
+	sales_code_trade_pl = b.total_trade_pl * (a.sales_code_notional / b.total_sales_code_notional),
+	/* pos pl */	
+	taker_position_pl = b.total_position_pl * (a.taker_notional / b.total_taker_notional),
+	maker_position_pl = b.total_position_pl * (a.maker_notional / b.total_maker_notional),
+	sales_code_position_pl = b.total_position_pl * (a.sales_code_notional / b.total_sales_code_notional)
+from
+	#trades a,
+	#deals b
+where
+	a.deal_id = b.deal_id
+
+/* BENCH */
+insert into #messages select "Calculated trade attribution", "Took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms (" + convert(varchar(10), @@rowcount) + " rows)"
+select @last_bench = getdate()
+
+
+/*
+ |  Breakdowns
+ */ 
+
+insert into #meta values("Column Group", "section", NULL, NULL)
+insert into #meta values("Column Format", "total_volume", null, "#,##0.00")
+insert into #meta values("Column Format", "position_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "trade_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "total_pl", null, "#,##0.00")
+
+
+
+create table
+	#taker_breakdown
+(
+	taker varchar(50),
+	total_volume float NULL,
+	ticket_count int NULL,
+	position_pl float NULL,
+ 	trade_pl float NULL,
+	total_pl float NULL
+)
+
+insert into 
+	#taker_breakdown 
+select
+	taker = b.symbol,
+	total_volume = sum(a.volume),
+	ticket_count = count(*),
+	position_pl = sum(a.taker_position_pl),
+	trade_pl = sum(a.taker_trade_pl),
+	total_pl = sum(a.taker_trade_pl) + sum(a.taker_position_pl)
+from
+	#trades a,
+	traders b
+where
+	a.trader_id = b.trader_id
+group by
+	b.symbol
+order by
+	b.symbol
+
+
+insert into
+	#taker_breakdown
+select
+	taker = "Total",
+	total_volume = sum(a.total_volume),
+	ticket_count = sum(a.ticket_count),
+	position_pl = sum(a.position_pl),
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.total_pl)
+from
+	#taker_breakdown a 
+
+
+
+select * from #meta	
+
+select 
+	section = "Takers",
+	*
+from
+	#taker_breakdown
+
+/* BENCH */
+insert into #messages select "BLS taker breakdown", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+create table
+	#maker_breakdown
+(
+	maker varchar(50),
+	total_volume float NULL,
+	ticket_count int NULL,
+	position_pl float NULL,
+	trade_pl float NULL,
+	total_pl float NULL
+)
+
+insert into
+	#maker_breakdown
+select
+	maker = b.name,
+	total_volume = sum(a.volume),
+	ticket_count = count(*),
+	position_pl = sum(a.maker_position_pl),
+	trade_pl = sum(a.maker_trade_pl),
+	total_pl = sum(a.maker_trade_pl) + sum(a.maker_position_pl)
+from
+	#trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+group by
+	b.name
+order by
+	b.name
+
+insert into
+	#maker_breakdown
+select
+	maker = "Total",
+	total_volume = sum(a.total_volume),
+	ticket_count = sum(a.ticket_count),
+	position_pl = sum(a.position_pl),
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.total_pl)
+from
+	#maker_breakdown a
+
+
+select * from #meta
+
+select
+	section = "Makers",
+	*
+from
+	#maker_breakdown
+
+
+/* BENCH */
+insert into #messages select "BLS maker breakdown", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+
+create table
+	#broker_breakdown
+(
+	broker varchar(50),
+	total_volume float,
+	ticket_count int,
+	position_pl float,
+	trade_pl float,
+	total_pl float
+)
+
+insert into
+	#broker_breakdown
+select 
+	broker_code = b.symbol,
+	total_volume = sum(a.volume),
+	ticket_count = count(*),
+	position_pl = sum(a.position_pl),
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.trade_pl) + sum(a.position_pl)
+from   
+	#trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+group by
+	b.symbol
+order by
+	b.symbol
+
+
+insert into
+	#broker_breakdown
+select
+	broker = "Total",
+	total_volume = sum(a.total_volume),
+	ticket_count = sum(a.ticket_count),
+	position_pl = sum(a.position_pl),
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.total_pl)
+from
+	#broker_breakdown a
+
+
+select * from #meta
+
+select 
+	section = "Brokers",
+	*
+from   
+	#broker_breakdown
+
+/* BENCH */
+insert into #messages select "BLS broker breakdown", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms"
+select @last_bench = getdate()
+
+
+create table
+	#sales_code_breakdown
+(
+	sales_code varchar(50),
+	total_volume float,
+	ticket_count int,
+	position_pl float,
+	trade_pl float,
+	total_pl float
+)
+
+insert into
+	#sales_code_breakdown
+select
+	sales_code = b.name,
+	total_volume = sum(a.volume),
+	ticket_count = count(*),
+	position_pl = sum(a.sales_code_position_pl),
+	trade_pl = sum(a.sales_code_trade_pl),
+	total_pl = sum(a.sales_code_trade_pl) + sum(a.sales_code_position_pl)
+from
+	#trades a,
+	sales_codes b
+where
+	a.sales_code_id = b.sales_code_id
+group by
+	b.name
+order by
+	b.name
+
+update 
+	#sales_code_breakdown
+set
+	sales_code = "Unattributed"
+where
+	sales_code = 'None'
+
+insert into
+	#sales_code_breakdown
+select
+	sales_code = "Total",
+	total_volume = sum(a.total_volume),
+	ticket_count = sum(a.ticket_count),
+	position_pl = sum(a.position_pl),
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.total_pl)
+from
+	#sales_code_breakdown a
+
+/*select deal_id, trade_id, sales_code_id, none_salescode, quantity, trade_pl, position_pl, sales_code_notional, sales_code_attribution, sales_code_trade_pl, sales_code_position_pl from #trades where deal_id in (select distinct deal_id from #trades where sales_code_id = 36) order by deal_id, trade_id */
+
+select * from #meta
+
+select
+	section = "Sales Codes",
+	*
+from
+	#sales_code_breakdown
+
+
+/* BENCH */
+insert into #messages select "BLS sales code breakdown", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+create table
+	#products_breakdown
+(
+	products varchar(50),
+	total_volume float,
+	ticket_count int,
+	position_pl float,
+	trade_pl float,
+	total_pl float
+)
+
+insert into
+	#products_breakdown
+select
+	products_code = b.symbol,
+	total_volume = sum(a.volume),
+	ticket_count = count(*),
+	position_pl = sum(a.position_pl),
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.trade_pl) + sum(a.position_pl)
+from
+	#trades a,
+	contracts b
+where
+	a.perspective_contract_id = b.contract_id
+group by
+	b.symbol
+order by
+	b.symbol
+
+
+insert into
+	#products_breakdown
+select
+	products = "Total",
+	total_volume = sum(a.total_volume),
+	ticket_count = sum(a.ticket_count),
+	position_pl = sum(a.position_pl),
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.total_pl)
+from
+	#products_breakdown a
+
+
+select * from #meta
+
+select
+	section = "Products",
+	*
+from
+	#products_breakdown
+
+
+/* BENCH */
+insert into #messages select "BLS products breakdown", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms"
+select @last_bench = getdate()
+
+create table
+	#trade_type_breakdown
+(
+	trade_type varchar(50),
+	total_volume float,
+	ticket_count int,
+	position_pl float,
+	trade_pl float,
+	total_pl float
+)
+
+
+insert into
+	#trade_type_breakdown
+select
+	trade_type_code = b.name,
+	total_volume = sum(a.volume),
+	ticket_count = count(*),
+	position_pl = sum(a.position_pl),	
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.trade_pl) + sum(a.position_pl)
+from
+	#trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+group by
+	b.name
+order by
+	b.name
+
+
+insert into
+	#trade_type_breakdown
+select
+	trade_type = "Total",
+	total_volume = sum(a.total_volume),
+	ticket_count = sum(a.ticket_count),
+	position_pl = sum(a.position_pl),
+	trade_pl = sum(a.trade_pl),
+	total_pl = sum(a.total_pl)
+from
+	#trade_type_breakdown a
+
+
+select * from #meta
+
+select
+	section = "Trade Types",
+				*
+from
+	#trade_type_breakdown
+
+/* BENCH */
+insert into #messages select "BLS trade type breakdown", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+
+create table
+	#blotter (
+		type int,
+		deal_id int,
+		trade_id int,
+		internal_account_id int NULL,
+		internal_account varchar(50) NULL,
+		external_account_id int NULL,
+		external_account varchar(50) NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		agency_counterparty char(1) NULL,
+		trader_id int NULL,
+		trader varchar(50) NULL,
+		agency_trader char(1) NULL,
+		broker_id int NULL,
+		broker varchar(50) NULL,
+		strategy_id int NULL,
+		strategy varchar(50) NULL,
+		sales_code_id int NULL,
+		sales_code varchar(50) NULL,
+		none_salescode char(1) NULL,
+		contract_id int NULL,
+		contract varchar(50) NULL,
+		value_date datetime NULL,
+		quantity numeric(30,4) NULL,
+		price float NULL,
+		bo_trade_date datetime NULL,
+		trade_pl float,
+		position_pl float,
+		taker_notional float NULL,
+		taker_attribution float NULL,
+		taker_trade_pl float NULL,
+		taker_position_pl float NULL,
+		maker_notional float NULL,
+		maker_attribution float NULL,
+		maker_trade_pl float NULL,
+		maker_position_pl float NULL,
+		sales_code_notional float NULL,
+		sales_code_attribution float NULL,
+		sales_code_trade_pl float NULL,
+		sales_code_position_pl float NULL,
+		evaluation_notional float NULL,
+		style varchar(50) NULL
+	)
+insert into
+	#blotter (
+		type,
+		deal_id,
+		trade_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		agency_counterparty,
+		trader_id,
+		agency_trader,
+		broker_id,
+		strategy_id,
+		sales_code_id,
+		none_salescode,
+		contract_id,
+		value_date,
+		quantity,
+		price,
+		bo_trade_date,
+		trade_pl,
+		position_pl,
+		taker_notional,
+		taker_attribution,
+		taker_trade_pl,
+		taker_position_pl,
+		maker_notional,
+		maker_attribution,
+		maker_trade_pl,
+		maker_position_pl,
+		sales_code_notional,
+		sales_code_attribution,
+		sales_code_trade_pl,
+		sales_code_position_pl,
+		evaluation_notional,
+		style
+	) 
+select
+	type = 1,
+	deal_id,
+	trade_id,
+	internal_account_id,
+	external_account_id,
+	counterparty_id,
+	agency_counterparty,
+	trader_id,
+	agency_trader,
+	broker_id,
+	strategy_id,
+	sales_code_id,
+	none_salescode,
+	contract_id,
+	value_date,
+	quantity,
+	price,  
+	bo_trade_date,
+	trade_pl,
+	position_pl,
+	taker_notional,
+	taker_attribution,
+	taker_trade_pl,  
+	taker_position_pl,
+	maker_notional,
+	maker_attribution,
+	maker_trade_pl,  
+	maker_position_pl,
+	sales_code_notional,
+	sales_code_attribution,
+	sales_code_trade_pl,
+	sales_code_position_pl,
+	evaluation_notional,
+	style = "background:#fff;color:#333"
+from
+	#trades 
+
+/* BENCH */
+insert into #messages select "BLS Blotter insert trades", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+update
+	#blotter
+set
+	broker = b.symbol
+from
+	#blotter a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+update
+	#blotter
+set
+	internal_account = b.symbol
+from
+	#blotter a,
+	internal_accounts b
+where
+	a.internal_account_id = b.internal_account_id
+
+update
+	#blotter
+set
+	external_account = b.symbol
+from
+	#blotter a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#blotter
+set
+	trader = b.symbol
+from
+	#blotter a,
+	traders b
+where
+	a.trader_id = b.trader_id
+
+update
+	#blotter
+set
+	counterparty = b.name
+from
+	#blotter a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+update
+	#blotter
+set
+	strategy = b.name
+from
+	#blotter a,
+	strategies b
+where
+	a.strategy_id = b.strategy_id
+
+update
+	#blotter
+set
+	sales_code = b.name
+from
+	#blotter a,
+	sales_codes b
+where
+	a.sales_code_id = b.sales_code_id
+
+update
+	#blotter
+set
+	contract = b.symbol
+from
+	#blotter a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+/* BENCH */
+insert into #messages select "BLS Blotter update trades", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+insert into
+	#blotter (
+		type,
+		deal_id,
+		trade_id,
+		trade_pl,
+		position_pl,
+		taker_notional,
+		taker_trade_pl,
+		taker_position_pl,
+		maker_notional,
+		maker_trade_pl,
+		maker_position_pl,
+		sales_code_notional,
+		sales_code_trade_pl,
+		sales_code_position_pl,
+		style
+	) 
+select
+	type = 1,
+	deal_id,
+	trade_id = 0,
+	total_trade_pl,
+	total_position_pl,
+	total_taker_notional,
+	total_trade_pl,
+	total_position_pl,
+	total_maker_notional,
+	total_trade_pl,
+	total_position_pl,
+	total_sales_code_notional,
+	total_trade_pl,
+	total_position_pl,
+	style = "background:#e5f0b4;color:#000"
+from
+	#deals
+
+/* BENCH */
+insert into #messages select "BLS Blotter insert deals", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+update
+	#blotter
+set
+	type = 2,
+	style = style + ";color:#999"
+where
+	trade_pl = 0
+and
+	position_pl = 0
+
+/* BENCH */
+insert into #messages select "BLS Blotter update ", "M5 took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @last_bench, getdate()))) + " ms" 
+select @last_bench = getdate()
+
+
+insert into #meta values("Row Style", "style", NULL, NULL)
+insert into #meta values("Column Group", "section", NULL, NULL)
+insert into #meta values("Column Format", "date", null, "MM/dd/yyyy")
+insert into #meta values("Column Format", "value", null, "MM/dd")
+insert into #meta values("Column Format", "price", null, "0.0000##")
+insert into #meta values("Column Format", "trade_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "position_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "tk_attr", null, "#,##0.00%")
+insert into #meta values("Column Format", "tk_trade_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "tk_pos_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "mk_attr", null, "#,##0.00%")
+insert into #meta values("Column Format", "mk_trade_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "mk_pos_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "sc_attr", null, "#,##0.00%")
+insert into #meta values("Column Format", "sc_trade_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "sc_pos_pl", null, "#,##0.00")
+insert into #meta values("Column Format", "notional", null, "#,##0.00")
+
+select * from #meta
+delete from #meta
+
+/* select
+	/*section="Blotter",*/
+	id = case when trade_id = 0 then deal_id else trade_id end,
+	date = bo_trade_date,
+	/* internal_account, */
+	external_account,
+	/* counterparty, */
+	/* agency_counterparty, */
+	/* trader, */
+	/* agency_trader, */
+	/* broker, */
+	/* strategy, */
+	/* sales_code, */
+	/* none_salescode, */
+	contract,
+	value = value_date,
+	quantity,
+	price,
+	trade_pl = case when trade_pl != 0 then trade_pl else NULL end,
+	position_pl = case when position_pl != 0 then position_pl else NULL end,
+	taker = trader,
+	tk_attr = case when taker_attribution != 0 then taker_attribution else NULL end,
+	tk_trade_pl = case when taker_trade_pl != 0 then taker_trade_pl else NULL end,
+	tk_pos_pl = case when taker_position_pl != 0 then taker_position_pl else NULL end,
+	maker = counterparty,
+	mk_attr = case when maker_attribution != 0 then maker_attribution else NULL end,
+	mk_trade_pl = case when maker_trade_pl != 0 then maker_trade_pl else NULL end,
+	mk_pos_pl = case when maker_position_pl != 0 then maker_position_pl else NULL end,
+	sales_code,
+	sc_attr = case when sales_code_attribution != 0 then sales_code_attribution else NULL end,
+	sc_trade_pl = case when sales_code_trade_pl != 0 then sales_code_trade_pl else NULL end,
+	sc_pos_pl = case when sales_code_position_pl != 0 then sales_code_position_pl else NULL end,
+       	notional = case when evaluation_notional != 0 then evaluation_notional else NULL end,
+       	style
+from
+	#blotter
+order by
+	deal_id,
+	trade_id */
+
+/* BENCH */
+insert into #messages select "BLS Run Report Total", "Total took " + convert(varchar(11), convert(numeric(10, 2), datediff(millisecond, @start_bench, getdate()))) + " ms" 
+
+
+/* select
+	subject,
+	message
+from
+	#messages
+order by
+	id */
+
+go

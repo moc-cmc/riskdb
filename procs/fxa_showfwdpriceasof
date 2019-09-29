@@ -1,0 +1,86 @@
+if object_id("fxa_showfwdpriceasof") != NULL
+    drop procedure
+        fxa_showfwdpriceasof
+go
+
+
+create procedure
+	fxa_showfwdpriceasof
+		@login varchar(50),
+		@symbol varchar(50),
+		@value_date datetime,
+		@as_of_date datetime
+as
+
+
+declare @contract_id int
+declare @days float
+declare @spot_price float
+declare @forward_price float
+declare @product_rate float
+declare @currency_rate float
+declare @product_id int
+declare @currency_id int
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+exec
+	r_contractproduct
+		@contract_id,
+		@product_id output
+exec
+	r_contractcurrency
+		@contract_id,
+		@currency_id output
+
+
+
+
+
+exec
+	r_forwardpriceasof
+		@contract_id,
+		@as_of_date,
+		@value_date,
+		@days output,
+		@spot_price output,
+		@forward_price output,
+		@currency_rate output,
+		@product_rate output
+
+create table
+	#output(
+		category varchar(50),
+		value varchar(50))
+
+insert into
+	#output
+values(
+	"Contract",
+	@symbol)
+insert into
+	#output
+values(
+	"Value Date",
+	convert(varchar(11), @value_date, 1))
+
+select * from #output
+
+
+
+
+go
+

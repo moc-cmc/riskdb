@@ -1,0 +1,44 @@
+use
+	risk_spo
+go
+
+drop procedure
+	en_receiveladderbal
+go
+
+create procedure
+	en_receiveladderbal
+		@login varchar(50),
+		@group_name varchar(50),
+		@en_batch_id int,
+		@account varchar(50),
+		@account_type varchar(50),
+		@product varchar(50),
+		@value_date datetime,
+		@balance float
+as
+
+
+insert into
+	en_risk_ladder(
+		en_batch_id,
+		group_name,
+		account,
+		account_type,
+		product,
+		value_date,
+		balance)
+values(
+	@en_batch_id,
+	@group_name,
+	@account,
+	@account_type,
+	@product,
+	@value_date,
+	@balance)
+
+
+
+go
+		
+		

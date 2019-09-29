@@ -1,0 +1,411 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_inspectlicense
+go
+
+create procedure
+	lw_inspectlicense
+		@login varchar(50),
+		@jurisdiction varchar(50)
+as
+
+declare @entity varchar(50)
+declare @collecting varchar(1)
+declare @status varchar(50)
+declare @as_of_date datetime
+declare @expiration_date datetime 
+declare @licensing_authority varchar(200)
+declare @license_number varchar(50)
+declare @cert_auth_date datetime
+declare @exemption_type varchar(200)
+declare @legal_basis varchar(250)
+declare @date_started datetime
+declare @est_completion datetime
+declare @notes varchar(255)
+declare @license_renewal_fee varchar(25)
+declare @cert_auth_exp varchar(25)
+declare @cert_auth_renew_fee varchar(25)
+declare @bond_amt varchar(30)
+declare @bond_exp datetime
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Style",
+	"value",
+	NULL,
+	"text-align:left")
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"bond_exp",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"bond_amt",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"entity",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_values",
+	"Edit License",
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"status",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"as_of_date",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"expiration_date",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"licensing_authority",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"license_number",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"cert_auth",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"exemption_type",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"legal_basis",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"date_started",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"est_completion",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"notes",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"jurisdiction",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"license_renewal_fee",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"cert_auth_exp",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"cert_auth_renew_fee",
+	NULL,
+	NULL)
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"collecting",
+	NULL,
+	NULL)
+
+
+
+
+select * from #meta
+
+select
+	@entity = c.name,
+	@collecting = a.collecting,
+	@status = d.name,
+	@as_of_date = a.as_of_date,
+	@expiration_date = a.expiration_date,
+	@licensing_authority = e.name,
+	@license_number = a.license_number,
+	@cert_auth_date = a.cert_auth_date,
+	@exemption_type = f.name,
+	@legal_basis = g.name,
+	@date_started = a.date_started,
+	@est_completion = a.est_completion,
+	@notes = a.notes,
+	@license_renewal_fee = convert(varchar(25), a.license_renewal_fee),
+	@cert_auth_exp = convert(varchar(11), a.cert_auth_exp, 1),
+	@cert_auth_renew_fee = convert(varchar(25), a.cert_auth_renew_fee),
+	@bond_amt = convert(varchar(25), a.bond_amt),
+	@bond_exp = a.bond_exp
+from
+	licenses a,
+	jurisdictions b,
+	entities c,
+	statuses d,
+	licensing_authorities e,
+	exemption_types f,
+	legal_bases g
+where
+	a.jurisdiction_id = b.jurisdiction_id
+and
+	a.entity_id = c.entity_id
+and
+	a.status_id = d.status_id
+and
+	a.licensing_authority_id = e.licensing_authority_id
+and
+	a.exemption_type_id = f.exemption_type_id
+and
+	a.legal_basis_id = g.legal_basis_id
+and
+	b.name = @jurisdiction
+
+create table
+	#output(
+		attribute varchar(50),
+		value varchar(250) NULL)
+
+insert into #output values("Jurisdiction", @jurisdiction)
+insert into #output values("Entity", @entity)
+insert into #output values("Collecting", @collecting)
+insert into #output values("Status", @status)
+insert into #output values("As Of Date", convert(char(11), @as_of_date, 1))
+insert into #output values("Expiration Date", convert(char(11), @expiration_date, 1))
+insert into #output values("Licensing Authority", @licensing_authority)
+insert into #output values("License Number", @license_number)
+insert into #output values("License Renewal Fee", @license_renewal_fee)
+insert into #output values("Cert Auth Date", convert(char(11), @cert_auth_date, 1))
+insert into #output values("Cert Auth Expiration", convert(char(11), @cert_auth_exp, 1))
+insert into #output values("Cert Auth Renew Fee", convert(varchar(25), @cert_auth_renew_fee))
+insert into #output values("Exemption Type", @exemption_type)
+insert into #output values("Legal Basis", @legal_basis)
+insert into #output values("Date Started", convert(varchar(11), @date_started, 1))
+insert into #output values("Est Completion", convert(varchar(11), @est_completion, 1))
+insert into #output values("Bond Amount", convert(varchar(25), @bond_amt))
+insert into #output values("Bond Expiration", convert(varchar(11), @bond_exp, 1))
+insert into #output values("Notes", @notes)
+
+
+select
+	section = "Current Settings For " + rtrim(@jurisdiction),
+	style = "background:#FFFFFF;border: 1px solid white",
+	attribute,
+	value
+from
+	#output
+
+select
+	edit_values = "EDIT THIS RECORD",
+	jurisdiction = b.name,
+	entity = c.name,
+	a.collecting,
+	status = d.name,
+	as_of_date = convert(char(11), a.as_of_date, 1),
+	expiration_date = convert(char(11), a.expiration_date, 1),
+	licensing_authority = e.name,
+	a.license_number,
+	a.license_renewal_fee,
+	cert_auth = convert(char(11), a.cert_auth_date, 1),
+	cert_auth_exp = convert(char(11), a.cert_auth_exp, 1),
+	cert_auth_renew_fee = a.cert_auth_renew_fee,
+	exemption_type = f.name,
+	legal_basis = g.name,
+	date_started = convert(char(11), a.date_started, 1),
+	est_completion = convert(char(11), a.est_completion, 1),
+	a.notes,
+	a.bond_amt,
+	bond_exp = convert(char(11), a.bond_exp, 1)
+from
+	licenses a,
+	jurisdictions b,
+	entities c,
+	statuses d,
+	licensing_authorities e,
+	exemption_types f,
+	legal_bases g
+where
+	a.jurisdiction_id = b.jurisdiction_id
+and
+	a.entity_id = c.entity_id
+and
+	a.status_id = d.status_id
+and
+	a.licensing_authority_id = e.licensing_authority_id
+and
+	a.exemption_type_id = f.exemption_type_id
+and
+	a.legal_basis_id = g.legal_basis_id
+and
+	b.name = @jurisdiction
+
+
+truncate table #meta
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	section = "Edit History",
+	edited_by = h.login,
+	a.archive_date,
+	jurisdiction = b.name,
+	entity = c.name,
+	a.collecting,
+	status = d.name,
+	as_of_date = convert(char(11), a.as_of_date, 1),
+	expiration_date = convert(char(11), a.expiration_date, 1),
+	licensing_authority = e.name,
+	a.license_number,
+	cert_auth = convert(char(11), a.cert_auth_date, 1),
+	exemption_type = f.name,
+	legal_basis = g.name,
+	date_started = convert(char(11), a.date_started, 1),
+	est_completion = convert(char(11), a.est_completion, 1),
+	a.notes,
+	a.license_renewal_fee,
+	a.cert_auth_exp,
+	a.cert_auth_renew_fee,
+	a.bond_amt,
+	bond_exp = convert(char(11), a.bond_exp, 1)
+from
+	license_archive a,
+	jurisdictions b,
+	entities c,
+	statuses d,
+	licensing_authorities e,
+	exemption_types f,
+	legal_bases g,
+	tico_accounts h
+where
+	a.jurisdiction_id = b.jurisdiction_id
+and
+	a.entity_id = c.entity_id
+and
+	a.status_id = d.status_id
+and
+	a.licensing_authority_id = e.licensing_authority_id
+and
+	a.exemption_type_id = f.exemption_type_id
+and
+	a.legal_basis_id = g.legal_basis_id
+and
+	a.tico_account_id = h.account_id
+and
+	b.name = @jurisdiction
+order by
+	a.archive_date desc
+
+	
+
+
+go

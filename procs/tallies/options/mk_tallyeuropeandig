@@ -1,0 +1,78 @@
+use
+	risk_makr_dev
+go
+
+drop procedure
+	mk_tallyeuropeandig
+go
+
+create procedure
+	mk_tallyeuropeandig
+		@login varchar(50),
+		@counterparty varchar(50),
+		@buy_sell varchar(50),
+		@dealt_currency varchar(20),
+		@counter_currency varchar(20),
+		@put_call varchar(10),
+		@spot_ref numeric(30,8),
+		@strike numeric(30,8),
+		@rebate numeric(30,4),
+		@notional_currency varchar(20),
+		@timezone varchar(50),
+		@expiration datetime,
+		@exercise_style varchar(50),
+		@option_settledate datetime,
+		@barrier numeric(30,8),
+		@barrier_direction varchar(30)=NULL,
+		@payment_timing varchar(30),
+		@window_start datetime,
+		@window_end datetime,
+		@premium numeric(30,4),
+		@premium_ccy varchar(10),
+		@premium_settledate datetime,
+		@fixing_source varchar(50),
+		@trade_note varchar(100)
+
+	
+as
+
+declare @deal_id int
+
+
+exec
+	api_marketeuropeandig
+		@login = @login,
+		@deal_id = @deal_id output,
+		@counterparty = @counterparty,
+		@buy_sell = @buy_sell,
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@put_call = @put_call,
+		@spot_ref = @spot_ref,
+		@strike = @strike,
+		@rebate = @rebate,
+		@notional_currency = @notional_currency,
+		@timezone = @timezone,
+		@expiration = @expiration,
+		@exercise_style = @exercise_style,
+		@option_settledate = @option_settledate,
+		@barrier = @barrier,
+		@barrier_direction = @barrier_direction,
+		@payment_timing = @payment_timing,
+		@window_start = @window_start,
+		@window_end = @window_end,
+		@premium = @premium,
+		@premium_ccy = @premium_ccy,
+		@premium_settledate = @premium_settledate,
+		@fixing_source = @fixing_source,
+		@trade_note = @trade_note
+
+
+exec
+	r_inspectdealtrades
+		@login = @login,
+		@deal_id = @deal_id
+
+
+go
+

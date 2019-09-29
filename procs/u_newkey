@@ -1,0 +1,39 @@
+
+if object_id("u_newkey") != NULL
+    drop procedure
+        u_newkey
+go
+
+create procedure
+	u_newkey
+	        @tname varchar(32),
+	@next_key int output
+as
+
+begin tran
+	update
+		keys
+	set
+		last_id = last_id + 1
+	where
+		relation = @tname
+
+	if @@rowcount != 1
+	begin
+	select
+	    	@next_key = -1
+		rollback tran
+		raiserror 999999 'u_newkeys: cannot find the table, "%1!", in the keys table', @tname
+	end
+
+	select
+		@next_key = last_id
+	from
+		keys
+       	where
+		relation = @tname
+commit tran
+
+return @next_key
+
+go

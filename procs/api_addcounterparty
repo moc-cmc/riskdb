@@ -1,0 +1,150 @@
+
+if object_id("api_addcounterparty") != NULL
+    drop procedure
+        api_addcounterparty
+go
+
+create procedure
+	api_addcounterparty
+		@login varchar(30),
+		@cpty varchar(50),
+		@ext_acct varchar(50),
+		@fund_agency_counterparty char(1)=NULL
+
+as
+
+declare @counterparty varchar(50)
+declare @external_account varchar(50)
+declare @counterparty_id int
+declare @tico_server varchar(100)
+declare @tico_database varchar(100)
+declare @sql_string varchar(200)
+declare @external_account_id int
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @shorts_nop_type_id int
+declare @shorts_dsl_type_id int
+declare @run_id int
+
+select
+	@counterparty = @cpty,
+	@external_account = @ext_acct
+
+if @fund_agency_counterparty = "Y"
+begin
+	select
+		@external_account_id = 0
+end
+
+select
+	@counterparty_id = counterparty_id
+from
+	counterparties
+where
+	name = @counterparty
+if @@rowcount != 0
+begin
+	select
+		status = "Error",
+		message = "Counterparty already exists",
+		counterparty = @counterparty
+	return
+end
+
+if @external_account_id = NULL
+begin
+	select
+		@external_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = @external_account
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message= "External account not found",
+			external_account = @external_account
+		return
+	end
+end
+
+exec
+	j_nextkey
+		"counterparties",
+		@counterparty_id output
+
+
+insert into
+	counterparties(
+		counterparty_id,
+		name,
+		external_account_id)
+values(
+	@counterparty_id,
+	@counterparty,
+	@external_account_id)
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+if @fund_agency_counterparty = "Y"
+begin
+	insert into
+		fund_agency_counterparties(
+			fund_id,
+			counterparty_id)
+	values(
+		@fund_id,
+		@counterparty_id
+	)
+end
+
+
+exec
+        j_nextkey
+                "runs",
+                @run_id output
+
+insert into
+        runs(
+		run_id,
+		name)
+values(
+        @run_id,
+        @counterparty)
+
+insert into
+	run_counterparties(
+		run_id,
+		counterparty_id)
+values(
+        @run_id,
+        @counterparty_id)
+
+/* GRANT ACCESS FOR ADMINS */
+
+exec
+        r_grantrunforgroup
+                @counterparty,
+                "Admin"
+
+
+select
+	@tico_server = tico_server,
+	@tico_database = tico_database
+from
+	funds
+where
+	fund_id = @fund_id
+
+
+select
+	@sql_string = "exec " + rtrim(@tico_database) + "..flush"
+
+exec sp_remotesql @tico_server, @sql_string
+
+
+go

@@ -1,0 +1,86 @@
+drop procedure e_saveallcommits
+go
+
+
+create procedure
+	e_saveallcommits
+		@login varchar(50),
+		@trade_date datetime
+as
+
+select
+	@login = "markr"
+
+
+select
+	msg = "Tally Mint Volume"
+begin
+exec
+	mnt_tallycommittedtrades
+		@login,
+		"MINT",
+		@trade_date
+end
+
+select
+	msg = "Tally Chappy Volume"
+begin
+exec
+	chap_tallycommittedtrades
+		@login,
+		"CHAPD",
+		@trade_date
+end
+
+
+select msg = "Tallying CFEFX Trades"
+exec
+	cfe_tallycommittedtrades 
+ 		@login,
+		"CFEFX",
+		@trade_date
+
+select msg = "Tallying CFE-NY Netted Trades"
+exec
+	cfe_ex_tallynettedtrades
+		@login,
+		"CFEFX",
+		@trade_date
+
+/* chriso: 20160403 - BGC moved to monthly fee so no volume
+select msg = "Tallying BGC Trades"
+exec
+	bgc_tallycommittedtrades
+		@login,
+		"BGC",
+		@trade_date
+*/
+
+
+select msg = "Tallying Cresco Trades"
+exec
+        cres_tallycommittedtrades
+                @login,
+                "Cresco",
+                @trade_date
+
+select msg = "Tallying ITG trades"
+exec
+	itg_tallycommittedtrades
+		@login,
+		"ITG",
+		@trade_date
+
+
+select
+        msg = "Tally Gleneagle Volume"
+begin
+exec
+        glen_tallycommittedtrades
+                @login,
+                "Gleneagle",
+                @trade_date
+end
+
+
+go

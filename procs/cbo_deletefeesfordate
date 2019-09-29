@@ -1,0 +1,91 @@
+drop procedure cbo_deletefeesfordate
+go
+
+create procedure 
+	cbo_deletefeesfordate
+		@login varchar(50),
+		@trade_date datetime
+
+as
+
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @fee_commission_bro_id int
+declare @fee_break_transaction_id int
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#transaction_types
+(
+	transaction_type_id int,
+	name varchar(100)
+)
+insert into
+	#transaction_types
+select
+	transaction_type_id,
+	name
+from
+	transaction_types
+where
+	name in("Fees/Commissions/Brokerage", "Volume Break")
+
+
+delete
+	account_transactions
+from
+	account_transactions a,
+	#transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.transaction_date = @end_date
+
+create table
+	#product_transactions
+(
+	product_transaction_id int
+)
+
+insert into
+	#product_transactions 
+select
+	a.product_transaction_id
+from
+	product_transactions a,
+	fs_product_transactions b
+where
+	a.product_transaction_id = b.product_transaction_id
+and
+	a.transaction_date > @begin_date
+and
+	a.transaction_date <= @end_date
+
+delete
+	product_transactions
+from
+	product_transactions a,
+	#product_transactions b
+where
+	a.product_transaction_id = b.product_transaction_id
+	
+
+delete 
+        fs_product_transactions
+from
+        fs_product_transactions a,
+        #product_transactions b
+where
+        a.product_transaction_id = b.product_transaction_id
+
+
+
+go
+

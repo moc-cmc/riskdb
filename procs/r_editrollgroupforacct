@@ -1,0 +1,67 @@
+drop procedure r_editrollgroupforacct
+go
+
+create procedure
+	r_editrollgroupforacct
+		@login varchar(50),
+		@external_account varchar(50),
+		@spread_group_name varchar(50)
+		
+as
+
+
+declare @roll_spread_group_id int
+declare @external_account_id int
+
+select
+	@roll_spread_group_id = roll_spread_group_id
+from
+	roll_spread_groups
+where
+	name = @spread_group_name
+if @roll_spread_group_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem finding group for name",
+		name = @spread_group_name
+
+	exec
+        	r_managerollspreadgroups
+                	@login
+
+	return
+end
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @external_account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem finding account",
+		external_account = @external_account
+	exec
+		r_managerollspreadgroups
+			@login
+	return
+end
+
+update
+	account_roll_spread_groups
+set
+	roll_spread_group_id=@roll_spread_group_id
+where
+	external_account_id=@external_account_id
+
+	
+	
+exec
+	r_managerollspreadgroups
+		@login,
+		@spread_group_name
+
+go

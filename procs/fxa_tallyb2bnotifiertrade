@@ -1,0 +1,99 @@
+use
+	risk_cfe
+go
+
+if object_id("fxa_tallyb2bnotifiertrade") != NULL
+    drop procedure
+	fxa_tallyb2bnotifiertrade
+go
+
+create procedure
+	fxa_tallyb2bnotifiertrade
+		@login varchar(50),
+		@tally_type varchar(50),
+		@trader varchar(50),
+		@quantity numeric(30,4),
+		@counterparty varchar(50),
+		@symbol varchar(50),
+		@price float,
+		@value_date datetime,
+		@fixing_date datetime=NULL
+		
+as
+
+declare @client_buys_sells varchar(50)
+declare @dealt_currency varchar(10)
+declare @counter_currency varchar(10)
+declare @contract_id int
+declare @deal_id int
+
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Symbol not found",
+		symbol = @symbol
+	return
+end
+
+
+select
+	@dealt_currency = a.symbol
+from
+	products a,
+	forwards b
+where
+	a.product_id = b.product_id
+and
+	b.contract_id = @contract_id
+
+select
+	@counter_currency = a.symbol
+from
+	products a,
+	forwards b
+where
+	a.product_id = b.currency_id
+and
+	b.contract_id = @contract_id
+
+
+if @quantity < 0
+	select
+		@client_buys_sells = "Client Sells"
+else
+	select
+		@client_buys_sells = "Client Buys"
+
+select
+	@quantity = abs(@quantity)
+
+exec
+	api_tallyb2bforward
+		@login = @login,
+		@tally_type = @tally_type,
+		@client_user = @trader,
+		@client_buys_sells = @client_buys_sells,
+		@counterparty = @counterparty,
+		@quantity = @quantity,
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@client_price = @price,
+		@client_val_date = @value_date,
+		@market_price = @price,
+		@market_val_date = @value_date,
+		@deal_id = @deal_id output,
+		@client_fixing_date = @fixing_date,
+		@market_fixing_date = @fixing_date
+
+
+
+
+go

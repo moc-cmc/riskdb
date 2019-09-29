@@ -1,0 +1,18 @@
+drop procedure
+	r_sourcetypes
+go
+
+create procedure
+	r_sourcetypes
+
+as
+
+
+select
+	name
+from
+	source_types
+order by
+	name
+
+go

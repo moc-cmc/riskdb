@@ -1,0 +1,251 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_license
+go
+
+create procedure
+	lw_license
+		@state varchar(100),
+		@blank varchar(100)=NULL,
+		@licensed varchar(50)=NULL,
+		@date_licensed varchar(50)=NULL,
+		@license_exp varchar(50)=NULL,
+		@license_no varchar(50)=NULL,
+		@cert varchar(100)=NULL,
+		@attorney_exmpt varchar(50)=NULL,
+		@exemption varchar(100)=NULL,
+		@legal_basis varchar(100)=NULL,
+		@corner_stone varchar(50)=NULL,
+		@date_started varchar(25)=NULL,
+		@date_complete varchar(25)=NULL,
+		@notes varchar(255)=NULL,
+		@cert_auth_exp varchar(50)=NULL,
+		@collecting varchar(5)=NULL,
+		@bond_amt numeric(30,2)=NULL,
+		@bond_exp datetime=NULL
+
+as
+
+
+declare @license_id int
+declare @entity_id int
+declare @jurisdiction_id int
+declare @status_id int
+declare @licensing_authority_id int
+declare @exemption_type_id int
+declare @legal_basis_id int
+declare @license_status varchar(50)
+declare @l_date datetime
+declare @expiration datetime
+declare @cert_date datetime
+declare @start datetime
+declare @complete datetime
+declare @cert_auth_exp_date datetime
+
+if @date_licensed != "N/A" and @date_licensed != "" and @date_licensed != NULL
+	select
+		@l_date = convert(datetime, @date_licensed)
+if @license_exp != "N/A" and @license_exp != "" and @license_exp != NULL and @license_exp not like "%perpe%"
+	select
+		@expiration = convert(datetime, @license_exp)
+if @cert != "N/A" and @cert != "" and @cert != NULL and @cert not like "%pend%"
+	select
+		@cert_date = convert(datetime, @cert)
+if @date_started != "N/A" and @date_started != "" and @date_started != NULL
+	select
+		@start = convert(datetime, @date_started)
+if @date_complete != "N/A" and @date_complete != "" and @date_complete != NULL and @date_complete not like "%known%"
+	select
+		@complete = convert(datetime, @date_complete)
+if @cert_auth_exp != "N/A" and @cert_auth_exp != "" and @cert_auth_exp != NULL and @cert_auth_exp not like "%pend%"
+	select
+		@cert_auth_exp_date = convert(datetime, @cert_auth_exp)
+
+
+select
+	@jurisdiction_id = jurisdiction_id
+from
+	jurisdictions
+where
+	name = @state
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"jurisdictions",
+			@jurisdiction_id output
+
+	insert into
+		jurisdictions
+	values(
+		@jurisdiction_id,
+		@state)
+end
+
+select
+	@entity_id = entity_id
+from
+	entities
+where
+	name = "Firsel"
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"entities",
+			@entity_id output
+
+	insert into
+		entities
+	values(
+		@entity_id,
+		"Firsel")
+end
+
+if upper(convert(char(1), @licensed)) = "Y"
+	select
+		@license_status = "Licensed"
+else
+	select
+		@license_status = "Unlicensed"
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = @license_status
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@status_id output
+
+	insert into
+		statuses
+	values(
+		@status_id,
+		@license_status)
+end
+
+select
+	@licensing_authority_id = licensing_authority_id
+from
+	licensing_authorities
+where
+	name = "Unknown"
+if @licensing_authority_id = NULL
+begin
+	exec
+		j_nextkey
+			"licensing_authorities",
+			@licensing_authority_id output
+
+	insert into
+		licensing_authorities
+	values(
+		@licensing_authority_id,
+		"Unknown")
+end
+
+
+if @exemption != NULL
+begin
+	select
+		@exemption_type_id = exemption_type_id
+	from
+		exemption_types
+	where
+		name = @exemption
+	if @@rowcount = 0
+	begin
+		exec
+			j_nextkey
+				"exemption_types",
+				@exemption_type_id output
+
+		insert into
+			exemption_types
+		values(
+			@exemption_type_id,
+			@exemption)
+	end
+end
+
+if @legal_basis != NULL
+begin
+	select
+		@legal_basis_id = legal_basis_id
+	from
+		legal_bases
+	where
+		name = @legal_basis
+	if @@rowcount = 0
+	begin
+		exec
+			j_nextkey
+				"legal_bases",
+				@legal_basis_id output
+	
+		insert into
+			legal_bases
+		values(
+			@legal_basis_id,
+			@legal_basis)
+	end
+end
+
+exec
+	j_nextkey
+		"licenses",
+		@license_id output
+
+insert into
+	licenses(
+		license_id,
+		jurisdiction_id,
+		entity_id,
+		status_id,
+		as_of_date,
+		expiration_date,
+		licensing_authority_id,
+		license_number,
+		cert_auth_date,
+		exemption_type_id,
+		legal_basis_id,
+		date_started,
+		est_completion,
+		notes,
+		cert_auth_exp,
+		collecting,
+		bond_amt,
+		bond_exp)
+values(
+	@license_id,
+	@jurisdiction_id,
+	@entity_id,
+	@status_id,
+	@l_date,
+	@expiration,
+	@licensing_authority_id,
+	@license_no,
+	@cert_date,
+	@exemption_type_id,
+	@legal_basis_id,
+	@date_started,
+	@complete,
+	@notes,
+	@cert_auth_exp,
+	upper(convert(char(1), @collecting)),
+	@bond_amt,
+	@bond_exp)
+	
+	
+
+
+
+go

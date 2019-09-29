@@ -1,0 +1,121 @@
+
+if object_id("cm_fundaccounts") != NULL
+    drop procedure
+        cm_fundaccounts
+go
+
+create procedure
+	cm_fundaccounts
+		@login varchar(30)
+
+as
+
+declare @fund_type varchar(50)
+declare @fund_id int
+declare @group_name varchar(30)
+
+create table
+	#meta(
+		meta_type char(50),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"activate_user",
+	"Activate Login",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"remove_user",
+	"Remove Manager User",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_login",
+	"New Manager Login",
+	NULL)
+
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select
+	#meta.meta_type, #meta.name, #meta.action, #meta.value
+from
+	#meta
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund_type = a.name,
+	@group_name = b.name
+from
+	fund_types a,
+	funds b
+where
+	a.fund_type_id = b.fund_type_id
+and
+	b.fund_id = @fund_id
+	
+
+select
+	new_login = "Create New Login",
+	group_name = @group_name,
+	fund_type = @fund_type
+
+	
+create table
+	#output(
+		group_name varchar(40),
+		user_name varchar(30),
+		password varchar(30),
+		status varchar(30),
+		remove_user varchar(40) NULL,
+		activate_user varchar(40) NULL)
+
+insert into
+	#output
+select
+	group_name = @group_name,
+	a.login,
+	a.password,
+	status = b.name,
+	NULL,
+	NULL
+from
+	tico_accounts a,
+	statuses b
+where
+	a.status_id = b.status_id
+
+update
+	#output
+set
+	remove_user = "REMOVE",
+	activate_user = "ACTIVATE"
+where
+	status = "New"
+
+
+--Adaptive Server has expanded all '*' elements in the following statement
+select
+	#output.group_name, #output.user_name, #output.password, #output.status, #output.remove_user, #output.activate_user
+from
+	#output
+order by
+	user_name
+
+
+go

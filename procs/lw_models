@@ -1,0 +1,64 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_models
+go
+
+create procedure
+	lw_models
+		@login varchar(50)
+as
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"begin_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"view_model",
+	"Model Collection Events",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_model",
+	"Add Model",
+	NULL)
+
+select * from #meta
+
+select
+	add_model = "ADD NEW MODEL"
+
+select
+	collection_model = name,
+	view_model = "VIEW MODEL"
+from
+	collection_models
+
+go

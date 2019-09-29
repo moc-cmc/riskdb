@@ -1,0 +1,36 @@
+drop procedure
+	r_managereginfowrapper
+go
+
+create procedure
+	r_managereginfowrapper
+		@login varchar(50)
+
+
+as
+
+/* CHECK TO SEE IF THIS IS ENABLED */
+declare @enabled_product_features varchar(50)
+select
+        @enabled_product_features = name
+from
+        enabled_product_features
+where
+        name in("EMIR Regulatory Reporting")
+if @@rowcount != 1
+begin
+        select
+		section = "Feature Not Supported",
+                message = "<b>EMIR Regulatory Reporting</b>" + " must be enabled to view this report. Please contact " + '<a href="mailto:sales@elysiumtechgroup.com">' + 'sales@elysiumtechgroup.com</a>'  + " for more information regarding this feature set."
+        return
+end
+
+if @enabled_product_features != NULL
+begin
+	exec
+		r_manageregulatoryinfo
+			@login
+end
+
+go
+

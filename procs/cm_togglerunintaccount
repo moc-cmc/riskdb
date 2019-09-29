@@ -1,0 +1,106 @@
+
+if object_id("cm_togglerunintaccount") != NULL
+    drop procedure
+        cm_togglerunintaccount
+go
+
+create procedure
+	cm_togglerunintaccount
+		@login varchar(30),
+		@run_name varchar(50),
+		@internal_account varchar(50)
+as
+
+
+declare @tico_account_id int
+declare @run_id int
+declare @internal_account_id int
+declare @is_included int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run Not Found"
+	return
+end
+
+select
+	@internal_account_id = internal_account_id
+from
+	internal_accounts
+where
+	symbol = @internal_account
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "External account not found",
+		internal_account = @internal_account
+	return
+end
+
+
+select
+	@is_included = count(*)
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+and
+	internal_account_id = @internal_account_id
+
+if @is_included > 0
+begin
+	delete
+
+	from
+		run_internal_accounts
+	where
+		run_id = @run_id
+	and
+		internal_account_id = @internal_account_id
+end
+else
+begin
+	insert into
+		run_internal_accounts
+	values(
+		@run_id,
+		@internal_account_id)
+end
+
+exec
+	cm_runintaccountfilters
+		@login,
+		@run_name,
+		"External Account"
+
+
+
+go

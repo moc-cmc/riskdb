@@ -1,0 +1,33 @@
+drop procedure
+        r_brokertraders
+go
+
+create procedure
+        r_brokertraders
+
+as
+
+create table
+        #traders(
+                trader_id int,
+                symbol varchar(50))
+
+insert into
+        #traders
+select
+        a.trader_id,
+        a.symbol
+from
+        traders a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+and
+        b.symbol like "%UNALLOC%"
+group by
+        a.trader_id
+
+select name=symbol from #traders order by symbol
+
+go
+

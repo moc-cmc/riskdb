@@ -1,0 +1,711 @@
+use
+	risk_finotec
+go
+
+drop procedure
+	fo_marginsummary
+go
+
+create procedure
+	fo_marginsummary
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @id int
+declare @ids int
+declare @contract_id int
+declare @value_date datetime
+declare @days float 
+declare @spot_price float
+declare @forward_price float
+declare @give_product_rate float
+declare @get_product_rate float
+declare @missing_prices int
+
+
+/* Only handles spot/fwd for now. */
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"run_name",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"sample_account",
+	"Range Transaction History",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_short",
+	"Number",
+	"#,##0;0;(#,##0)")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"margin_bucket",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"delta",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equivalent",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"margin",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_short",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"margin_use",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found"
+	return
+end
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#external_accounts(
+		external_account_id int)
+
+insert into
+	#external_accounts
+select
+	a.external_account_id
+from
+	external_accounts a,
+	fund_external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.external_account_type_id = c.external_account_type_id
+and
+	c.name in( "Client", "Counterparty")
+
+create table
+	#positions(
+		external_account_id int,
+		contract_id int,
+		quantity float,
+		product_id int NULL,
+		currency_id int NULL,
+		price float NULL)
+insert into
+	#positions(
+		external_account_id,
+		contract_id,
+		quantity)
+select
+	a.external_account_id,
+	a.contract_id,
+	sum(a.quantity)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = 423 /* CITI */
+and
+	/* a.trade_date < @end_date */
+	a.trade_date < "3/13/14 11:55"
+and
+	a.value_date > @begin_date
+group by
+	a.external_account_id,
+	a.contract_id
+	
+
+update
+	#positions
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#positions a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+
+update
+	#positions
+set
+	a.price = b.price
+from
+	#positions a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, b.price_date) = convert(date, @end_date)
+
+update
+	#positions
+set
+	a.price = 1.0 / c.price
+from
+	#positions a,
+	forwards b,
+	prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.price = NULL
+
+update
+	#positions
+set
+	a.price = b.price
+from
+	#positions a,
+	current_prices b
+where
+	a.contract_id = b.contract_id
+and
+	a.price = NULL
+		
+update
+	#positions 
+set
+	a.price = 1.0 / c.price
+from
+	#positions a,
+	forwards b,
+	current_prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.price = NULL
+
+select
+	account = b.symbol,
+	c.symbol,
+	a.quantity,
+	product = d.symbol,
+	currency = e.symbol,
+	a.price
+from
+	#positions a,
+	external_accounts b,
+	contracts c,
+	products d,
+	products e
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = c.contract_id
+and
+	a.product_id = d.product_id
+and
+	a.currency_id = e.product_id /* MARKR */
+
+
+
+select
+	@missing_prices = count(*)
+from
+	#positions
+where
+	price = NULL
+if @missing_prices = NULL
+	select
+		@missing_prices = 0
+
+if @missing_prices > 0
+begin
+	select
+		status = "Missing Prices",
+		message = "Missing prices, cannot calculate margin"
+	return
+end
+
+
+create table
+	#trades(
+		external_account_id int,
+		quantity float,
+		contract_id int,
+		product_id int,
+		product_qty float,
+		currency_id int,
+		currency_qty float,
+		price float,
+		product_margin float NULL,
+		currency_margin float NULL,
+		margin_bucket float NULL,
+		short_product_id int NULL,
+		short_qty numeric(30,4) NULL,
+		evaluation_currency_id int NULL,
+		bucket_id int NULL,
+		bucket varchar(50) NULL)
+insert into
+	#trades(
+		external_account_id,
+		quantity,
+		contract_id,
+		product_id,
+		product_qty,
+		currency_id,
+		currency_qty,
+		price,
+		evaluation_currency_id)
+select
+	a.external_account_id,
+	a.quantity,
+	a.contract_id,
+	b.product_id,
+	a.quantity,
+	b.currency_id,
+	a.quantity * price * -1.0,
+	a.price,
+	evaluation_currency_id = @evaluation_currency_id
+from
+	#positions a,
+	forwards b,
+	#external_accounts c
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = c.external_account_id
+
+
+update
+	#trades
+set
+	product_margin = .0625,
+	currency_margin = .0625
+
+
+update
+	#trades
+set
+	a.product_margin = b.margin
+from
+	#trades a,
+	product_margins b
+where
+	a.product_id = b.product_id
+
+
+update
+	#trades
+set
+	a.currency_margin = b.margin
+from
+	#trades a,
+	product_margins b
+where
+	a.currency_id = b.product_id
+
+update
+	#trades
+set
+	margin_bucket = 0.0
+update
+	#trades
+set
+	margin_bucket = product_margin
+where
+	product_margin > margin_bucket
+
+update
+	#trades
+set
+	margin_bucket = currency_margin
+where
+	currency_margin > margin_bucket
+
+delete
+
+from
+	#trades
+where
+	quantity = 0.0
+	
+update
+	#trades
+set
+	short_product_id = product_id,
+	short_qty = product_qty
+where
+	quantity  < 0.0 
+
+update
+	#trades
+set
+	short_product_id = currency_id,
+	short_qty = currency_qty
+where
+	quantity > 0.0
+
+/* create table
+	#buckets(
+		bucket_id int identity,
+		margin_bucket float)
+
+insert into
+	#buckets
+select
+	distinct(margin_bucket)
+from
+	#trades
+
+update
+	#trades
+set
+	a.bucket_id = b.bucket_id
+from
+	#trades a,
+	#buckets b
+where
+	a.margin_bucket = b.margin_bucket */
+
+update
+	#trades
+set
+	bucket = convert(varchar(30), convert(numeric(30,5), margin_bucket))
+
+
+create table
+	#shorts(
+		external_account_id int,
+		bucket varchar(30), 
+		product_id int,
+		quantity numeric(30,4),
+		bucket_margin float NULL,
+		currency_id int NULL,
+		conversion_rate float NULL,
+		margin_use float NULL,
+		equivalent float NULL
+		)
+insert into
+	#shorts(
+		external_account_id,
+		bucket,
+		product_id,
+		quantity)
+select
+	external_account_id,
+	bucket,
+	short_product_id,
+	sum(short_qty)
+from
+	#trades
+where
+	short_product_id != @evaluation_currency_id
+group by
+	external_account_id,
+	bucket,
+	short_product_id
+
+update
+	#shorts
+set
+	quantity = abs(quantity)
+
+update
+	#shorts
+set
+	bucket_margin = convert(float, bucket),
+	currency_id = @evaluation_currency_id
+
+
+update
+	#shorts
+set
+	conversion_rate = 1.0
+where
+	product_id = currency_id
+
+update
+	#shorts
+set
+	a.conversion_rate = c.price
+from
+	#shorts a,
+	forwards b,
+	prices c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+
+
+update
+	#shorts
+set
+	a.conversion_rate = 1.0 / c.price
+from
+	#shorts a,
+	forwards b,
+	prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.conversion_rate = NULL
+
+update
+	#shorts
+set
+	a.conversion_rate = c.price
+from
+	#shorts a,
+	forwards b,
+	current_prices c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	a.conversion_rate = NULL
+
+update
+	#shorts
+set
+	a.conversion_rate = 1.0 / c.price
+from
+	#shorts a,
+	forwards b,
+	current_prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.conversion_rate = NULL
+
+
+
+
+update
+	#shorts
+set
+	margin_use = bucket_margin *  quantity
+
+
+update
+	#shorts
+set
+	equivalent = margin_use * conversion_rate
+	
+
+create table
+	#summary(
+		external_account_id int,
+		equivalent float)
+insert into
+	#summary
+select
+	external_account_id,
+	sum(equivalent)
+from
+	#shorts
+group by
+	external_account_id
+
+select
+	section = "Client Margin Usage Summary",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = a.symbol,
+	account_type = c.name,
+	margin_use = equivalent
+from
+	external_accounts a,
+	#summary b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.external_account_type_id = c.external_account_type_id
+and
+	a.symbol != "INTERNAL"
+order by
+	a.symbol
+
+
+/* create table
+	#positions(
+		external_account_id int,
+		contract_id int,
+		quantity numeric(30,4))
+insert into
+	#positions
+select
+	external_account_id,
+	contract_id,
+	sum(quantity)
+from
+	#trades
+group by
+	external_account_id,
+	contract_id
+
+select
+	section = "Net Positions",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = a.symbol,
+	b.symbol,
+	c.quantity
+from
+	external_accounts a,
+	contracts b,
+	#positions c
+where
+	a.external_account_id = c.external_account_id
+and
+	b.contract_id = c.contract_id */
+
+
+select
+	section = "Client Margin Usage",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = a.symbol,
+	product = b.symbol,
+	margin_bucket = c.bucket_margin,
+	net_short = c.quantity * -1.0,
+	margin = c.margin_use,
+	c.equivalent
+from
+	external_accounts a,
+	products b,
+	#shorts c
+where
+	a.external_account_id = c.external_account_id
+and
+	b.product_id = c.product_id
+and
+	a.symbol != "INTERNAL"
+order by
+	a.symbol,
+	b.symbol,
+	c.bucket_margin
+
+
+
+
+go
+

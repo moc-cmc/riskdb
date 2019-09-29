@@ -1,0 +1,28 @@
+use
+	risk_harbor
+go
+
+drop procedure
+	cn_masteraccounts
+go
+
+create procedure
+	cn_masteraccounts
+		@login varchar(50)
+as
+
+
+select
+	a.symbol
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.name = "Master"
+order by
+	a.external_account_id
+
+
+go

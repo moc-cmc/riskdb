@@ -1,0 +1,106 @@
+
+if object_id("r_modelinputsforfuture") != NULL
+    drop procedure
+        r_modelinputsforfuture
+go
+
+create procedure
+	r_modelinputsforfuture
+		@contract_id int
+as
+
+declare @minutes int
+declare @hours float
+declare @underlying_price float
+declare @vol float
+declare @interest_rate float
+declare @underlying_contract_id int
+declare @as_of datetime
+declare @expiration datetime
+declare @contract_tv_id int
+declare @days float
+declare @product_id int
+
+
+select
+	@underlying_contract_id = a.underlying_contract_id,
+	@expiration = b.expiration
+from
+	options a,
+	option_expirations b,
+	option_contracts c
+where
+	a.option_id = b.option_id
+and
+	b.option_expiration_id = c.option_expiration_id
+and
+	c.contract_id = @contract_id
+
+select
+	@as_of = getdate()
+
+exec
+	r_priceasof
+		@underlying_contract_id,
+		@as_of,
+		@underlying_price output
+
+select
+	@contract_tv_id = contract_tv_id
+from
+	contract_tvs
+where
+	contract_id = @contract_id
+and
+	tv_date = (
+		select
+			max(tv_date)
+		from
+			contract_tvs
+		where
+			contract_id = @contract_id)
+
+select
+	@vol = volatility
+from
+	contract_tvs
+where
+	contract_tv_id = @contract_tv_id
+
+
+exec
+	r_contractcurrency
+		@contract_id,
+		@product_id output
+
+
+exec
+	r_rateasof
+		@product_id,
+		@as_of,
+		@expiration,
+		@interest_rate output
+
+select
+	@minutes = datediff(minute, getdate(), @expiration)
+if @minutes >= 1
+	select
+		@hours = convert(float, @minutes) / 60.0
+else
+	select
+		@hours = 0,
+		@vol = 0
+
+select
+	@days = @hours / 24.0
+	
+
+select
+	underlying_price = @underlying_price,
+	volatility = @vol,
+	days = @days,
+	interest_rate = @interest_rate,
+	carry_cost = 0.0,
+	days_in_year = 360.0
+
+go

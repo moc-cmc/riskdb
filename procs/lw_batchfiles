@@ -1,0 +1,143 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_batchfiles
+go
+
+create procedure
+	lw_batchfiles
+		@login varchar(50)
+as
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+         #meta
+values(
+         "Column Format",
+         "total_balance",
+         "Number",
+         "#,##0.00")
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"begin_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"activate",
+	"Create Batch File Trades",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"evaluate",
+	"Evaluate File",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_model",
+	"Add Model",
+	NULL)
+
+select * from #meta
+
+
+create table
+	#output(
+		batch_file_id int,
+		identifier varchar(100),
+		name varchar(100), 
+		timestamp datetime,
+		accounts int NULL,
+		total_balance float NULL,
+		status varchar(50) NULL)
+insert into
+	#output(
+		batch_file_id,
+		identifier,
+		name,
+		timestamp,
+		status)
+select
+	a.batch_file_id,
+	a.identifier,
+	a.name,
+	a.timestamp,
+	b.name
+from
+	batch_files a,
+	statuses b
+where
+	a.status_id = b.status_id
+
+	
+create table
+	#stats(
+		batch_file_id int,
+		num_accounts int,
+		total_balance float)
+insert into
+	#stats
+select
+	batch_file_id,
+	count(identifier),
+	sum(amount)
+from
+	batch_file_accounts
+group by
+	batch_file_id
+
+update
+	#output
+set
+	a.accounts = b.num_accounts,
+	a.total_balance = b.total_balance
+from
+	#output a,
+	#stats b
+where
+	a.batch_file_id = b.batch_file_id
+
+
+select
+	identifier,
+	name,
+	timestamp,
+	accounts,
+	total_balance,
+	status,
+	evaluate = "EVALUATE",
+	activate = "ACTIVATE"
+from
+	#output
+order by
+	name
+
+
+go

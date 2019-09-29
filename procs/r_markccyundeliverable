@@ -1,0 +1,46 @@
+use
+	risk_moc
+go
+
+drop procedure
+	r_markccyundeliverable
+go
+
+create procedure
+	r_markccyundeliverable
+		@symbol varchar(50)
+
+as
+
+declare @product_id int
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @symbol
+
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Product not found",
+		product = @symbol
+	return
+end
+
+delete
+
+from
+	nondeliverable_ccys
+where
+	product_id = @product_id
+
+insert into
+	nondeliverable_ccys
+values(
+	@product_id)
+
+go
+	

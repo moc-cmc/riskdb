@@ -1,0 +1,150 @@
+drop procedure
+	r_uncommitdate
+go
+
+create procedure
+	r_uncommitdate
+		@login varchar(50),
+		@uncommit_date datetime
+
+as
+
+declare @max_committed_reval_dt datetime
+declare @max_commit_transaction_dt datetime
+declare @fo_commit_type_id int
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @commit_log_id int
+declare @tico_account_id int
+declare @status_id int
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "login not found"
+        return
+end
+
+select
+        @status_id = status_id
+from
+        statuses
+where
+        name = "Uncommitted"
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "status not found"
+        return
+end
+
+select @uncommit_date = convert(char(8), @uncommit_date, 112)
+
+exec 
+	r_daterangefordate
+		@uncommit_date,
+		@begin_date output,
+		@end_date output
+select
+	@begin_date = convert(char(8), @begin_date, 112)+" 17:00",
+	@end_date = convert(char(8), @end_date, 112)+" 17:00"
+
+select 
+	@max_committed_reval_dt = max(reval_date)
+from
+	committed_daily_revals
+
+select
+	@fo_commit_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Front Office Commit"
+if @@rowcount != 1
+begin
+	select 
+		error = "Error",
+		msg = "Problem determining id for transaction type",
+		type = "'Front Office Commit'"
+	return
+end	
+
+select
+	@max_commit_transaction_dt = max(transaction_date)
+from
+	int_account_transactions
+where
+	transaction_type_id = @fo_commit_type_id
+
+if @max_committed_reval_dt > @end_date
+begin
+	if @max_commit_transaction_dt > @end_date
+	begin
+        	select
+                	"error"= "Can not uncommit date",
+                	"msg" = "Revals and Commit transactions exist after date"
+		return
+	end
+	else
+	begin
+		delete from
+			trade_daily_revals
+		where
+			reval_date > @end_date
+
+		delete from
+			committed_daily_revals
+		where
+			reval_date > @end_date
+	end
+end
+	
+
+if @max_committed_reval_dt < @end_date and @max_commit_transaction_dt < @end_date
+begin
+	select
+                "error"= "Can not uncommit date",
+                "msg" = "No commits exist for date",
+		"last_reval_date" = @max_committed_reval_dt,
+		"last_commit_date" = @max_commit_transaction_dt,
+		"uncommitting_for" = @end_date
+	return
+end
+
+exec
+ 
+	r_uncommitdaterange
+			@begin_date = @end_date,
+			@end_date = @end_date 
+
+/* Log Uncommit */
+exec
+        j_nextkey
+                "commit_logs",
+                @commit_log_id output
+insert into
+        commit_logs
+values(
+        @commit_log_id,
+        @tico_account_id,
+        @status_id,
+        @uncommit_date,
+        getdate()
+)
+
+
+exec
+	r_revalandcommittrades
+			@login
+
+go
+

@@ -1,0 +1,89 @@
+create or replace procedure
+	r_deleterunforfiledrop
+		@login varchar(50),
+		@run varchar(50),
+		@filedrop_report varchar(50),
+		@filedrop_destination varchar(50)
+
+as
+
+
+declare @run_id int
+declare @filedrop_destination_id int
+declare @filedrop_report_id int
+declare @already_configured varchar(1)
+
+select
+        @filedrop_destination_id = filedrop_destination_id
+from
+        filedrop_destinations
+where
+        name = @filedrop_destination
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                msg = "Could not find destination",
+                destination = @filedrop_destination
+        return
+end
+
+select
+        @filedrop_report_id = filedrop_report_id
+from
+        filedrop_reports
+where
+        name = @filedrop_report
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                msg = "Could not find report",
+                report = @filedrop_report
+        return
+end
+
+select
+        @run_id = run_id
+from
+        runs
+where
+        name = @run
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                msg = "Could not find run",
+                run = @run
+        return
+end
+
+delete from
+	run_fd_report_destinations
+where
+	run_id = @run_id
+and
+	filedrop_report_id = @filedrop_report_id
+and
+	filedrop_destination_id = @filedrop_destination_id
+if @@rowcount != 1
+begin
+	select
+		msg = "didnt delete"
+end
+	
+select
+	status = "Success",
+	msg = "Removed Run For Filedrop",
+	filedrop_report = @filedrop_report,
+	filedrop_destination = @filedrop_destination
+
+exec
+	r_managefiledropmultirun
+		@login = @login
+
+go
+		
+
+
+

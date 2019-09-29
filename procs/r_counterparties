@@ -1,0 +1,19 @@
+
+if object_id("r_counterparties") != NULL
+    drop procedure
+        r_counterparties
+go
+
+create procedure
+	r_counterparties
+as
+
+select
+	symbol = name
+from
+	counterparties
+order by
+	name
+
+
+go

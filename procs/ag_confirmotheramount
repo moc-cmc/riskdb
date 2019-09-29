@@ -1,0 +1,31 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_confirmotheramount
+go
+
+create procedure
+	ag_confirmotheramount
+		@login varchar(50),
+		@account varchar(50),
+		@product varchar(50),
+		@value_date datetime,
+		@unconfirmed numeric(30,4),
+		@note varchar(200)=NULL
+as
+
+
+exec
+	ag_addpbwiresignoff
+		@login = @login,
+		@account = @account,
+		@product = @product,
+		@confirmation_type = "Other Amount",
+		@value_date = @value_date,
+		@amount = @unconfirmed,
+		@note = @note
+
+
+go

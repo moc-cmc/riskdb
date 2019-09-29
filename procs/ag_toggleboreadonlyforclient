@@ -1,0 +1,43 @@
+create or replace procedure
+	ag_toggleboreadonlyforclient
+		@login varchar(100),
+		@user_name varchar(100),
+		@legal_entity varchar(150)
+
+as
+
+declare @toggle_action varchar(25)
+declare @access_group varchar(100)
+declare @tico_account_id int
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+
+select
+	@access_group = "Client Back Office Read Only"
+
+exec
+	api_toggleaccessgroupforlogin
+		@login = @login,
+		@user_name = @user_name,
+		@access_group = @access_group,
+		@toggle_action = @toggle_action output
+
+exec
+	ag_legalentitieshome
+		@login = @login,
+		@legal_entity = @legal_entity
+
+go

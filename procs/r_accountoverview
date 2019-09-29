@@ -1,0 +1,1023 @@
+
+drop procedure
+	r_accountoverview
+go
+
+create procedure
+	r_accountoverview
+		@login varchar(50),
+		@external_account varchar(50)
+
+
+as
+
+declare @external_account_id int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "external_account",
+        NULL,
+        NULL)
+
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "ext_account",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "details",
+        "External Account Details",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_notifier",
+        "Add Trade Notifier",
+        NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_notifier",
+	"Edit Trade Notifier",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "delete_notifier",
+        "Delete Trade Notifier",
+        NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_user_name",
+	"Trader User Names",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"delete_trader",
+	"Delete Trader",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_trader",
+	"Add New Trader",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_trader",
+	"Edit Trader",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_defaults",
+	"Tally Defaults",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"mappings",
+	"Trader Mappings",
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "quantity",
+        "Number",
+        "#,##0.00")
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit",
+        "Edit Account Margins",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_give_up",
+        "Add Client Give Up",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_give_up",
+        "Edit Client Give Up",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "del_give_up",
+        "Delete Client Give Up",
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"del_mapping",
+	"Delete External Account Mapping",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_mapping",
+	"Add External Account Mapping",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_limits",
+	"Edit Ext Account Limits",
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_mapping",
+	"Edit External Account Mapping",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_account",
+        "Edit External Account",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "del_account",
+        "Delete External Account",
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+        "add_note",
+        "Add Note",
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"del_trader_mapping",
+	"Delete Trader Mapping",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_trader_mapping",
+	"Add Trader Mapping",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_trader_mapping",
+	"Edit Trader Mapping",
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select
+	#meta.meta_type, #meta.name, #meta.action, #meta.value
+from
+	#meta
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts 
+where
+	symbol = @external_account
+
+
+create table
+	#external_accounts(
+		external_account_id int,
+		external_account varchar(50),
+		account varchar(50),
+		external_account_type_id int,
+		external_account_type varchar(50),
+		aggregation_style_id int,
+		aggregation_style varchar(50),
+		pb varchar(50) NULL,
+		edit_account varchar(50)
+	)
+
+insert into
+	#external_accounts
+select
+	a.external_account_id,
+	a.symbol,
+	a.symbol,
+	a.external_account_type_id,
+	b.name,
+	a.aggregation_style_id,
+	c.name,
+	NULL,
+	edit_account = "EDIT"
+from
+	external_accounts a,
+	external_account_types b,
+	aggregation_styles c
+where
+	a.external_account_type_id = b.external_account_type_id 
+and
+	a.aggregation_style_id = c.aggregation_style_id
+and
+	a.symbol = @external_account
+
+update
+	#external_accounts
+set
+	pb = a.name
+from
+	sources a,
+	prime_brokers b,
+	external_account_prime_brokers c,
+	#external_accounts d
+where
+	a.source_id = b.source_id
+and
+	b.prime_broker_id = c.prime_broker_id
+and
+	c.external_account_id = d.external_account_id
+
+
+create table
+	#external_account_mappings(
+		section varchar(50),
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		external_account varchar(50) NULL,
+		source_id int NULL,
+		source varchar(50) NULL,
+		mapping varchar(50) NULL,
+		add_mapping varchar(50) NULL,
+		edit_mapping varchar(30) NULL,
+		del_mapping varchar(50) NULL,
+		style varchar(50) 
+	)
+	
+
+insert into 
+	#external_account_mappings(
+			section,
+			add_mapping,
+			external_account,
+			style
+	)
+select
+	section = "External Account Mappings",
+	add_mapping = "Add Mapping",
+	@external_account,
+	style = "background:rgb(233, 241, 245)"
+
+insert into
+	#external_account_mappings(
+			section,
+			external_account_id,
+			external_account,
+			account,
+			source_id,
+			source,
+			mapping,
+			edit_mapping,
+			del_mapping,
+			style
+	)
+select
+	section = "External Account Mappings",
+	external_account_id = a.external_account_id,
+	external_account = a.symbol,
+	account = a.symbol,
+	source_id = b.source_id,
+	source = b.name,
+	mapping = c.symbol,
+	edit_mapping = "EDIT",
+	del_mapping = "DELETE",
+	style = "background:#fff"
+from
+	external_accounts a,
+	sources b,
+	external_account_symbols c
+where
+	a.external_account_id = c.external_account_id
+and
+	b.source_id = c.source_id
+and
+	a.symbol = @external_account
+order by
+	b.name,
+	a.symbol
+
+create table
+        #trader_mappings(
+                section varchar(50),
+                trader_id int NULL,
+                trader varchar(50) NULL,
+		trdr varchar(50) NULL,
+                source_id int NULL,
+                source varchar(50) NULL,
+                mapping varchar(50) NULL,
+                add_trader_mapping varchar(50) NULL,
+                edit_trader_mapping varchar(30) NULL,
+                del_trader_mapping varchar(50) NULL,
+                style varchar(50)
+        )
+
+
+insert into
+        #trader_mappings(
+                        section,
+                        add_trader_mapping,
+                        style
+        )
+select
+        section = "Trader Mappings",
+        add_trader_mapping = "Add Mapping",
+        style = "background:rgb(233, 241, 245)"
+
+insert into
+        #trader_mappings(
+                        section,
+                        trader_id,
+                        trader,
+			trdr,
+                        source_id,
+                        source,
+                        mapping,
+                        edit_trader_mapping,
+                        del_trader_mapping,
+                        style
+        )
+select
+        section = "Trader Mappings",
+        trader_id = d.trader_id,
+        trader = d.symbol,
+        trdr = d.symbol,
+        source_id = b.source_id,
+        source = b.name,
+        mapping = c.symbol,
+        edit_trader_mapping = "EDIT",
+        del_trader_mapping = "DELETE",
+        style = "background:#fff"
+from
+        external_accounts a,
+        sources b,
+        trader_symbols c,
+        traders d
+where
+        a.external_account_id = d.external_account_id
+and
+        b.source_id = c.source_id
+and
+	c.trader_id = d.trader_id
+and
+        a.symbol = @external_account
+order by
+        b.name,
+        a.symbol
+
+
+
+create table
+	#credit(
+		section varchar(50),
+		external_account_id int,
+		ext_account varchar(50),
+		currency varchar(50),
+		nop_type varchar(50),
+		nop_limit float,
+		dsl_type varchar(50),
+		dsl_limit float,
+		notice_level float,
+		warning_level float,
+		blocked_level float,
+		edit_limits varchar(50)
+	)
+
+insert into
+	#credit
+select
+	section = "Credit Summary",
+	b.external_account_id,
+	ext_account = b.symbol,
+	currency = c.symbol,
+	nop_type = d.name,
+	a.nop_limit,
+	dsl_type = e.name,
+	a.dsl_limit,
+	a.notice_level,
+	a.warning_level,
+	a.blocked_level,
+	edit_limits = "EDIT"
+from
+	ext_account_limits a,
+	external_accounts b,
+	products c,
+	nop_types d,
+	dsl_types e
+where
+	a.external_account_id = b.external_account_id
+and
+	a.currency_id = c.product_id
+and
+	a.nop_type_id = d.nop_type_id
+and
+	a.dsl_type_id = e.dsl_type_id
+and	
+	b.symbol = @external_account
+
+	
+
+create table
+	#client_give_ups(
+		section varchar(50),
+		add_give_up varchar(50) NULL,
+		external_account_id int NULL,
+		external_account varchar(50) NULL,
+		account varchar(50) NULL,
+		source_id int NULL,
+		source varchar(50) NULL,
+		symbol varchar(50) NULL,
+		edit_give_up varchar(50) NULL,
+		del_give_up varchar(50) NULL,
+		style varchar(50)
+	)
+		
+insert into
+	#client_give_ups(
+		section,
+		add_give_up,
+		external_account,
+		style
+	)
+select
+	section = "Client Give Ups",
+	add_give_up = "Add Give Up",
+	@external_account,
+	style = "background:#E9F1F5"
+	
+
+insert into
+	#client_give_ups(
+		section,
+		external_account_id,
+		external_account,
+		account,
+		source_id,
+		source,
+		symbol,
+		edit_give_up,
+		del_give_up,
+		style
+		)
+select
+	section = "Client Give Ups",
+	a.external_account_id,
+	a.symbol,
+	a.symbol,
+	b.source_id,
+	b.name,
+	c.symbol,
+	edit_give_up = "EDIT",
+	del_give_up = "DELETE",
+	style = "background:#fff"
+from
+	external_accounts a,
+	sources b,
+	client_give_ups c
+where
+	a.external_account_id = c.external_account_id
+and
+	b.source_id = c.source_id
+and
+	a.symbol = @external_account
+
+
+create table
+	#traders(
+		section varchar(50), 
+		add_trader varchar(50) NULL,
+		trader_id int NULL,
+		trader varchar(50) NULL,
+		sales_code varchar(20) NULL,
+		external_account varchar(50) NULL,
+		account varchar(50) NULL,
+		tico_account_id int NULL,
+		user_name varchar(30) NULL,
+		tally_defaults varchar(25) NULL,
+		edit_trader varchar(20) NULL,
+		delete_trader varchar(20) NULL,
+		set_user_name varchar(25) NULL,
+		mappings varchar(25) NULL,
+		style varchar(50)
+	)
+
+
+insert into
+	#traders(
+		section,
+		add_trader,
+		external_account,
+		style
+	)
+select
+	section = "Traders",
+	add_trader = "Add Trader",
+	@external_account,
+	style = "background:#E9F1F5"
+
+insert into
+	#traders
+select
+	section = "Traders",
+	NULL,
+	a.trader_id,
+	trader = a.symbol,
+	sales_code = b.name,
+        external_account = d.symbol,
+	account = d.symbol,
+	tico_account_id = c.account_id,
+	user_name = c.login,
+	tally_defaults = NULL,
+	edit_trader = "EDIT",
+	delete_trader = "DELETE",
+	set_user_name = "SET USER NAME",
+	mappings = "MAPPINGS",
+	style = "background:#fff"
+from
+	traders a,
+	sales_codes b,
+	tico_accounts c,
+	external_accounts d
+where
+	a.sales_code_id = b.sales_code_id
+and
+	a.external_account_id = d.external_account_id
+and
+	a.tico_account_id *= c.account_id
+and
+	d.symbol = @external_account
+order by
+        d.symbol,
+	a.symbol
+
+update
+	#traders
+set
+	tally_defaults = "SET TALLY DEFAULTS"
+where
+	user_name != NULL
+
+update 
+	#traders
+set
+	tally_defaults = "TALLY DEFAULTS"
+from
+	#traders a,
+	default_tally_accounts b
+where
+	a.tico_account_id = b.tico_account_id
+
+
+create table
+        #trade_notifiers(
+		section varchar(50),
+		add_notifier varchar(50) NULL,
+                trade_notifier_id int NULL,
+		source_id int NULL,
+		source varchar(50) NULL,
+                external_account_id int NULL,
+		external_account varchar(50) NULL,
+		account varchar(50) NULL,
+                counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+                trader_id int NULL,
+		trader varchar(50) NULL,
+                status_id int NULL,
+		status varchar(50) NULL,
+                broker_id int NULL,
+		broker varchar(50) NULL,
+		trade_type_id int NULL,
+		trade_type varchar(50) NULL,
+		notifier_date datetime NULL,
+		notification_status_id int NULL,
+		notification_status varchar(50) NULL,
+		edit_notifier varchar(50) NULL,
+		delete_notifier varchar(50) NULL,
+		aggregation_style_id int NULL,
+		aggregation_style varchar(50) NULL,
+		style varchar(50)
+	)
+
+
+insert into
+	#trade_notifiers(
+		section,
+		add_notifier,
+		external_account,
+		style)
+select
+	section = "Trade Notifiers",
+	add_notifier = "Add Notifier",
+	@external_account,
+	style = "background:#E9F1F5"
+
+insert into
+       #trade_notifiers(
+		section,
+		trade_notifier_id,
+		source_id,
+		external_account_id,
+		account,
+		broker_id,
+		trader_id,
+		counterparty_id,
+		status_id,
+		trade_type_id,
+		notification_status_id,
+		notifier_date,
+		edit_notifier,
+		delete_notifier,
+		style
+       )
+select
+	section = "Trade Notifiers",
+	a.trade_notifier_id,
+        a.source_id,
+        a.external_account_id,
+	b.symbol,
+        a.broker_id,
+        a.trader_id,
+        a.counterparty_id,
+        a.status_id,
+	a.trade_type_id,
+        a.notification_status_id,
+        a.notifier_date,
+        edit_notifier = "EDIT NOTIFIER",
+        delete_notifier = "DELETE NOTIFIER",
+	style = "background:#fff"
+
+from
+	trade_notifiers a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @external_account
+
+update
+        #trade_notifiers
+set
+        external_account = b.symbol,
+	aggregation_style_id = c.aggregation_style_id,
+	aggregation_style = c.name
+from
+        #trade_notifiers a,
+        external_accounts b,
+	aggregation_styles c
+where
+        a.external_account_id = b.external_account_id
+and
+	b.aggregation_style_id = c.aggregation_style_id
+
+update
+        #trade_notifiers
+set
+        trader = b.symbol
+from
+        #trade_notifiers a,
+        traders b
+where
+        a.trader_id = b.trader_id
+
+update
+        #trade_notifiers
+set
+        counterparty = b.name
+from
+        #trade_notifiers a,
+        counterparties b
+where
+        a.counterparty_id = b.counterparty_id
+
+
+update
+        #trade_notifiers
+set
+        status = b.name
+from
+        #trade_notifiers a,
+        statuses b
+where
+        a.status_id = b.status_id
+
+update
+	#trade_notifiers
+set
+	notification_status = b.name
+from
+	#trade_notifiers a,
+	statuses b
+where
+	a.notification_status_id = b.status_id
+
+update
+	#trade_notifiers
+set
+	trade_type = b.name
+from
+	#trade_notifiers a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+update
+        #trade_notifiers
+set
+        broker = b.symbol
+from
+        #trade_notifiers a,
+        brokers b
+where
+        a.broker_id = b.broker_id 
+
+update 
+	#trade_notifiers
+set
+	source = b.name
+from
+	#trade_notifiers a,
+	sources b
+where
+	a.source_id = b.source_id
+
+create table
+	#notes(
+		section varchar(50),
+		add_note varchar(50) NULL,
+	        note_id int NULL,
+                external_account_id int NULL,
+		external_account varchar(50) NULL,
+		account varchar(50) NULL,
+                tico_account_id int NULL,
+		tico_account varchar(50) NULL,
+                note varchar(255) NULL,
+                timestamp varchar(50) NULL,
+		style varchar(50)
+	)
+
+
+insert into 
+	#notes(
+		section,
+		add_note,
+		external_account,
+		style
+	)
+select
+	section = "Notes",
+	add_note = "Add Note",
+	external_account = @external_account,
+	style = "background:#E9F1F5"
+
+insert into
+	#notes(
+		section,
+		note_id,
+		external_account_id,
+		external_account,
+		account,
+		tico_account_id,
+		tico_account,
+		note,
+		timestamp,
+		style
+	)
+select
+	section = "Notes",
+	a.note_id,
+	a.external_account_id,
+	@external_account,
+	@external_account,
+	a.tico_account_id,
+	b.login,
+	a.note,
+	convert(varchar(50), a.timestamp),
+	style = "background:#fff"
+from
+	external_account_notes a,
+	tico_accounts b,
+	external_accounts c
+	
+where
+	a.tico_account_id = b.account_id
+and
+	c.symbol = @external_account
+and
+	a.external_account_id = c.external_account_id
+			
+
+select
+        external_account = external_account,
+	account = account,
+        account_type = external_account_type,
+	prime_broker = pb,
+        aggregation_style = aggregation_style,
+        edit_account = "EDIT",
+	details = "DETAILS"
+from
+	#external_accounts
+
+select
+        section,
+        add_trader,
+        trader,
+        sales_code,
+        external_account,
+        account,
+        user_name,
+        tally_defaults,
+        edit_trader,
+        delete_trader,
+        set_user_name,
+        style
+from
+        #traders
+
+
+select
+	section,
+	add_mapping,
+	external_account,
+	account,
+	source,
+	mapping,
+	edit_mapping,
+	del_mapping,
+	style
+from
+	#external_account_mappings
+
+select
+        section,
+        add_trader_mapping,
+        trader,
+        source,
+        mapping,
+        edit_trader_mapping,
+        del_trader_mapping,
+        style
+from
+        #trader_mappings
+order by
+	trdr
+
+select
+	section,
+	add_give_up,
+	external_account,
+	account,
+	source,
+	symbol,
+	edit_give_up,
+	del_give_up,
+	style
+from
+	#client_give_ups
+
+
+select
+	section,
+	add_notifier,
+        external_account,
+        trade_notifier_id,
+        source,
+	account,
+        account_aggregation_style = aggregation_style,
+        broker,
+	trader,
+        counterparty,
+        status,
+	trade_type,
+        notification_status,
+        notifier_date,
+        edit_notifier,
+        delete_notifier,
+	style
+from
+        #trade_notifiers
+
+select
+        section,
+        ext_account,
+        currency,
+        nop_type,
+        nop_limit,
+        dsl_type,
+        dsl_limit,
+        notice_level,
+        warning_level,
+        blocked_level,
+        edit_limits
+from
+        #credit
+
+select
+	section,
+	add_note,
+	external_account,
+	account,
+	login = tico_account,
+	date_added = timestamp,
+	note,
+	style
+from
+	#notes
+
+go

@@ -1,0 +1,329 @@
+drop procedure r_addagggroup
+go
+
+create procedure
+	r_addagggroup
+		@login varchar(50),
+		@name varchar(50),
+		@agg_schedule varchar(50),
+		@tally_user varchar(50),
+		@tally_trade_type varchar(25),
+		@tally_internal_account varchar(50),
+		@tally_external_account varchar(50),
+		@tally_counterparty varchar(50),
+		@tally_trader varchar(50),
+		@tally_strategy varchar(25),
+		@tally_status varchar(25),
+		@tally_broker varchar(50),
+		@tally_sales_code varchar(50),
+		@offset_ext_account varchar(50)=NULL,
+		@offset_counterparty varchar(50)=NULL,
+		@offset_trader varchar(50)=NULL
+
+as
+
+declare @agg_group_id int
+declare @agg_schedule_id int
+declare @tally_user_id int
+declare @tally_trade_type_id int
+declare @tally_internal_account_id int
+declare @tally_external_account_id int
+declare @tally_counterparty_id int
+declare @tally_trader_id int
+declare @tally_strategy_id int
+declare @tally_status_id int
+declare @tally_broker_id int
+declare @tally_sales_code_id int
+declare @offset_ext_account_id int
+declare @offset_counterparty_id int
+declare @offset_trader_id int
+
+
+select
+	@agg_schedule_id = agg_schedule_id
+from
+	agg_schedules
+where
+	name = @agg_schedule
+if @agg_schedule_id = NULL
+begin
+	select
+		error="Error",
+		msg="Aggregation Schedule not found",
+		agg_schedule = @agg_schedule
+	return
+end
+
+
+select
+	@tally_user_id = account_id
+from
+	tico_accounts
+where
+	login = @tally_user
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find login",
+		login=@tally_user
+	return
+end
+
+select
+	@tally_trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = @tally_trade_type
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_trade_type_id",
+		trade_type = @tally_trade_type
+	return
+end
+
+select
+	@tally_internal_account_id = internal_account_id
+from
+	internal_accounts
+where
+	symbol = @tally_internal_account
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_internal_account_id",
+		tally_internal_account = @tally_internal_account
+	return
+end
+
+select
+	@tally_external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @tally_external_account
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_external_account_id",
+		tally_external_account= @tally_external_account
+	return
+end
+
+select
+	@tally_counterparty_id = counterparty_id
+from
+	counterparties
+where
+	name = @tally_counterparty
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_counterparty_id",
+		tally_counterparty=@tally_counterparty
+	return
+end
+
+select
+	@tally_trader_id = trader_id
+from
+	traders
+where
+	symbol = @tally_trader
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_trader_id",
+		tally_trader=@tally_trader
+	return
+end
+select
+	@tally_strategy_id = strategy_id
+from
+	strategies
+where
+	name = @tally_strategy
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_strategy_id",
+		tally_strategy = @tally_strategy
+end
+
+select
+	@tally_broker_id = broker_id
+from
+	brokers
+where
+	symbol = @tally_broker
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_broker_id",
+		tally_broker = @tally_broker
+	return
+end
+
+select
+	@tally_sales_code_id = sales_code_id
+from
+	sales_codes
+where
+	name = @tally_sales_code
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_sales_code_id",
+		tally_sales_code = @tally_sales_code
+	return
+end
+select
+	@tally_status_id = status_id
+from
+	statuses
+where
+	name = @tally_status
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg ="Could not find tally_status_id",
+		tally_status = @tally_status
+	return
+end
+
+
+if @offset_ext_account != NULL
+begin
+
+	select
+		@offset_ext_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = @offset_ext_account
+	if @@rowcount = 0
+	begin
+		select
+			status="Error",
+			msg ="Could not find offset_ext_account_id",
+			offset_ext_account= @offset_ext_account
+		return
+	end
+end
+
+if @offset_counterparty != NULL
+begin
+	select
+		@offset_counterparty_id = counterparty_id
+	from
+		counterparties
+	where
+		name = @offset_counterparty
+	if @@rowcount = 0
+	begin
+		select
+			status="Error",
+			msg ="Could not find offset_counterparty_id",
+			offset_counterparty=@offset_counterparty
+		return
+	end
+end
+
+if @offset_trader != NULL
+begin
+	select
+		@offset_trader_id = trader_id
+	from
+		traders
+	where
+		symbol = @offset_trader
+	if @@rowcount = 0
+	begin
+		select
+			status="Error",
+			msg ="Could not find offset_trader_id",
+			offset_trader=@offset_trader
+		return
+	end
+end
+	
+
+exec
+	j_nextkey 
+		"agg_groups",
+		@agg_group_id output
+
+insert into
+	agg_groups(
+		agg_group_id,
+		name,
+		agg_schedule_id,
+                tally_user_id,
+		tally_trade_type_id,
+		tally_internal_account_id,
+		tally_external_account_id,
+		tally_counterparty_id,
+		tally_trader_id,
+		tally_strategy_id,
+		tally_status_id,
+		tally_broker_id,
+		tally_sales_code_id,
+		offset_ext_account_id,
+		offset_counterparty_id,
+		offset_trader_id
+		)
+values(
+	@agg_group_id,
+	@name,
+	@agg_schedule_id,
+	@tally_user_id,
+	@tally_trade_type_id,
+	@tally_internal_account_id,
+	@tally_external_account_id,
+	@tally_counterparty_id,
+	@tally_trader_id,
+	@tally_strategy_id,
+	@tally_status_id,
+	@tally_broker_id,
+	@tally_sales_code_id,
+	@offset_ext_account_id,
+	@offset_counterparty_id,
+	@offset_trader_id
+)
+if @@rowcount = 1
+begin
+	select
+		status = "Successfully created Aggregation Group",
+		name = @name,
+		agg_schedule = @agg_schedule,
+	        usr=@tally_user,
+       		ttype=@tally_trade_type,
+        	ia=@tally_internal_account,
+        	ea=@tally_external_account,
+        	cpty=@tally_counterparty,
+        	tu=@tally_trader,
+        	strat=@tally_strategy,
+        	st=@tally_status,
+        	br=@tally_broker,
+        	sc=@tally_sales_code,
+		oeo=@offset_ext_account,
+		ocpty=@offset_counterparty,
+		otu=@offset_trader
+
+end
+
+
+go
+
+	

@@ -1,0 +1,379 @@
+use
+	risk_edgewater
+go
+
+drop procedure
+	bag_riskclassmtmrange
+go
+
+create procedure
+	bag_riskclassmtmrange
+		@login varchar(50),
+		@begin_date datetime,
+		@end_date datetime
+as
+
+declare @settlement float
+declare @volume float
+declare @net float
+declare @yield float
+declare @avg_volume float
+declare @avg_net float
+declare @days int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"run_name",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"clear_mtms",
+	"Clear Risk Class MTMs",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"account_perspectives",
+	"Account Perspectives",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "settlement",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "yield",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "avg_net",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "avg_volume",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "saved_volume",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "volume",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "equiv",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "saved_net",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "net",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "short_equiv",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "short",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "long",
+	 "Number",
+	"#,##0")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "long_equiv",
+	 "Number",
+	"#,##0")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+declare @risk_classes int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@subtotal_style = "background:#FFFFFF;border: 1px solid white;font-style:italic;font-color:grey",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+create table
+	#risk_classes(
+		risk_class_id int,
+		min_date datetime NULL,	
+		max_date datetime NULL,
+		days int NULL,
+		volume float NULL,
+		avg_volume float NULL,
+		settled_pl float NULL,
+		net float NULL,
+		avg_net float NULL,
+		yield float NULL)
+
+delete
+
+from
+	beta_risk_class_mtms
+where
+	volume = NULL
+delete
+
+from
+	beta_risk_class_mtms
+where
+	open_equity = NULL
+
+insert into
+	#risk_classes(
+		risk_class_id,
+		min_date,
+		max_date,
+		days,
+		volume,
+		avg_volume,
+		settled_pl,
+		net,
+		avg_net)
+select
+	risk_class_id,
+	min(trade_date),
+	max(trade_date),
+	count(risk_class_id),
+	sum(volume),
+	avg(volume),
+	sum(settled_pl),
+	sum(open_equity),
+	avg(open_equity)
+from
+	beta_risk_class_mtms
+where
+	convert(date, trade_date) >= convert(date, @begin_date)
+and
+	convert(date, trade_date) <= convert(date, @end_date)
+group by
+	risk_class_id
+
+update
+	#risk_classes
+set
+	yield = net / (volume / 1000000.00)
+where
+	abs(volume) > 0.0
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		risk_class_id int NULL,
+		name varchar(50) NULL,
+		min_date datetime NULL,
+		max_date datetime NULL,
+		days int NULL,
+		volume float NULL,
+		avg_volume float NULL,
+		settlement float NULL,
+		net float NULL,
+		avg_net float NULL,
+		yield float NULL)
+
+
+insert into
+	#output(
+		style,
+		risk_class_id,
+		name,
+		min_date,
+		max_date,
+		days,
+		volume,
+		avg_volume,
+		settlement,
+		net,
+		avg_net,
+		yield)
+select
+	style = @style,
+	a.risk_class_id,
+	b.name,
+	a.min_date,
+	a.max_date,
+	a.days,
+	a.volume,
+	a.avg_volume,
+	a.settled_pl,
+	a.net,
+	a.avg_net,
+	a.yield
+from
+	#risk_classes a,
+	risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+order by
+	b.name
+
+select
+	@volume = sum(volume),
+	@net = sum(net),
+	@days = sum(days),
+	@settlement = sum(settlement)
+from
+	#output
+
+if abs(@volume) > 0.0
+	select
+		@yield = @net / (@volume / 1000000.00)
+
+/* if @days > 0
+begin
+	select
+		@avg_volume = @volume / @days,
+		@avg_net = @net / @days
+end */
+
+insert into
+	#output(
+		style,
+		name,
+		days,
+		volume,
+		settlement,
+		net,
+		avg_volume,
+		avg_net,
+		yield)
+values(
+	@total_style,
+	"Total",
+	@days,
+	@volume,
+	@settlement,
+	@net,
+	@avg_volume,
+	@avg_net,
+	@yield)
+
+select
+	section = "Risk Class MTM P&L For Range",
+	style,
+	risk_class = name,
+	min_date = convert(varchar(11), min_date, 0),
+	max_date = convert(varchar(11), max_date, 0),
+	active_days = days,
+	volume,
+	avg_volume,
+	settlement,
+	net,
+	avg_net,
+	yield
+from
+	#output
+order by
+	id
+
+
+go

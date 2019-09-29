@@ -1,0 +1,14 @@
+drop procedure
+	r_settlementmethods
+go
+
+create procedure
+	r_settlementmethods
+as
+
+select
+	name
+from
+	settlement_methods
+
+go

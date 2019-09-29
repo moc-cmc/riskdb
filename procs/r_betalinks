@@ -1,0 +1,1659 @@
+drop procedure r_betalinks
+go
+
+create procedure
+	r_betalinks
+		@login char(30)
+as
+
+
+declare @tico_account_id int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem determining current user" 
+ 
+ 	return
+end
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+
+
+insert into
+	#links
+values(
+	"Format Number",
+	"notional_capital",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert
+  into
+	#links
+values(
+	"Format Number",
+	"balance",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"p_l",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"other",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"interest",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"adjustments",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"fees",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert
+  into
+	#links
+values(
+	"Format Number",
+	"cash_activity",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Column Link",
+	"netted_trades_for_run",
+	"Netted Trades For Run",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"debug_beta_bo",
+	"Debug Beta BO",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"back_office_agency",
+	"Back Office Agency",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"exposure_ladder",
+	"Exposure Ladder",
+	NULL,
+	NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"realloc_ccy_balances",
+	"Realloc CCY Balances",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"volume_invoice",
+	"Volume Invoice",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"beta_deal_pl",
+	"Beta Run Deal P&L",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"agency_pl",
+	"Agency Runs",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"trading_volume",
+	"Trading Volume",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"realloc_check",
+	"Reallocation Check",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"reallocations",
+	"Queued Fund Allocations",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"allocation_check",
+	"Allocation Check",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"commit_runs_for_day",
+	"Commit Run P&LS For Day",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"fx_rolls_by_run",
+	"FX Rolls By Run",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values
+ (
+	"Column Link",
+	"client_fills",
+	"Client Fills Blotter",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"test_blotter",
+	"Dev DealPL Blotter",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"reval_date_trades",
+	"Reval Trades For Date",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"options_rec_report",
+	"Options Recon Report",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"user_pl_view_styles",
+	"User P&L View Styles",
+	NULL,
+	NULL)
+
+insert into
+ #links
+values(
+	"Column Link",
+	"site_actitity",
+	"Site Activity",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"andy_option_inputs",
+	"Andy Option Inputs",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"bo_settles",
+	"Back Office Settles",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"deal_pl_blotter",
+	"Deal P&L Blotter",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"fwd_commit_pl",
+	"BO FWD P&L",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"client_risk_summary",
+	"Client Risk Summary",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"commit_fund",
+	"Commit Fund",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"mpt_tt_volume",
+	"MPT Trade Tracker Volume",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values( 
+	"Column Link",
+	"pl_statement",
+	"P&L Statement",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"option_input",
+	"Option Tally Output (Vanilla)",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"exposure_for_day",
+	"Run Exposure For Day",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"pos_report",
+	"POS Report",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"eod_report",
+	"End Of Day Report",
+	NULL,
+	NULL)
+
+ 
+insert into
+	#links
+values(
+	"Column Link", 
+	"portfolios",
+	"Portfolios",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"spot_fx_summary",
+	"Spot FX Summary",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"void_check",
+	"Void Check",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"slice_pl",
+	"Slice P&L",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"sim_accounts",
+	"SIM Accounts",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"sim_forwards",
+	"SIM Forwards",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"pl_commit_by_run",
+	"Commit By Run",	
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"returns_summary",
+	"Returns Summary",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"fund_volume_history",
+	"Fund Volume History",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"fund_fees",
+	"Fund Fees",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"mtd_pl_summary",
+	"MTD FWD P&L Summary", 
+	NULL,
+	NULL)
+
+insert into
+	#links
+ values(
+	"Column Link",
+	"leverage_summary",
+	"Leverage Summary",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"open_trade_pl",
+	"Open Trade P&L",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"summary_pl",
+	"Summary P&L",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"leverage_history",
+	"Leverage History",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"forward_crosses",
+	"Forward Crosses",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link", 
+	"trade_blotter",
+	"Trade Blotter",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"track_record",
+	"Internal Account Transactions",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+ "report_holds",
+	"Report Holds",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"report_files",
+	"Report Files",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"funds",
+	"Funds",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"future_series",
+	"Future Series",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"ubs_limit_use",
+	"UBS Line Use",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"premium_report",
+	"Premium Report",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"abn_futures",
+	"ABN Futures",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"def_perspective_contracts",
+	"Default Perspective Contracts",
+	NULL,
+	NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+ 	"trader_limits",
+	"Trader Limits",
+	NULL,
+	NULL
+ )
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"trade_report_appendix",
+	"Trade Report Appendix",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"random_cup",
+	"Cup Teams",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"begin_dod",
+	"Begin DOD",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"server_name",
+	"Server Name",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"aig_commit",
+	"AIG Commit",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"spectrum_opts",
+	"Spectrum Options Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"spectrum",
+	"Spectrum Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"avg_price_pl",
+	"P&L Avg",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"risk_data_report",
+	"Risk Data Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert 
+ into
+	#links
+values(
+	"Column Link",
+	"edit_forward_settle",
+	"Edit Forward Settle",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"set_spot_fwd_settle",
+	"Edit Forward Spot Price",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"fwd_pl", 
+	"FWD P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"product_regions",
+	"Product Regions",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"nop",
+	"NOP",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"tally_fund_stop",
+	"Tally Fund Stop",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"capital_at_risk",
+	"Order Analysis",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"tally_deal",
+	"Tally Deal",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"implied_entry",
+	"Implied Entry P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"limits",
+	"Limits",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"reconcile_report",
+	"Reconcile Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"import_graceland",
+	"Import Graceland",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"import_pb_report",
+	"Import AIG PB Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"import_ftp_report",
+	"Import AIG FTP Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"old_debug_pl",
+	"Old Debug P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+ 	"Column Link",
+	"cursor_pl",
+	"Cursor P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"trial_balance",
+	"Trial Balance",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"mgt_report",
+	"Management Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"volume",
+	"Volume",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"day_trades_report",
+	"Report Day Trades",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"fees_for_run",
+	"Fess For Run",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"unrealized_pl",
+	"Unrealized P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"add_int_transaction",
+	"New Int Transaction",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"add_ext_transaction",
+	"New Ext Transaction",
+	"suppressAutoexecute=YES",
+ NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"cash_recon",
+	"Cash Recon",
+	"suppressAutoexecute=YES",
+	NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"volume_history",
+	"Volume History",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"cash_ladder",
+	"Cash Ladder",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"currency_rolls",
+	"Currency Rollovers",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"trade_period_report",
+	"Trades For Period",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"prod_based_pl",
+	"Prod-based PL",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"wfund_trade_report",
+	"WFUND Trades",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"service_contracts",
+	"Service Contracts",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"allocate_ext_rolls",
+	"Allocate External Rolls",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"adaptor_contracts",
+	"Adaptor Contracts",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"contract_inspector",
+	"Contract Inspector",
+	"suppressAutoexecute=YES", 
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"gridiron_runs",
+	"Gridiron Runs",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"cross_reducer",
+	"Cross Reducer",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"net_rvs",
+	"Option Net Replacement Values",
+	NULL,
+	NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"test_b_pl",
+	"B Intraday P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"back_office_pl",
+	"BO FWD P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"option_compare",
+	"Option P&L Compare",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"tally_spot_internal", 
+ 	"Tally Internal Spot",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"premium_checks",
+	"Premium Checks",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"commit_pl_no_int",
+	"Commit P&L No INTERNAL",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"compare_opts",
+	"Option Price Compare",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values
+ (
+	"Column Link",
+	"bad_tvs",
+	"Bad TVs",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"internal_fut_tally",
+	"Tally Internal Future",
+	"suppressAutoexecute=YES",
+	NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"check_internals",
+	"Check Internals",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"unexpired_options",
+	"Unexpired Options As Of",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"historical_deltas",
+	"Historical Option Deltas",
+	"suppressAutoexecute=YES",
+	NULL)
+ 
+
+insert into
+	#links
+values(
+	"Column Link",
+	"crosses",
+	"Cross Rates",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"interest_rates",
+	"Interest Rates",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"correct_option_settles",
+	"Correct Option Settles",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"copy_intraday_theos",
+	"Copy Intraday Theos",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"eod_positions",
+	"End Of Day Positions",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_trade_premium",
+	"Edit Trade Premium",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"realloc_spot_premium",
+	"Reallocate Spot Premium",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"create_option",
+	"Create Option Contract",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link", 
+ 	"feed_server_contracts",
+	"Feed Server Contracts",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"create_exotic",
+	"Create Exotic",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+ 	#links
+values(
+	"Column Link",
+	"create_premiums",
+	"Create Premiums For Deal",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"mp_twenty_day",
+	"Twenty Day Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"lyxor_report",
+	"Lyxor Report", 
+ 	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"historical_report",
+	"Back Office P&L Report",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+ 	"Column Link",
+	"test_new_bo_pl",
+	"Test Old Commit P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"tally_pct_options",
+	"Tally Options PCT",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"delete_contract",
+	"Delete Contract",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"delete_transactions",
+	"Delete Internal Account Transaction",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"trade_history",
+	"Trade History",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"test_new_commit",
+	"Beta Commit P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"beta_pl",
+	"Beta P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"trader_track",
+	"Trader Tracking",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"test_new_nav_est",
+	"Internal Account NAV Estimate",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"external_account",
+	"Account Transactions",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"import_fimat",
+	"Import FIMAT Report",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"internal_account",
+	"Internal Account Transactions",
+	NULL,
+	NULL)
+
+insert into
+        #links
+values( 
+  	"Column Link",
+       "claim_all_oms_trades",
+       "Claim all OMS trades",
+       NULL,
+  	NULL)
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+/* if @login in("edmount", "markr", "edmount-old", "markr-old", "ront", 
+ "chriso", "maon", "markvs")
+begin */
+	select
+		delete_transactions = "Delete Transaction",
+		beta_pl = "Beta P&L",
+		test_new_commit = "TEST",
+		test_new_nav_est = "TEST NEW NAV ESTIMATE",
+		interest_rates = "Interest Rates",
+		trade_history = "Trade History",
+		delete_contract = "DELETE CONTRACT"
+		
+	select
+		tally_pct_options = "Tally Options (PCT)",
+		test_new_bo_pl = "Test Old Commit P&L",
+		historical_report = "Committed P&L report",
+		premium_report = "Premium Report",
+		lyxor_report = "Lyxor Report",
+		trade_report_appendix = "Report Appendix"
+	
+	select
+		mp_twenty_day = "MP Twenty Day Report",
+		create_premiums = "Create Zero Premiums For Deal",
+		create_option = "Create Option Contract",
+		feed_server_contracts = "Feed Server Contracts",
+		report_files = "Report Files",
+		report_holds = "Report Holds",
+		realloc_spot_premium = "Realloc Spot Premium",
+		edit_trade_premium = "Edit Trade Premium"
+		
+	select
+		eod_positions = "End Of Day Pos Report",
+		copy_intraday_theos = "Copy Intrday Theos",
+		correct_option_settles = "Correct Option Settles",
+		crosses = "Crosses",
+		check_internals = "Check Internals"
+	
+	select
+		historical_deltas = "Hist Deltas",
+		unexpired_options = "Unexpired Options",
+		bad_tvs = "Bad TVs",
+		compare_opts = "Compare End of Year Option Prices",
+		commit_pl_no_int = "Commit P&L (No INTERNALS)"
+	
+	select
+		premium_checks = "Premium Check",
+		internal_fut_tally = "Internal Futures Tally",
+		tally_spot_internal = "Internal Spot Tally",
+		option_compare = "Option P&L Compare",
+		pl_commit_by_run = "Commit By Run"
+		
+	select
+		test_b_pl = "Test New Intrday P&L",
+		cross_reducer = "Cross Reducer",
+		net_rvs = "Open NRV Report",
+		ubs_limit_use = "UBS Utilized Line",
+		contract_inspector = "Inspect Contract"
+
+	select
+		trader_limits = "Trader Limits",
+		gridiron_runs = "Gridiron Runs",
+		future_series = "Future Series",
+		adaptor_contracts = "Adaptor Contracts",
+		service_contracts = "Service Contracts", 
+ 		wfund_trade_report = "WFUND Trades"
+
+
+	select
+		allocate_ext_rolls = "Allocate External Rolls",
+		prod_based_pl = "Prod-based P&L",
+		funds = "Funds",
+		def_perspective_contracts = "Default Perspective Contracts",
+		currency_rolls = "Rolls"
+	
+	select
+		fees_for_run = "Fees For Run",
+		leverage_history = "Leverage History"
+/* end */
+
+if @login = "cateh"
+begin
+	select
+		test_new_bo_pl = "Test Old Commit P&L",
+		contract_inspector = "Inspect Contract"
+end
+
+
+if @login = "markr" or @login = "edmount" or @login = "markr-old" or @login = "ront" or @login = "chriso" or @login = "maon"
+	select
+ 
+		begin_dod = "Begin DOD",
+		cursor_pl = "Cursros P&L",
+		old_debug_pl = "Old Debug P&L"
+
+if @login = "mount"
+	select
+		currency_rolls = "Rolls"
+
+if @login = "markr" or @login = "edmount" or @login = "crouch" or @login = "gman" or @login = "ront" or @login = "maon"
+begin
+	select
+		trade_period_report = "Trades For Period",
+		day_trades_report = "Report Day Trades"
+
+	select
+		cash_ladder = "Cash Ladder",
+		volume = "Volume",
+		volume_history = "Volume History",
+		unrealized_pl = "Unrealized P&L",
+		trial_balance = "Trial Balance",
+		limits = "Limits"
+	
+	select
+		tally_deal = "Tally Deal",
+		tally_fund_stop = "Tally Fund Stop",
+		product_regions = "Product Regions",
+		edit_forward_settle = "Edit Forward Settle",
+		fwd_commit_pl = "FWD COMMIT P&L"
+	
+	select
+		set_spot_fwd_settle = "Edit Forward Spot Price",
+		risk_data_report = "Risk Data Report",
+		avg_price_pl = "Avg Price P&L",
+		spectrum = "Spectrum Report",
+		spectrum_opts = "Spectrum Options Report"
+
+end
+
+if @login =  "lee"
+	select
+		volume = "Volume",
+ 	volume_history = "Volume History" 
+
+if @login = "markr" or @login = "maon"
+begin
+	select
+		import_pb_report = "Import AIG PB Report",
+		import_ftp_report = "Import AIG FTP Report", 
+ 		reconcile_report = "Reconcile Report",
+		server_name = "Server Name"
+end
+
+if @login = "markr" or @login = "edmount" or @login = "alstrademo" or @login = "maon"
+	select
+		trade_blotter = "Trade Blotter",
+		fwd_pl = "FWD P&L",
+		nop = "Net Open Position"
+
+
+if @login in("edmount", "ront", "markr", "andy", "chen", "crouch", "pete", "chriso", "dawsillini", "maon")
+	begin
+		select
+			abn_futures = "ABN Futures",
+			claim_all_oms_trades = "Claim all OMS trades",
+			forward_crosses = "Forward Crosses",
+			aig_commit = "AIG Commit"
+		select
+			summary_pl = "Summary P&L",
+			open_trade_pl = "Open Trade P&L",
+			leverage_summary = "Leverage Summary",
+			mtd_pl_summary = "MTD P&L Summary",
+			fund_fees = "Fund Fees",
+			fund_volume_history = "Fund Volume History"
+		select
+			returns_summary = "Returns Summary"
+	end
+
+if @login = "mount"
+ 
+	select
+		avg_price_pl = "Avg Price P&L"
+
+select
+	trader_track = "Trader Track",
+	sim_forwards = "SIM Forwards",
+	sim_accounts= "SIM Accounts",
+	slice_pl = "Slice P&L",
+	void_check = "VOID CHECK"
+select
+	spot_fx_summary = "Spot FX Summary",
+	portfolios = "Portfolios",
+	option_input = "OPTION TALLY INPUTS",
+	eod_report = "End Of Day Report",
+	exposure_for_day = "Exposure For Day"
+
+select
+	import_graceland = "Import Graceland",
+	pos_report = "POS Report",
+	client_risk_summary = "Client Risk Summary",
+	mpt_tt_volume = "MPT Trade Tracker Volume",
+	back_office_pl = "BO Commit p&l"
+
+select
+	pl_statement = "P&L Statement",
+	commit_fund = "COMMIT FUND",
+	deal_pl_blotter = "DEAL P&L BLOTTER",
+	bo_settles = "Back Office Settles",
+	andy_option_inputs = "OPTION INPUTS"
+
+select
+	site_actitity = "Site Activity",
+	user_pl_view_styles = "User P&L View Styles",
+	options_rec_report = "Options Recon Report",
+	reval_date_trades = "Reval Trades For Date",
+	test_blotter = "Dev DealPL Blotter",
+	fx_rolls_by_run = "FX ROLLS BY RUN"
+
+select
+	client_fills = "Tally Client Fills",
+	commit_runs_for_day = "Commit Runs For Day",
+	allocation_check = "Allocation Check",
+	reallocations = "Queued Reallocations",
+	realloc_check = "Realloc Check"
+
+select
+	trading_volume = "Trading Volume",
+	agency_pl = "Agency P&L",
+	beta_deal_pl = "Beta Deal P&L",
+	volume_invoice = "Volume Invoice",
+	realloc_ccy_balances = "Realloc CCY Balances"
+select
+	exposure_ladder = "Exposure Ladder",
+	back_office_agency = "Back Office Agency",
+	debug_beta_bo = "Debug Beta BO",
+	netted_trades_for_run = "Netted Trades For Run"
+                                         
+                                                                                                                                                           
+go
+ 

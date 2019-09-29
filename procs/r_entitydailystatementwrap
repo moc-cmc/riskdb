@@ -1,0 +1,16 @@
+create or replace procedure
+	r_entitydailystatementwrap
+                @login varchar(50),
+                @legal_entity varchar(255),
+		@trade_date datetime = NULL
+
+as
+
+
+exec
+	bn_ledailystatement
+		@login = @login,
+		@legal_entity = @legal_entity,
+		@trade_date = @trade_date
+
+go

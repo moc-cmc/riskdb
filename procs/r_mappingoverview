@@ -1,0 +1,757 @@
+drop procedure r_mappingoverview
+go
+
+create procedure 
+	r_mappingoverview
+		@login varchar(50),
+		@source varchar(50) = NULL
+
+as
+
+declare @source_id int
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @grey_style varchar(200)
+declare @selected_style varchar(200)
+declare @ext_acct_id int
+declare @trader_id int
+declare @cp_id int
+declare @pb_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+	#meta
+values(	
+	"Column Link",
+	"add_inbound_account_symbol",
+	"Add Inbound Account Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_outbound_account_symbol",
+	"Add Outbound Account Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_account_mapping",
+	"Edit Account Mapping",
+	NULL
+)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"delete_account_mapping",
+	"Delete Account Mapping",
+	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_inbound_trader_symbol",
+        "Add Inbound Trader Symbol",
+        NULL
+)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"add_outbound_trader_symbol",
+	"Add Outbound Trader Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_trader_mapping",
+	"Edit Trader Symbol Mapping",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"delete_trader_mapping",
+	"Delete Trader Symbol Mapping",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_inbound_counterparty_symbol",
+	"Add Inbound Counterparty Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_outbound_counterparty_symbol",
+	"Add Outbound Counterparty Symbol",
+	NULL
+)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"edit_counterparty_mapping",
+	"Edit Counterparty Mapping Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"delete_counterparty_mapping",
+	"Delete Counterparty Mapping Symbol",
+	NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_inbound_prime_broker_symbol",
+	"Add Inbound Prime Broker Symbol",
+	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_outbound_prime_broker_symbol",
+        "Add Outbound Prime Broker Symbol",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_prime_broker_mapping",
+        "Edit Prime Broker Mapping Symbol",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "delete_prime_broker_mapping",
+        "Delete Prime Broker Mapping Symbol",
+        NULL
+)
+
+insert into
+       #meta
+values(
+       "Column Link",
+       "view_secondary",
+       "View Secondary",
+       NULL
+)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+        @grey_style = "color:#CCCCCC;background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+select
+	* 
+from 
+	#meta
+
+
+create table
+	#sources
+(
+	source_id int,
+	name varchar(50),
+	source_type_id int,
+	source_type varchar(50)
+)
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+
+if @source_id = NULL
+begin
+	insert into
+		#sources
+	select
+		a.source_id,
+		a.name,
+		a.source_type_id,
+		b.name
+	from
+		sources a,
+		source_types b
+	where
+		a.source_type_id = b.source_type_id
+end
+else
+begin
+	insert into
+		#sources
+	select
+		a.source_id,
+		a.name,
+		a.source_type_id,
+		b.name
+	from
+		sources a,
+		source_types b
+	where
+		a.source_type_id = b.source_type_id
+	and
+		a.source_id = @source_id
+end
+	
+
+create table
+	#accounts
+(
+	external_account_id int,
+	name varchar(50) NULL, /* going to select symbol here. but using name since it makes later queries easier */
+ 	source_id int NULL,
+	source_name varchar(50) NULL,
+	source_type varchar(50) NULL,
+	mapping varchar(50) NULL,
+	edit_account_mapping varchar(10) NULL,
+	delete_account_mapping varchar(10) NULL,
+	add_inbound_account_symbol varchar(10) NULL,
+	add_outbound_account_symbol varchar(10) NULL,
+	style varchar(200) NULL
+)
+
+create table
+        #traders
+(
+        trader_id int,
+        name varchar(50) NULL,
+        source_id int NULL,
+        source_name varchar(50) NULL,
+	source_type varchar(50) NULL,
+        mapping varchar(50) NULL ,
+	edit_trader_mapping varchar(10) NULL,
+	delete_trader_mapping varchar(10) NULL,
+	add_inbound_trader_symbol varchar(10) NULL,
+	add_outbound_trader_symbol varchar(10) NULL,
+	style varchar(200) NULL
+)       
+
+create table
+        #counterparties
+(
+        counterparty_id int,
+        name varchar(50) NULL,
+        source_id int NULL,
+        source_name varchar(50) NULL,
+	source_type varchar(50) NULL,
+        mapping varchar(50) NULL,
+	edit_counterparty_mapping varchar(10) NULL,
+	delete_counterparty_mapping varchar(10) NULL,
+	add_inbound_counterparty_symbol varchar(10) NULL,
+	add_outbound_counterparty_symbol varchar(10) NULL,
+	style varchar(200) NULL
+)
+
+create table
+        #prime_brokers
+(
+	prime_broker_id int NULL,
+        name varchar(50) NULL,
+        source_id int NULL,
+        source_name varchar(50) NULL,
+	source_type varchar(50) NULL,
+        mapping varchar(50) NULL,
+	edit_prime_broker_mapping varchar(10) NULL,
+	delete_prime_broker_mapping varchar(10) NULL,
+	add_inbound_prime_broker_symbol varchar(10) NULL,
+	add_outbound_prime_broker_symbol varchar(10) NULL,
+	style varchar(200) NULL
+)
+
+declare account_cursor cursor for
+	select
+		external_account_id
+	from
+		external_accounts
+	order by
+		external_account_id
+
+open account_cursor
+fetch account_cursor into @ext_acct_id
+
+while @@sqlstatus = 0
+begin
+
+	insert into 
+		#accounts (
+			external_account_id,
+			name,
+			source_name,
+			source_type,
+			mapping,
+			style )
+	select
+		a.external_account_id,
+		a.name,
+		c.name,
+		c.source_type,
+		b.symbol,
+		@style
+	from
+		external_accounts a,
+		external_account_symbols b,
+		#sources c
+	where
+		a.external_account_id=@ext_acct_id
+	and
+		a.external_account_id=b.external_account_id
+	and
+		b.source_id=c.source_id
+
+	if (@@rowcount = 0)
+	begin
+		insert into
+			#accounts (
+				external_account_id,
+				name,
+				style )
+		select
+			external_account_id,
+			name,
+			@grey_style
+		from
+			external_accounts
+		where
+			external_account_id=@ext_acct_id
+	end
+
+	fetch account_cursor into @ext_acct_id
+end
+
+close account_cursor
+deallocate account_cursor
+
+declare trader_cursor cursor for
+	select
+		trader_id
+	from
+		traders
+	order by
+		trader_id
+
+open trader_cursor 
+fetch trader_cursor into @trader_id
+
+while @@sqlstatus = 0
+begin
+	
+	insert into
+		#traders (
+			trader_id,
+			name,
+			source_name,
+			source_type,
+			mapping,
+			style )
+		select
+			a.trader_id,
+			a.symbol,
+			c.name,
+			c.source_type, 
+			b.symbol,
+			@style
+		from
+			traders a,
+			trader_symbols b,
+			#sources c
+		where
+			a.trader_id=@trader_id
+		and
+			a.trader_id=b.trader_id
+		and
+			b.source_id=c.source_id
+
+		if (@@rowcount = 0)
+		begin
+			insert into
+				#traders (
+					trader_id,
+					name,
+					style )
+			select
+				trader_id,
+				symbol,
+				@grey_style
+			from
+				traders	
+			where
+				trader_id=@trader_id
+
+		end
+
+		fetch trader_cursor into @trader_id
+end
+
+close trader_cursor
+deallocate trader_cursor
+	
+declare cp_cursor cursor for
+	select
+		counterparty_id	
+	from
+		counterparties
+	order by
+		counterparty_id	
+
+open cp_cursor
+fetch cp_cursor into @cp_id
+
+while @@sqlstatus = 0
+begin
+
+	insert into
+		#counterparties (
+			counterparty_id,
+			name,
+			source_name,
+			source_type,
+			mapping,
+			style )
+	select
+		a.counterparty_id,
+		a.name,
+		c.name,
+		c.source_type,
+		b.symbol,
+		@style
+	from
+		counterparties a,
+		counterparty_symbols b,
+		#sources c
+	where
+		a.counterparty_id=@cp_id
+	and
+		a.counterparty_id=b.counterparty_id
+	and
+		b.source_id=c.source_id
+
+	if (@@rowcount = 0)
+	begin
+		insert into 
+			#counterparties (
+				counterparty_id,
+				name,
+				style )
+		select
+			counterparty_id,
+			name,
+			@grey_style
+		from
+			counterparties
+		where
+			counterparty_id=@cp_id
+	end
+		
+	fetch cp_cursor into @cp_id
+end
+
+close cp_cursor
+deallocate cp_cursor
+
+create table #pbs (
+		prime_broker_id int,
+		symbol varchar(100))
+
+insert into
+	#pbs (
+	prime_broker_id,
+	symbol)
+select
+	a.prime_broker_id,
+	b.name
+from
+	prime_brokers a,
+	sources b,
+	source_types c
+where
+	a.source_id=b.source_id
+and
+	b.source_type_id=c.source_type_id
+and
+	c.name="Prime Broker"
+	
+declare pb_cursor cursor for
+	select
+		prime_broker_id
+	from
+		prime_brokers
+	order by
+		prime_broker_id
+
+open pb_cursor
+fetch pb_cursor into @pb_id
+
+while (@@sqlstatus = 0)
+begin
+	insert into
+		#prime_brokers (
+			prime_broker_id,
+			name,
+			source_name,
+			source_type,
+			mapping,
+			style )
+	select
+		a.prime_broker_id,
+		a.symbol,
+		c.name,
+		c.source_type,
+		b.symbol,
+		@style
+	from
+		#pbs a,
+		prime_broker_symbols b,
+		#sources c
+	where
+		a.prime_broker_id=@pb_id
+	and
+		a.prime_broker_id=b.prime_broker_id
+	and
+		b.source_id=c.source_id
+/*	and
+		c.name in ("Inbound", "Outbound")*/
+
+	if (@@rowcount = 0)
+	begin
+		insert into
+			#prime_brokers (
+				prime_broker_id,
+				name,
+				style )
+		select
+			prime_broker_id,
+			symbol,
+			@grey_style
+		from
+			#pbs 
+		where
+			prime_broker_id=@pb_id
+ 	end
+
+	fetch pb_cursor into @pb_id
+
+end
+
+close pb_cursor
+deallocate pb_cursor
+ 
+declare @has_permission char(1)
+
+exec
+        r_checkaccessgrouppermission
+                @login,
+                "Static Data Admin",
+                @has_permission output,
+		@show_perm_denied = "N"
+
+if (@has_permission = "Y")
+begin
+
+	insert into
+        	#accounts (
+                	external_account_id,
+                	add_inbound_account_symbol,
+                	add_outbound_account_symbol)
+	values(
+        	0,
+        	"Add",
+        	"Add" )
+
+	update
+		#accounts
+	set
+		edit_account_mapping="Edit",
+		delete_account_mapping="Delete"
+	where
+		mapping != NULL
+
+	insert into
+		#traders (
+			trader_id,
+			add_inbound_trader_symbol,
+			add_outbound_trader_symbol)
+	values(
+		0,
+		"Add",
+		"Add" )
+
+	update
+        	#traders
+	set
+		edit_trader_mapping="Edit",
+		delete_trader_mapping="Delete"	
+	where
+		mapping != NULL
+
+	insert into 
+		#counterparties (
+			counterparty_id,
+			add_inbound_counterparty_symbol,
+			add_outbound_counterparty_symbol)
+	values(
+		0,
+		"Add",
+		"Add" )
+
+	update
+		#counterparties
+	set
+		edit_counterparty_mapping="Edit",
+		delete_counterparty_mapping="Delete"	
+	where
+		mapping != NULL
+
+	insert into
+		#prime_brokers (
+			prime_broker_id,
+			add_inbound_prime_broker_symbol,
+			add_outbound_prime_broker_symbol)
+	values(
+		0,
+		"Add",
+		"Add")
+	
+	update
+		#prime_brokers
+	set
+		edit_prime_broker_mapping="Edit",
+		delete_prime_broker_mapping="Delete"
+	where
+		mapping != NULL
+
+end
+
+select
+	section = "Account Mappings",
+	style,
+	name,
+	source_name,
+	source_type,
+	mapping,
+	edit_account_mapping,
+	delete_account_mapping,
+	add_inbound_account_symbol,
+	add_outbound_account_symbol
+from 
+	#accounts
+order by 
+	name
+	
+select
+	section = "Trader Mappings",
+	style,
+	name,
+	source_name,
+	source_type,
+	mapping,
+	edit_trader_mapping,
+	delete_trader_mapping,
+	add_inbound_trader_symbol,
+	add_outbound_trader_symbol	
+from 
+	#traders
+order by
+	name
+
+select
+	section = "Counterparty Mappings",
+	style,
+	name,
+	source_name,
+	source_type,
+	mapping,
+	edit_counterparty_mapping,
+	delete_counterparty_mapping,
+	add_inbound_counterparty_symbol,
+	add_outbound_counterparty_symbol	
+from 
+	#counterparties
+order by
+	name
+	
+select
+	section = "Prime Broker Mappings",
+	style,
+	name,
+	source_name,
+	source_type,
+	mapping,
+	edit_prime_broker_mapping,
+	delete_prime_broker_mapping,
+	add_inbound_prime_broker_symbol,
+	add_outbound_prime_broker_symbol	
+from 
+	#prime_brokers
+order by
+	name
+
+select
+	section = "More Mappings",
+	'view_secondary'="View Secondary Symbol Mappings",
+	'description'="View mappings for Broker, Contract, Credit Profile, Product, Status, Strategy, Trade Type"
+
+go

@@ -1,0 +1,64 @@
+
+if object_id("cm_makefundactive") != NULL
+    drop procedure
+        cm_makefundactive
+go
+
+create procedure
+	cm_makefundactive
+		@login varchar(30),
+		@name varchar(50)
+as
+
+declare @fund_id int
+declare @active_status_id int
+
+
+select
+	@fund_id = fund_id
+from
+	funds
+where
+	name = @name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Fund not found",
+		fund = @name
+	return
+end
+
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@active_status_id output
+
+	insert into
+		statuses
+	values(
+		@active_status_id,
+		"Active")
+end
+
+update
+	funds
+set
+	status_id = @active_status_id
+where
+	fund_id = @fund_id
+
+exec
+	cm_funds
+		@login
+
+go

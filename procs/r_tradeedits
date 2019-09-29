@@ -1,0 +1,772 @@
+create procedure
+	r_tradeedits
+		@login varchar(50),
+		@edit_date datetime=NULL
+
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+
+select
+        @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+        @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+        @subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+        @style = "background:#FFFFFF;border: 1px solid white",
+        @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+        @selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"t_or_te",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value From #meta
+
+
+if @edit_date = NULL
+begin
+	select
+		@edit_date = getdate()
+end
+
+exec
+        r_daterangefordate
+                @edit_date,
+                @begin_date output,
+                @end_date output
+
+create table
+        #trades(
+                deal_id int NULL,
+                trade_id int NULL,
+		h_deal_id int,
+		h_trade_id int,
+		last_modified_by_id int NULL,
+		last_modified_by varchar(25) NULL,
+		tallied_user_id int NULL,
+		edited_user_id int NULL,
+		tally_login varchar(25) NULL,
+		edit_login varchar(50) NULL,	
+                trade_date datetime NULL,
+		contract varchar(50) NULL,
+                contract_id int NULL,
+                value_date datetime NULL,
+		fixing_date datetime NULL,
+                quantity numeric(30,4) NULL,
+                volume float NULL,
+                trade_price float NULL,
+                trader_id int NULL,
+		trader varchar(50) NULL,
+                broker_id int NULL,
+		broker varchar(50) NULL,
+                external_account_id int NULL,
+		external_account varchar(50) NULL,
+		counterparty varchar(50) NULL,
+                counterparty_id int NULL,
+		sales_code varchar(50) NULL,
+                sales_code_id int NULL,
+		timestamp datetime NULL,
+		style varchar(50) NULL,
+		section varchar(50) NULL,
+		t_or_te varchar(2) NULl  /* This is to define rows in table as the come from trades or trade_edits */
+		
+)
+
+create table
+	#trade_edits(
+		trade_id int)
+
+insert into
+	#trade_edits(
+		trade_id)
+select
+	distinct(trade_id)
+from
+	trade_edits
+where
+	timestamp >= @begin_date
+and
+	timestamp <= @end_date
+
+insert into 
+	#trades(
+		deal_id,
+		trade_id,
+		h_deal_id,
+		h_trade_id,
+		last_modified_by_id,
+		trade_date,
+		contract_id,
+		value_date,
+		fixing_date,
+		quantity,
+		trade_price,
+		trader_id,
+		broker_id,
+		external_account_id,
+		counterparty_id,
+		sales_code_id,
+		style,
+		t_or_te)
+select
+	a.deal_id,
+        a.trade_id,
+	a.deal_id,
+	a.trade_id,
+        a.user_id,
+        a.trade_date,
+        a.contract_id,
+        a.value_date,
+	a.fixing_date,
+        a.quantity,
+        a.price,
+        a.trader_id,
+        a.broker_id,
+        a.external_account_id,
+        a.counterparty_id,
+        a.sales_code_id, /*
+	"background:rgb(233, 241, 245)", */
+	@total_style,
+	"t"
+from
+	trades a,
+	#trade_edits b
+where
+	a.trade_id = b.trade_id
+
+insert into 
+        #trades(
+                h_deal_id,
+                h_trade_id,
+		last_modified_by_id,
+                trade_date,
+                contract_id,
+                value_date,
+		fixing_date,
+                quantity,
+                trade_price,
+                trader_id,
+                broker_id,
+                external_account_id,
+                counterparty_id,
+                sales_code_id,
+		timestamp,
+		style,
+                t_or_te)
+select
+        a.deal_id,
+        a.trade_id,
+        a.user_id,
+        a.trade_date,
+        a.contract_id,
+        a.value_date,
+	a.fixing_date,
+        a.quantity,
+        a.price,
+        a.trader_id,
+        a.broker_id,
+        a.external_account_id,
+        a.counterparty_id,
+        a.sales_code_id,
+	a.timestamp,
+	"background:#fff",
+        "te"
+from
+        trade_edits a,
+        #trade_edits b
+where
+        a.trade_id = b.trade_id
+
+
+declare @update_quantity float
+declare @update_price float
+declare @update_contract float
+declare @update_value_date float
+declare @update_fixing_date float
+declare @update_trader float
+declare @update_ext_account float
+declare @update_ctpy float
+declare @update_broker float
+declare @update_sales_code float
+declare @update_trade_date float
+
+declare @id int
+declare @ids int
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#trades
+where
+	t_or_te = 't'
+and
+	trade_id > @id
+
+while @ids > 0
+begin
+
+	select
+		@id = min(trade_id)
+	from
+		#trades
+	where
+		t_or_te = 't'
+	and
+		trade_id > @id
+
+	select
+		@update_quantity = NULL,
+		@update_price = NULL,
+		@update_contract = NULL,
+		@update_value_date = NULL,
+		@update_fixing_date = NULL,
+		@update_trader = NULL,
+		@update_ext_account = NULL,
+		@update_ctpy = NULL,
+		@update_broker = NULL,
+		@update_sales_code = NULL,
+		@update_trade_date = NULL
+
+	select
+		@update_quantity = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.quantity != b.quantity
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+		a.h_trade_id = @id
+	group by 
+		a.quantity,
+		a.h_trade_id
+	if @update_quantity = NULL
+	begin
+
+		update
+			#trades
+		set
+			quantity = NULL
+		where
+			h_trade_id = @id
+		and
+			t_or_te = "te"
+	end
+
+	select
+		@update_price = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.trade_price != b.trade_price
+	and
+                a.h_trade_id = @id
+        group by
+		a.trade_price,
+                a.h_trade_id
+
+	if @update_price = NULL
+	begin
+		update
+			#trades
+		set
+			trade_price = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+
+	end
+
+	select
+		@update_trade_date = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.trade_date != b.trade_date
+	and
+		a.h_trade_id = @id
+        group by
+                a.trade_date,
+                a.h_trade_id
+
+	if @update_trade_date = NULL
+	begin
+		
+		update
+        		#trades
+		set
+			trade_date = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+	
+	select
+		@update_contract = count(*)
+	from
+		#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.contract_id != b.contract_id
+	and
+		a.h_trade_id = @id
+	group by
+                a.contract_id,
+                a.h_trade_id
+
+	if @update_contract = NULL
+	begin
+	
+		update
+        		#trades
+		set
+			contract_id = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+	
+	
+	select
+		@update_value_date = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.value_date != b.value_date
+	and
+		a.h_trade_id = @id
+        group by
+                a.value_date,
+                a.h_trade_id
+
+	if @update_value_date = NULL
+	begin
+		update
+        		#trades
+		set
+        		value_date = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+	
+	select
+		@update_fixing_date = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.fixing_date != b.fixing_date
+	and
+                a.h_trade_id = @id
+        group by
+                a.fixing_date,
+                a.h_trade_id
+
+	if @update_fixing_date = NULL
+	begin
+		update
+        		#trades
+		set
+        		fixing_date = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+	
+	select
+		@update_trader = count(*)
+	from
+		#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.trader_id != b.trader_id
+	and
+		a.h_trade_id = @id
+        group by
+                a.trader_id,
+                a.h_trade_id
+
+	if @update_trader = NULL
+	begin
+		
+		update
+			#trades
+		set
+			trader_id = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+	
+	select
+		@update_ctpy = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.counterparty_id != b.counterparty_id
+	and
+		a.h_trade_id = @id
+        group by
+                a.counterparty_id,
+                a.h_trade_id
+
+	if @update_ctpy  = NULL
+	begin
+	
+		update
+        		#trades
+		set
+        		counterparty_id = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+	
+	select
+		@update_ext_account = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.external_account_id != b.external_account_id
+	and
+		a.h_trade_id = @id
+        group by
+                a.external_account_id,
+                a.h_trade_id
+
+	if @update_ext_account = NULL
+	begin
+	
+		update
+        		#trades
+		set
+        		external_account_id = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+	
+	select
+		@update_broker = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.broker_id != b.broker_id
+	and
+		a.h_trade_id = @id
+        group by
+                a.broker_id,
+                a.h_trade_id
+
+	if @update_broker = NULL
+	begin
+		update
+        		#trades
+		set
+        		broker_id = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+	
+	select
+		@update_sales_code = count(*)
+	from
+        	#trades a,
+        	#trades b
+	where
+        	a.h_trade_id = b.h_trade_id
+	and
+        	a.t_or_te = "te"
+	and
+		b.t_or_te = "t"
+	and
+        	a.sales_code_id != b.sales_code_id
+	and
+		a.h_trade_id = @id
+        group by
+                a.sales_code_id,
+                a.h_trade_id
+
+	if @update_sales_code = NULL
+	begin
+		update
+        		#trades
+		set
+        		sales_code_id = NULL
+		where
+        		t_or_te = "te"
+		and
+			h_trade_id = @id
+	end
+
+	select
+		@ids = count(*)
+	from
+		#trades
+	where
+		t_or_te = 't'
+	and
+		trade_id > @id
+
+end
+
+update
+	#trades
+set
+	section = "Error - Current Trades not found"
+
+
+update
+	#trades
+set
+	section = "Modified"
+from
+	#trades a,
+	trades b
+where
+	a.h_trade_id = b.trade_id
+
+update
+	#trades
+set
+	section = "Canceled"
+from
+	#trades a,
+	trade_edits b,
+	trades c
+where
+	a.h_trade_id = b.trade_id
+and
+	b.trade_id = c.trade_id
+and
+	c.quantity = 0
+
+
+update
+	#trades
+set
+	last_modified_by = b.login
+from
+	#trades a,
+	tico_accounts b
+where
+	a.last_modified_by_id = b.account_id
+
+update
+        #trades
+set
+        edit_login = b.login
+from
+        #trades a,
+        tico_accounts b
+where
+        a.edited_user_id = b.account_id
+
+update
+	#trades
+set
+	contract = a.symbol
+from
+	contracts a,
+	#trades b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	trader = b.symbol
+from
+	#trades a,
+	traders b
+where
+	a.trader_id = b.trader_id
+
+update
+	#trades
+set
+	external_account = b.symbol
+from
+	#trades a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#trades
+set
+	counterparty = b.name
+from
+	#trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+update
+	#trades
+set
+	sales_code = b.name
+from
+	#trades a,
+	sales_codes b
+where
+	a.sales_code_id = b.sales_code_id
+		
+update
+	#trades
+set
+	broker = b.symbol
+from
+	#trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+
+select
+        trade_id = h_trade_id,
+        deal_id,
+	last_modified_by,
+        edit_time = timestamp,
+        symbol = contract,
+        quantity,
+        trade_price,
+	value_date = convert(char(11), value_date, 1),
+	fixing_date = convert(char(11), fixing_date, 1),
+        trader,
+        external_account,
+        counterparty,
+        broker,
+        trade_date,
+	style,
+	section,
+	t_or_te
+from
+        #trades
+order by
+	case section
+		when "Modified" then 1
+		when "Canceled" then 2
+		when "Error - Current Trades not found" then 3
+	end,
+	section DESC,
+	h_trade_id,
+	t_or_te,
+	timestamp DESC
+
+
+
+go 

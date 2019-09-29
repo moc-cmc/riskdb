@@ -1,0 +1,132 @@
+drop procedure
+	mn_setdealstatus
+go
+
+create procedure
+	mn_setdealstatus
+		@login varchar(50),
+		@deal_id int,
+		@status varchar(50)
+as
+
+
+declare @status_id int
+declare @external_account varchar(50)
+declare @external_account_id int
+declare @existing_status varchar(50)
+declare @trade_id int
+declare @trades int
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = @status
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Status not found",
+		status_name = @status
+	return
+end
+
+select
+	@external_account = a.symbol,
+	@existing_status = d.name
+from
+	external_accounts a,
+	external_account_types b,
+	trades c,
+	statuses d
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	a.external_account_id = c.external_account_id
+and
+	c.status_id = d.status_id
+and
+	c.deal_id = @deal_id
+and
+	b.name = "Master"
+if @external_account = NULL
+begin
+	select
+		status = "Error",
+		message = "Could not resolve external account for deal",
+		deal_id = @deal_id
+	return
+end
+
+if @existing_status = "Committed"
+begin
+	select
+		status = "Error",
+		message = "Cannot edit status of Committed deal"
+	return
+end
+
+exec
+	cn_validateaccountaccess
+		@login,
+		@external_account,
+		@external_account_id output
+
+
+
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "External account not found"
+	return
+end
+
+
+update
+	deals
+set
+	status_id = @status_id
+where
+	deal_id = @deal_id
+
+select
+	@trade_id = 0
+select
+	@trades = count(*)
+from
+	trades
+where
+	deal_id = @deal_id
+and
+	trade_id > @trade_id
+
+while @trades > 0
+begin
+	select
+		@trade_id = min(trade_id)
+	from
+		trades
+	where
+		deal_id = @deal_id
+	and
+		trade_id > @trade_id
+
+	exec
+		r_inserttradenotification
+			@trade_id
+
+	select
+		@trades = count(*)
+	from
+		trades
+	where
+		deal_id = @deal_id
+	and
+		trade_id > @trade_id
+
+end
+
+
+go	

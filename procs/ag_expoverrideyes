@@ -1,0 +1,23 @@
+drop procedure
+	ag_expoverrideyes
+go
+
+create procedure
+	ag_expoverrideyes
+		@login varchar(50),
+		@trade_id int,
+		@symbol varchar(50)
+as
+
+
+exec
+	ag_settradeexpoverride
+		@login = @login,
+		@trade_id = @trade_id,
+		@symbol = @symbol,
+		@exercise = "Yes"
+
+
+go
+
+

@@ -1,0 +1,143 @@
+create or replace procedure
+	api_balancecheckdepositfosub
+		@login varchar(50),
+		@fo_sub_account varchar(100),
+		@product varchar(25),
+		@amount numeric(30, 8)
+as
+
+
+declare @bo_master_account_id int
+declare @bo_external_account_id int
+declare @fo_sub_account_id int
+declare @master_account varchar(50)
+declare @as_of_date datetime
+declare @status varchar(10)
+declare @message varchar(50)
+declare @product_id int
+declare @balance float
+declare @available_balance numeric(30, 8)
+declare @pending_balance numeric(30, 8)
+
+select
+	@as_of_date = getdate()
+
+select
+	@amount = abs(@amount)
+
+select
+	@fo_sub_account_id = fo_sub_account_id,
+	@bo_master_account_id = bo_master_account_id
+from
+	fo_sub_accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @fo_sub_account
+if @fo_sub_account_id = NULL
+begin
+	select 
+		status = "Error",
+		message = "Problem finding fo sub account for name provided",
+		provided = @fo_sub_account
+	return
+end
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Product not found",
+		product = @product
+	return
+end
+
+select
+	@bo_external_account_id = b.external_account_id,
+	@master_account = b.symbol
+from
+	bo_master_accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.bo_master_account_id = @bo_master_account_id
+if @bo_external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding ext account for master account",
+		bo_master_account_id = @bo_master_account_id
+	return
+end
+	
+
+select
+	@balance = sum(amount)
+from
+	account_transactions
+where
+	external_account_id = @bo_external_account_id
+and
+	currency_id = @product_id
+and
+	transaction_date <= @as_of_date
+if @balance = NULL
+begin
+	select
+		@balance = 0
+end
+
+select
+	@pending_balance = sum(amount)
+from
+	pending_transactions
+where
+	external_account_id = @bo_external_account_id
+and
+	currency_id = @product_id
+and
+	transaction_date <= @as_of_date
+if @pending_balance = NULL
+begin
+	select 
+		@pending_balance = 0
+
+end
+
+select
+	@available_balance = @balance + @pending_balance
+
+if convert(numeric(30, 8), (@amount * 100000000) / 100000000)  > convert(numeric(30, 8), (@available_balance * 100000000) / 100000000)
+begin
+	select
+		@status = "Fail",
+		@message = "Insufficient funds for deposit"
+end
+else
+begin
+	select
+		@status = "OK",
+		@message = "Proceed with deposit"
+end
+
+select
+	status = @status,
+	message = @message,
+	master_account = @master_account,
+	amount_requested = @amount,
+	available_balance = @available_balance,
+	pending_balance = @pending_balance,
+	balance = @balance,
+	as_of_date = @as_of_date
+	
+	
+
+go

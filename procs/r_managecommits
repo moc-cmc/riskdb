@@ -1,0 +1,144 @@
+create or replace procedure
+	r_managecommits
+		@login varchar(50)
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"enable",
+	"Toggle Commit",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "disable",
+        "Toggle Commit",
+        NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "cpid",
+        NULL,
+        NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+create table
+	#commit_procs(
+        	commit_proc_id int,
+        	name char(30),
+        	commit_proc varchar(50) NULL,
+        	uncommit_proc varchar(50) NULL,
+        	description varchar(255),
+        	should_run varchar(1),
+        	ordering int,
+        	debug varchar(1) NULL,
+		style varchar(100) NULL,
+		enable varchar(10) NULL,
+		disable varchar(10) NULL
+    	)
+
+insert into
+	#commit_procs(
+		style,
+		commit_proc_id,
+		name,
+		commit_proc,
+		uncommit_proc,
+		description,
+		should_run,
+		ordering,
+		debug
+	)
+select
+	style = @style,
+	commit_proc_id,
+        name,
+        commit_proc,
+        uncommit_proc,
+        description,
+        should_run,
+        ordering,
+        debug
+from
+	commit_procs
+
+update 
+	#commit_procs
+set
+	enable = "Enable"
+where
+	should_run = "N"
+
+update 
+        #commit_procs
+set
+        disable = "Disable"
+where
+        should_run = "Y"
+
+
+select
+	section = "Overview",
+	"cpid" = commit_proc_id,
+	style,
+        ordering,
+        name,
+        commit_proc,
+        uncommit_proc,
+        description,
+	enable,
+	disable
+from
+        #commit_procs
+order by
+	ordering ASC
+	
+
+go

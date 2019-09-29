@@ -1,0 +1,96 @@
+use
+	risk_cc
+go
+
+drop procedure
+	r_futpospricevalue
+go
+
+create procedure
+	r_futpospricevalue
+		@contract_id int,
+		@quantity numeric(30,4),
+		@price float,
+		@value float output
+
+as
+
+
+declare @forward_id int
+declare @coupon float
+declare @market_rate float
+declare @face_value float
+declare @coupons_per_year int
+declare @total_coupons int
+declare @rate float
+declare @numerator float
+declare @fraction float
+declare @years float
+declare @pv_coupons float
+declare @pv_face float
+
+select
+	@forward_id = b.forward_id
+from
+	future_contracts a,
+	futures b
+where
+	a.future_id = b.future_id
+and
+	a.contract_id = @contract_id
+if @forward_id = NULL
+	return
+	
+
+select
+	@coupon = coupon_rate,
+	@coupons_per_year = coupons_per_year,
+	@total_coupons = total_coupons,
+	@face_value = face_value
+from
+	bond_attributes
+where
+	contract_id = @forward_id
+if @coupon = NULL
+	return
+
+select
+	@years = @total_coupons / @coupons_per_year
+
+select
+	@rate = (100.00 - @price) / 100.00
+
+select
+	@rate = @rate / @coupons_per_year,
+	@coupon = @coupon / @coupons_per_year,
+	@years = @years / (1.0 /  @coupons_per_year)
+
+select
+	@numerator = 1.0 - power((1 + @rate), @years * -1.0)
+
+select
+	@fraction = @numerator / @rate
+
+select
+	@pv_coupons = @quantity * (@coupon * @face_value * @fraction) * -1.0
+
+select
+	@pv_face = @quantity * (@face_value / power(1.0 + @rate, @years)) * -1.0
+
+
+
+select
+	@value = @pv_coupons + @pv_face
+
+
+go
+	
+
+
+
+
+
+
+
+
+	

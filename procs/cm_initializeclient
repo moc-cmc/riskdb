@@ -1,0 +1,547 @@
+
+if object_id("cm_initializeclient") != NULL
+    drop procedure
+        cm_initializeclient
+go
+
+create procedure
+	cm_initializeclient
+		@login varchar(30),
+		@fund_name varchar(50),
+		@assets_under_management numeric(30,2),
+		@evaluation_currency char(30),
+		@fund_type varchar(50),
+		@deployment varchar(50),
+		@fund_code varchar(10),
+		@product varchar(25)
+as
+
+declare @tico_account_id int
+declare @fund_id int
+declare @internal_account_id int
+declare @run_id int
+declare @portfolio_id int
+declare @int_account_transaction_id int
+declare @deposit_transaction_type_id int
+declare @month char(2)
+declare @year char(4)
+declare @datestring varchar(30)
+declare @transaction_date datetime
+declare @evaluation_currency_id int
+declare @currency_product_type_id int
+declare @source_id int
+declare @fund_type_id int
+declare @status_id int
+declare @tico_server varchar(100)
+declare @tico_database varchar(100)
+declare @broker_id int
+declare @strategy_id int
+declare @fund_sub_type_exists char(1)
+
+select
+	@fund_code = upper(@fund_code)
+
+if @deployment = "Production"
+begin
+	select
+		@tico_server = "TICO_MANAGER",
+		@tico_database = "tico_agency"
+end
+if @deployment = "Development"
+begin
+	select
+		@tico_server = "TICO_MANAGER_DEV",
+		@tico_database = "tico_agency"
+end
+
+if @tico_server = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve tico database for deployment"
+	return
+end
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where 
+	symbol = "MPT Tally"
+if @broker_id = NULL
+begin
+	exec
+		j_nextkey
+			"brokers",
+			@broker_id output
+	insert into
+		brokers(
+			broker_id,
+			symbol,
+			source_id)
+	values(
+		@broker_id,
+		"MPT Tally",
+		0)
+end
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "MPT"
+if @source_id = NULL
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = "Active"
+	if @status_id = NULL
+	begin
+		exec
+			j_nextkey
+				"statuses",
+				@status_id output
+
+		insert into
+			statuses
+		values(
+			@status_id,
+			"Active")
+	end
+
+	exec
+		j_nextkey
+			"sources",
+			@source_id output
+
+	insert into
+		sources(
+			source_id,
+			name,
+			status_id)
+	values(
+		@source_id,
+		"MPT",
+		@status_id)
+end
+
+select
+	@strategy_id = strategy_id
+from
+	strategies
+where
+	name = "Agency"
+if @strategy_id = NULL
+begin
+	exec
+		j_nextkey
+			"strategies",
+			@strategy_id output
+	insert into
+		strategies(
+			strategy_id,
+			name)
+	values(
+		@strategy_id,
+		"Agency"
+	)
+end
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Review"
+if @@rowcount != 1
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@status_id output
+	insert into
+		statuses
+	values(
+		@status_id,
+		"Review")
+end
+
+select
+	@fund_type_id = fund_type_id
+from
+	fund_types
+where
+	name = @fund_type
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Fund Type Not found",
+		fund_type = @fund_type
+	return
+end
+
+select
+	@month = convert(char(2), datepart(month, getdate())),
+	@year = convert(char(4), datepart(year, getdate()))
+
+select
+	@datestring = @month + "/1/" + @year
+select
+	@transaction_date = convert(datetime, @datestring)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+
+truncate table
+	fund_tico_accounts
+
+insert into
+	fund_tico_accounts
+select
+	fund_id,
+	account_id,
+	priority = 1
+from
+	funds a,
+	tico_accounts b
+
+
+select
+	@evaluation_currency_id = product_id
+from
+	products
+where
+	symbol = @evaluation_currency
+if @@rowcount != 1
+begin
+	select
+		@currency_product_type_id = product_type_id
+	from
+		product_types
+	where
+		name = "Currency"
+	if @@rowcount != 1
+	begin
+		exec
+			j_nextkey
+				"product_types",
+				@currency_product_type_id output
+		insert into
+			product_types
+		values(
+			@currency_product_type_id,
+			"Currency")
+	end
+
+
+	exec
+		j_nextkey
+			"products",
+			@evaluation_currency_id output
+
+	insert into
+		products
+	values(
+		@evaluation_currency_id,
+		@currency_product_type_id,
+		@evaluation_currency,
+		@evaluation_currency)
+
+end
+
+update
+	funds
+set
+	name = @fund_name,
+	evaluation_currency_id = @evaluation_currency_id,
+	fund_type_id = @fund_type_id,
+	status_id = @status_id,
+	tico_server = @tico_server,
+	tico_database = @tico_database,
+	fund_code = @fund_code
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"funds",
+			@fund_id output
+
+	insert into 
+		funds(
+			fund_id,
+		 	name,
+		 	evaluation_currency_id,
+			fund_type_id,
+			status_id,
+			tico_server,
+			tico_database,
+			fund_code)
+	values(
+		@fund_id,
+		@fund_name,
+		@evaluation_currency_id,
+		@fund_type_id,
+		@status_id,
+		@tico_server,
+		@tico_database,
+		@fund_code)
+end
+		
+select
+	@fund_id = fund_id
+from
+	funds
+where
+	name = @fund_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Funds are not set up properly for demo environment"
+	return
+end
+
+select
+	@fund_sub_type_exists = "Y"
+from
+	fund_sub_types
+where
+	fund_id = @fund_id
+and
+	name = @product
+if @fund_sub_type_exists != "Y"
+begin
+	insert into
+		fund_sub_types(
+			fund_id,
+			name)
+	values(
+		@fund_id,
+		@product
+	)
+go
+
+exec
+	j_nextkey
+		"internal_accounts",
+		@internal_account_id output
+
+insert into
+	internal_accounts
+values(
+	@internal_account_id,
+	@fund_name,
+	@fund_name,
+	0)
+
+insert into
+	fund_internal_accounts
+values(
+	@fund_id,
+	@internal_account_id)
+
+insert into
+	internal_account_views
+values(
+	@internal_account_id)
+
+
+exec
+	j_nextkey
+		"runs",
+		@run_id output
+
+insert into
+	runs
+values(
+	@run_id,
+	@fund_name)
+
+insert into
+	run_internal_accounts
+values(
+	@run_id,
+	@internal_account_id)
+
+insert into
+	risk_server_runs(
+		run_id)
+values(
+	@run_id
+)
+
+insert into
+	default_run_favorites(
+		fund_id,
+		run_id)
+values(
+	@fund_id,
+	@run_id)
+
+
+
+exec
+	api_createlogin
+		@login=@login,
+		@first_name="Elysium",
+		@last_name=@fund_name,
+		@email="ops@elysiumtechgroup.com",
+		@user_password=NULL,
+		@login_type="Elysium"
+
+insert into
+	user_runs
+select
+	account_id,
+	run_id = @run_id
+from
+	tico_accounts
+
+exec
+	j_nextkey
+		"portfolios",
+		@portfolio_id output
+
+insert into
+	portfolios
+values(
+	@portfolio_id,
+	@fund_name)
+
+insert into
+	portfolio_accounts
+values(
+	@portfolio_id,
+	@internal_account_id)
+
+
+exec
+	j_nextkey
+		int_account_transactions,
+		@int_account_transaction_id output
+
+select
+	@deposit_transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Deposit"
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Deposit transaction type not found"
+	return
+end
+
+insert into
+	int_account_transactions
+values(
+	@int_account_transaction_id,
+	@tico_account_id,
+	@internal_account_id,
+	@deposit_transaction_type_id,
+	@transaction_date,
+	@assets_under_management,
+	"Initial Deposit")
+
+
+update
+	fund_run_defaults
+set
+	evaluation_currency_id = @evaluation_currency_id,
+	source_id = @source_id
+where
+	fund_id = @fund_id
+if @@rowcount = 0
+	insert into
+		fund_run_defaults
+	values(
+		@fund_id,
+		@evaluation_currency_id,
+		@source_id)
+
+update
+	login_types
+set
+	suffix = "."+lower(rtrim(@fund_code))
+where
+	name = "Standard"
+
+update
+        login_types 
+set
+        suffix = "@"+lower(rtrim(@fund_code))
+where
+        name = "Client"
+
+exec
+	cm_subscriptomajorccys
+		@login=@login,
+		@show_ccys="N"
+
+/* Add default credit profile configs */
+declare @usd_ccy_id int
+declare @nop_type_id int
+declare @dsl_type_id int
+
+select
+	@usd_ccy_id = product_id
+from
+	products
+where
+	symbol = "USD"
+
+select
+	@nop_type_id = nop_type_id
+from
+	nop_types
+where
+	name = "Aggregate Shorts"
+
+select
+	@dsl_type_id = dsl_type_id
+from
+	dsl_types
+where
+	name = "Net"
+
+if @usd_ccy_id != NULL and @nop_type_id != NULL and @dsl_type_id != NULL
+begin
+
+	insert into
+		default_credit_profile_values
+	values(
+		@usd_ccy_id,
+		@nop_type_id,
+		@dsl_type_id,
+		.75,
+		.85,
+		.95
+	)
+end
+
+		
+exec
+	cm_funds
+		@login
+
+go

@@ -1,0 +1,13 @@
+
+if object_id("r_traders") != NULL
+    drop procedure
+        r_traders
+go
+
+create procedure
+	r_traders
+as
+
+select name=symbol from traders order by name 
+
+go

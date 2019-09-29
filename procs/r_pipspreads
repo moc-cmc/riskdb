@@ -1,0 +1,18 @@
+drop procedure
+	r_pipspreads
+go
+
+create procedure
+	r_pipspreads
+		@login varchar(50)
+
+as
+
+select
+	name
+from
+	pip_spreads
+order by
+	name
+
+go

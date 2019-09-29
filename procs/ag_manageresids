@@ -1,0 +1,1274 @@
+drop procedure
+	ag_manageresids
+go
+
+create procedure
+	ag_manageresids
+		@login varchar(50),
+		@value_date datetime=NULL
+as
+
+declare @missing_contracts int
+declare @fund_id int
+declare @fund varchar(100)
+declare @roll_trader_id int
+declare @prime_broker_id int
+declare @transaction_type_id int
+declare @fund_prime_broker_id int
+declare @prime_broker varchar(50)
+declare @fund_external_account_id int
+declare @batch_id int
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @id int
+declare @ids int
+declare @pb_id int
+declare @resids int
+
+declare @product_id int
+declare @product varchar(50)
+declare @side varchar(50)
+declare @quantity numeric(30,2)
+declare @contract_id int
+declare @defined_resid_rate_id int
+declare @resid_rate float
+declare @external_account_id int
+
+declare @queued_resid_id int
+declare @queued_resids int
+declare @balance float
+declare @required_settlements int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_queued_resids",
+	"Tally Queued Resids",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"resid_rates",
+	"Resid Rates",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pb_products",
+	"Prime Broker Products",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_queued_settlements",
+	"Tally Queued Settlements",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_clients",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_market",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closed_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"unsettled_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"settled_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund= name
+from
+	funds
+where
+	fund_id = @fund_id
+
+if @value_date = NULL
+begin
+	select
+		@value_date = convert(datetime, convert(date, getdate()))
+
+	exec
+		r_nextbusinessday
+			@value_date,
+			@value_date output
+end
+	
+select
+	@fund = name
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@fund_prime_broker_id = a.prime_broker_id,
+	@fund_external_account_id = a.bo_external_account_id
+from
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.name = @fund
+
+select	
+	@roll_trader_id = roll_trader_id
+from
+	fund_roll_traders
+where
+	fund_id = @fund_id
+
+select
+	@prime_broker_id = a.prime_broker_id
+from
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.name = @prime_broker
+
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "FX Settlement"
+
+create table
+	#account_settlements(
+		external_account_id int,
+		product_id int,
+		amount numeric(30,4) NULL)
+insert into
+	#account_settlements(
+		external_account_id,
+		product_id,
+		amount)
+select
+	external_account_id,
+	currency_id,
+	sum(amount)
+from
+	account_transactions
+where
+	transaction_type_id = @transaction_type_id
+and
+	convert(date, transaction_date) = convert(date, @value_date)
+group by
+	external_account_id,
+	currency_id
+
+
+create table
+	#closed_account_settlements(
+		external_account_id int,
+		product_id int,
+		amount numeric(30,4) NULL)
+insert into
+	#closed_account_settlements(
+		external_account_id,
+		product_id,
+		amount)
+select
+	external_account_id,
+	currency_id,
+	sum(amount)
+from
+	closed_account_transactions
+where
+	transaction_type_id = @transaction_type_id
+and
+	convert(date, transaction_date) = convert(date, @value_date)
+group by
+	external_account_id,
+	currency_id
+
+
+
+create table
+	#pb_settlements(
+		prime_broker_id int,
+		product_id int,
+		amount numeric(30,2) NULL)
+insert into
+	#pb_settlements(
+		prime_broker_id,
+		product_id,
+		amount)
+select
+	b.prime_broker_id,
+	a.currency_id,
+	sum(a.amount)
+from
+	account_transactions a,
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_type_id = @transaction_type_id
+and
+	convert(date, a.transaction_date) = convert(date, @value_date)
+group by
+	b.prime_broker_id,
+	a.currency_id
+
+create table
+	#closed_pb_settlements(
+		prime_broker_id int,
+		product_id int,
+		amount numeric(30,2) NULL)
+insert into
+	#closed_pb_settlements(
+		prime_broker_id,
+		product_id,
+		amount)
+select
+	b.prime_broker_id,
+	a.currency_id,
+	sum(a.amount)
+from
+	closed_account_transactions a,
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_type_id = @transaction_type_id
+and
+	convert(date, a.transaction_date) = convert(date, @value_date)
+group by
+	b.prime_broker_id,
+	a.currency_id
+
+
+create table
+	#prime_brokers(
+		id int identity,
+		style varchar(250) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(100),
+		external_account_id int NULL)
+
+
+create table
+	#trades(
+		trade_id int NULL,
+		external_account_id int NULL,
+		external_account varchar(50) NULL,
+		external_account_type_id int NULL,
+		external_account_type varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		product_qty float NULL,
+		currency_qty float NULL,
+		value_date datetime NULL,
+		price float NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(50) NULL)
+
+insert into
+	#trades(
+		trade_id,
+		external_account_id,
+		product_id,
+		product_qty,
+		currency_id,
+		currency_qty,
+		value_date,
+		price)
+select
+	a.trade_id,
+	a.external_account_id,
+	c.product_id,
+	a.quantity,
+	c.currency_id,
+	a.quantity * a.price * -1.0,
+	a.value_date,
+	a.price
+from
+	trades a,
+	fund_external_accounts b,
+	forwards c
+where
+	a.contract_id = c.contract_id
+and
+	a.external_account_id = b.external_account_id
+and
+	b.fund_id = @fund_id
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+
+update
+	#trades
+set
+	a.product = b.symbol,
+	a.currency = c.symbol
+from
+	#trades a,
+	products b,
+	products c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = c.product_id
+
+update
+	#trades
+set
+	a.external_account = b.symbol,
+	a.external_account_type_id = b.external_account_type_id
+from
+	#trades a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+
+update
+	#trades
+set
+	a.external_account_type = b.name
+from
+	#trades a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+
+update
+	#trades
+set
+	a.prime_broker_id = b.prime_broker_id
+from
+	#trades a,
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+
+/* delete
+
+from
+	#trades
+where
+	prime_broker_id = @fund_prime_broker_id */
+
+update
+	#trades
+set
+	a.prime_broker = c.name
+from
+	#trades a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+
+
+insert into
+	#prime_brokers(
+		prime_broker)
+select
+	distinct(prime_broker)
+from
+	#trades
+where
+	prime_broker_id != @fund_prime_broker_id
+order by
+	prime_broker
+
+insert into
+	#prime_brokers(
+		prime_broker)
+select
+	a.name
+from
+	sources a,
+	prime_brokers b
+where
+	a.source_id = b.source_id
+and
+	b.prime_broker_id = @fund_prime_broker_id
+
+
+update
+	#prime_brokers
+set
+	a.prime_broker_id = b.prime_broker_id
+from
+	#prime_brokers a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker = c.name
+and
+	c.source_id = b.source_id
+
+update
+	#prime_brokers
+set
+	a.external_account_id = b.mkt_ext_account_id
+from
+	#prime_brokers a,
+	prime_brokers b
+where
+	a.prime_broker_id = b.prime_broker_id
+
+update
+	#prime_brokers
+set
+	style = @style
+
+create table
+	#pb_positions(
+		prime_broker_id int,
+		product_id int,
+		quantity float)
+insert into
+	#pb_positions(
+		prime_broker_id,
+		product_id,
+		quantity)
+select
+	prime_broker_id,
+	product_id,
+	sum(product_qty)
+from
+	#trades
+group by
+	prime_broker_id,
+	product_id
+
+insert into
+	#pb_positions(
+		prime_broker_id,
+		product_id,
+		quantity)
+select
+	prime_broker_id,
+	currency_id,
+	sum(currency_qty)
+from
+	#trades
+group by
+	prime_broker_id,
+	currency_id
+
+create table
+	#client_positions(
+		external_account_id int,
+		product_id int,
+		quantity float)
+insert into
+	#client_positions
+select
+	external_account_id,
+	product_id,
+	sum(product_qty)
+from
+	#trades
+where
+	prime_broker_id = @fund_prime_broker_id
+and
+	external_account_type = "Client"
+group by
+	external_account_id,
+	product_id
+
+insert into
+	#client_positions(
+		external_account_id,
+		product_id,
+		quantity)
+select
+	external_account_id,
+	currency_id,
+	sum(currency_qty)
+from
+	#trades
+where
+	prime_broker_id = @fund_prime_broker_id
+and
+	external_account_type = "Client"
+group by
+	external_account_id,
+	currency_id
+
+	
+	
+create table
+	#pb_balances(
+		prime_broker_id int,
+		prime_broker varchar(50) NULL,
+		external_account_id int NULL,
+		side varchar(50) NULL,
+		product_id int,
+		product varchar(50) NULL,
+		closed_fx numeric(30,2) NULL,
+		settled_fx numeric(30,2) NULL,
+		quantity numeric(30,2) NULL,
+		net_balance float NULL)
+insert into
+	#pb_balances(
+		prime_broker_id,
+		product_id,
+		quantity)
+select
+	prime_broker_id,
+	product_id,
+	sum(quantity)
+from
+	#pb_positions
+group by
+	prime_broker_id,
+	product_id
+
+update
+	#pb_balances
+set
+	a.product = b.symbol
+from
+	#pb_balances a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#pb_balances 
+set
+	a.prime_broker = c.name
+from
+	#pb_balances a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+
+update
+	#pb_balances
+set
+	settled_fx = 0.0,
+	closed_fx = 0.0
+
+update
+	#pb_balances
+set
+	a.settled_fx = b.amount
+from
+	#pb_balances a,
+	#pb_settlements b
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	a.product_id = b.product_id
+
+update
+	#pb_balances
+set
+	a.closed_fx = b.amount
+from
+	#pb_balances a,
+	#closed_pb_settlements b
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	a.product_id = b.product_id
+
+update
+	#pb_balances
+set
+	net_balance = quantity - closed_fx - settled_fx
+	
+update
+	#pb_balances
+set
+	side = "Market"
+update
+	#pb_balances
+set
+	side = "Client"
+where
+	prime_broker_id = @fund_prime_broker_id
+
+update
+	#pb_balances
+set
+	a.external_account_id = b.mkt_ext_account_id
+from
+	#pb_balances a,
+	prime_brokers b
+where
+	a.prime_broker_id = b.prime_broker_id
+
+
+/*******************************************************/
+create table
+	#client_balances(
+		style varchar(250) NULL,
+		external_account_id int,
+		evaluation_currency_id int NULL,
+		account varchar(50) NULL,
+		product_id int,
+		product varchar(50) NULL,
+		closed_fx numeric(30,2) NULL,
+		settled_fx numeric(30,2) NULL,
+		quantity numeric(30,2) NULL,
+		net_balance float NULL,
+		resid varchar(10) NULL)
+insert into
+	#client_balances(
+		external_account_id,
+		product_id,
+		quantity)
+select
+	external_account_id,
+	product_id,
+	sum(quantity)
+from
+	#client_positions
+group by
+	external_account_id,
+	product_id
+
+update
+	#client_balances
+set
+	style = @style
+
+update
+	#client_balances
+set
+	a.product = b.symbol,
+	a.account = c.symbol,
+	a.evaluation_currency_id = c.evaluation_currency_id
+from
+	#client_balances a,
+	products b,
+	external_accounts c
+where
+	a.product_id = b.product_id
+and
+	a.external_account_id = c.external_account_id
+
+update
+	#client_balances
+set
+	settled_fx = 0.0,
+	closed_fx = 0.0
+
+update
+	#client_balances
+set
+	a.settled_fx = b.amount
+from
+	#client_balances a,
+	#account_settlements b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+	#client_balances
+set
+	a.closed_fx = b.amount
+from
+	#client_balances a,
+	#closed_account_settlements b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id 
+
+update
+	#client_balances
+set
+	settled_fx = 0.0
+where
+	settled_fx = NULL
+
+update
+	#client_balances
+set
+	closed_fx = 0.0
+where
+	closed_fx = NULL
+
+update
+	#client_balances
+set
+	net_balance = quantity - closed_fx - settled_fx
+
+delete
+
+from
+	#client_balances
+where
+	abs(quantity) < 0.01
+
+
+create table
+	#pb_output(
+		id int identity,
+		style varchar(250) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(100) NULL,
+		external_account_id int NULL,
+		external_account varchar(100) NULL,
+		value_date varchar(20) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		balance numeric(30,2) NULL,
+		closed_fx numeric(30,2) NULL,
+		settled_fx numeric(30,2) NULL,
+		net_balance numeric(30,2) NULL,
+		resid varchar(10) NULL)
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#prime_brokers
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#prime_brokers
+	where
+		id > @id
+
+	select
+		@pb_id = prime_broker_id
+	from
+		#prime_brokers
+	where
+		id = @id
+
+	insert into
+		#pb_output(
+			style,
+			external_account_id,
+			prime_broker_id,
+			prime_broker,
+			value_date)
+	select
+		pb_style = @pb_style,
+		external_account_id,
+		prime_broker_id,
+		prime_broker,
+		value_date = convert(varchar(11), @value_date, 1)
+	from
+		#prime_brokers
+	where
+		id = @id
+
+
+	insert into
+		#pb_output(
+			style,
+			prime_broker_id,
+			external_account_id,
+			product_id,
+			product,
+			balance,
+			closed_fx,
+			settled_fx,
+			net_balance)
+	select
+		style = @style,
+		prime_broker_id,
+		external_account_id,
+		product_id,
+		product,
+		quantity,
+		closed_fx,
+		settled_fx,
+		net_balance
+	from
+		#pb_balances
+	where
+		prime_broker_id = @pb_id
+	order by
+		product
+			
+	select
+		@ids = count(*)
+	from
+		#prime_brokers
+	where
+		id > @id
+end
+
+update
+	#pb_output
+set
+	style = @client_style
+where
+	prime_broker_id = @fund_prime_broker_id
+
+update
+	#pb_output
+set
+	style = @error_style,
+	resid = "Yes"
+where
+	abs(balance) > 0.01
+
+update
+	#pb_output
+set
+	a.style = @style,
+	a.resid = "No"
+from
+	#pb_output a,
+	pb_deliverable_products b
+where
+	a.product_id = b.product_id
+and
+	a.prime_broker_id = b.prime_broker_id
+
+update
+	#client_balances
+set
+	style = @error_style,
+	resid = "Yes"
+where
+	product_id != evaluation_currency_id
+and
+	abs(quantity) > .01
+	
+
+update
+	#client_balances
+set
+	a.style = @style,
+	a.resid = "No"
+from
+	#client_balances a,
+	acct_deliverable_products b
+where
+	a.product_id = b.product_id
+and
+	a.external_account_id = b.external_account_id
+
+
+
+/*******/
+create table
+	#resids(
+		id int identity,
+		external_account_id int NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		contract_id int NULL,
+		value_date datetime NULL,
+		quantity numeric(30,2) NULL,
+		price float NULL)
+
+/* insert into
+	#resids(
+		external_account_id,
+		product_id,
+		value_date,
+		quantity)
+select
+	external_account_id,
+	product_id,
+	value_date = @value_date,
+	balance * -1.0
+from
+	#pb_output
+where
+	prime_broker_id != @fund_prime_broker_id
+and
+	resid = "Yes" */
+
+
+insert into
+	#resids(
+		external_account_id,
+		product_id,
+		value_date,
+		quantity)
+select
+	external_account_id,
+	product_id,
+	value_date = @value_date,
+	quantity * -1.0
+from
+	#client_balances
+where
+	resid = "Yes"
+
+update
+	#resids
+set
+	a.currency_id = b.evaluation_currency_id
+from
+	#resids a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#resids
+set
+	a.contract_id = b.contract_id
+from
+	#resids a,
+	forwards b
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+
+update
+	#resids
+set
+	a.price = b.rate
+from
+	#resids a,
+	defined_resid_rates b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, b.value_date) = convert(date, @value_date)
+
+select
+	@missing_contracts = count(*)
+from
+	#resids
+where
+	contract_id = NULL
+if @missing_contracts > 0
+begin
+	select
+		section = "Missing Contracts",
+		message = "Missing contracts for product currency pair. Check contract subscription for",
+		product = a.symbol,
+		currency = b.symbol,
+		contract_id = c.contract_id
+	from
+		products a,
+		products b,
+		#resids c
+	where
+		a.product_id = c.product_id
+	and
+		b.product_id = c.currency_id
+	and
+		c.contract_id = NULL
+	return
+end
+
+select
+	@resids = count(*)
+from
+	#resids
+
+if @resids > 0
+begin
+	exec
+		j_nextkey
+			"batches",
+			@batch_id output
+
+			
+	select
+		@id = 0
+	select
+		@ids = count(*)
+	from
+		#resids
+	where
+		id > @id
+
+	while @ids > 0
+	begin
+		select
+			@id = min(id)
+		from
+			#resids
+		where
+			id > @id
+
+
+		select
+			@contract_id = NULL,
+			@defined_resid_rate_id = NULL,
+			@resid_rate = NULL,
+			@external_account_id = NULL,
+			@quantity = NULL
+
+		select
+			@contract_id = contract_id,
+			@external_account_id = external_account_id,
+			@quantity = quantity
+		from
+			#resids
+		where
+			id = @id
+
+		select
+			@defined_resid_rate_id = defined_resid_rate_id,
+			@resid_rate = rate
+		from
+			defined_resid_rates
+		where
+			contract_id = @contract_id
+		and
+			convert(date, value_date) = convert(date, @value_date)
+		if @defined_resid_rate_id = NULL
+		begin
+			exec
+				j_nextkey
+					"defined_resid_rates",
+					@defined_resid_rate_id output
+
+			insert into
+				defined_resid_rates(
+					defined_resid_rate_id,
+					value_date,
+					contract_id)
+			values(
+				@defined_resid_rate_id,
+				@value_date,
+				@contract_id)
+		end
+
+
+		exec
+			j_nextkey
+				"queued_resid_trades",
+				@queued_resid_id output
+		insert into
+			queued_resid_trades(
+				queued_resid_id,
+				batch_id,
+				trade_date,
+				external_account_id,
+				quantity,
+				contract_id,
+				value_date,
+				price)
+		values(
+			@queued_resid_id,
+			@batch_id,
+			getdate(),
+			@external_account_id,
+			@quantity,
+			@contract_id,
+			@value_date,
+			@resid_rate)
+			
+		select
+			@ids = count(*)
+		from
+			#resids
+		where
+			id > @id
+	end
+end
+	
+
+/*******/
+select
+	style = @style,
+	pb_products = "Prime Broker Products",
+	resid_rates = "Resid Rates",
+	value_date = @value_date
+
+select
+	style,
+	clearing_entity = prime_broker,
+	value_date,
+	product,
+	balance,
+	closed_fx,
+	settled_fx,
+	net_balance
+from
+	#pb_output
+order by
+	id
+
+select
+	section = "Prime of Primes Clients",
+	style,
+	account,
+	product,
+	balance = quantity,
+	closed_fx,
+	settled_fx,
+	net_balance
+from
+	#client_balances
+order by
+	account
+
+
+select
+	section = "Queued Resids",
+	style = @style,
+	account = b.symbol,
+	c.symbol,
+	a.quantity,
+	a.value_date,
+	a.price
+from
+	/* #resids a, */
+	queued_resid_trades a,
+	external_accounts b,
+	contracts c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = c.contract_id
+and
+	a.batch_id = @batch_id
+order by
+	b.symbol,
+	c.symbol
+if @@rowcount > 0
+begin
+	select
+		tally_queued_resids = "Tally Queued Resids",
+		batch_id = @batch_id
+end
+
+
+go

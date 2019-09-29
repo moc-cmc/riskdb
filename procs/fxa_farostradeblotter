@@ -1,0 +1,337 @@
+
+if object_id("fxa_farostradeblotter") != NULL
+    drop procedure
+        fxa_farostradeblotter
+go
+
+create procedure fxa_farostradeblotter  @trade_date datetime as
+
+declare @trade_id 		int
+declare @contract_id	int
+declare @dealt_cur		varchar(5)
+declare @counter_cur	varchar(5)
+declare @spot_price		float
+declare @allin			float
+declare @forwardpts		float
+declare @price_source_id	int
+declare @end_date		datetime
+declare @begin_date		datetime
+declare @valdate		datetime
+declare @price_date		datetime
+declare @price_style		varchar(12)
+declare @trade_type			varchar(12)
+
+exec r_daterangefordate @trade_date, @begin_date output, @end_date output
+
+select
+	@price_date = dateadd(hour, 17, convert(datetime, convert(char(11), @end_date, 1)))
+
+select
+	@price_source_id=source_id
+from
+	sources
+where
+	name="MPT"
+
+/* Market side first */
+
+create table #trades (
+	trade_id		int,
+	contract_id		int,
+	client_taker	varchar(15),
+	client_userid	varchar(15),
+	counterparty_maker	varchar(100),
+	cp_userid			varchar(100) NULL,
+	ccypair				varchar(12),
+	side				varchar(5),
+	given_ccy			varchar(5),
+	given_amt			float,
+	counter_ccy			varchar(5),
+	counter_amt			float,
+	spot_rate			float NULL,
+	fwd_pts				float NULL,
+	allin_rate			float NULL,
+	trade_date			datetime,
+	settle_date			datetime,
+	time_stamp			datetime,
+	matching_trade		int,
+	pandl				float,
+	is_matched			int,
+	pb					varchar(100),
+	is_crossccy			int,
+	account				varchar(50),
+	is_PLTrade			int,
+	sent_to_traiana		int,
+	credit_updated		int,
+	group_id			int,
+	pandl_ccy			varchar(10),
+	is_cancelled		int,
+	is_marked			int,
+	is_modified			int,
+	ndf_fix				datetime NULL,
+	never_match			int,
+	ops_manual_confirm	int,
+	pl_traded_out		int,
+	is_autotrade		int,
+	td_pandl			float,
+	settle_pandl		float)
+
+insert into
+	#trades
+select
+    a.trade_id,
+    a.contract_id,
+	"",
+    "",
+    "",
+    "", 
+    "",
+    "",
+	e.symbol,
+	a.quantity,
+	f.symbol,
+	a.price * a.quantity,
+	a.spot_reference,
+	0.0,	
+	0.0,
+	a.trade_date,
+	a.value_date,
+	a.trade_date,
+	0,
+	0,
+	0,
+	m.name,
+	0,
+	j.name,
+	0,
+	1,
+	0,
+	a.deal_id,
+	"USD",
+	0,
+	0,
+	0,
+	a.fixing_date,
+	0,
+	0,
+	0,
+	1,
+	0,
+	0
+from
+	trades a,
+	counterparties b,
+	/* counterparty_symbols c, */
+	forwards d,
+	products e,
+	products f,
+	/* deals g,
+	deal_types h,*/
+	fund_external_accounts i,
+	funds j,
+	external_account_prime_brokers k,
+	prime_brokers l,
+	sources m	
+where
+	trade_date >= @trade_date and
+	a.counterparty_id=b.counterparty_id and
+	/* a.counterparty_id *= c.counterparty_id and */
+	a.contract_id=d.contract_id and
+	d.product_id=e.product_id and
+	d.currency_id=f.product_id and
+	/* a.deal_id=g.deal_id and
+	g.deal_type_id=h.deal_type_id and
+	h.name like "Client%" and */
+	a.external_account_id=i.external_account_id and
+	i.fund_id=j.fund_id and 
+	a.external_account_id=k.external_account_id and
+	k.prime_broker_id=l.prime_broker_id and
+	l.source_id = m.source_id
+
+update
+	#trades
+set
+	side="SELL"
+where
+	given_amt < 0
+
+update
+	#trades
+set
+	side="BUY"
+where
+	given_amt > 0
+
+declare trades cursor for
+	select
+		trade_id,
+		given_ccy,
+		counter_ccy,
+		contract_id,
+		settle_date
+	from
+		#trades
+	order by
+		trade_id
+
+open trades
+fetch trades into @trade_id, @dealt_cur, @counter_cur, @contract_id, @valdate
+
+while @@sqlstatus = 0
+begin
+
+	select @trade_type = NULL
+
+	select
+		@trade_type=c.name
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.trade_id=@trade_id and
+		a.external_account_id=b.external_account_id and
+		b.external_account_type_id=c.external_account_type_id
+
+	if(@trade_type = "Counterparty")
+	begin
+		/* markit trade */
+		
+		update
+			#trades
+		set 
+			a.counterparty_maker=c.name,
+			a.cp_userid="faros user",
+			a.client_taker="farostrading",
+			a.client_userid = convert(varchar(15), c.counterparty_id)	
+		from
+			#trades a,
+			trades b,
+			counterparties c
+		where
+			a.trade_id=b.trade_id and
+			b.counterparty_id=c.counterparty_id and
+			a.trade_id=@trade_id
+
+	end
+	else
+	begin
+	
+		/* client trade */
+	
+		update
+			#trades
+		set
+			a.counterparty_maker="faros",
+			a.cp_userid=convert(varchar(15), c.counterparty_id),
+			a.client_taker=c.name,
+			a.client_userid = "farosbank"
+		from
+			#trades a,
+			trades b,
+			counterparties c
+		where
+			a.trade_id=b.trade_id and
+			b.counterparty_id=c.counterparty_id and
+			a.trade_id=@trade_id
+	end
+	
+	if(@dealt_cur < @counter_cur)
+	begin
+		update 
+			#trades
+		set
+			ccypair = @dealt_cur + "/" +@counter_cur
+		where
+			trade_id = @trade_id
+	end
+	else
+	begin
+		update
+			#trades
+		set
+			ccypair = @counter_cur + "/" + @dealt_cur
+		where
+			trade_id = @trade_id
+	end
+
+	if(@dealt_cur != "USD" and @counter_cur != "USD")
+	begin
+		update
+			#trades
+		set
+			is_crossccy = 1
+		where
+			trade_id = @trade_id
+	end
+
+	/*
+	select @spot_price=NULL, @allin=NULL, @forwardpts=NULL
+	
+	select
+        @price_style = a.name
+    from
+        price_styles a,
+        contract_price_styles b
+    where
+        b.contract_id=@contract_id and
+        b.price_style_id=a.price_style_id
+
+	select
+       @spot_price=price
+    from
+        bo_spot_settles
+    where
+        source_id=@price_source_id and
+        contract_id=@contract_id and
+        price_date=@price_date
+
+	select
+		@allin=price
+	from
+		bo_prices
+	where
+		source_id=@price_source_id and
+		contract_id=@contract_id and
+		price_date=@price_date and
+		value_date=@valdate
+
+	update
+		#trades
+	set
+		spot_rate=@spot_price,
+		fwd_pts=@spot_price - @allin, 
+		allin_rate=@allin
+	*/
+	
+	fetch trades into @trade_id, @dealt_cur, @counter_cur, @contract_id, @valdate
+
+end
+close trades
+deallocate trades
+
+select
+	trade_id,
+	group_id,
+	client_taker,
+	counterparty_maker,
+	cp_userid,
+	ccypair,
+	side,
+	given_ccy,
+	given_amt,
+	counter_ccy,
+	counter_amt,
+	spot_rate,
+	/* fwd_pts,
+	allin_rate, */
+	trade_date,
+	ndf_fix,
+	settle_date,
+	pb
+	/* pandl_ccy,
+	settle_pandl */
+from
+	#trades
+
+go

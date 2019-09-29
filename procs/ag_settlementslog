@@ -1,0 +1,371 @@
+drop procedure
+	ag_settlementslog
+go
+
+create procedure
+	ag_settlementslog
+		@login varchar(50),
+		@value_date datetime=NULL
+as
+
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @fund_id int
+declare @payments_ext_account_id int
+declare @deliv_settlement_method_id int
+declare @fx_settlement_type_id int
+declare @wire_type_id int
+declare @payment_request_id int
+declare @payment_type_id int
+
+declare @id int
+declare @ids int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"old_value_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"transfer_log",
+	"Settlements Log",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_vs_clients",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+if @value_date = NULL
+	select
+		@value_date = convert(datetime, convert(date, getdate()))
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@payments_ext_account_id = payments_ext_account_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+
+select
+	@deliv_settlement_method_id = settlement_method_id
+from
+	settlement_methods
+where
+	name = "Delivery"
+if @deliv_settlement_method_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Delivery settlement method not found"
+	return
+end
+
+select
+	@fx_settlement_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "FX Settlement"
+if @fx_settlement_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "FX Settlement transaction type not found"
+	return
+end
+
+select
+	@wire_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Payment Request"
+if @wire_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"transaction_types",
+			@wire_type_id output
+
+	insert into
+		transaction_types(
+			transaction_type_id,
+			name,
+			direction)
+	values(
+		@wire_type_id,
+		"Payment Request",
+		1)
+end
+
+
+create table
+	#requests(
+		id int identity,
+		payment_request_id int NULL,
+		submitted_by varchar(50) NULL,
+		timestamp datetime NULL,
+		payer_account varchar(50) NULL,
+		payee_account varchar(50) NULL,
+		amount numeric(30,2) NULL,
+		product varchar(50) NULL,
+		status varchar(50) NULL)
+insert into
+	#requests(
+		payment_request_id,
+		submitted_by,
+		timestamp,
+		payer_account,
+		payee_account,
+		amount,
+		product,
+		status)
+select
+	a.payment_request_id,
+	submitted_by = b.login,
+	a.timestamp,
+	payer_account = c.symbol,
+	payee_account = d.symbol,
+	a.amount,
+	product = e.symbol,
+	status = f.name
+from
+	payment_requests a,
+	tico_accounts b,
+	external_accounts c,
+	external_accounts d,
+	products e,
+	statuses f
+where
+	a.submitted_by = b.account_id
+and
+	a.payer_account_id = c.external_account_id
+and
+	a.payee_account_id = d.external_account_id
+and
+	a.product_id = e.product_id
+and
+	a.status_id = f.status_id
+and
+	convert(date, a.timestamp) = convert(date, @value_date)
+order by
+	a.payment_request_id
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#requests
+where
+	id > @id
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		payment_request_id int NULL,
+		submitted_by varchar(50) NULL,
+		timestamp datetime NULL,
+		payer_account varchar(50) NULL,
+		payee_account varchar(50) NULL,
+		amount numeric(30,2) NULL,
+		product varchar(50) NULL,
+		status varchar(50) NULL,
+		account_transaction_id int NULL,
+		account varchar(50) NULL,
+		transaction_type varchar(50) NULL)
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#requests
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#requests
+	where
+		id > @id
+
+	select
+		@payment_request_id = payment_request_id
+	from
+		#requests
+	where
+		id = @id
+
+	insert into
+		#output(
+			style,
+			payment_request_id,
+			submitted_by,
+			timestamp,
+			payer_account,
+			payee_account,
+			amount,
+			product,
+			status)
+	select
+		style = @subtotal_style,
+		payment_request_id,
+		submitted_by,
+		timestamp,
+		payer_account,
+		payee_account,
+		amount,
+		product,
+		status
+	from
+		#requests
+	where
+		id = @id
+
+	insert into
+		#output(
+			style,
+			account_transaction_id,
+			account,
+			transaction_type,
+			amount,
+			product)
+	select
+		style = @style,
+		b.account_transaction_id,
+		account = d.symbol,
+		transaction_type = e.name,
+		b.amount,
+		f.symbol 
+	from
+		payment_request_transactions a,
+		account_transactions  b,
+		tico_accounts c,
+		external_accounts d,
+		transaction_types e,
+		products f
+	where
+		a.account_transaction_id = b.account_transaction_id
+	and
+		b.entered_by = c.account_id
+	and
+		b.external_account_id = d.external_account_id
+	and
+		b.transaction_type_id = e.transaction_type_id
+	and
+		b.currency_id = f.product_id
+	and
+		a.payment_request_id = @payment_request_id	
+	order by
+		a.payment_request_id,
+		b.account_transaction_id 
+	
+	select
+		@ids = count(*)
+	from
+		#requests
+	where
+		id > @id
+			
+end
+
+select
+	section = "Payment Requests",
+	style,
+	request_id = payment_request_id,
+	submitted_by,
+	timestamp,
+	payer_account,
+	payee_account,
+	account_transaction_id,
+	account,
+	type = transaction_type,
+	amount,
+	product,
+	status
+from
+	#output
+order by
+	id
+
+/* select
+	external_account_id,
+	transaction_type_id,
+	currency_id,
+	sum(amount)
+from
+	account_transactions
+where
+	external_account_id = @payments_ext_account_id
+and
+	transaction_date < dateadd(day, 1, convert(date, @value_date))
+group by
+	external_account_id,
+	transaction_type_id,
+	currency_id */
+
+
+go

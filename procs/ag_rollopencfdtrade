@@ -1,0 +1,273 @@
+drop procedure
+	ag_rollopencfdtrade
+go
+
+create procedure
+	ag_rollopencfdtrade
+		@login varchar(50),
+		@open_trade_id int
+as
+
+declare @original_trade_id int
+declare @o_trade_id int
+declare @deal_id int
+declare @user_id int
+declare @trade_type_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @counterparty_id int
+declare @quantity numeric(30,4) /* Use open amount from open trades */
+declare @contract_id int
+declare @value_date datetime /* Get this from the open trade id */
+declare @fixing_date datetime
+declare @price float
+declare @trade_date datetime /* Use 5pm of the closing value date */
+declare @trader_id int
+declare @strategy_id int
+declare @status_id int
+declare @broker_id int
+declare @sales_code_id int
+declare @identifier varchar(100)
+declare @pct_price float
+declare @spot_reference float
+declare @next_value_date datetime
+declare @next_trade_date datetime
+
+declare @closing_trade_id int
+declare @closing_identifier varchar(100)
+declare @roll_trade_id int
+declare @roll_identifier varchar(100)
+
+select
+	@o_trade_id = trade_id,
+	@value_date = value_date,
+	@quantity = open_amount
+from
+	open_trades
+where
+	id = @open_trade_id 
+
+select
+	@trade_date = convert(datetime, convert(date, @value_date))
+select
+	@next_trade_date = dateadd(hour, 17, @trade_date)
+select
+	@next_trade_date = dateadd(minute, 1, @next_trade_date)
+
+
+
+exec
+	r_nextbusinessday
+		@value_date,
+		@next_value_date output
+
+select
+	@trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = "CFD Roll"
+if @trade_type_id = NULL
+begin
+	insert into
+		trade_types(
+			name)
+	values(
+		"CFD Roll")
+	select
+		@trade_type_id = @@identity
+end
+
+select
+	@external_account_id = external_account_id,
+	@deal_id = deal_id
+from
+	trades
+where
+	trade_id = @o_trade_id
+
+select
+	@original_trade_id = min(trade_id)
+from
+	trades
+where
+	deal_id = @deal_id
+and
+	external_account_id = @external_account_id
+
+
+select
+	@deal_id = deal_id,
+	@user_id = user_id,
+	@internal_account_id = internal_account_id,
+	@external_account_id = external_account_id,
+	@counterparty_id = counterparty_id,
+	@contract_id = contract_id,
+	@fixing_date = fixing_date,
+	@price = price,
+	@trader_id = trader_id,
+	@strategy_id = strategy_id,
+	@status_id = status_id,
+	@broker_id = broker_id,
+	@sales_code_id = sales_code_id,
+	@identifier = identifier,
+	@pct_price = pct_price,
+	@spot_reference = spot_reference
+from
+	trades
+where
+	trade_id = @original_trade_id
+
+exec
+	j_nextkey
+		"trades",
+		@closing_trade_id output
+select
+	@closing_identifier = rtrim(convert(varchar(50), @original_trade_id)) + "-" + rtrim(convert(varchar(50), @closing_trade_id))
+
+exec
+	j_nextkey
+		"trades",
+		@roll_trade_id output
+
+select
+	@roll_identifier = rtrim(convert(varchar(50), @original_trade_id)) + "-" + rtrim(convert(varchar(50), @roll_trade_id))
+
+	
+begin tran
+
+	insert into
+		trades(
+			trade_id,
+			deal_id,
+			user_id,
+			trade_type_id,
+			internal_account_id,
+			external_account_id,
+			counterparty_id,
+			quantity,
+			contract_id,
+			value_date,
+			fixing_date,
+			price,
+			trade_date,
+			trader_id,
+			strategy_id,
+			status_id,
+			broker_id,
+			sales_code_id,
+			identifier,
+			pct_price,
+			spot_reference)
+	values(
+		@closing_trade_id,
+		@deal_id,
+		@user_id,
+		@trade_type_id,
+		@internal_account_id,
+		@external_account_id,
+		@counterparty_id,
+		@quantity * -1.0,
+		@contract_id,
+		@value_date,
+		@fixing_date,
+		@price,
+		@trade_date,
+		@trader_id,
+		@strategy_id,
+		@status_id,
+		@broker_id,
+		@sales_code_id,
+		@closing_identifier,
+		@pct_price,
+		@spot_reference)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to roll open trade",
+			open_trade_id = @open_trade_id
+		rollback tran
+		return
+	end
+
+
+	insert into
+		trades(
+			trade_id,
+			deal_id,
+			user_id,
+			trade_type_id,
+			internal_account_id,
+			external_account_id,
+			counterparty_id,
+			quantity,
+			contract_id,
+			value_date,
+			fixing_date,
+			price,
+			trade_date,
+			trader_id,
+			strategy_id,
+			status_id,
+			broker_id,
+			sales_code_id,
+			identifier,
+			pct_price,
+			spot_reference)
+	values(
+		@roll_trade_id,
+		@deal_id,
+		@user_id,
+		@trade_type_id,
+		@internal_account_id,
+		@external_account_id,
+		@counterparty_id,
+		@quantity,
+		@contract_id,
+		@next_value_date,
+		@fixing_date,
+		@price,
+		@next_trade_date,
+		@trader_id,
+		@strategy_id,
+		@status_id,
+		@broker_id,
+		@sales_code_id,
+		@roll_identifier,
+		@pct_price,
+		@spot_reference)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to roll open trade",
+			open_trade_id = @open_trade_id
+		rollback tran
+		return
+	end
+
+
+	/* delete
+
+	from
+		open_trades
+	where
+		id = @open_trade_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to close open trade",
+			open_trade_id = @open_trade_id
+		rollback tran
+		return
+	end */
+
+commit tran
+
+
+			
+
+
+go

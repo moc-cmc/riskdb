@@ -1,0 +1,1204 @@
+create or replace procedure
+	ag_legalentitieshome
+		@login varchar(50),
+		@legal_entity varchar(255)=NULL
+as
+
+declare @fund_id int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @grey_style varchar(250)
+declare @selected_style varchar(250)
+declare @legal_entity_id int
+declare @default_user_pool varchar(100)
+declare @legal_entity_status varchar(50)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"billing_contacts",
+	"Billing Contacts",
+	NULL) 
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "ordering",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "symbol",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "account",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+	"bo_master_account",
+	NULL,
+	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+	"master_account_name",
+	NULL,
+	NULL
+)
+
+
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_legal_entity",
+	"Add Legal Entity",
+	NULL) 
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_outside_account",
+        "Add Outside Account",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_provider",
+        "Add Provider",
+        NULL)
+
+insert into
+        #meta
+values( 
+        "Column Link",
+        "add_bo_account",
+        "Add BO Account",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_trader",
+        "Add Trader To Account",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "remove_trader",
+        "Remove Trader From Account",
+        NULL)
+
+
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_fo_sub_account",
+        "Add FO Sub Account",
+        NULL)
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"leid",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "view_entity",
+        "Legal Entities Home",
+        NULL)
+
+insert into
+	#meta
+values( 
+        "Column Hidden",
+        "legal_entity",
+	NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "entering_legal_entity",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "available_legal_entity",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "remove_legal_entity",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "user_pool",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "mfa_login",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "mfa_phone_number",
+        NULL,
+        NULL)
+
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_user",
+        "Add Legal Entity User",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_users",
+        "Add Standard Users To Legal Entity",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_client_user",
+        "Add Legal Entity Client User",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "remove_user",
+        "Remove Legal Entity User",
+        NULL)
+
+insert into
+        #meta
+values( 
+        "Column Link",
+        "permissions",
+        "View User Permissions",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "enable_login",
+        "Enable MFA Access",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "disable_login",
+        "Disable MFA Access",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "approve_setup",
+        "Approve Legal Entity Setup",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "account_instructions",
+        "View Account Instructions",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "create_trader",
+        "Create Legal Entity Trader For User",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "bo_access",
+        "Toggle Client Back Office Access",
+        NULL)
+
+insert into
+        #meta
+values( 
+        "Column Link",
+        "bo_readonly",
+        "Toggle Client Back Office Read Only",
+        NULL)
+
+insert into
+        #meta
+values( 
+        "Column Link",
+        "fo_access",
+        "Toggle Client Front Office Access",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "fo_readonly",
+        "Toggle Client Front Office Read Only",
+        NULL)
+
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "manage_otc_whitelist",
+        "Manage Legal Entity OTC Whitelist",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "remove_otc_access",
+        "Legal Entities Home Remove Legal Entity from Whitelist",
+        NULL)
+
+
+
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @legal_entity
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@grey_style = "color:#CCCCCC;background:#FFFFFF;border: 1px solid white"
+
+select
+	style = @style,
+	legal_entity = @legal_entity,
+	add_legal_entity = "Add Legal Entity",
+	add_provider = "Add Provider",
+	billing_contacts = "Billing Contacts"
+
+
+create table
+	#legal_entities(
+		legal_entity_id int,
+		name varchar(255),
+		lei varchar(100) NULL,
+		approval_count int NULL,
+		approve_setup varchar(10) NULL,
+		status_id int NULL,
+		status varchar(50) NULL,
+		section varchar(50) NULL,
+		add_outside_account varchar(50) NULL,
+		add_bo_account varchar(50) NULL,
+		add_users varchar(50) NULL,
+		add_client_user varchar(50) NULL,
+		style varchar(50) NULL)
+
+insert into
+	#legal_entities(
+		legal_entity_id,
+		name,
+		lei,
+		approve_setup,
+		status_id,
+		section,
+		style)
+select
+	legal_entity_id,
+	name,
+	lei,
+	NULL,
+	status_id,	
+	section = "Legal Entities",
+	style = @style
+from
+	legal_entities
+order by
+	name
+
+
+update
+	#legal_entities
+set
+	status = b.name
+from
+	#legal_entities a,
+	statuses b
+where
+	a.status_id = b.status_id
+
+
+update
+	#legal_entities
+set
+	style = @selected_style,
+	approve_setup = "Approve",
+        add_outside_account = "Add Outside Account",
+        add_bo_account = "Add BO Account",
+        add_users = "Add Internal Users",
+        add_client_user = "Add Client User"
+where
+	name = @legal_entity
+
+create table
+	#le_approvals(
+		legal_entity_id int,
+		approval_count int NULL
+)
+insert into
+	#le_approvals(
+		legal_entity_id,
+		approval_count)
+select
+	legal_entity_id,
+	count(*)
+from
+	legal_entity_approvals
+group by
+	legal_entity_id
+
+update
+        #legal_entities
+set
+        approval_count = b.approval_count
+from
+        #legal_entities a,
+        #le_approvals b
+where
+	a.legal_entity_id = b.legal_entity_id
+
+update
+	#legal_entities
+set
+	approve_setup = NULL
+where
+	status = "Approved"
+
+
+select
+	section,
+	style,
+	legal_entity = name,
+	entity = name,
+	view_entity = "VIEW",
+	approval_count = approval_count,
+	approve_setup = approve_setup,
+	status = status,
+	lei = lei,
+	add_outside_account = add_outside_account,
+        add_bo_account = add_bo_account,
+	add_users = add_users,
+	add_client_user = add_client_user
+from
+	#legal_entities
+
+
+if @legal_entity_id = NULL
+begin
+	/* 
+         * EXIT THE PROC SINCE WE DO NOT NEED TO SHOW ANY DETAIL
+         * ---------------------------------------------------------*/
+	return
+end
+
+
+select
+	@legal_entity_status = status
+from
+	#legal_entities
+where
+	legal_entity_id = @legal_entity_id
+
+	
+select
+	style = @style,
+	section = "Outside Accounts",
+	"outside_account" = a.name,
+	outside_account_type = b.name,
+	legal_entity = c.name,
+	provider = d.name,
+	account_instructions = "VIEW"
+from
+	outside_accounts a,
+	outside_account_types b,
+	legal_entities c,
+	providers d
+where
+	a.outside_account_type_id = b.outside_account_type_id
+and
+	a.legal_entity_id = c.legal_entity_id
+and
+	a.provider_id = d.provider_id
+and
+	a.legal_entity_id = @legal_entity_id
+order by
+	a.name
+	
+create table	
+	#account_output(
+		id int identity,
+		ordering int,
+		bo_master_account_id int,
+		master_account varchar(100),
+		master_account_symbol varchar(100) NULL,
+		master_account_name varchar(100) NULL,
+		legal_entity varchar(100) NULL,
+		sub_account_id int NULL,
+		sub_account_symbol varchar(100) NULL,
+		sub_account_name varchar(100) NULL,
+		trader_id int NULL,
+		trader varchar(100) NULL,
+		add_fo_sub_account varchar(25) NULL,
+		add_trader varchar(25) NULL,
+                remove_trader varchar(25) NULL,
+		edit_account varchar(25) NULL,
+		style varchar(255) NULL
+)
+
+insert into
+	#account_output(
+		ordering,
+		bo_master_account_id,
+		master_account,
+		master_account_symbol,
+		master_account_name,
+		legal_entity,
+		add_fo_sub_account,
+		edit_account,
+		style)
+select
+	1,
+	a.bo_master_account_id,
+	b.symbol,
+	b.symbol,
+	b.name,
+	c.name,
+	"Add FO Sub Account",
+	"Edit Master Account",
+	@total_style
+from
+	bo_master_accounts a,
+	external_accounts b,
+	legal_entities c
+where
+	a.external_account_id =  b.external_account_id
+and
+	a.legal_entity_id = c.legal_entity_id
+and
+	c.legal_entity_id = @legal_entity_id
+
+	
+	
+/*
+select
+	style = @style,
+	section = "Back Office Master Accounts",
+	b.symbol,
+	b.name,
+	legal_entity = c.name,
+	add_fo_sub_account = "Add FO Sub Account"
+from
+	bo_master_accounts a,
+	external_accounts b,
+	legal_entities c
+where
+	a.external_account_id =  b.external_account_id
+and
+	a.legal_entity_id = c.legal_entity_id
+and
+	c.legal_entity_id = @legal_entity_id
+
+*/
+
+
+insert into
+        #account_output(
+                ordering,
+                bo_master_account_id,
+                master_account,
+		sub_account_id,
+		sub_account_symbol,
+		sub_account_name,
+		edit_account,
+                style)
+select
+        ordering = 2,
+        bo_master_account_id = c.bo_master_account_id,
+	master_account = d.symbol,
+	sub_account_id = a.fo_sub_account_id,
+        sub_account_symbol = b.symbol,
+        sub_account_name = b.name,
+	"Edit Sub Account",
+        @subtotal_style
+from
+	fo_sub_accounts a,
+	external_accounts b,
+	bo_master_accounts c,
+	external_accounts d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.bo_master_account_id = c.bo_master_account_id
+and
+	c.external_account_id = d.external_account_id
+and
+	c.legal_entity_id = @legal_entity_id
+
+
+
+
+	
+	
+select
+	@default_user_pool = a.name
+from
+	cognito_user_pools a,
+	cognito_settings b
+where
+	a.cognito_user_pool_id = b.default_user_pool_id
+
+create table
+	#le_users(
+		legal_entity_id int,
+		tico_account_id int,
+		first_name varchar(50),
+		last_name varchar(50),
+		user_name varchar(100),
+		email varchar(100) NULL,
+		phone varchar(100) NULL,
+		mfa_type_id int NULL,
+		mfa_type varchar(25) NULL,
+		trader_id int NULL,
+		trader_name varchar(50) NULL,
+		login_status varchar(50) NULL,
+		status varchar(50) NULL,
+		enable_login varchar(50) NULL,
+		disable_login varchar(50) NULL,
+		create_date datetime NULL,
+		last_updated datetime NULL,
+		create_trader varchar(25) NULL,
+		bo_access varchar(10) NULL,
+		bo_readonly varchar(10) NULL,
+		fo_access varchar(10) NULL,
+		fo_readonly varchar(10) NULL,
+		section varchar(50) NULL
+)
+
+insert into 
+	#le_users
+select
+	a.legal_entity_id,
+	c.account_id,	
+	c.given_names,
+	c.surname,
+	c.login,
+	email = NULL,
+	phone = NULL,
+	mfa_type_id = NULL,
+	mfa_type = NULL,
+	trader_id = NULL,
+	trader_name = NULL,
+	login_status = "Pending",
+	status = NULL,
+	enable_login = "ENABLE ACCESS",
+	disable_login = NULL,
+	create_date = NULL,
+	last_updated = NULL,
+	create_trader = "Create Trader",
+	bo_access = "-",
+	bo_readonly = "-",
+	fo_access = NULL, /* null since fo access requires trader, will set to - later */
+	fo_readonly = "-",
+	section = "Client Users"
+from
+	legal_entities a,
+	legal_entity_tico_accounts b,
+	tico_accounts c,
+	tico_account_types d,
+	login_types e
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = c.account_id
+and
+	a.legal_entity_id = @legal_entity_id 
+and
+	c.account_id = d.tico_account_id
+and
+	d.login_type_id = e.login_type_id
+and
+	e.name = "Client"
+
+update
+	#le_users
+set
+	trader_id =  b.trader_id,
+	trader_name = b.symbol,
+	create_trader = NULL,
+	fo_access = "-"
+from
+	#le_users a,
+	traders b
+where
+	a.tico_account_id = b.tico_account_id
+
+delete 
+	#le_users
+from
+	#le_users a,
+	traders b
+where
+	a.first_name = b.symbol
+
+update 
+	#le_users
+set
+	bo_access = "Yes"
+from
+	#le_users a,
+	access_group_accounts b,
+	access_groups c
+where
+	a.tico_account_id = b.tico_account_id
+and
+	b.access_group_id = c.access_group_id
+and
+	c.name = "Client Back Office"
+
+update 
+        #le_users
+set
+        bo_readonly = "Yes"
+from
+        #le_users a,
+        access_group_accounts b,
+        access_groups c
+where
+        a.tico_account_id = b.tico_account_id
+and
+        b.access_group_id = c.access_group_id
+and
+        c.name = "Client Back Office Read Only"
+
+update 
+        #le_users
+set
+        fo_access = "Yes"
+from
+        #le_users a,
+        access_group_accounts b,
+        access_groups c
+where
+        a.tico_account_id = b.tico_account_id
+and
+        b.access_group_id = c.access_group_id
+and
+        c.name = "Client Front Office"
+
+update
+        #le_users
+set
+        fo_readonly = "Yes"
+from
+        #le_users a,
+        access_group_accounts b,
+        access_groups c
+where
+        a.tico_account_id = b.tico_account_id
+and
+        b.access_group_id = c.access_group_id
+and
+        c.name = "Client Front Office Read Only"
+
+
+
+	
+
+insert into
+        #le_users
+select
+        a.legal_entity_id,
+        c.account_id,
+        c.given_names,
+        c.surname,
+        c.login,
+	email = NULL,
+	phone = NULL,
+	mfa_type_id = NULL,
+	mfa_type = NULL,
+	trader_id =  NULL,
+	trader_name =  NULL,
+        login_status = "Pending",
+	status = NULL,
+        enable_login = "ENABLE ACCESS",
+        disable_login = NULL,
+        create_date = NULL,
+        last_updated = NULL,
+	create_trader = NULL,
+        bo_access = NULL,
+        bo_readonly = NULL,
+        fo_access = NULL,
+        fo_readonly = NULL,
+        section = "Internal Users"
+from
+        legal_entities a,
+        legal_entity_tico_accounts b,
+        tico_accounts c,
+        tico_account_types d,
+        login_types e
+where
+        a.legal_entity_id = b.legal_entity_id
+and
+        b.tico_account_id = c.account_id
+and
+        a.legal_entity_id = @legal_entity_id
+and
+        c.account_id = d.tico_account_id
+and
+        d.login_type_id = e.login_type_id
+and
+        e.name = "Standard"
+
+
+update
+	#le_users
+set
+	email = a.email
+from
+	emails a,
+	user_emails b,
+	#le_users c
+where
+	a.email_id = b.email_id
+and
+	b.tico_account_id = c.tico_account_id
+
+
+update
+	#le_users
+set
+	login_status = c.name,
+	status = d.name,
+	phone = b.phone_number,
+	create_date = b.create_date,
+	last_updated = b.last_modify_date,
+	mfa_type_id = b.mfa_type_id
+from
+	#le_users a,
+	cognito_users b,
+	cognito_user_statuses c,
+	statuses d
+where
+	a.tico_account_id = b.tico_account_id
+and
+	b.cognito_user_status_id = c.cognito_user_status_id
+and
+	b.status_id = d.status_id
+
+update
+	#le_users
+set
+	mfa_type = b.name
+from
+	#le_users a,
+	mfa_types b
+where
+	a.mfa_type_id = b.mfa_type_id
+
+	
+update
+	#le_users
+set
+	disable_login = "DISABLE ACCESS"
+from
+	#le_users a,
+	cognito_users b,
+	cognito_user_statuses c,
+	statuses d
+where
+	a.tico_account_id = b.tico_account_id
+and
+	b.cognito_user_status_id = c.cognito_user_status_id
+and
+	b.status_id = d.status_id
+and
+	d.name not in("User Review", "Submitted")
+
+if @legal_entity_status != "Approved"
+begin
+	update
+		#le_users
+	set
+		enable_login = NULL,
+		disable_login = NULL
+end
+
+
+insert into
+        #account_output(
+                ordering,
+                bo_master_account_id,
+                master_account,
+                sub_account_id,
+		sub_account_symbol,
+		trader_id,
+                trader,
+                add_trader,
+                style)
+select
+        ordering = 3,
+        bo_master_account_id = c.bo_master_account_id,
+        master_account = d.symbol,
+        sub_account_id = a.fo_sub_account_id,
+	sub_account_symbol = b.symbol,
+	trader_id = e.trader_id,
+        trader = e.symbol,
+        "Add Trader",
+        @grey_style
+from
+        fo_sub_accounts a,
+        external_accounts b,
+        bo_master_accounts c,
+        external_accounts d,
+        traders e,
+        #le_users f
+where
+        a.external_account_id = b.external_account_id
+and
+        a.bo_master_account_id = c.bo_master_account_id
+and
+        c.external_account_id = d.external_account_id
+/*
+and
+        b.external_account_id = f.external_account_id - no join, show all traders for each sub account 
+*/
+and
+        f.trader_id = e.trader_id
+and
+        c.legal_entity_id = @legal_entity_id
+
+update
+	#account_output
+set
+	add_trader = NULL,
+	remove_trader= "Remove Trader",
+	style = @style
+from
+	#account_output a,
+        fo_sub_accounts b,
+	external_account_traders c
+where
+	a.sub_account_id = b.fo_sub_account_id
+and
+	b.external_account_id = c.external_account_id
+and
+	a.trader_id = c.trader_id
+
+
+create table
+	#legal_entity_otc_links(
+		ordering int,
+		legal_entity varchar(150),
+		legal_entity_otc_link_id int NULL,
+		entering_legal_entity_id int NULL,
+		available_legal_entity_id int NULL,
+		available_legal_entity varchar(150) NULL,
+		manage_otc_whitelist varchar(25) NULL,
+		remove_access varchar(25) NULL,
+		style varchar(255) NULL
+)
+
+if @legal_entity != NULL
+begin
+	insert into
+		#legal_entity_otc_links(
+			ordering,
+			legal_entity,
+			manage_otc_whitelist,
+			style)
+	values(
+		1,
+		@legal_entity,
+		"Manage Whitelist",
+		@total_style
+	)
+
+end
+
+insert into
+	#legal_entity_otc_links(
+		ordering,
+		legal_entity,
+		legal_entity_otc_link_id,
+		entering_legal_entity_id,
+		available_legal_entity_id,
+		available_legal_entity,
+		manage_otc_whitelist,
+		remove_access,
+		style)
+select
+	2,
+	@legal_entity,
+	a.legal_entity_otc_link_id,
+	a.entering_legal_entity_id,
+	a.available_legal_entity_id,
+	b.name,
+	NULL,
+	"Remove",
+	@style
+from
+	legal_entity_otc_links a,
+	legal_entities b,
+	legal_entities c
+where
+	a.entering_legal_entity_id = c.legal_entity_id
+and
+	a.available_legal_entity_id = b.legal_entity_id
+and
+	c.name = @legal_entity
+	
+	
+	
+
+select
+	section = "Account Overview",
+	ordering,
+	master_account,
+	bo_master_account = master_account_symbol,
+	master_account_name = master_account_name,
+	symbol = master_account_symbol,
+	name = master_account_name,
+	sub_account_symbol,
+	sub_account_name,
+	trader,
+	add_fo_sub_account,
+	add_trader,
+	remove_trader,
+	edit_account,
+	style,
+	account = sub_account_symbol,
+	legal_entity = @legal_entity
+from
+	#account_output
+order by 
+	master_account,
+	account,
+	ordering,
+	trader
+
+
+
+select
+	style = @style,
+	section,
+	legal_entity = @legal_entity,
+	first_name,
+	last_name,
+	user_name,
+	email,
+	phone,
+	mfa_type,
+	trader_name,
+	bo_access,
+	bo_readonly,
+	fo_access,
+	fo_readonly,
+	login_status,
+/*
+	enable_login,
+	disable_login,
+	create_date,	
+	last_updated,
+*/
+	create_trader,
+	/*permissions = "VIEW",*/
+	mfa_login = user_name,
+	mfa_phone_number = phone,
+	user_pool = @default_user_pool
+from
+	#le_users
+where
+	section = "Client Users"
+order by
+	section,
+	last_name,
+	first_name
+
+
+select
+	style = style,
+	section = "OTC Whitelist",
+	legal_entity = legal_entity,
+	entering_legal_entity = legal_entity,
+	available_legal_entity = available_legal_entity,
+	remove_legal_entity = available_legal_entity,
+	manage_otc_whitelist,
+	whitelisted_legal_entity = available_legal_entity,
+	"remove_otc_access" = remove_access
+from
+	#legal_entity_otc_links 
+order by
+	ordering,
+	available_legal_entity
+
+
+select
+        style = @style,
+        section,
+        legal_entity = @legal_entity,
+        first_name,
+        last_name,
+        user_name,
+        email,
+        phone,
+	mfa_type,
+        login_status,
+        mfa_login = user_name,
+        mfa_phone_number = phone,
+        user_pool = @default_user_pool
+from
+        #le_users
+where
+        section != "Client Users"
+order by
+        section,
+        last_name,
+        first_name
+
+select
+	style = @style,
+	section = "Approval Log",
+	b.approved_at,
+        user_name = a.login,
+        first_name = a.given_names,
+	last_name = a.surname
+from
+	tico_accounts a,
+	legal_entity_approvals b
+where
+	a.account_id = b.tico_account_id
+and	
+	b.legal_entity_id = @legal_entity_id
+
+
+go

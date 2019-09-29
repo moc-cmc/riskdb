@@ -1,0 +1,1389 @@
+drop procedure r_allocationtrades
+go
+
+create procedure
+	r_allocationtrades
+                @login varchar(50),
+                @run_name varchar(25)=NULL,
+                @begin_date datetime=NULL,
+                @end_date datetime=NULL,
+		@deal_id int=NULL
+		
+as
+
+
+declare @account_id int
+declare @num_of_runs int
+declare @run_id int
+declare @begin_day_string varchar(50)
+declare @end_day_string varchar(50)
+
+
+/* META information */ 
+create table
+        #links(
+                meta_type char(200),
+                name char(30),
+                action char(200) NULL,
+                value char(255) NULL,
+                format char(20) NULL)
+insert into
+        #links
+values(
+        "Column Hidden",
+        "run",
+        NULL,
+        NULL,
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Hidden",
+        "begin_date",
+        NULL,
+        NULL,
+        NULL)
+
+
+insert into
+        #links
+values(
+        "Column Hidden",
+        "end_date",
+        NULL,
+        NULL,
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Hidden",
+        "group_action",
+        NULL,
+        NULL,
+        NULL)
+
+
+insert into
+        #links
+values(
+        "Column Hidden",
+        "counterparty",
+        NULL,
+        NULL,
+        NULL)
+
+
+insert into
+        #links
+values(
+        "Column Hidden",
+        "working_deal",
+        NULL,
+        NULL,
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Hidden",
+	"num_agg_trades",
+        NULL,
+        NULL,
+        NULL)
+
+
+
+insert into
+        #links
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL,
+        NULL)
+
+insert into
+        #links
+values (
+        "Row Style",
+        "style",
+        NULL,
+        NULL,
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "run_name",
+        "Allocation Trades",
+        NULL,
+        NULL)
+
+insert into
+        #links
+values(
+        "Format Number",
+        "volume",
+        NULL,
+        NULL,
+        "#,##0")
+
+insert into
+        #links
+values(
+        "Column Link",
+        "allocate_trade",
+        "Trade Allocation",
+        NULL,
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "select_deal",
+        "Group for Allocation",
+        NULL,
+        NULL)
+
+
+insert into
+        #links
+values(
+        "Column Link",
+        "agg_and_alloc",
+        "Aggregate and Allocate",
+        NULL,
+        NULL)
+
+
+insert into
+        #links
+values(
+        "Column Link",
+        "refresh",
+        "Allocation Trades",
+        NULL,
+        NULL)
+
+
+
+
+/* Run determination: only show run list if there user has more than one run */
+select
+        @account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+
+select
+        @num_of_runs = count(*)
+from
+        user_runs
+where
+        tico_account_id = @account_id
+
+if @num_of_runs > 1 and @run_name = NULL
+begin
+	exec
+		r_runallocationtrades
+			@login,
+	                @run_name,
+	                @begin_date,
+        	        @end_date
+	return
+end
+else if @num_of_runs > 1 and @run_name != NULL
+begin
+	select
+		@run_id = a.run_id
+	from
+		runs a,
+		user_runs b
+	where
+		a.name = @run_name
+	and
+		b.tico_account_id = @account_id
+        if @run_id = NULL
+        begin
+                select
+                        "error"="Run permission not granted for user",
+                        "run_name"=@run_name,
+                        "login"=@login
+                return
+        end
+end
+else if @num_of_runs = 0
+begin
+	select
+		"error"="No run(s) defined for user",
+		"user"=@login
+	return
+end
+else if @num_of_runs = 1
+begin
+        select
+                @run_id = run_id
+        from
+                user_runs
+        where
+                tico_account_id = @account_id
+
+	if @run_id = NULL
+	begin
+		select
+			"error"="Run permission not granted for user",
+			"run_name"=@run_name,
+			"login"=@login
+		return
+	end
+end
+
+
+
+/* Date determination */
+if @begin_date = NULL
+begin
+        select
+                @begin_date = getdate()
+end
+ 
+if datepart(hour, @begin_date) >= 17
+begin
+        exec
+                r_nextbusinessday
+                        @begin_date,
+                        @begin_date output
+end
+select
+        @begin_day_string = convert(char(2), datepart(month, @begin_date)) + "/" +
+                convert(char(2), datepart(day, @begin_date)) + "/" +
+                convert(char(4), datepart(year, @begin_date))
+select
+        @begin_date = convert(datetime, @begin_day_string)
+exec
+        r_prevbusinessday
+                @begin_date,
+                @begin_date output
+select
+        @begin_date = dateadd(hour, 17, @begin_date)
+
+if @end_date = NULL
+begin
+        exec
+                r_nextbusinessday
+                        @begin_date,
+                        @end_date output
+end
+select
+        @end_day_string = convert(char(2), datepart(month, @end_date)) + "/" +
+                        convert(char(2), datepart(day, @end_date)) + "/" +
+                        convert(char(4), datepart(year, @end_date)) + " 17:00"
+select
+        @end_date = convert(datetime, @end_day_string)
+
+
+/* Run filtering */
+
+create table
+        #traders(
+                trader_id int)
+insert into
+        #traders
+select
+        trader_id
+from
+        run_traders
+where
+        run_id = @run_id
+if @@rowcount = 0
+begin
+        insert into
+                #traders
+        select
+                trader_id
+        from
+                traders
+end
+
+create table
+        #strategies(
+                strategy_id int)
+insert into
+        #strategies
+select
+        strategy_id
+from
+        run_strategies
+where
+        run_id = @run_id
+if @@rowcount = 0
+begin
+        insert into
+                #strategies
+        select
+                strategy_id
+        from
+                strategies
+end
+
+create table
+        #external_accounts(
+                external_account_id int)
+insert into
+        #external_accounts
+select
+        external_account_id
+from
+        run_external_accounts
+where
+        run_id = @run_id
+if @@rowcount = 0
+begin
+        insert into
+                #external_accounts
+        select
+                external_account_id
+        from
+                external_accounts
+end
+
+create table
+        #internal_accounts(
+                internal_account_id int)
+insert into
+        #internal_accounts
+select
+        internal_account_id
+from
+        run_internal_accounts
+where
+        run_id = @run_id
+if @@rowcount = 0
+        insert into
+                #internal_accounts
+        select
+                internal_account_id
+        from
+                internal_accounts
+create table
+        #brokers(
+                broker_id int)
+insert into
+        #brokers
+select
+        broker_id
+from
+        run_brokers
+where
+        run_id = @run_id
+if @@rowcount = 0
+        insert into
+                #brokers
+        select
+                broker_id
+        from
+                brokers
+
+create table
+        #counterparties(
+                counterparty_id int)
+
+insert into
+        #counterparties
+select
+        counterparty_id
+from
+        run_counterparties
+where
+        run_id = @run_id
+if @@rowcount = 0
+        insert into
+                #counterparties
+        select
+                counterparty_id
+        from
+                counterparties
+
+
+
+
+/* Trade Data */
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		trade_type_id int,
+		trade_type varchar(25) NULL,
+		deal_type_id int NULL,
+		deal_type varchar(25) NULL,
+		internal_account_id int,
+		internal_account varchar(50) NULL,
+		external_account_id int,
+		external_account varchar(50) NULL,
+		external_account_type_id int NULL,
+		external_account_type varchar(25) NULL,
+		trader_id int,
+		trader varchar(50) NULL,
+		counterparty_id int,
+		counterparty varchar(50) NULL,
+                agency_vs_counterparty varchar(50) NULL,
+		fund_agency_trade char(1) NULL,
+		fund_agency_buy_sell varchar(4) NULL,
+		client_buy_sell varchar(4) NULL,
+		broker_id int,
+		broker varchar(25) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(30) NULL,
+		ext_account_pb varchar(25) NULL,
+		contract_id int,
+		contract varchar(50) NULL,
+		traded_ccy varchar(10) NULL,
+                counter_ccy varchar(10) NULL,
+		quantity float NULL,
+		abs_qty float NULL,
+		trade_date datetime,
+		trade_day datetime NULL,
+		value_date varchar(15) NULL,
+		fixing_date varchar(15) NULL,
+		db_price float,
+		std_price float NULL,
+		spot_reference float NULL,
+		sales_code_id int,
+		sales_code varchar(25) NULL,
+		strategy_id int,
+		strategy varchar(30) NULL,
+		identifier varchar(100) NULL,
+		deal_identifier varchar(100) NULL,
+		deal_status_id int NULL,
+		deal_status varchar(25) NULL,
+		trade_status_id int,
+		trade_status varchar(25) NULL
+		)
+
+
+create nonclustered index 
+	tmp_tid
+on
+	#trades(trade_id)
+
+
+/*
+| Insert *_ids into #trades
+*/
+insert into
+	#trades
+(
+	trade_id,
+	deal_id,
+	trade_type_id,
+	internal_account_id,
+	external_account_id,
+	trader_id,
+	counterparty_id,
+	fund_agency_trade,
+	contract_id,
+	broker_id,
+	quantity,
+	trade_date,
+	value_date,
+	fixing_date,
+	db_price,
+	std_price,
+	spot_reference,
+	sales_code_id,
+	strategy_id,
+	identifier,
+	trade_status_id,
+	abs_qty
+)
+select 
+	trade_id = a.trade_id,
+	deal_id = a.deal_id,
+	trade_type_id = a.trade_type_id,
+	internal_account_id = a.internal_account_id,
+	external_account_id = a.external_account_id,
+	trader_id = a.trader_id,
+	counterparty_id = a.counterparty_id,
+        fund_agency_trade = "N", /* defaults to 'N', updated to 'Y' if fund_agency trade */
+	contract_id = a.contract_id,
+	broker_id = a.broker_id,
+	quantity = a.quantity,
+	trade_date = a.trade_date,
+	value_date = a.value_date,
+	fixing_date = a.fixing_date,
+	db_price = a.price,
+	std_price = a.price,
+	spot_reference = a.spot_reference,
+	sales_code_id = a.sales_code_id,
+	strategy_id = a.strategy_id,
+	identifier = a.identifier,
+	trade_status_id = a.status_id,
+	abs_qty = abs(a.quantity)
+from
+	trades a,
+        #external_accounts b,
+        #internal_accounts c,
+        #traders d,
+        #strategies e,
+        #brokers f,
+        #counterparties g
+where
+        a.external_account_id = b.external_account_id
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.trader_id = d.trader_id
+and
+        a.strategy_id = e.strategy_id
+and
+        a.broker_id= f.broker_id
+and
+        a.counterparty_id = g.counterparty_id
+and
+        a.trade_date >= @begin_date
+and
+        a.trade_date <= @end_date
+and
+	a.quantity != 0
+
+	
+/*
+| Query deals
+*/
+update
+	#trades
+set
+	deal_type_id = b.deal_type_id,
+	deal_status_id = b.status_id
+from
+	#trades a,
+	deals b
+where
+	a.deal_id =  b.deal_id
+
+update
+	#trades
+set
+	deal_identifier = b.symbol
+from
+	#trades a,
+	deal_exec_symbols b
+where
+	a.deal_id =  b.deal_id
+
+update
+	#trades
+set
+	deal_type = b.name
+from
+	#trades a,
+	deal_types b
+where
+	a.deal_type_id = b.deal_type_id
+
+/*
+| Query trade_types
+*/
+update
+	#trades
+set
+	trade_type = b.name
+from
+	#trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+/*
+| Query internal_accounts
+*/
+
+update
+	#trades
+set
+	internal_account = b.symbol
+from
+	#trades a,
+	internal_accounts b
+where
+	a.internal_account_id = b.internal_account_id
+
+/*
+| Query external_accounts
+*/
+
+update 
+        #trades
+set
+        external_account = b.symbol,
+	external_account_type_id = b.external_account_type_id
+from
+        #trades a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+
+update
+	#trades 
+set
+	external_account_type = b.name
+from
+	#trades a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+
+/*
+| Query traders
+*/
+update
+	#trades
+set
+	trader = b.symbol
+from
+        #trades a,
+        traders b
+where
+        a.trader_id = b.trader_id
+
+/*
+| Query counterparties
+*/
+
+update
+	#trades
+set
+	counterparty = b.name,
+	agency_vs_counterparty = b.name
+from
+	#trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+update
+	#trades
+set
+	fund_agency_trade = "Y",
+	agency_vs_counterparty = a.external_account
+from
+	#trades a,
+	fund_agency_counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+update
+	#trades
+set
+	fund_agency_buy_sell = "SELL",
+        client_buy_sell = "BUY"
+where
+	quantity < 0
+
+update
+        #trades
+set
+        fund_agency_buy_sell = "BUY",
+	client_buy_sell = "SELL"
+where
+        quantity > 0
+
+/*
+| Query brokers
+*/
+
+update
+	#trades
+set
+	broker = b.symbol
+from
+	#trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+/*
+| Query strategies
+*/
+
+update 
+	#trades
+set
+	strategy = b.name
+from
+	#trades a,
+	strategies b
+where
+	a.strategy_id = b.strategy_id
+
+/*
+|  Adjust display prices to standard rate for all pairs
+*/
+update
+    #trades
+set
+    std_price = case 
+        when d.name = "Inverted" and c.factor != NULL then
+            (1 / a.db_price) * c.factor * d.factor
+        when d.name = "Inverted" then
+            (1 / a.db_price) * d.factor
+        when c.factor != NULL then
+            a.db_price * c.factor * d.factor
+        else
+            a.db_price * d.factor
+    end
+from
+    #trades a,
+    contracts b,
+    contract_price_styles c,
+    price_styles d
+where
+    a.contract_id = b.contract_id
+and
+    b.contract_id = c.contract_id
+and
+    c.price_style_id = d.price_style_id
+
+/*
+|  Query contracts, dealt ccy, counter ccy
+*/
+update 
+	#trades
+set
+	contract = b.symbol
+from
+	#trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+
+/*
+| Query statuses
+*/
+update
+	#trades
+set
+	deal_status = b.name
+from
+	#trades a,
+	statuses b
+where
+	a.deal_status_id = b.status_id
+
+update
+        #trades
+set
+	trade_status = b.name
+from
+        #trades a,
+        statuses b
+where
+        a.trade_status_id = b.status_id
+
+update
+	#trades
+set
+	prime_broker_id = c.source_id,
+	prime_broker = c.name
+from
+	#trades a,
+	external_account_prime_brokers b,
+	sources c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.prime_broker_id = c.source_id
+
+
+/* Trade Output */
+
+create table
+	#trade_output
+(
+        section varchar(25) NULL,
+	style varchar(100) NULL,
+        run varchar(25) NULL,
+	working_deal int NULL,
+        deal_id int NULL,
+        trade_id int NULL,
+        trade_type varchar(25) NULL,
+        trade_date varchar(25) NULL,
+        trade_time varchar(25) NULL,
+        trades_trade_date datetime NULL,
+        value_date varchar(25) NULL,
+        symbol varchar(25) NULL,
+        quantity float NULL,
+        trade_price float NULL,
+        trader varchar(25) NULL,
+        broker varchar(25) NULL,
+        external_account varchar(25) NULL,
+        counterparty varchar(25) NULL,
+        status varchar(25) NULL,
+	select_deal varchar(25) NULL,
+        allocate_trade varchar(25) NULL,
+        agg_and_alloc varchar(25) NULL,
+	num_agg_trades int NULL,
+	contract_id int NULL,
+	abs_qty float NULL,
+	buy_sell varchar(25) NULL,
+	group_action varchar(25) NULL
+)
+
+create table
+        #allocated_trade_output
+(
+        section varchar(25) NULL,
+        style varchar(100) NULL,
+        run varchar(25) NULL,
+        working_deal int NULL,
+        deal_id int NULL,
+        trade_id int NULL,
+        trade_type varchar(25) NULL,
+        trade_date varchar(25) NULL,
+        trade_time varchar(25) NULL,
+        trades_trade_date datetime NULL,
+        value_date varchar(25) NULL,
+        symbol varchar(25) NULL,
+        quantity float NULL,
+        trade_price float NULL,
+        trader varchar(25) NULL,
+        broker varchar(25) NULL,
+        external_account varchar(25) NULL,
+        counterparty varchar(25) NULL,
+        status varchar(25) NULL,
+        select_deal varchar(25) NULL,
+        allocate_trade varchar(25) NULL,
+        agg_and_alloc varchar(25) NULL,
+        num_agg_trades int NULL,
+	contract_id int NULL,
+	abs_qty float NULL,
+	buy_sell varchar(25) NULL,
+	group_action varchar(25) NULL
+)
+
+
+/* Insert trade information */
+
+insert into
+	#trade_output
+(
+        section,
+	style,
+        run,
+        deal_id,
+        trade_id,
+        trade_type,
+        trade_date,
+        trade_time,
+	trades_trade_date,
+        value_date,
+        symbol,
+        quantity,
+        trade_price,
+        trader,
+        broker,
+        external_account,
+        counterparty,
+        status,
+	allocate_trade,
+	contract_id,
+	abs_qty,
+	group_action
+)
+select
+	section="Unallocated",
+	style="color:#333333;background:#FFFFFF",
+	run=@run_name,
+	deal_id = a.deal_id,
+	trade_id = a.trade_id,
+	trade_type = a.trade_type,
+	trade_date = convert(char(11), a.trade_date, 1),
+	trade_time = right(convert(char(26), a.trade_date, 9), 14),
+	trades_trade_date = a.trade_date,
+        value_date = convert(varchar(11), a.value_date, 1),
+	symbol = a.contract,
+	quantity = a.quantity,
+	trade_price = a.std_price,
+	trader = a.trader,
+	broker = a.broker,
+	external_account = a.external_account,
+	counterparty = a.counterparty,
+	status = a.trade_status,
+	/*allocate_trade = "Allocate Leg"*/
+	allocate_trade = "",
+	contract_id = a.contract_id,
+	abs_qty = a.abs_qty,
+	group_action = "Group"
+from
+	#trades a
+where
+	fund_agency_trade = "Y"
+
+update
+	#trade_output
+set
+	section = "Allocated",
+	allocate_trade = "",
+	agg_and_alloc = "",
+	select_deal = ""
+where
+	status = "Allocated"
+
+insert into
+        #trade_output
+(
+        section,
+        style,
+        run,
+        deal_id,
+        trade_type,
+        trade_date,
+        value_date,
+        symbol,
+        quantity,
+        trade_price,
+        trader,
+        broker,
+        external_account,
+        counterparty,
+        status,
+	select_deal,
+	agg_and_alloc,
+	num_agg_trades,
+	abs_qty,
+	group_action,
+	contract_id
+)
+select
+        section="Unallocated",
+        style="background:#c7e9fd",
+        run=@run_name,
+        deal_id = a.deal_id,
+        trade_type = a.trade_type,
+        trade_date = convert(char(11), a.trade_date, 1),
+        value_date = convert(varchar(11), a.value_date, 1),
+        symbol = a.contract,
+        quantity = sum(a.quantity),
+        trade_price = case when sum(a.quantity) != 0 then convert(numeric(30, 10), sum(a.quantity*a.db_price)/sum(a.quantity)) else NULL end,
+        trader = a.trader,
+        broker = a.broker,
+        external_account = a.external_account,
+        counterparty = a.counterparty,
+        status = a.trade_status,
+	select_deal = "Select",
+	agg_and_alloc="ALLOCATE BLOCK",
+	num_agg_trades = count(*),
+	abs_qty = sum(a.abs_qty),
+	group_action = "Group",
+	contract_id = a.contract_id
+from
+        #trades a
+where
+	fund_agency_trade = "Y"
+group by
+	deal_id,
+	trade_type,
+	convert(char(11), a.trade_date, 1),
+	value_date,
+	contract,
+	trader,
+	broker,
+	external_account,
+	counterparty,
+	trade_status,
+	contract_id
+
+
+update
+	#trade_output
+set
+	working_deal = @deal_id
+
+update
+	#trade_output
+set
+	section = "Working",
+	select_deal = ""
+where
+	deal_id = @deal_id
+
+update
+	#trade_output
+set
+	select_deal = "Remove",
+	group_action = "Ungroup"
+from
+	#trade_output a,
+	trade_origin_deals b
+where
+	a.trade_id = b.trade_id
+and
+	a.deal_id = @deal_id
+
+
+if @deal_id != NULL
+begin
+	declare @working_contract_id int
+
+	select
+		@working_contract_id = contract_id
+	from
+		#trade_output
+	where
+		deal_id = @deal_id
+	group by
+		contract_id
+	
+	update 
+		#trade_output
+	set
+		style="color:#333333;background:#CCCCCC",
+		select_deal = ""
+	where
+		section != "Working"
+	and
+		trade_id = NULL
+	and
+		contract_id != @working_contract_id
+end
+
+
+	
+update
+        #trade_output
+set
+        section = "Allocated",
+	allocate_trade = "RE-ALLOCATE"
+where
+        status = "Allocated"
+
+update
+	#trade_output
+set
+	trade_price = round(trade_price, 5)
+where
+	trade_id = NULL
+
+/* remove rounding on JPY
+update
+        #trade_output 
+set
+        trade_price = round(trade_price, 4)
+where
+        symbol like "%JPY"
+*/
+
+delete from 
+	#trade_output
+where
+	status = "Allocated"
+and
+	trade_id = NULL
+
+insert into
+	#allocated_trade_output
+(
+        section,
+        style,
+        run,
+        working_deal,
+        deal_id,
+        trade_id,
+        trade_type,
+        trade_date,
+        trade_time,
+        trades_trade_date,
+        value_date,
+        symbol,
+        quantity,
+        trade_price,
+        trader,
+        broker,
+        external_account,
+        counterparty,
+        status,
+        select_deal,
+        allocate_trade,
+        agg_and_alloc,
+        num_agg_trades,
+	abs_qty,
+	buy_sell,
+	group_action
+)
+select
+        section,
+        style,
+        run,
+        working_deal,
+        deal_id,
+        trade_id,
+        trade_type,
+        trade_date,
+        trade_time,
+	trades_trade_date,
+        value_date,
+        symbol,
+        quantity,
+        trade_price,
+        trader,
+        broker,
+        external_account,
+        counterparty,
+        status,
+        select_deal,
+        allocate_trade,
+        agg_and_alloc,
+        num_agg_trades,
+	abs_qty,
+	buy_sell,
+	group_action
+from
+	#trade_output
+where
+	section = "Allocated"
+
+delete from
+	#trade_output
+where
+	section = "Allocated"
+
+declare @unalloc_trade_count int
+declare @alloc_trade_count int
+
+select
+	@unalloc_trade_count = count(*)
+from
+	#trade_output
+where
+	trade_id != NULL
+
+
+select
+	@alloc_trade_count = count(*)
+from
+	#allocated_trade_output
+
+declare @select_version int
+select @select_version = 2
+
+if @select_version = 2
+begin
+	insert into
+	        #links
+	values(
+        	"Column Hidden",
+        	"quantity",
+		NULL,
+        	NULL,
+        	NULL)
+end
+else
+begin
+        insert into
+                #links
+        values(
+                "Column Hidden",
+                "buy_sell",
+                NULL,
+                NULL,
+                NULL)
+        insert into
+                #links
+        values(
+                "Column Hidden",
+                "qty",
+                NULL,
+                NULL,
+                NULL)
+end
+
+
+select * from #links
+
+select
+	"report"="Allocated Trades",
+	"unallocated_trades" = @unalloc_trade_count,
+	"allocated_trades" = @alloc_trade_count,
+	"begin_range" = @begin_date,
+	"end_range" = @end_date,
+	"begin_date" = @begin_date,
+	"end_date" = @end_date,
+	"run_name"=@run_name,
+	"deal_id"=@deal_id,
+	"refresh"="REFRESH"
+	
+
+/* VERSION 1 - Mint Perspective Qtys */
+if @select_version = 1
+begin
+	select
+        	section,
+		style,
+        	run,
+		working_deal,
+        	deal_id,
+        	trade_id,
+        	trade_type,
+        	trade_date,
+        	trade_time,
+        	value_date,
+        	symbol,
+        	quantity,
+        	trade_price,
+        	trader,
+        	broker,
+        	external_account,
+        	counterparty,
+        	status,
+		select_deal,
+        	allocate_trade,
+		agg_and_alloc,
+		num_agg_trades,
+		group_action,
+		begin_date=@begin_date,
+		end_date=@end_date
+	from
+		#trade_output
+	order by
+		section desc,
+		deal_id,
+		agg_and_alloc desc
+	
+	select
+        	section,
+        	style,
+        	run,
+        	working_deal,
+        	deal_id,
+        	trade_id,
+        	trade_type,
+        	trade_date,
+        	trade_time,
+        	value_date,
+        	symbol,
+        	quantity,
+        	trade_price,
+        	trader,
+        	broker,
+        	external_account,
+        	counterparty,
+        	status,
+        	select_deal,
+        	allocate_trade,
+        	agg_and_alloc,
+        	num_agg_trades,
+		group_action,
+        	begin_date=@begin_date,
+        	end_date=@end_date
+	from
+        	#allocated_trade_output
+	order by
+		trades_trade_date desc
+end
+else
+begin
+	/* VERSION 2 - Absolute Value QTYs with 'Client BUYS', 'Client SELLS' */
+	
+	update 
+		#trade_output 
+	set
+		buy_sell = "Client Buy"
+	update 
+        	#allocated_trade_output
+	set
+        	buy_sell = "Client Buy"
+	
+	update 
+        	#trade_output
+	set
+        	buy_sell = "Client Sell"
+	where
+		quantity > 0
+	update
+        	#allocated_trade_output
+	set
+        	buy_sell = "Client Sell"
+	where
+        	quantity > 0
+	
+	
+	
+	
+	select
+        	section,
+        	style,
+        	run,
+        	working_deal,
+        	deal_id,
+        	trade_id,
+        	trade_type,
+        	trade_date,
+        	trade_time,
+        	value_date,
+        	symbol,
+		buy_sell,
+        	quantity,
+		qty=abs_qty,
+        	trade_price,
+        	trader,
+        	broker,
+        	external_account,
+        	counterparty,
+        	status,
+        	select_deal,
+        	allocate_trade,
+        	agg_and_alloc,
+        	num_agg_trades,
+		group_action,
+        	begin_date=@begin_date,
+        	end_date=@end_date
+	from
+        	#trade_output
+	order by
+        	section desc,
+        	deal_id,
+        	agg_and_alloc desc
+	
+	select
+        	section,
+        	style,
+        	run,
+        	working_deal,
+        	deal_id,
+        	trade_id,
+        	trade_type,
+        	trade_date,
+        	trade_time,
+        	value_date,
+        	symbol,
+        	buy_sell,
+        	quantity,
+        	qty=abs_qty,
+        	trade_price,
+        	trader,
+        	broker,
+        	external_account,
+        	counterparty,
+        	status,
+        	select_deal,
+        	allocate_trade,
+        	agg_and_alloc,
+        	num_agg_trades,
+		group_action,
+        	begin_date=@begin_date,
+        	end_date=@end_date
+	from
+        	#allocated_trade_output
+	order by
+        	trades_trade_date desc
+end
+	
+
+go

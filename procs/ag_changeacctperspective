@@ -1,0 +1,55 @@
+use
+	risk_edgewater
+go
+
+drop procedure
+	ag_changeacctperspective
+go
+
+create procedure
+	ag_changeacctperspective
+		@login varchar(50),
+		@account varchar(50)
+as
+
+
+declare @external_account_id int
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+delete
+
+from
+	reverse_persective_accounts
+where
+	external_account_id = @external_account_id
+if @@rowcount = 0
+begin
+	insert into
+		reverse_persective_accounts
+	values(
+		@external_account_id)
+end
+
+
+
+
+exec
+	ag_accountperspectives
+		@login 
+
+go

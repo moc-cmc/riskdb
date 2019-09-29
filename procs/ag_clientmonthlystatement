@@ -1,0 +1,1397 @@
+
+drop procedure
+	ag_clientmonthlystatement
+go
+
+create procedure
+	ag_clientmonthlystatement
+		@login varchar(50),
+		@account varchar(50),
+		@month varchar(20),
+		@year varchar(10)
+as
+
+
+declare @fund_id int
+declare @date datetime
+declare @external_account_id int
+declare @tico_account_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @first_of_month datetime
+declare @first_of_next_month datetime
+declare @first_biz_day datetime
+declare @last_of_prev_month datetime
+declare @last_biz_last_month datetime
+declare @last_of_month datetime
+declare @last_biz_day datetime
+declare @report_month varchar(2)
+declare @report_year varchar(4)
+declare @datestring varchar(15)
+declare @begin_balance float
+declare @end_balance float
+declare @begin_open_equity float
+declare @end_open_equity float
+declare @evaluation_currency_id int
+declare @transaction_types int
+declare @transaction_type_id int
+declare @transaction_type varchar(50)
+declare @amount float
+declare @cash_total float
+declare @begin_net_equity float
+declare @end_net_equity float
+declare @display_currency_id int
+declare @max_mtd_statement_trades int
+declare @total_trades int
+
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @ledger_style varchar(250)
+declare @futures_style varchar(250)
+declare @fwd_style varchar(250)
+declare @fwd_opt_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"not_currency",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_fwd_price",
+	"Edit Statement Fwd Price",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"counter_amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dealt_amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equivalent_amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ytd",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"mtd",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"daily",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"rate",
+	"Number",
+	 "#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"value",
+	"Number",
+	 "#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@date = convert(datetime, rtrim(@month) + " 1, " + rtrim(@year))
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@ledger_style = "background:#FFFFFF;border: 1px solid white",
+	@futures_style = "background:#FFFFFF;border: 1px solid white",
+	@fwd_style = "background:#FFFFFF;border: 1px solid white",
+	@fwd_opt_style = "background:#FFFFFF;border: 1px solid white"
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@external_account_id = external_account_id,
+	@max_mtd_statement_trades = max_mtd_statement_trades
+from
+	external_accounts a,
+	runs b,
+	user_runs c
+where
+	a.symbol = b.name
+and
+	b.run_id = c.run_id
+and
+	c.tico_account_id = @tico_account_id
+and
+	a.symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+
+if @date = NULL
+	select
+		@date = max(commit_date) 
+	from 
+		daily_commits a, 
+		commit_statuses b 
+	where 
+		a.commit_status_id = b.commit_status_id 
+	and 
+		b.name in("Commit Complete")
+
+select
+	@report_month = convert(varchar(2), datepart(month, @date)),
+	@report_year = convert(varchar(4), datepart(year, @date))
+
+select
+	@first_of_month = convert(datetime, @report_month + "/1/" + @report_year)
+
+exec
+	r_prevbusinessday
+		@first_of_month,
+		@last_biz_last_month output
+select
+	@first_of_next_month = dateadd(month, 1, @first_of_month)
+
+select
+	@last_of_prev_month = dateadd(day, -1, @first_of_month),
+	@last_of_month = dateadd(day, -1, @first_of_next_month)
+
+exec
+	r_nextbusinessday
+		@last_of_prev_month,
+		@first_biz_day output
+
+exec
+	r_prevbusinessday
+		@first_of_next_month,
+		@last_biz_day output
+
+create table
+	#report(
+		id int identity,
+		style varchar(250) NULL,
+		description varchar(50) NULL,
+		value float NULL,
+		evaluation_currency_id int NULL,
+		display_value float NULL,
+		display_currency_id int NULL)
+insert into
+	#report(
+		style,
+		description)
+values(
+	@total_style,
+	@account)
+
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	phone
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	email
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	address_line1
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	address_line2
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	additional1
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	additional2
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	additional3
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+
+
+
+/* insert into
+	#report(
+		style,
+		description)
+values(
+	@style,
+	"Statement Begin Date " + convert(varchar(11), @first_of_month, 1))
+
+insert into
+	#report(
+		style,
+		description)
+values(
+	@style,
+	"Statement End Date " +  convert(varchar(11), @last_of_month, 1)) */
+
+
+create table
+	#display_rates(
+		product_id int,
+		begin_rate float NULL,
+		end_rate float NULL)
+
+insert into
+	#display_rates(
+		product_id)
+select
+	a.product_id
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+and
+	b.name = "Currency"
+
+select
+	@display_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+update
+	#display_rates
+set
+	begin_rate = 1.0,
+	end_rate = 1.0
+where
+	product_id = @display_currency_id
+
+update
+	#display_rates
+set
+	a.begin_rate = c.price
+from
+	#display_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @display_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @first_biz_day)
+
+update
+	#display_rates
+set
+	a.begin_rate = (1.0 / c.price)
+from
+	#display_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = @display_currency_id
+and
+	b.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @first_biz_day)
+and
+	a.begin_rate = NULL
+
+
+update
+	#display_rates
+set
+	a.end_rate = c.price
+from
+	#display_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @display_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @last_biz_day)
+
+update
+	#display_rates
+set
+	a.end_rate = (1.0 / c.price)
+from
+	#display_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = @display_currency_id
+and
+	b.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @last_biz_day)
+and
+	a.end_rate = NULL
+
+create table
+	#conversion_rates(
+		product_id int,
+		begin_rate float NULL,
+		end_rate float NULL)
+
+insert into
+	#conversion_rates(
+		product_id)
+select
+	a.product_id
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+and
+	b.name = "Currency"
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+update
+	#conversion_rates
+set
+	begin_rate = 1.0,
+	end_rate = 1.0
+where
+	product_id = @evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	a.begin_rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @last_of_prev_month)
+
+update
+	#conversion_rates
+set
+	a.begin_rate = (1.0 / c.price)
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @last_of_prev_month)
+and
+	a.begin_rate = NULL
+
+
+
+update
+	#conversion_rates
+set
+	a.end_rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @last_biz_day)
+
+update
+	#conversion_rates
+set
+	a.end_rate = (1.0 / c.price)
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+        b.product_id = @evaluation_currency_id
+and
+        b.currency_id = a.product_id
+and
+        b.contract_id = c.contract_id
+and
+        convert(date, c.price_date) = convert(date, @last_biz_day)
+and
+        a.end_rate = NULL
+
+
+
+create table
+	#transactions(
+		account_transaction_id int,
+		transaction_date datetime,
+		transaction_type_id int,
+		currency_id int,
+		amount float,
+		begin_equiv float NULL,
+		end_equiv float NULL)
+
+insert into
+	#transactions(
+		account_transaction_id,
+		transaction_date,
+		transaction_type_id,
+		currency_id,
+		amount)
+select
+	account_transaction_id,
+	transaction_date,
+	transaction_type_id,
+	currency_id,
+	amount
+from
+	account_transactions
+where
+	external_account_id = @external_account_id
+and
+	convert(date, transaction_date) <= convert(date, @last_of_month)
+
+update
+	#transactions
+set
+	a.begin_equiv = a.amount * b.begin_rate
+from
+	#transactions a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+update
+	#transactions
+set
+	begin_equiv = 0.0
+where
+	transaction_date >= @first_of_month
+
+update
+	#transactions
+set
+	a.end_equiv = a.amount * b.end_rate
+from
+	#transactions a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+
+
+select
+	@begin_balance = sum(begin_equiv)
+from
+	#transactions
+where
+	transaction_date < @first_of_month
+if @begin_balance = NULL
+	select
+		@begin_balance = 0.0
+
+/* Replace this with lookup using trades 
+select
+	@begin_open_equity = sum(a.unrealized_pl_to_date * -1.0)
+from
+	committed_daily_revals a,
+	trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = @external_account_id
+and
+	convert(date, a.reval_date) = convert(date, @last_biz_last_month)
+if @begin_open_equity = NULL
+	select
+		@begin_open_equity = 0.0 */
+
+/* New begin open equity seciton */
+
+create table
+	#begin_balances(
+		product_id int,
+		balance float)
+insert into
+	#begin_balances(
+		product_id,
+		balance)
+select
+	b.product_id,
+	sum(a.quantity * -1.0)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.value_date > @last_biz_last_month
+and
+	a.trade_date < dateadd(hour, 17, @last_biz_last_month)
+group by
+	b.product_id
+
+insert into
+	#begin_balances(
+		product_id,
+		balance)
+select
+	b.currency_id,
+	sum(a.quantity * a.price)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.value_date > @last_biz_last_month
+and
+	a.trade_date < dateadd(hour, 17, @last_biz_last_month)
+group by
+	b.product_id
+
+create table
+	#begin_net(
+		product_id int,
+		balance float NULL,
+		equiv float NULL)
+insert into
+	#begin_net(
+		product_id,
+		balance)
+select
+	product_id,
+	balance
+from
+	#begin_balances
+group by
+	product_id
+
+update
+	#begin_net
+set
+	a.equiv = a.balance * b.begin_rate
+from
+	#begin_net a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+select
+	@begin_open_equity = sum(equiv)
+from
+	#begin_net
+
+
+/* New end open equity seciton */
+
+create table
+	#end_balances(
+		product_id int,
+		balance float)
+insert into
+	#end_balances(
+		product_id,
+		balance)
+select
+	b.product_id,
+	sum(a.quantity * -1.0)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.value_date > @last_biz_day
+and
+	a.trade_date < dateadd(hour, 17, @last_biz_day)
+group by
+	b.product_id
+
+insert into
+	#end_balances(
+		product_id,
+		balance)
+select
+	b.currency_id,
+	sum(a.quantity * a.price)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = @external_account_id
+and
+	a.value_date > @last_biz_day
+and
+	a.trade_date < dateadd(hour, 17, @last_biz_day)
+group by
+	b.currency_id
+
+
+create table
+	#end_net(
+		product_id int,
+		balance float NULL,
+		equiv float NULL)
+insert into
+	#end_net(
+		product_id,
+		balance)
+select
+	product_id,
+	balance
+from
+	#end_balances
+group by
+	product_id
+
+update
+	#end_net
+set
+	a.equiv = a.balance * b.end_rate
+from
+	#end_net a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+select
+	@end_open_equity = sum(equiv)
+from
+	#end_net
+
+
+insert into
+	#report(
+		style,
+		description,
+		value)
+values(
+	@style,
+	"Total Cash as of " + convert(varchar(11), @first_of_month),
+	@begin_balance)
+
+insert into
+	#report(
+		style,
+		description,
+		value)
+values(
+	@style,
+	"Total Open Equity as of " + convert(varchar(11), @first_of_month),
+	@begin_open_equity)
+
+
+insert into
+	#report(
+		style,
+		description,
+		value)
+values(
+	@style,
+	"Total Net Equity as of " + convert(varchar(11), @first_of_month),
+	@begin_balance + @begin_open_equity)
+
+select
+	@end_balance = sum(end_equiv)
+from
+	#transactions
+where
+	convert(date, transaction_date) <= convert(date, @last_of_month)
+if @end_balance = NULL
+	select
+		@end_balance = 0.0
+
+/* select
+	@end_open_equity = sum(a.unrealized_pl_to_date * -1.0)
+from
+	committed_daily_revals a,
+	trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = @external_account_id
+and
+	convert(date, a.reval_date) = convert(date, @last_biz_day)
+if @end_open_equity = NULL
+	select
+		@end_open_equity = 0.0 */
+
+select
+	@end_net_equity = @end_balance + @end_open_equity
+
+
+create table
+	#transaction_types(
+		transaction_type_id int)
+insert into
+	#transaction_types
+select
+	distinct(transaction_type_id)
+from
+	#transactions
+
+create table
+	#cash_out(
+		id int identity,
+		style varchar(250) NULL,
+		transaction_id varchar(50) NULL,
+		transaction_date datetime NULL,
+		transaction_type varchar(50) NULL,
+		currency varchar(50) NULL,
+		amount float NULL,
+		equivalent_amount float NULL)
+
+select
+	@transaction_type_id = 0
+select
+	@transaction_types = count(*)
+from
+	#transaction_types
+where
+	transaction_type_id > @transaction_type_id
+
+while @transaction_types > 0
+begin
+	select
+		@transaction_type_id = min(transaction_type_id)
+	from
+		#transaction_types
+	where
+		transaction_type_id > @transaction_type_id
+
+	select
+		@amount = NULL
+
+	select
+		@transaction_type = name
+	from
+		transaction_types
+	where
+		transaction_type_id = @transaction_type_id
+
+	select
+		@amount = sum(end_equiv)
+	from
+		#transactions
+	where
+		transaction_type_id = @transaction_type_id
+	and
+		convert(date, transaction_date) >= convert(date, @first_of_month)
+	if @amount = NULL
+		select
+			@amount = 0.0
+
+	insert into
+		#report(
+			style,
+			description,
+			value)
+	values(
+		@style,
+		@transaction_type + "s During Period",
+		@amount)
+
+	insert into
+		#cash_out(
+			style,
+			transaction_id)
+	values(
+		@style,
+		@transaction_type)
+
+	insert into
+		#cash_out(
+			style,
+			transaction_id,
+			transaction_date,
+			transaction_type,
+			currency,
+			amount,
+			equivalent_amount)
+	select
+		style = @style,
+		convert(varchar(50), convert(numeric(30,0), a.account_transaction_id)),
+		a.transaction_date,
+		transaction_type = b.name,
+		currency = c.symbol,
+		a.amount,
+		equivalent_amount = end_equiv
+	from
+		#transactions a,
+		transaction_types b,
+		products c
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.currency_id = c.product_id
+	and
+		b.name = @transaction_type
+	and
+		a.transaction_date >= @first_of_month
+	and
+		a.amount != 0.0
+	order by
+		a.transaction_date
+
+	insert into
+		#cash_out(
+			style,
+			transaction_id,
+			equivalent_amount)
+	values(
+		@total_style,
+		@transaction_type + " Total",
+		@amount)
+
+	select
+		@transaction_types = count(*)
+	from
+		#transaction_types
+	where
+		transaction_type_id > @transaction_type_id
+end
+
+insert into
+	#report(
+		style,
+		description,
+		value)
+values(
+	@style,
+	"Total Cash as of " + convert(varchar(11), @last_of_month),
+	@end_balance)
+
+insert into
+	#report(
+		style,
+		description,
+		value)
+values(
+	@style,
+	"Total Open Equity as of " + convert(varchar(11), @last_of_month),
+	@end_open_equity)
+
+insert into
+	#report(
+		style,
+		description,
+		value)
+values(
+	@total_style,
+	"Total Net Equity as of " + convert(varchar(11), @last_of_month),
+	@end_balance + @end_open_equity)
+
+select
+	section = rtrim(@account) + " - " + datename(month, @first_of_month) + " " + datename(year, @first_of_month) + " Monthly Statement",
+	style,
+	description,
+	value
+from
+	#report
+where
+	value = NULL
+order by
+	id
+
+
+
+	
+create table
+	#positions(
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4))
+
+insert into
+	#positions
+select
+	contract_id,
+	value_date,
+	sum(quantity * -1.0)
+from
+	trades 
+where
+	convert(date, value_date) > convert(date, @last_of_month)
+and
+	external_account_id = @external_account_id
+and
+	trade_date < dateadd(hour, 17, convert(datetime, convert(date, @last_of_month)))
+group by
+	contract_id,
+	value_date
+
+/*
+delete
+
+from
+	#positions
+where
+	quantity = 0.0
+*/
+
+select
+	section = "Summary",
+	style,
+	description,
+	value
+from
+	#report
+where
+	value != NULL
+order by
+	id
+
+
+select
+	section = "Cash Transactions during " + datename(month, @first_of_month) + " " + datename(year, @first_of_month),
+	style,
+	transaction_id,
+	transaction_date = convert(varchar(11), transaction_date),
+	transaction_type,
+	currency,
+	amount,
+	equivalent_amount
+from
+	#cash_out
+order by
+	id
+
+select
+	section = "Net Pair Positions as of " + convert(varchar(11), @last_of_month),
+	/*section = "Net Open Positions as of " + convert(varchar(11), @last_of_month),*/
+	style = @style,
+	b.symbol,
+	value_date = convert(varchar(11), a.value_date),
+	a.quantity
+from
+	#positions a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+order by
+	b.symbol,
+	convert(datetime, a.value_date)
+
+
+create table
+	#open_trades(
+		id int identity,
+		section varchar(250) NULL,
+		style varchar(250) NULL,
+		trade_type varchar(50) NULL,
+		trade_id int NULL,
+		value_date varchar(11) NULL,
+		dealt_ccy varchar(50) NULL,
+		dealt_amount float NULL,
+		counter_ccy varchar(50) NULL,
+		counter_amount float NULL,
+		rate float NULL,
+		trade_date datetime NULL)
+insert into
+	#open_trades(
+		section,
+		style,
+		trade_type,
+		trade_id,
+		value_date,
+		dealt_ccy,
+		dealt_amount,
+		counter_ccy,
+		counter_amount,
+		rate,
+		trade_date)
+select
+	section = "Open Trades as of " + convert(varchar(11), @last_of_month),
+	style = @style,
+	trade_type = c.name,
+	a.trade_id,
+	value_date = convert(varchar(11), a.value_date),
+	dealt_ccy = e.symbol,
+	dealt_amount = b.quantity * -1.0,
+	counter_ccy = f.symbol,
+	counter_amount = b.quantity * b.price,
+	rate = b.price,
+	b.trade_date
+from
+	committed_daily_revals a,
+	trades b,
+	trade_types c,
+	forwards d,
+	products e,
+	products f
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = @external_account_id
+and
+	b.trade_type_id = c.trade_type_id
+and
+	b.contract_id = d.contract_id
+and
+	d.product_id = e.product_id
+and
+	d.currency_id = f.product_id
+and
+	convert(date, a.reval_date) = convert(date, a.bo_trade_date)
+and
+	a.value_date > @last_of_month
+and
+	convert(date, a.bo_trade_date) <= convert(date, @last_of_month)
+order by
+	e.symbol,
+	f.symbol,
+	a.value_date
+
+
+select
+	@total_trades = count(*)
+from
+	#open_trades
+if @total_trades <= @max_mtd_statement_trades
+begin
+	select
+		section,
+		style,
+		trade_type,
+		trade_id,
+		value_date,
+		dealt_ccy,
+		dealt_amount,
+		counter_ccy,
+		counter_amount,
+		rate,
+		trade_date
+	from
+		#open_trades
+	order by
+		id
+end
+else
+begin
+	select
+		section,
+		style,
+		trade_type,
+		trade_id,
+		value_date,
+		dealt_ccy,
+		dealt_amount,
+		counter_ccy,
+		counter_amount,
+		rate,
+		trade_date
+	from
+		#open_trades
+	where
+		1=2
+	order by
+		id
+end
+create table
+	#maturing_trades(
+		id int identity,
+		section varchar(250) NULL,
+		style varchar(250) NULL,
+		trade_type varchar(50) NULL,
+		trade_id int NULL,
+		value_date varchar(11) NULL,
+		dealt_ccy varchar(50) NULL,
+		dealt_amount float NULL,
+		counter_ccy varchar(50) NULL,
+		counter_amount float NULL,
+		rate float NULL,
+		trade_date datetime NULL)
+insert into
+	#maturing_trades(
+		section,
+		style,
+		trade_type,
+		trade_id,
+		value_date,
+		dealt_ccy,
+		dealt_amount,
+		counter_ccy,
+		counter_amount,
+		rate,
+		trade_date)
+select
+	section = "Trades Maturing during " + datename(month, @first_of_month) + " " + datename(year, @first_of_month),
+	style = @style,
+	trade_type = c.name,
+	a.trade_id,
+	value_date = convert(varchar(11), a.value_date),
+	dealt_ccy = e.symbol,
+	dealt_amount = b.quantity * -1.0,
+	counter_ccy = f.symbol,
+	counter_amount = b.quantity * b.price,
+	rate = b.price,
+	b.trade_date
+from
+	committed_daily_revals a,
+	trades b,
+	trade_types c,
+	forwards d,
+	products e,
+	products f
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = @external_account_id
+and
+	b.trade_type_id = c.trade_type_id
+and
+	b.contract_id = d.contract_id
+and
+	d.product_id = e.product_id
+and
+	d.currency_id = f.product_id
+and
+	convert(date, a.reval_date) = convert(date, a.bo_trade_date)
+and
+	a.value_date >= @first_of_month
+and
+	a.value_date <= @last_of_month
+order by
+	e.symbol,
+	f.symbol,
+	a.value_date
+
+select
+	@total_trades = count(*)
+from
+	#maturing_trades
+
+if @total_trades <= @max_mtd_statement_trades 
+begin
+	select
+		section,
+		style,
+		trade_type,
+		trade_id,
+		value_date,
+		dealt_ccy,
+		dealt_amount,
+		counter_ccy,
+		counter_amount,
+		rate,
+		trade_date
+	from
+		#maturing_trades
+	order by
+		id
+end
+else
+begin
+	select
+		section,
+		style,
+		trade_type,
+		trade_id,
+		value_date,
+		dealt_ccy,
+		dealt_amount,
+		counter_ccy,
+		counter_amount,
+		rate,
+		trade_date
+	from
+		#maturing_trades
+	where
+		1=2
+	order by
+		id
+end
+	
+
+
+
+
+
+exec
+	r_showdisclaimer
+		"Monthly Trading Statement"
+
+
+go
+

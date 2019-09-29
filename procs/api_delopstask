@@ -1,0 +1,222 @@
+drop procedure api_editopstask
+go
+
+create procedure
+	api_editopstask
+		@login varchar(50),
+		@ops_task_id int,
+		@name varchar(100)=NULL,
+		@ops_task_type varchar(30)=NULL,
+		@status varchar(20)=NULL,
+		@ordering int = NULL,
+		@assigned_to varchar(50)=NULL,
+		@task_date datetime=NULL
+
+as
+
+declare @tico_account_id int
+declare @status_id int
+declare @assigned_to_id int
+declare @ops_task_type_id int
+
+declare @orig_name varchar(100)
+declare @orig_ops_task_type_id int
+declare @orig_status_id int
+declare @orig_ordering int
+declare @orig_assigned_to_id int
+declare @orig_task_date datetime
+
+declare @debug char(1)
+select
+	@debug = "N"
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login",
+		login = @login
+	return
+end
+
+select 
+	@orig_name = name,
+	@orig_ops_task_type_id = ops_task_type_id,
+	@orig_ordering = ordering,
+	@orig_status_id = status_id,
+	@orig_assigned_to_id = assigned_to,
+	@orig_task_date = create_date
+from
+	ops_tasks
+where
+	ops_task_id = @ops_task_id
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message ="Problem finding ops task for id",
+		ops_task_id = @ops_task_id
+	return
+end
+
+if @assigned_to != NULL
+begin
+	select
+		@assigned_to_id = account_id
+	from
+		tico_accounts
+	where
+		login = @assigned_to
+	if @assigned_to_id = NULL
+	begin
+			select
+				status="Error",
+				message="Problem finding account for assigned to",
+				assigned_to=@assigned_to
+			return
+	end
+end
+
+if @status != NULL
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = @status
+	if @status_id = NULL
+	begin
+		select
+			status="Error",
+			message="Problem finding status",
+			provided_status=@status	
+		return
+	end
+end
+
+if @ops_task_type != NULL
+begin
+	select	
+		@ops_task_type_id = ops_task_type_id
+	from
+		ops_task_types
+	where
+		name = @ops_task_type
+	if @ops_task_type_id = NULL
+	begin
+		select
+			status="Error",
+			message="Problem finding ops task type",
+			ops_task_type=@ops_task_type
+		return
+	end
+end
+
+
+if @ops_task_type_id = NULL
+	select
+		@ops_task_type_id = @orig_ops_task_type_id
+
+if @ordering = NULL
+	select
+		@ordering = @orig_ordering
+
+if @task_date = NULL
+	select
+		@task_date = @orig_task_date
+
+if @status_id = NULL
+	select
+		@status_id = @orig_status_id
+if @name = NULL
+	select
+		@name = @orig_name
+
+if @assigned_to_id = NULL
+	select
+		@assigned_to_id = @orig_assigned_to_id
+
+if @debug="Y"
+begin
+	select
+		@orig_name,
+		@name,
+		@orig_ops_task_type_id,
+		@ops_task_type_id,
+		@orig_ordering,
+		@ordering,
+		@orig_status_id,
+		@status_id,
+		@orig_assigned_to_id,
+		@assigned_to_id,
+		@orig_task_date,
+		@task_date
+
+end
+
+/* check if anything changed, if not, return. otherwise update the whole row*/
+if 	@orig_name = @name and
+        @orig_ops_task_type_id = @ops_task_type_id and
+        @orig_ordering = @ordering and
+        @orig_status_id = @status_id and
+        @orig_assigned_to_id = @assigned_to_id and
+        @orig_task_date = @task_date
+begin
+        select
+            status = "OK",
+            message = "No change in task details. Task not modified"
+        return
+end
+else
+begin
+	begin tran
+		update 
+			ops_tasks
+		set
+			name = @name,
+			ops_task_type_id = @ops_task_type_id,
+			ordering = @ordering,
+			status_id = @status_id,
+			assigned_to = @assigned_to_id,
+			create_date = @task_date
+		where
+			ops_task_id = @ops_task_id
+		if @@rowcount != 1
+		begin
+			select
+				status="Error",
+				message = "Problem updating task",
+				name = @name,
+				ordering = @ordering,
+				provided_status = @status,
+				assigned_to = @assigned_to,
+				ops_task_type = @ops_task_type,
+				task_date = @task_date
+			rollback
+			return
+		end
+	commit tran
+
+	select
+		status="Success",
+		message = "Task successfully modified",
+		ops_task_id = @ops_task_id,
+		name = @name,
+		ordering = @ordering,
+		provided_status = @status,
+		assigned_to = @assigned_to,
+		ops_task_type = @ops_task_type
+end
+
+	
+go
+
+
+

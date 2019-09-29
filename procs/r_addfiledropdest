@@ -1,0 +1,48 @@
+create or replace procedure
+	r_addfiledropdest
+		@login varchar(50),
+		@filedrop_destination varchar(50)
+
+as
+
+declare @filedrop_destination_id int
+
+select
+        @filedrop_destination_id = filedrop_destination_id
+from
+        filedrop_destinations
+where
+        name = @filedrop_destination
+
+if @filedrop_destination_id != NULL
+begin
+        select
+                status = "Error",
+                msg = "destination already exists",
+                destination = @filedrop_destination
+        return
+end
+
+
+insert into
+	filedrop_destinations(
+		name)
+select
+	@filedrop_destination
+
+if @@rowcount = 1
+begin
+	select
+		status = "Success",
+		msg = "Destination added",
+		destination = @filedrop_destination
+end
+
+
+exec
+	r_viewfiledropdestinations
+		@login = @login
+
+go
+	
+

@@ -1,0 +1,631 @@
+create or replace procedure
+	ag_legalentitystatement
+		@login varchar(50),
+		@legal_entity varchar(100),
+		@begin_date datetime,
+		@end_date datetime
+
+as
+
+
+declare @fund_id int
+declare @tico_account_id int
+declare @legal_entity_id int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @client_style varchar(250)
+
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @evaluation_currency_id int
+
+declare @total_balance float
+declare @total_equiv float
+
+declare @original_begin_date datetime
+declare @original_end_date datetime
+declare @id int
+declare @ids int
+declare @account varchar(50)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"example_column_name",
+	"Tico Proc Title",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"beginning_balance", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"deposits", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"withdrawals", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"accruals", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"fees", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ending_balance", 
+ 	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+select
+	@original_begin_date = @begin_date,
+	@original_end_date = @end_date
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+if @end_date < @begin_date
+begin
+	select
+		status = "Error",
+		message = "Begin date is after end date",
+		begin_date = @begin_date,
+		end_date = @end_date
+	return
+end
+
+select
+	@begin_date = convert(datetime, convert(date, @begin_date))
+exec
+	r_prevbusinessday
+		@begin_date,
+		@begin_date output
+
+select
+	@begin_date = convert(datetime, convert(date, @begin_date))
+select
+	@begin_date = dateadd(hour, 17, @begin_date)
+
+select
+	@end_date = convert(datetime, convert(date, @end_date))
+select
+	@end_date = dateadd(hour, 17, @end_date)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@legal_entity_id = a.legal_entity_id
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	a.name = @legal_entity
+and
+	b.tico_account_id = @tico_account_id
+if @legal_entity_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Legal entity not found",
+		legal_entity = @legal_entity
+	return
+end
+
+create table
+	#external_accounts(
+		external_account_id int,
+		symbol varchar(50) NULL)
+insert into
+	#external_accounts(
+		external_account_id,
+		symbol)
+select
+	a.external_account_id,
+	b.symbol
+from
+	bo_master_accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.legal_entity_id = @legal_entity_id
+
+insert into
+        #external_accounts(
+                external_account_id,
+                symbol)
+select
+        b.external_account_id,
+        b.symbol
+from
+        bo_master_accounts a,
+        external_accounts b,
+	fo_sub_accounts c
+where
+	a.bo_master_account_id = c.bo_master_account_id
+and
+        c.external_account_id = b.external_account_id
+and
+        a.legal_entity_id = @legal_entity_id
+
+
+
+create table
+	#begin_balances(
+		product_id int,
+		balance float NULL)
+insert into
+	#begin_balances(
+		product_id,
+		balance)
+select
+	a.currency_id,
+	sum(a.amount)
+from
+	account_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_date < @begin_date
+group by
+	a.currency_id
+
+
+create table
+	#account_transactions(
+		account_transaction_id int,
+		entered_by int,
+		external_account_id int,
+		transaction_type_id int,
+		transaction_date datetime,
+		currency_id int,
+		amount float,
+		note varchar(250) NULL)
+insert into
+	#account_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		note)
+select
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	a.amount,
+	a.note
+from
+	account_transactions a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date < @end_date
+
+
+create table
+	#all_products(
+		product_id int)
+insert into
+	#all_products
+select
+	distinct(product_id)
+from
+	#begin_balances
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(currency_id)
+from
+	#account_transactions
+where
+	currency_id not in(
+		select
+			product_id
+		from
+			#all_products)
+
+
+create table
+	#summary(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		beginning_balance float NULL,
+		deposits float NULL,
+		withdrawals float NULL,
+		accruals float NULL,
+		fees float NULL,
+		ending_balance float NULL)
+insert into
+	#summary(
+		style,
+		product_id,
+		product,
+		beginning_balance,
+		deposits,
+		withdrawals,
+		accruals,
+		fees,
+		ending_balance)
+select
+	style = @style,
+	a.product_id,
+	a.symbol,
+	beginning_balance = 0.0,
+	deposits = 0.0,
+	withdrawals = 0.0,
+	accruals = 0.0,
+	fees = 0.0,
+	ending_balance = 0.0
+from
+	products a,
+	#all_products b
+where
+	a.product_id = b.product_id
+order by
+	a.symbol
+
+update
+	#summary
+set
+	a.beginning_balance = b.balance
+from
+	#summary a,
+	#begin_balances b
+where
+	a.product_id = b.product_id
+
+create table
+	#activity(
+		product_id int,
+		transaction_type_id int,
+		amount float)
+insert into
+	#activity(
+		product_id,
+		transaction_type_id,
+		amount)
+select
+	currency_id,
+	transaction_type_id,
+	sum(amount)
+from
+	#account_transactions
+group by
+	currency_id,
+	transaction_type_id
+
+update
+	#summary
+set
+	a.deposits = b.amount
+from
+	#summary a,
+	#activity b,
+	transaction_types c
+where
+	a.product_id = b.product_id
+and
+	b.transaction_type_id = c.transaction_type_id
+and
+	c.name = "Deposit"
+
+update
+	#summary
+set
+	a.withdrawals = b.amount
+from
+	#summary a,
+	#activity b,
+	transaction_types c
+where
+	a.product_id = b.product_id
+and
+	b.transaction_type_id = c.transaction_type_id
+and
+	c.name = "Withdrawal"
+
+
+update
+	#summary
+set
+	a.accruals = b.amount
+from
+	#summary a,
+	#activity b,
+	transaction_types c
+where
+	a.product_id = b.product_id
+and
+	b.transaction_type_id = c.transaction_type_id
+and
+	b.amount > 0.0
+and
+	c.name not in("Withdrawal", "Deposit")
+
+
+update
+	#summary
+set
+	a.fees = b.amount
+from
+	#summary a,
+	#activity b,
+	transaction_types c
+where
+	a.product_id = b.product_id
+and
+	b.transaction_type_id = c.transaction_type_id
+and
+	b.amount < 0.0
+and
+	c.name not in("Withdrawal", "Deposit")
+
+update
+	#summary
+set
+	ending_balance = beginning_balance + deposits + withdrawals + accruals + fees
+
+
+create table
+	#header(
+		id int identity,
+		style varchar(250) NULL,
+		legal_entity varchar(100) NULL,
+		statement_begin_date datetime NULL,
+		statement_end_date datetime NULL,
+		report_run_date datetime NULL)
+insert into
+	#header(
+		style,
+		legal_entity,
+		statement_begin_date,
+		statement_end_date,
+		report_run_date)
+values(
+	@total_style,
+	@legal_entity,
+	@begin_date,
+	@end_date,
+	getdate())
+
+insert into
+	#header(
+		style,
+		legal_entity)
+select
+	style = @style,
+	statement = a.name
+from
+	legal_entity_contacts a,
+	legal_entities b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.name = @legal_entity
+
+select
+	style,
+	entity = legal_entity,
+	statement_begin_date,
+	statement_end_date,
+	report_run_date
+from
+	#header
+order by
+	id
+
+select
+	section = rtrim(@legal_entity) + " Balance Summary",
+	style,
+	product,
+	beginning_balance,
+	deposits,
+	withdrawals,
+	accruals,
+	fees,
+	ending_balance
+from
+	#summary
+order by
+	id
+/*
+select
+	section = "Transactions",
+	style = @style,
+	a.account_transaction_id,
+	account = b.symbol,
+	transaction_type = c.name,
+	a.transaction_date,
+	product = d.symbol,
+	amount,
+	note
+from
+	#account_transactions a,
+	external_accounts b,
+	transaction_types c,
+	products d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_type_id = c.transaction_type_id
+and
+	a.currency_id = d.product_id
+order by
+	a.transaction_date
+*/
+
+create table
+	#accounts(
+		id int identity,
+		account varchar(50))
+insert into
+	#accounts(
+		account)
+select
+	symbol
+from
+	#external_accounts
+order by
+	symbol
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#accounts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#accounts
+	where
+		id > @id
+
+	select
+		@account = NULL
+
+	select
+		@account = account
+	from
+		#accounts
+	where
+		id = @id
+
+
+	exec
+		ag_subaccountstatement
+			@login = @login,
+			@account = @account,
+			@begin_date = @original_begin_date,
+			@end_date = @original_end_date
+
+
+	select
+		@ids = count(*)
+	from
+		#accounts
+	where
+		id > @id
+end
+
+
+exec
+    r_showdisclaimer
+        "Legal Entity Statement",
+	"N"
+	
+
+go

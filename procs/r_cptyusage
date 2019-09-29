@@ -1,0 +1,175 @@
+use
+	risk_faros
+go
+
+drop procedure
+	r_cptyusage
+go
+
+create procedure
+	r_cptyusage
+		@login varchar(50),
+		@counterparty_id int,
+		@nop float output,
+		@dsl float output
+as
+
+declare @fund_id int
+declare @counterparty varchar(50)
+declare @nop_type varchar(50)
+declare @dsl_type varchar(50)
+declare @product varchar(50)
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@product = a.symbol
+from
+	products a,
+	funds b
+where
+	a.product_id = b.evaluation_currency_id
+and
+	b.fund_id = @fund_id
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Could not find evaluation currency"
+	return
+end
+
+select
+	@counterparty = name
+from
+	counterparties
+where
+	counterparty_id = @counterparty_id
+
+select
+	@nop_type = a.name,
+	@dsl_type = b.name
+from
+	nop_types a,
+	dsl_types b,
+	counterparty_limits c
+where
+	a.nop_type_id = c.nop_type_id
+and
+	b.dsl_type_id = c.dsl_type_id 
+and
+	c.counterparty_id = @counterparty_id
+
+
+if @nop_type = "Net"
+begin
+	select
+		@nop = sum(abs(equiv))
+	from
+		counterparty_ladder_details
+	where
+		counterparty = @counterparty
+	and
+		product != @product
+end
+
+if @nop_type = "Longs"
+begin
+	select
+		@nop = sum(abs(equiv))
+	from
+		counterparty_ladder_details
+	where
+		counterparty = @counterparty
+	and
+		equiv > 0.0
+end
+
+if @nop_type = "Shorts"
+begin
+	select
+		@nop = sum(abs(equiv))
+	from
+		counterparty_ladder_details
+	where
+		counterparty = @counterparty
+	and
+		equiv < 0.0
+end
+
+create table
+	#dsl(
+		value_date datetime,
+		dsl float)
+
+if @dsl_type = "Net"
+begin
+	insert into
+		#dsl
+	select
+		value_date,
+		sum(abs(equiv))
+	from
+		counterparty_ladder_details
+	where
+		counterparty = @counterparty
+	and
+		product != @product
+	group by
+		value_date
+
+	select
+		@dsl = max(dsl)
+	from
+		#dsl
+end
+
+if @dsl_type = "Longs"
+begin
+	insert into
+		#dsl
+	select
+		value_date,
+		sum(abs(equiv))
+	from
+		counterparty_ladder_details
+	where
+		counterparty = @counterparty
+	and
+		equiv > 0.0
+	group by
+		value_date
+
+	select
+		@dsl = max(dsl)
+	from
+		#dsl
+end
+
+
+if @dsl_type = "Shorts"
+begin
+	insert into
+		#dsl
+	select
+		value_date,
+		sum(abs(equiv))
+	from
+		counterparty_ladder_details
+	where
+		counterparty = @counterparty
+	and
+		equiv < 0.0
+	group by
+		value_date
+
+	select
+		@dsl = max(dsl)
+	from
+		#dsl
+end
+
+go

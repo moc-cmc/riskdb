@@ -1,0 +1,174 @@
+create or replace procedure
+	api_generateoachecksum
+		@login varchar(50),
+		@legal_entity varchar(150),
+		@outside_account varchar(50)
+
+as
+
+declare @has_permission varchar(10)
+declare @legal_entity_id int
+declare @hash_value varchar(200)
+declare @outside_account_id int
+declare @existing_checksum varchar(200)
+
+
+exec
+	r_checkaccessgrouppermission
+		@login=@login,
+		@access_group="Wire Admin",
+		@show_perm_denied = "N",
+		@has_permission = @has_permission output
+
+if @has_permission != "Y"
+begin
+	select
+		status = "Error",
+		message = "Permission denied"
+	return
+end
+
+declare @tico_account_id int
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+
+select
+	@legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @legal_entity
+if @@rowcount !=1
+begin
+	select
+		status = "Error",
+		message = "Could not find legal entity",
+		legal_entity = @legal_entity
+	return
+end
+
+
+declare @allow_creation_pending_only char(1)
+select
+	@allow_creation_pending_only = "N"
+
+select
+	@outside_account_id = outside_account_id
+from
+	pending_outside_accounts
+where
+	name = @outside_account
+and
+	legal_entity_id = @legal_entity_id
+if @outside_account_id = NULL 
+begin
+	if @allow_creation_pending_only = "N"
+	begin
+		select
+			@outside_account_id = outside_account_id
+		from
+			outside_accounts
+		where
+			name = @outside_account
+		and
+			legal_entity_id = @legal_entity_id
+	end
+	if @outside_account_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem determining oa properties"
+		return
+	end
+end
+
+select
+	@existing_checksum = checksum
+from
+	outside_account_info
+where
+	outside_account_id = @outside_account_id
+
+select
+        @legal_entity = name
+from
+        legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+        a.legal_entity_id = @legal_entity_id 
+and
+	b.tico_account_id = @tico_account_id
+if @@rowcount !=1
+begin
+        select
+                status = "Error",
+                message = "Could not find legal entity or no permission",
+                legal_entity = @legal_entity
+        return
+end
+
+
+if @existing_checksum != NULL
+begin
+	select
+		status = "Error",
+		message = "Checksum already exists, can not generate a new checksum"
+	return
+end
+
+if @outside_account_id = NULL 
+begin
+	select
+		status = "Error",
+		message = "Access to account and legal entity denied"
+	return
+end
+
+
+exec
+	api_oahashgen
+		@login = @login,
+		@outside_account = @outside_account,
+		@hash_value = @hash_value output
+
+begin tran
+	update
+		outside_account_info
+	set
+		checksum = @hash_value,
+		checksum_user_id = @tico_account_id
+	where
+		outside_account_id = @outside_account_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem updating account info with checksum"
+		rollback tran
+		return
+	end
+commit tran
+
+
+select
+	status = "Success",
+	message = "Successfully generated checksum",
+	outside_account = @outside_account,	
+	checksum = @hash_value
+
+go

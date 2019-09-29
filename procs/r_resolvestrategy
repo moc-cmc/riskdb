@@ -1,0 +1,181 @@
+
+if object_id("r_resolvestrategy") != NULL
+    drop procedure
+        r_resolvestrategy
+go
+
+create proc
+	r_resolvestrategy
+        @login varchar(50),
+        @source varchar(50),
+        
+        @strategy_id int = NULL out,
+        
+        @name varchar(50) = NULL out,
+        
+        @create char(1) = NULL out,
+        @report char(1) = NULL
+as
+
+/* messages */
+declare @to varchar(50)
+declare @issue varchar(250)
+declare @subject varchar(250)
+declare @content varchar(250)
+declare @check_sql varchar(250)
+
+declare @should_create char(1)
+declare @source_id int
+
+select
+    @should_create = @create,
+    @create = "N"
+ 
+if @login = NULL or @source = NULL
+begin
+    if @report != "N"
+        select
+            strategy = "Error",
+            message = "Login and source required",
+            login = @login,
+            source = @source
+    raiserror 99001, "@login and @source required"
+    return
+end
+
+/* Lookup @strategy_id for @name */
+select
+    @strategy_id = strategy_id
+from
+    strategies
+where
+    name = @name
+    
+if @strategy_id = NULL
+begin
+
+    /* Resolve the @source_id from @source */
+    exec
+        r_resolvesource
+            @login = @login,
+            @source_id = @source_id out,
+            @name = @source,
+            @report = @report
+    if @source_id = NULL
+        return
+        
+    if @should_create = "Y" and /* has permission */ exists (
+        select
+            *
+        from
+            source_permissions
+        where
+            source_id = @source_id
+        and
+            autocreates_strategies = "Y"
+    )
+    begin
+    
+        if @name = NULL
+        begin
+            
+            select
+                @issue = "unsupported:r_resolvestrategy():missing:@name",
+                @to = "support",
+                @subject = "Couldn't autocreate strategy without a name",
+                @content = "User does not exist. r_resolvestrategy attempted to create the strategy but no @name was provided."
+            exec
+                r_postmessage
+                    @login = @login,
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High"
+                    
+            if @report != "N"
+                select
+                    strategy = "Error",
+                    message = "Cannot create strategy without specifying name",
+                    name = @name
+                    
+            return
+        end
+        
+        exec
+            j_nextkey
+                "strategies",
+                @strategy_id out
+        
+        insert into
+            strategies (
+                strategy_id,
+                name
+            )
+            values (
+                @strategy_id,
+                @name
+            )
+        
+        if @@rowcount != 1
+        begin
+            raiserror 98020, "Failed to create strategy"
+            return
+        end
+        
+        select
+            @create = "Y"
+    
+        select
+            @to = "support",
+            @subject = "Status, """ + @name + """, created",
+            @content = "The strategy, """ + @name + """, was created by " + @login + " on behalf of " + @source + "."
+        exec
+            r_postmessage
+                @login = @login,
+                @to = @to,
+                @channel = "General",
+                @subject = @subject,
+                @content = @content,
+                @priority = "Low"
+                
+    end
+    else
+    begin
+
+        select
+            @issue = "notfound:strategies(name=" + @name + ")",
+            @to = "support",
+            @subject = "Status, """ + @name + """, not supported",
+            @content = "The strategy, """ + @name + """, could not be found.",
+            @check_sql = "if exists(select * from strategies where name = """ + @name + """) exec r_manageissue @issue_id=#{id}, @strategy = 'Resolved'"
+        exec
+            r_manageissue
+                @login = @login,
+                @name = @issue,
+                @to = @to,
+                @channel = "General",
+                @subject = @subject,
+                @content = @content,
+                @priority = "High",
+                @check_sql = @check_sql
+                
+        if @report != "N"
+            select
+                strategy = "Error",
+                message = "Strategy not found",
+                name = @name
+                
+        return
+    end
+end
+
+select
+    @name = name
+from
+    strategies
+where
+    strategy_id = @strategy_id
+
+go

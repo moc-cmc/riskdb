@@ -1,0 +1,186 @@
+create or replace procedure
+	api_processexecutionresponse
+		@otc_match_id int,
+		@identifier varchar(100),
+		@success_status varchar(50),
+		@message varchar(100),
+		@error_message varchar(100)
+
+as
+
+declare @open_request char(1)
+
+declare @timestamp datetime
+
+declare @accepted_status_id int
+declare @rejected_status_id int
+declare @booked_status_id int
+declare @current_status_id int
+declare @status_id int
+declare @status varchar(50)
+
+select
+	@timestamp = getdate()
+
+select
+	@open_request = "Y"
+from
+	otc_matches a,
+	statuses b
+where
+	a.execution_status_id = b.status_id
+and
+        /* include booked to avoid race condition with FIX connection */
+	b.name in("Submitted", "Booked") 
+and
+	a.otc_match_id = @otc_match_id
+if @open_request != "Y"
+begin
+	select
+		status = "Error", 
+		message = "Problem finding open request from id",
+		otc_match_id = @otc_match_id
+	return
+end
+
+
+
+select
+        @rejected_status_id = status_id
+from
+        statuses 
+where
+        name = "Rejected"
+if @rejected_status_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem finding 'Rejected' status id"
+        return
+end
+
+select
+        @accepted_status_id = status_id
+from
+        statuses 
+where
+        name = "Accepted"
+if @accepted_status_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem finding 'Accepted' status id"
+        return
+end
+
+select
+        @booked_status_id = status_id
+from
+        statuses
+where
+        name = "Booked"
+if @booked_status_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem finding 'Booked' status id"
+        return
+end
+
+
+
+if @success_status = 'true' and @error_message = ""
+begin
+	select
+		@status = "Accepted"
+end
+else if @success_status = 'false' or @error_message != ""
+begin
+	select
+		@status = "Rejected"
+end
+else
+begin
+	select
+		@status = "Unknown"
+end
+
+select
+	@status_id = status_id
+from
+	statuses 
+where
+	name = @status
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding status ",
+		status_provided = @status
+	return
+end
+
+if @status != "Approved"
+begin
+        begin tran
+		select
+			@current_status_id = execution_status_id
+		from
+			otc_matches
+		where
+			otc_match_id = @otc_match_id
+
+		if @current_status_id = @booked_status_id
+		begin
+			/* dont update the status because the FIX connection already set it to booked */
+			update
+				otc_matches
+			set
+				execution_response_date = @timestamp,
+				execution_message = @error_message,
+				execution_id = @identifier	
+			where
+				otc_match_id = @otc_match_id
+			if @@rowcount != 1
+			begin
+                        	select
+                                	status = "Error",
+                                	message = "Problem setting non status props on otc match"
+                        	rollback tran
+                        	return
+			end
+		end
+		else
+		begin
+			update
+				otc_matches
+			set
+				execution_status_id = @status_id,
+				execution_response_date = @timestamp,
+				execution_message = @error_message,
+				execution_id = @identifier	
+			where
+				otc_match_id = @otc_match_id
+			if @@rowcount != 1
+			begin
+                        	select
+                                	status = "Error",
+                                	message = "Problem setting props on otc match"
+                        	rollback tran
+                        	return
+			end
+		end
+        commit tran
+end
+
+select
+	status = "OK",
+	message = "Processed Exec Reponse",
+        otc_match_id = @otc_match_id ,
+        identifier = @identifier,
+        success_status = @success_status,
+        response_message = @message,
+        erro_message = @error_message
+
+
+go

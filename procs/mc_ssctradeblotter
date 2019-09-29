@@ -1,0 +1,213 @@
+drop procedure mc_ssctradeblotter
+go
+
+create procedure mc_ssctradeblotter @tradeDate datetime = NULL as
+
+declare @begin_date datetime
+declare @end_date   datetime
+declare @fund_name varchar(50)
+declare @query_futures char(1)
+
+select
+	@query_futures = "Y"
+
+select
+	@fund_name = "GLOBAL DIV"
+
+
+if(@tradeDate = NULL)
+begin
+	select
+		@tradeDate = getdate() 
+	from
+		trades
+end
+
+exec r_daterangefordate @tradeDate, @begin_date output, @end_date output
+
+select 
+	"Ccy Pair"=rtrim(f.symbol) + rtrim(e.symbol), 
+	Instrument="Forward",
+	"L/S"="",
+	(case when a.quantity < 0
+     Then "Sell " + rtrim(f.symbol) + "/" + "Buy " + rtrim(e.symbol)
+      else "Buy " + rtrim(f.symbol) + "/" + "Sell " + rtrim(e.symbol)  end) as "Position",
+	"Dealt Amount" = convert(numeric(30,2),a.quantity), 
+	"Dealt Product" = rtrim(f.symbol),
+	"Contra Amount" = convert(numeric(30,2), ((a.quantity *  a.price) * -1)),
+	"Contra Product" = rtrim(e.symbol),
+	"Strike"=a.price,
+	"Expiration"=convert(varchar(12),a.trade_date,1),
+	"Cut"="",
+	"Settlement"=convert(varchar(12),a.value_date,1),
+	"Fixing Date"=convert(varchar(12),a.fixing_date,1),
+    "Premium"=NULL,
+    "Premium Product"="",
+    "Premium Settlment Date"=NULL,
+    "Bar Level 1"="",
+    "Bar Type 1"="",
+    "Bar Level 2"="",
+    "Bar Type 2"="",
+    "Trade Date"=convert(varchar(12),a.trade_date,1),
+    "Trade Id"=a.trade_id,
+    "Account"=i.name,
+     Broker=b.symbol,
+     Multiplier="",
+     Strategy = j.name,
+     Commissions = ""
+from 
+	trades a, 
+	brokers b,
+	forwards d,
+	products e,
+	products f,
+	contracts g,
+	instruments h,
+	external_accounts i,
+	strategies j
+where 
+	a.broker_id=b.broker_id and
+	a.contract_id=d.contract_id and
+	d.currency_id=e.product_id and
+	d.product_id=f.product_id and
+	a.trade_date between @begin_date and @end_date and
+	a.contract_id=g.contract_id and
+	g.instrument_id=h.instrument_id and
+	a.external_account_id=i.external_account_id and
+	a.strategy_id = j.strategy_id and
+	/* i.name="CITI VSMF" and */
+	/* i.symbol = @fund_name  andd */
+	h.name="Forward"
+
+UNION
+
+select
+	"Ccy Pair"=rtrim(g.symbol) + rtrim(f.symbol),
+	 Instrument="Standard",
+	 (case when a.quantity < 0
+	  Then "Short"
+	  else "Long" end) as "L/S",
+      	Position=
+		case when
+			b.put_call = "C"
+		then
+			rtrim(g.symbol) + " Call/" + rtrim(f.symbol) + " Put"
+		else
+			rtrim(g.symbol) + " Put/" + rtrim(f.symbol) + " Call"
+		end,
+	 "Dealt Amount"=convert(numeric(30,2),a.quantity),
+	 "Dealt Product"=g.symbol,
+	 "Contra Amount"=convert(numeric(30,2), ((a.quantity *  a.price) * -1)),
+	 "Contra Product"=f.symbol,
+	 Strike=b.strike,
+	 Expiration=convert(varchar(12),c.expiration,1),
+	 Cut="",
+	 Settlement=convert(varchar(12),h.settledate,1),
+	"Fixing Date"=convert(varchar(12),a.fixing_date,1),
+	 "Premium"=j.amount, 
+	 /*"Premium Product"="USD",*/
+	 "Premium Product"=p.symbol,
+	 "Premium Settlment Date"=convert(varchar(12),j.transaction_date,1),
+	 "Bar Level 1"="",
+	 "Bar Type 1"="",
+	 "Bar Level 2"="",
+	 "Bar Type 2"="",
+	 "Trade Date"=convert(varchar(12),a.trade_date,1),
+	 "Trade Id"=a.trade_id,
+	 "Account"=m.name,
+	 Broker=l.symbol,
+	 Multiplier="",
+	 Strategy = n.name,
+	 Commissions = ""
+from
+	trades a,
+	option_contracts b,
+	option_expirations c,
+	options d,
+	forwards e,
+	products f,
+	products g,	
+	option_settledates h,
+	account_transaction_trades i,
+	account_transactions j,
+	transaction_types k,
+	brokers l,
+	external_accounts m,
+	strategies n,
+	products p
+	
+where
+	a.contract_id=b.contract_id and
+	b.option_expiration_id=c.option_expiration_id and
+	c.option_id=d.option_id and
+	d.underlying_contract_id=e.contract_id and
+	e.currency_id=f.product_id and
+	e.product_id=g.product_id and
+	a.contract_id=h.contract_id and
+	a.trade_id=i.trade_id and
+	i.account_transaction_id=j.account_transaction_id and
+	j.transaction_type_id=k.transaction_type_id and
+	k.name="Option Premium" and
+	a.broker_id=l.broker_id and
+	a.external_account_id=m.external_account_id and
+	a.strategy_id = n.strategy_id and
+	j.currency_id = p.product_id and
+	/* m.name="CITI VSMF" and */
+	a.trade_date between @begin_date and @end_date
+UNION
+select
+        "Ccy Pair"=c.symbol,
+         Instrument="Future",
+         (case when a.quantity < 0
+          Then "Sell"
+          else "Buy" end) as "L/S",
+         (case when a.quantity < 0 then "Sell " + rtrim(c.symbol) when a.quantity > 0 then "Buy "+ rtrim(c.symbol) else c.symbol end) as "Position",
+         "Dealt Amount"=convert(numeric(30,2),a.quantity),
+         "Dealt Product"=d.name,
+         "Contra Amount"=NULL,
+         "Contra Product"=f.symbol,
+         Strike=a.price,
+         Expiration=convert(varchar(12),b.expiration,1),
+         Cut="",
+         Settlement=convert(varchar(12),b.expiration,1),
+         "Fixing Date"="",
+         "Premium"=NULL,
+         "Premium Product"="",
+         "Premium Settlment Date"=NULL,
+         "Bar Level 1"="",
+         "Bar Type 1"="",
+         "Bar Level 2"="",
+         "Bar Type 2"="",
+         "Trade Date"=convert(varchar(12),a.trade_date,1),
+         "Trade Id"=a.trade_id,
+         "Account"=m.name,
+         Broker=l.symbol,
+         Multiplier=convert(varchar(20), d.quantity),
+         Strategy = n.name,
+         Commissions = ""
+from
+        trades a,
+        future_contracts b,
+        contracts c,
+        futures d,
+        forwards e,
+        products f,
+        products g,
+        brokers l,
+        external_accounts m,
+	strategies n
+where
+        a.contract_id=b.contract_id and
+        b.contract_id = c.contract_id and
+        b.future_id = d.future_id and
+        d.forward_id=e.contract_id and
+        e.currency_id=f.product_id and
+        e.product_id=g.product_id and
+        a.broker_id=l.broker_id and
+        a.external_account_id=m.external_account_id and
+        a.strategy_id = n.strategy_id and
+	a.trade_date between @begin_date and @end_date
+
+
+go
+

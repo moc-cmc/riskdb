@@ -1,0 +1,249 @@
+
+drop procedure
+	ag_importspectrumoptions
+go
+
+create procedure
+	ag_importspectrumoptions
+		@login varchar(50),
+		@trans_date varchar(50)=NULL,
+		@transaction_number varchar(50)=NULL,
+		@counterparty varchar(50)=NULL,
+		@type varchar(50)=NULL,
+		@cur varchar(50)=NULL,
+		@face_amount varchar(50)=NULL,
+		@counter_cur varchar(50)=NULL,
+		@strike varchar(50)=NULL,
+		@settle_date varchar(50)=NULL,
+		@expiry_date varchar(50)=NULL,
+		@price varchar(50)=NULL,
+		@cur2 varchar(50)=NULL,
+		@premium_amount varchar(50)=NULL,
+		@usd_value varchar(50)=NULL,
+		@purpose varchar(50)=NULL,
+		@broker varchar(50)=NULL,
+		@broker_fee varchar(50)=NULL,
+		@portfolio varchar(50)=NULL,
+		@trader varchar(50)=NULL,
+		@ext_ref varchar(50)=NULL,
+		@liq_provider varchar(50)=NULL
+
+as
+
+
+declare @trade_timestamp datetime
+declare @source varchar(50)
+declare @source_id int
+declare @trade_id int
+declare @deal_id int
+declare @tally_type varchar(50)
+declare @deal_type varchar(50)
+declare @trade_type varchar(50)
+declare @external_account varchar(50)
+declare @cpty varchar(50)
+declare @quantity numeric(30,2)
+declare @premium numeric(30,2)
+declare @prem_settle_date datetime
+declare @premium_currency varchar(50)
+declare @pips_price float
+declare @expiration datetime
+declare @pair varchar(50)
+declare @put_call varchar(10)
+declare @symbol varchar(50)
+declare @contract_id int
+declare @value_date datetime
+declare @tally_broker varchar(50)
+declare @identifier varchar(100)
+
+select
+	@source = "Spectrum"
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+select
+	@tally_type = "Option",
+	@deal_type = "Market Option",
+	@trade_type = "Option"
+
+
+if @type = "LEC" or @type = "SEC"
+	select
+		@put_call = "Call"
+
+if @type = "LEP" or @type = "SEP"
+	select
+		@put_call = "Put"
+
+select
+	@put_call = left(@put_call, 1)
+
+select
+	@external_account = @counterparty,
+	@quantity = convert(numeric(30,2), @face_amount),
+	@premium = convert(numeric(30,2), @premium_amount),
+	@prem_settle_date = convert(datetime, @settle_date),
+	@premium_currency = @cur2,
+	@pips_price = convert(float, @price),
+	@expiration = convert(datetime, @expiry_date),
+	@value_date = convert(datetime, @expiry_date),
+	@trade_timestamp = convert(datetime, @trans_date),
+	@pair = rtrim(@cur) + rtrim(@counter_cur)
+
+if left(@type, 1) = "L" /* Trades are reverse perspective from velocity */
+	select
+		@quantity = @quantity * -1.0
+
+declare @underlying_contract_id int
+declare @contract varchar(50)
+declare @inverted varchar(50)
+	
+exec
+    r_validateccypair
+        @login=@login,
+        @symbol=@pair,
+        @ccy1=@cur,
+        @ccy2=@counter_cur,
+        @underlying_contract_id = @contract_id output,
+        @contract = @contract output,
+        @inverted = @inverted output
+
+exec
+	r_spotoptioncontract
+		@underlying_contract = @pair,
+		@timezone = "New York 10:00",
+		@expiration = @expiration,
+		@put_call = @put_call,
+		@strike = @strike,
+		@option_settledate = @expiration,
+		@contract_id = @contract_id output
+
+select
+	@symbol = symbol
+from
+	contracts
+where
+	contract_id = @contract_id
+
+
+if @broker = "OPTIONS"
+	select
+		@broker = "BLANK"
+
+select
+	@broker="MPT Options"
+
+select
+	@tally_broker = a.symbol
+from
+	brokers a,
+	broker_symbols b
+where
+	a.broker_id = b.broker_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @broker
+if @tally_broker = NULL
+begin
+	select
+		@tally_broker = symbol
+	from
+		brokers
+	where
+		symbol = @broker
+	if @tally_broker = NULL
+	begin
+		select
+			status = "Error",
+			message = "Broker symbol not found",
+			broker = @broker
+		return
+	end
+end
+
+select
+	@identifier = rtrim(@tally_broker) + "-" + @transaction_number
+
+select
+	@cpty = a.name
+from
+	counterparties a,
+	counterparty_symbols b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @liq_provider
+if @cpty = NULL
+begin
+	select
+		@cpty = name
+	from
+		counterparties
+	where
+		name = @liq_provider
+	if @cpty = NULL
+		select
+			@cpty = "UNASSIGNED"
+	/* begin
+		select
+			status = "Error",
+			message = "Counterparty not found",
+			counterparty = @liq_provider,
+			identifier = @identifier
+	end */
+end
+
+/* select
+	external_account = @external_account,
+	identifier = @identifier,
+	cpty = @cpty,
+	quantity = @quantity,
+	premium = @premium,
+	prem_settle_date = @prem_settle_date,
+	premium_currency = @premium_currency,
+	pips_price = @pips_price,
+	expiration = @expiration,
+	pair = @pair,
+	put_call = @put_call,
+	contract_id = @contract_id  */
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = @source,
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = @deal_type,
+		@trade_type = @trade_type,
+		@external_account = @external_account,
+		@counterparty = @cpty,
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@price = @pips_price,
+		@trade_date = @trade_timestamp,
+		@trader = @trader,
+		@strategy = @portfolio,
+		@broker = @tally_broker,
+		@identifier = @identifier,
+		@premium = @premium,
+		@premium_currency = @premium_currency,
+		@prem_settle_date = @prem_settle_date
+	
+
+go

@@ -1,0 +1,538 @@
+
+if object_id("r_manageissue") != NULL
+    drop procedure
+        r_manageissue
+go
+
+create procedure
+    r_manageissue
+        @login varchar(25),
+        @issue_id int = NULL out,
+        @channel varchar(50) = NULL out,
+        @item_relation_id int = NULL,
+        @item_id int = NULL,
+        @subject varchar(250) = NULL out,
+        @content varchar(250) = NULL out,
+        @properties varchar(250) = NULL out,
+        @priority varchar(15) = NULL out,
+        @status varchar(25) = NULL out,
+        @check_date datetime = NULL out,
+        @check_interval float = NULL out,
+        @check_sql varchar(250) = NULL out
+as
+
+/* 
+ * Creates or updates issues (this proc doesn't delete). There are two ways to
+ * specify an issue, either using @issue_id or (@channel, @item_relation_id,
+ * @item_id). The latter is required when creating an issue but ignored if
+ * @issue_id is provided. You cannot change the channel, item relation and item
+ * using this proc. They should be considered the natural key for issues with
+ * status that's neither "Resolved" nor "Cancelled". When creating an issue,
+ * @channel defaults to "Operations", the @status, "New", the @priority,
+ * "Normal"
+ * 
+ * The other parameters, @subject, @content, @properties, @priority, @status,
+ * @check_sql are modifiable. If these parameters are not specified, they are
+ * not added. However, a @subject is required, if this is a new issue.
+ * 
+ * The parameters @check_date, @check_interval are used to execute the
+ * @check_sql at an interval. See r_managetimer for information. The @check_date
+ * if specified, is the date when the issue is checked again. The
+ * @check_interval is period of the check. These parameters are ignored if
+ * there's no check_sql for the issue.
+ * 
+ */
+
+/* MARK: VARIABLES */
+
+declare @new_status_id int
+declare @resolved_status_id int
+declare @cancelled_status_id int
+declare @normal_priority_id int
+
+declare @user_id int
+declare @channel_id int
+declare @channel_item_relation_id int
+declare @priority_id int
+declare @status_id int
+
+declare @timer_name varchar(100)
+declare @old_status varchar(25)
+declare @timer_id int
+declare @timer_sql varchar(250)
+
+/* MARK: - FIND: @user_id */
+select
+    @user_id = a.account_id
+from
+    tico_accounts a
+where
+    a.login = @login
+
+if @user_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Login required, @login was not provided or not found",
+        login = @login
+    return
+end
+
+/* MARK: FIND @new_status_id */
+select
+    @new_status_id = a.status_id
+from
+    statuses a
+where
+    a.name = "New"
+
+/* MARK: FIND @resolved_status_id */
+select
+    @resolved_status_id = a.status_id
+from
+    statuses a
+where
+    a.name = "Resolved"
+
+/* MARK: FIND @cancelled_status_id */
+select
+    @cancelled_status_id = a.status_id
+from
+    statuses a
+where
+    a.name = "Cancelled"
+
+if @new_status_id = NULL or @resolved_status_id = NULL or @cancelled_status_id = NULL
+begin
+    select
+        status = "Error",
+        message = "One or more of the following statuses doesn't exist: New, Resolved, Cancelled",
+        new_status_id = @new_status_id,
+        resolved_status_id = @resolved_status_id,
+        cancelled_status_id = @cancelled_status_id
+    return
+end
+
+/* MARK: FIND @normal_priority_id */
+select
+    @normal_priority_id = a.priority_id
+from
+    priorities a
+where
+    a.name = "Normal"
+
+if @normal_priority_id = NULL
+begin
+    select
+        status = "Error",
+        message = "No such priority, 'Normal'",
+        normal_priority_id = @normal_priority_id
+    return
+end
+
+/* MARK: FIND @priority_id: from @priority */
+if @priority != NULL
+begin
+
+    select
+        @priority_id = a.priority_id
+    from
+        priorities a
+    where
+        a.name = @priority
+        
+    if @priority_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "Unrecognized priority",
+            priority = @priority
+        return
+    end
+    
+end
+
+/* MARK: FIND @status_id: from @status */
+if @status != NULL
+begin
+
+    select
+        @status_id = a.status_id
+    from
+        statuses a
+    where
+        a.name = @status
+        
+    if @status_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "Unrecognized status",
+            status_name = @status
+        return
+    end
+    
+end
+
+/* MARK: - IF/SET @channel: default to Operations */
+if @channel = NULL
+    select
+        @channel = "Operations"
+
+/* MARK: FIND @channel_id: from @channel */
+select
+    @channel_id = channel_id,
+    @channel_item_relation_id = item_relation_id
+from
+    channels
+where
+    name = @channel
+    
+/* MARK: IF no @channel_id: then autocreate it */
+if @channel_id is NULL and @channel != NULL
+begin
+
+    /* MARK: . CHECK PARAM: @item_relation_id */
+    if @item_relation_id = NULL and @item_id != NULL
+    begin
+        select
+            status = "Error",
+            message = "Cannot autocreate channel with @item_id but without @item_relation_id",
+            channel = @channel,
+            item_relation_id = @item_relation_id,
+            item_id = @item_id
+        return
+    end
+
+    /* MARK: . INSERT channels: autocreate the channel */
+    insert into
+        channels (
+            name,
+            item_relation_id
+        )
+    values (
+        @channel,
+        @item_relation_id
+    )
+    select
+        @channel_id = @@identity,
+        @channel_item_relation_id = @item_relation_id
+    
+    /* MARK: . IF/ERROR no @channel_id */
+    if @channel_id = NULL
+    begin
+        select
+            status = "Error",
+            message = "No channel found named, '" + @channel + "', and could not autocreate channel",
+            channel = @channel
+        return
+    end
+    
+end
+
+/* MARK: IF @item_relation_id not provided */
+if @channel_item_relation_id != NULL and @item_relation_id = NULL
+begin
+    /* MARK: . SET @item_relation_id */
+    select
+        @item_relation_id = @channel_item_relation_id
+end
+
+/* MARK: IF/ERROR @item_relation_id doesn't match */
+if @item_relation_id != NULL and @item_relation_id != @channel_item_relation_id
+begin
+    select
+        status = "Error",
+        message = "Mismatch between @item_relation_id parameter (" + object_name(@item_relation_id) + "), and channel's item_relation_id (" + object_name(@channel_item_relation_id) + ")",
+        channel = @channel,
+        item_relation_id = @item_relation_id,
+        item_relation = object_name(@item_relation_id),
+        channel_item_relation_id = @channel_item_relation_id,
+        channel_item_relation = object_name(@channel_item_relation_id)
+    return
+end
+
+/* MARK: IF/ERROR: @item_id is not provided but required */
+if @item_relation_id != NULL and @item_id = NULL
+begin
+    select
+        status = "Error",
+        message = "@item_id is required",
+        channel = @channel,
+        item_relation_id = @item_relation_id,
+        item_id = @item_id
+    return
+end
+
+/* MARK: - IF no @issue_id: find the issue */
+if @issue_id = NULL
+begin
+    
+    /* MARK: . FIND @issue_id: from @channel_id, @item_relation_id, @item_id */
+    select
+        @issue_id = a.issue_id
+    from
+        issues a
+    where
+        a.channel_id = @channel_id
+    and
+        a.item_relation_id = @item_relation_id
+    and
+        a.item_id = @item_id
+    and
+        a.status_id not in (@resolved_status_id, @cancelled_status_id)
+    
+end
+
+/* MARK: - IF @issue_id not specified, create it */
+if @issue_id = NULL
+begin
+
+    /* MARK: . IF/ERROR: if no @subject  */
+    if @subject is NULL
+    begin
+        select
+            status = "Error",
+            message = "Cannot create a new issue without a subject for issue"
+        return
+    end
+    
+    /* MARK: . DEFAULT @priority_id and @status_id */
+    if @priority_id = NULL
+        select
+            @priority_id = @normal_priority_id
+    if @status_id = NULL
+        select
+            @status_id = @new_status_id
+    
+    /* 
+     * MARK: . INSERT issues: 
+     */
+    insert into
+        issues
+    values (
+        @user_id,
+        getdate(),
+        @channel_id,
+        @item_relation_id,
+        @item_id,
+        @subject,
+        @content,
+        @properties,
+        @priority_id,
+        @status_id,
+        @check_sql
+    )
+    select
+        @issue_id = @@identity
+    
+    /* MARK: . EXEC r_postmessage: send initial message
+     * 
+     * Because this is a new issue, post a message for this issue to all of the
+     * recipients in the @to list. */
+    exec
+        r_postmessage
+            @login = @login,
+            @channel = @channel,
+            @item_relation_id = @item_relation_id,
+            @item_id = @item_id,
+            @subject = @subject,
+            @content = @content,
+            @properties = @properties,
+            @priority = @priority
+    
+end
+/* @MARK: ELSE: update the issue */
+else 
+begin
+    
+    /* MARK: . DEFAULT @channel, @item_relation_id, @item_id, @priority, etc.*/
+    select
+        @channel = case when @channel != NULL then @channel else b.name end,
+        @item_relation_id = case when @item_relation_id != NULL then @item_relation_id else b.item_relation_id end
+    from
+        issues a,
+        channels b
+    where
+        a.channel_id = b.channel_id
+        
+    if exists (
+        select
+            *
+        from
+            issues a
+        where
+            a.issue_id = @issue_id
+        and (
+                @subject != NULL and a.subject != @subject
+            or
+                @priority_id != NULL and a.priority_id != @priority_id
+            or
+                @status_id != NULL and a.status_id != @status_id
+            or
+                @check_sql != NULL and a.check_sql != @check_sql
+            )
+    )
+    begin
+
+        /* MARK: . UPDATE issues: @priority, @subject, @properties, etc.*/
+        update
+            issues
+        set
+            priority_id = case when @priority_id != NULL then @priority_id else priority_id end,
+            subject = case when @subject != NULL then @subject else subject end,
+            content = case when @content != NULL then @content else content end,
+            properties = case when @properties != NULL then @properties else properties end,
+            status_id = case when @status_id != NULL then @status_id else status_id end,
+            check_sql = case when @check_sql != NULL then @check_sql else check_sql end
+        where
+            issue_id = @issue_id
+        
+        select
+            @channel = b.name,
+            @item_relation_id = a.item_relation_id,
+            @item_id = a.item_id,
+            @subject = a.subject,
+            @content = a.content,
+            @properties = a.properties,
+            @priority = c.name
+        from
+            issues a,
+            channels b,
+            priorities c
+        where
+            a.channel_id = b.channel_id
+        and
+            a.priority_id = c.priority_id
+        and
+            a.issue_id = @issue_id
+        
+        /* Close the messages whose issues have been closed */
+        if @status in ("Inactive", "Closed", "Cancelled", "Resolved")
+        begin
+            update
+                messages
+            set
+                status_id = b.status_id
+            from
+                messages a,
+                statuses b
+            where
+                b.name = @status
+            and
+                a.channel_id = @channel_id
+            and
+                a.item_relation_id = @item_relation_id
+            and
+                a.item_id = @item_id
+            
+            select
+                @subject = "[" + upper(@status) + "] " + @subject,
+                @content = "Issue is now " + lower(@status) + ": " + @content
+                
+            exec
+                r_postmessage
+                    @login = @login,
+                    @channel = @channel,
+                    @item_relation_id = @item_relation_id,
+                    @item_id = @item_id,
+                    @subject = @subject,
+                    @content = @content,
+                    @properties = @properties,
+                    @priority = @priority
+                
+        end
+        else
+        begin
+            exec
+                r_postmessage
+                    @login = @login,
+                    @channel = @channel,
+                    @item_relation_id = @item_relation_id,
+                    @item_id = @item_id,
+                    @subject = @subject,
+                    @content = @content,
+                    @properties = @properties,
+                    @priority = @priority
+        end
+        
+    end
+            
+end
+
+/*
+ * Manage the timer for this issue
+ */
+if @check_sql != NULL and @status not in ("Inactive", "Closed", "Cancelled", "Resolved")
+begin
+
+    select
+        check_sql = @check_sql
+
+    select
+        @timer_name = "issue(" + convert(varchar(10), @issue_id) + ")"
+
+    select
+        @timer_id = timer_id
+    from
+        timers
+    where
+        name = @timer_name
+    
+    if @timer_id is NULL
+    begin
+        select
+            @timer_sql = @check_sql
+        select
+            @timer_sql = str_replace(@timer_sql, "#{id}", convert(varchar(10), @issue_id))
+        select
+            @timer_sql = str_replace(@timer_sql, "#{name}", convert(varchar(10), @timer_name))
+    
+        if @check_interval = NULL
+            select
+                @check_interval = 30.0
+        if @check_date = NULL
+            select
+                @check_date = dateadd(second, @check_interval, getdate())
+
+        insert into
+            timers
+        values (
+            @timer_name,
+            @check_date,
+            @check_interval,
+            0,
+            @timer_sql
+        )
+    end
+    
+end
+else
+begin
+    
+    delete from
+        timers
+    where
+        name = @timer_name
+    
+end
+
+/*
+ * If any of the parameters were provided as output set them now
+ */
+select
+    @channel = b.name,
+    @subject = a.subject,
+    @content = a.content,
+    @priority = c.name,
+    @status = d.name,
+    @check_sql = a.check_sql
+from
+    issues a
+    join channels b on a.channel_id = b.channel_id
+    join priorities c on a.priority_id = c.priority_id
+    join statuses d on a.status_id = d.status_id
+where
+    a.issue_id = @issue_id
+
+go

@@ -1,0 +1,77 @@
+use
+	risk_moc
+go
+
+drop procedure
+	ag_setfixingprice
+go
+
+create procedure
+	ag_setfixingprice
+		@login varchar(50),
+		@symbol varchar(50),
+		@fixing_date datetime,
+		@price float
+as
+
+
+declare @fixing_id int
+declare @contract_id int
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+select
+	@fixing_date = dateadd(hour, 17, convert(datetime, convert(date, @fixing_date)))
+
+update
+	fixings
+set
+	price = @price
+where
+	contract_id = @contract_id
+and
+	fixing_date = @fixing_date
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"fixings",
+			@fixing_id output
+
+	insert into
+		fixings(
+			fixing_id,
+			contract_id,
+			fixing_date,
+			price)
+	values(
+		@fixing_id,
+		@contract_id,
+		@fixing_date,
+		@price)
+end
+
+exec
+	ag_fixingprices
+		@login = @login,
+		@fixing_date = @fixing_date
+
+
+go
+
+
+
+

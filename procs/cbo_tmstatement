@@ -1,0 +1,27 @@
+drop procedure
+        cbo_tmstatement
+go
+
+create procedure
+	cbo_tmstatement
+		@login varchar(30),
+		@run_name varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+as
+
+declare @total_pl float
+
+exec
+	cbo_runpl
+		@login,
+		@run_name,
+		@begin_date,
+		@end_date,
+		@total_pl output,
+		"y",
+		"N"
+
+
+
+go

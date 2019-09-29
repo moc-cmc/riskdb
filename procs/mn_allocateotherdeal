@@ -1,0 +1,168 @@
+drop procedure
+	mn_allocateotherdeal
+go
+
+create procedure
+	mn_allocateotherdeal
+		@login varchar(50),
+		@run_name varchar(50),
+		@deal_id int,
+		@ma_version_id int
+as
+
+declare @external_account_id int
+declare @external_account varchar(50)
+declare @trade_id int
+declare @master_allocation_id int
+declare @sub_accounts int
+declare @sub_account_id int
+declare @sub_account varchar(50)
+declare @allocation float
+declare @trades int
+declare @orginal_quantity numeric(30,4)
+
+
+select
+	@master_allocation_id = b.master_allocation_id,
+	@trade_id = a.trade_id
+from
+	trades a,
+	master_allocations b,
+	ma_versions c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.master_allocation_id = c.master_allocation_id
+and
+	c.ma_version_id = @ma_version_id
+and
+	a.deal_id = @deal_id
+
+select
+	@external_account = a.symbol,
+	@orginal_quantity = b.quantity
+from
+	external_accounts a,
+	trades b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.trade_id = @trade_id
+
+exec
+	cn_validateaccountaccess
+		@login,
+		@external_account,
+		@external_account_id output
+/*
+select
+	@trades = count(trade_id)
+from
+	trades
+where
+	deal_id = @deal_id
+if @trades != 1
+begin
+	select
+		status = "Error",
+		message = "Allocation failed. Deal has more than 1 trade",
+		deal_id = @deal_id
+	return
+end
+*/
+
+
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Deal not found",
+		deal_id = @deal_id
+	return
+end
+
+create table
+	#sub_accounts(
+		sub_account_id int)
+insert into
+	#sub_accounts
+select
+	(a.sub_account_id)
+from
+	sub_accounts a,
+	ma_versions b
+where
+	a.ma_version_id = b.ma_version_id
+and
+	a.ma_version_id = @ma_version_id
+and
+	b.master_allocation_id = @master_allocation_id
+
+
+select
+	@sub_account_id = 0
+select
+	@sub_accounts = count(*)
+from
+	#sub_accounts
+where
+	sub_account_id > @sub_account_id
+
+while @sub_accounts > 0
+begin
+	select
+		@sub_account_id = min(sub_account_id)
+	from
+		#sub_accounts
+	where
+		sub_account_id > @sub_account_id
+
+	select
+		@sub_account = a.symbol,	
+		@allocation = b.allocation
+	from
+		external_accounts a,
+		sub_accounts b
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.sub_account_id = @sub_account_id
+
+	exec
+		mn_tallysubaccounttrade
+			@login,
+			@deal_id,
+			@sub_account,
+			@allocation,
+			@ma_version_id
+
+
+	select
+		@sub_accounts = count(*)
+	from
+		#sub_accounts
+	where
+		sub_account_id > @sub_account_id
+end
+
+insert into
+	deal_ma_versions
+values(
+	@deal_id,
+	@orginal_quantity,
+	@ma_version_id,
+	getdate()
+)
+
+exec
+	mn_setdealstatus
+		@login,
+		@deal_id,
+		"Allocated"
+
+exec
+	mn_accounttrades
+		@login,
+		@run_name
+
+go

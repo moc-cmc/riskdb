@@ -1,0 +1,111 @@
+create or replace procedure
+	api_addlegalentityotclink
+		@login varchar(100),
+		@entering_legal_entity varchar(150),
+		@available_legal_entity varchar(150),
+		@legal_entity_otc_link_id int=NULL output
+
+as
+
+
+
+declare @e_legal_entity_id int
+declare @a_legal_entity_id int
+declare @tico_account_id int
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+
+select
+	@e_legal_entity_id =  a.legal_entity_id
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @entering_legal_entity
+if @e_legal_entity_id  = NULL
+begin
+	select
+		status = "Error",
+		message = "Entering legal entity not found or user does not have permission",
+		entering_legal_entity = @entering_legal_entity
+	return
+end
+
+		
+select
+	@a_legal_entity_id =  a.legal_entity_id
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @available_legal_entity
+if @a_legal_entity_id  = NULL
+begin
+	select
+		status = "Error",
+		message = "Available legal entity not found or user does not have permission",
+		available_legal_entity = @available_legal_entity
+	return
+end
+
+select
+	@legal_entity_otc_link_id = legal_entity_otc_link_id
+from
+	legal_entity_otc_links
+where
+	entering_legal_entity_id = @e_legal_entity_id
+and
+	available_legal_entity_id = @a_legal_entity_id
+
+if @legal_entity_otc_link_id = NULL
+begin
+	insert into
+		legal_entity_otc_links(
+			entering_legal_entity_id,
+			available_legal_entity_id)
+	values(
+		@e_legal_entity_id,
+		@a_legal_entity_id
+	)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message =  "Problem adding legal entity link for OTC trading",
+			entering_legal_entity = @entering_legal_entity,
+			available_legal_entity = @available_legal_entity
+		return
+	end
+end
+
+select
+	status = "Success",
+	message = "Entering legal entity has access to sumbmit otc orders to available legal entity",
+	entering_legal_entity = @entering_legal_entity,
+	available_legal_entity = @available_legal_entity
+
+go
+
+
+		

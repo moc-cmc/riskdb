@@ -1,0 +1,160 @@
+if object_id("api_tallyclientswap") != NULL
+drop procedure
+        api_tallyclientswap
+go
+
+
+create procedure
+	api_tallyclientswap
+		@login char(25),
+		@client_user varchar(25),
+		@client_buys_sells varchar(25),
+		@quantity numeric(30,4),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@near_date datetime = NULL,
+		@near_price float,	
+		@far_date datetime = NULL,
+		@far_price float,
+		@deal_id int output,
+		@near_fixing_date datetime = NULL,		
+		@far_fixing_date datetime = NULL
+as
+
+declare @tally_type varchar(20)
+declare @external_account varchar(50)
+declare @symbol varchar(50)
+declare @near_trade_id int
+declare @far_trade_id int
+declare @trade_date datetime
+declare @near_quantity numeric(30,4)
+declare @far_quantity numeric(30,4)
+declare @contract_id int
+
+select
+	@tally_type = "Swap"
+
+if @client_buys_sells = "Client Buys"
+begin
+	select
+		@near_quantity = abs(@quantity) * -1.0
+end
+if @client_buys_sells = "Client Sells"
+begin
+	select
+		@near_quantity = abs(@quantity)
+end
+
+select
+	@far_quantity = @near_quantity * -1.0
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
+
+select
+    @contract_id = contract_id
+from
+    contracts
+where
+    symbol = @symbol
+if @@rowcount != 1
+begin
+
+    declare @evaluation_currency varchar(50)
+    declare @fund_id int
+
+    exec
+        r_defaultfundforlogin
+                @login,
+                @fund_id output
+
+    select
+        @evaluation_currency = a.symbol
+    from
+        products a,
+        funds b
+    where
+        a.product_id = b.evaluation_currency_id
+
+    exec r_addbatchfwdsubscription
+            @login,
+            @symbol,
+            @dealt_currency,
+            @counter_currency,
+            @evaluation_currency
+
+    if not exists (select contract_id from contracts where symbol=@symbol)
+    begin
+        select
+            status = "Error",
+            message = "Contract not found",
+            symbol=@symbol
+
+        return
+    end
+
+end
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	traders b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @client_user
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Could not found account for client user",
+		client_user = @client_user
+	return
+end
+
+
+select
+	@trade_date = getdate()
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @near_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "Client Swap",
+		@trade_type = "Swap Near",
+		@external_account = @external_account,
+		@quantity = @near_quantity,
+		@symbol = @symbol,
+		@value_date = @near_date,
+		@price = @near_price,
+		@trade_date = @trade_date,
+		@trader = @client_user,
+		@fixing_date = @near_fixing_date	
+
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @far_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "Client Swap",
+		@trade_type = "Swap Far",
+		@external_account = @external_account,
+		@quantity = @far_quantity,
+		@symbol = @symbol,
+		@value_date = @far_date,
+		@price = @far_price,
+		@trade_date = @trade_date,
+		@trader = @client_user,
+		@fixing_date = @far_fixing_date	
+
+exec r_inserttradenotification @near_trade_id
+exec r_inserttradenotification @far_trade_id
+
+go

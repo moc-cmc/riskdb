@@ -1,0 +1,63 @@
+create or replace procedure
+	r_deletefiledropdest
+		@login varchar(50),
+		@filedrop_destination varchar(50)
+
+as
+
+declare @filedrop_destination_id int
+declare @configured_destination varchar(1)
+
+select
+        @filedrop_destination_id = filedrop_destination_id
+from
+        filedrop_destinations
+where
+        name = @filedrop_destination
+
+if @filedrop_destination_id = NULL
+begin
+        select
+                status = "Error",
+                msg = "destination does not exist",
+                destination = @filedrop_destination
+        return
+end
+
+
+select
+	@configured_destination = "Y"
+from
+	run_fd_report_destinations
+where
+	filedrop_destination_id = @filedrop_destination_id
+
+if @configured_destination = "Y"
+begin
+	select
+		status = "Error",
+		msg = "Destination configured for run. Cannot delete",
+		filedrop_destination = @filedrop_destination
+	return
+end
+
+delete from 
+	filedrop_destinations
+where
+	filedrop_destination_id = @filedrop_destination_id
+if @@rowcount = 1
+begin
+	select
+		status = "Success",
+		msg = "Destination removed",
+		destination = @filedrop_destination
+end
+
+
+exec
+	r_viewfiledropdestinations
+		@login = @login
+
+go
+	
+

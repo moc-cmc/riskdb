@@ -1,0 +1,26 @@
+create or replace procedure
+	pd_yesno
+
+as
+
+create table
+	#yn
+(
+	id int,
+	name char(3)
+)
+
+insert into #yn values(1, "Yes")
+insert into #yn values(2, "No")
+
+select
+	name
+from
+	#yn
+order by
+	id
+
+go
+
+
+

@@ -1,0 +1,26 @@
+
+if object_id("del_instruments") != NULL
+    drop trigger
+        del_instruments
+go
+
+create trigger
+    del_instruments
+on
+    instruments
+for
+    delete
+as
+
+declare @result int
+
+select
+    @result = syb_sendmsg("localhost", 9999,
+        "Notify /topic/Store.Notify." + @@servername + "." + db_name() + ".instruments: delete "
+        + convert(varchar(10), a.instrument_id) + " "
+        + "'" + rtrim(str_replace(a.name, "'", "\'")) + "'"
+    )
+from
+    deleted a
+
+go

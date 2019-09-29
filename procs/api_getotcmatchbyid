@@ -1,0 +1,249 @@
+create or replace procedure
+	api_getotcmatchbyid
+		@otc_match_id int,
+		@source varchar(50)=NULL
+
+as
+
+declare @open_request char(1)
+declare @source_id int
+declare @submitted_status_id int
+
+select
+	@submitted_status_id = status_id
+from
+	statuses
+where
+	name = "Submitted"
+if @submitted_status_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem finding 'Submitted' status"
+	return
+end
+
+
+select
+	@open_request = "Y"
+from
+	otc_matches a
+where
+	a.execution_status_id = @submitted_status_id
+and
+	a.otc_match_id = @otc_match_id
+if @open_request != "Y"
+begin
+	select
+		status = "skip", 
+		message = "open request not found",
+		otc_match_id = @otc_match_id
+	return
+end
+
+if @source != NULL
+begin
+	select
+		@source_id = source_id
+	from
+		sources
+	where
+		name = @source
+	if @source_id = NULL
+	begin
+		select 
+			status = "Error",
+			message = "Problem finding source for provided",
+			source = @source
+		return
+	end
+end
+
+create table
+	#otc_matches(
+		otc_match_id int,
+		requestor_id int,
+		request_date datetime,
+		trade_date datetime,
+		buyer_account_id  int NULL,
+		buyer_trader_id int,
+		buyer_legal_entity_id int,
+		buyer_status_id int,
+		buyer_trade_id int NULL,
+		seller_account_id int NULL,
+		seller_trader_id int,
+		seller_legal_entity_id int,
+		seller_status_id int,
+		seller_trade_id int NULL,
+		contract_id int,
+		quantity numeric(30,8),
+		price float,
+		value_date datetime NULL,
+		execution_status_id int NULL,
+		traded_ccy varchar(30) NULL,
+		counter_ccy varchar(30) NULL,
+		buyer_trader varchar(50) NULL,
+		buyer_account varchar(50) NULL,
+		seller_trader varchar(50) NULL,
+		seller_account varchar(50) NULL
+)
+
+insert into
+	#otc_matches(
+		otc_match_id, 
+		requestor_id, 
+		request_date,
+		trade_date,
+		buyer_account_id , 
+		buyer_trader_id, 
+		buyer_legal_entity_id, 
+		buyer_status_id, 
+		buyer_trade_id, 
+		seller_account_id, 
+		seller_trader_id, 
+		seller_legal_entity_id, 
+		seller_status_id, 
+		seller_trade_id, 
+		contract_id, 
+		quantity, 
+		price,
+		value_date,
+		execution_status_id)
+
+select
+	a.otc_match_id,
+	a.requestor_id,
+	a.request_date,
+	a.trade_date,
+	a.buyer_account_id,
+	a.buyer_trader_id,
+	a.buyer_legal_entity_id,
+	a.buyer_status_id,
+	a.buyer_trade_id,
+	a.seller_account_id,
+	a.seller_trader_id,
+	a.seller_legal_entity_id,
+	a.seller_status_id,
+	a.seller_trade_id,
+	a.contract_id,
+	a.quantity,
+	a.price,
+	a.value_date,
+	a.execution_status_id 
+from
+	otc_matches a,
+	statuses b
+where
+	a.seller_status_id = b.status_id
+and
+	a.buyer_status_id = b.status_id
+and
+	b.name = "Affirmed"
+and
+	a.execution_status_id = @submitted_status_id
+and
+	otc_match_id = @otc_match_id
+
+	
+
+update
+	#otc_matches
+set
+	traded_ccy = c.symbol,
+	counter_ccy = d.symbol
+from
+	#otc_matches a,
+	forwards b,
+	products c,
+	products d
+where
+	a.contract_id = b.contract_id
+and
+	b.product_id = c.product_id
+and
+	b.currency_id = d.product_id
+
+update
+	#otc_matches
+set
+	buyer_trader = a.symbol
+from
+	trader_symbols a,
+	#otc_matches  b
+where
+	a.trader_id = b.buyer_trader_id
+and
+	a.source_id = @source_id
+
+update
+        #otc_matches
+set
+        seller_trader = a.symbol
+from    
+        trader_symbols a,
+	#otc_matches b
+where
+	a.trader_id = b.seller_trader_id
+and
+        source_id = @source_id
+
+update
+        #otc_matches
+set
+        buyer_account = a.symbol
+from    
+        external_account_symbols a,
+	#otc_matches b
+where
+	a.external_account_id = b.buyer_account_id 
+and
+        a.source_id = @source_id
+
+
+update
+        #otc_matches
+set
+        seller_account = a.symbol
+from    
+        external_account_symbols a,
+	#otc_matches b
+where
+	a.external_account_id = b.seller_account_id 
+and
+        a.source_id = @source_id
+
+
+select
+	otc_match_id,
+	traded_ccy,
+	counter_ccy,
+	requestor_id,
+	/*request_date, we need to send request date in central time to accomodaet a timezone issue caused by Joe P. @ mercury digital asset */
+	request_date = dateadd(hh, -1, request_date),
+	trade_date,
+	buyer_account_id,
+	buyer_account,
+	buyer_trader_id,
+	buyer_trader,
+	buyer_legal_entity_id,
+	buyer_status_id,
+	buyer_trade_id,
+	seller_account_id,
+	seller_account,
+	seller_trader_id,
+	seller_trader,
+	seller_legal_entity_id,
+	seller_status_id,
+	seller_trade_id,
+	contract_id,
+	quantity,
+	price,
+	value_date,
+	execution_status_id
+from
+	#otc_matches
+
+	
+	
+go
+

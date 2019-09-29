@@ -1,0 +1,218 @@
+drop procedure ag_groupshome
+go
+
+create procedure
+	ag_groupshome
+		@login varchar(50),
+		@group_name varchar(100)
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+
+declare @group_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"mc_group",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"back_to_messages",
+	"Messages Home",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_group",
+	"Add Message Group",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"action",
+	"Configure MC Group Login",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"group_name",
+	"Groups Home",
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+select
+	@group_id = group_id
+from
+	groups
+where
+	name = @group_name
+
+create table
+	#group_accounts(
+		id int identity,
+		style varchar(250) NULL,
+		group_id int NULL,
+		mc_group varchar(100) NULL,
+		tico_account_id int NULL,
+		mc_login varchar(50) NULL,
+		included varchar(20) NULL,
+		action varchar(20) NULL)
+insert into
+	#group_accounts(
+		style,
+		group_id,
+		mc_group,
+		tico_account_id,
+		mc_login,
+		action)
+select
+	style = @style,
+	group_id = @group_id,
+	group_name = @group_name,
+	account_id,
+	login,
+	action = "Add"
+from
+	tico_accounts
+order by
+	login
+
+update
+	#group_accounts
+set
+	included = "Yes",
+	action = "Remove"
+from
+	#group_accounts a,
+	group_accounts b
+where
+	a.group_id = b.group_id
+and
+	a.tico_account_id = b.tico_account_id
+
+
+
+create table
+	#groups(
+		id int identity,
+		style varchar(250) NULL,
+		group_id int NULL,
+		group_name varchar(100) NULL,
+		login_type varchar(100) NULL,
+		activity_status varchar(100) NULL)
+insert into
+	#groups(
+		style,
+		group_id,
+		group_name,
+		login_type,
+		activity_status)
+select
+	style = @style,
+	a.group_id,
+	a.name,
+	b.name,
+	c.name
+from
+	groups a,
+	login_types b,
+	activity_statuses c
+where
+	a.login_type_id = b.login_type_id
+and
+	a.activity_status_id = c.activity_status_id
+order by
+	a.name
+
+update
+	#groups
+set
+	style = @selected_style
+where
+	group_id = @group_id
+
+
+
+select
+	style = @style,
+	add_group = "Add Message Group",
+	back_to_messages = "Back to Messages"
+
+
+select
+	section = "Groups",
+	style,
+	group_name,
+	login_type,
+	activity_status
+from
+	#groups
+order by
+	id
+
+	
+select
+	section = rtrim(@group_name) + " Users",
+	style,
+	mc_group,
+	mc_login,
+	included,
+	action
+from
+	#group_accounts
+where
+	group_id != NULL
+order by
+	id
+
+go

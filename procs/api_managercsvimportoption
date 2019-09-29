@@ -1,0 +1,500 @@
+
+if object_id("api_managercsvimportoption") != null
+    drop procedure
+        api_managercsvimportoption
+go
+
+create procedure 
+    api_managercsvimportoption
+        @login varchar(50)=NULL,
+        @identifier varchar(100)=NULL,
+        @deal_identifier varchar(100)=NULL,
+        @report_type varchar(15)=NULL,
+        @trade_type varchar(15)=NULL,
+        @trade_date varchar(25)=NULL,
+        @trading_party varchar(50)=NULL,
+        @account varchar(50)=NULL,
+        @trader varchar(50)=NULL,
+        @traded_currency varchar(10)=NULL,
+        @counter_currency varchar(10)=NULL,
+        @value_date varchar(25)=NULL,
+        @fixing_date varchar(25)=NULL,
+        @quantity varchar(25)=NULL,
+        @buy_sell varchar(15)=NULL,
+        @underlying_spot_reference varchar(25)=NULL,
+        @counter_party varchar(50)=NULL,
+        @broker varchar(25)=NULL,
+        @source varchar(50)=NULL,
+        @volatility varchar(50)=NULL,
+        @premium varchar(50)=NULL,
+        @premium_ccy varchar(10)=NULL,
+        @premium_conversion_rate varchar(50)=NULL,
+        @opt_prem_settle_date varchar(50)=NULL,
+        @opt_settle_date varchar(50)=NULL,
+        @opt_strike varchar(50)=NULL,
+        @put_call varchar(50)=NULL,
+        @opt_time_zone_loc varchar(50)=NULL,
+        @opt_time_zone_time varchar(50)=NULL,
+        @block_trade varchar(10)=NULL,
+        @allocation_template varchar(50)=NULL,
+        @pipping_schedule varchar(50)=NULL,
+        @strategy varchar(25)=NULL
+as
+
+/* DEBUGGING
+select
+    "params api_managercsvimportoption",
+    login = @login,
+    identifier = @identifier,
+    deal_identifier = @deal_identifier,
+    report_type = @report_type,
+    trade_type = @trade_type,
+    trade_date = @trade_date,
+    trading_party = @trading_party,
+    account = @account,
+    trader = @trader,
+    traded_currency = @traded_currency,
+    counter_currency = @counter_currency,
+    value_date = @value_date,
+    fixing_date = @fixing_date,
+    quantity = @quantity,
+    buy_sell = @buy_sell,
+    underlying_spot_reference = @underlying_spot_reference,
+    counter_party = @counter_party,
+    broker = @broker,
+    source = @source,
+    volatility = @volatility,
+    premium = @premium,
+    premium_ccy = @premium_ccy,
+    premium_conversion_rate = @premium_conversion_rate,
+    opt_prem_settle_date = @opt_prem_settle_date,
+    opt_settle_date = @opt_settle_date,
+    opt_strike = @opt_strike,
+    put_call = @put_call,
+    opt_time_zone_loc = @opt_time_zone_loc,
+    opt_time_zone_time = @opt_time_zone_time,
+    block_trade = @block_trade,
+    allocation_template = @allocation_template,
+    pipping_schedule = @pipping_schedule,
+    strategy = @strategy
+*/
+
+declare @tally_source varchar(50)
+declare @tally_trade_type varchar(50)
+declare @tally_tally_type varchar(50)
+declare @tally_trader_type varchar(50)
+declare @tally_external_account varchar(50)
+declare @tally_counterparty_account varchar(50)
+declare @tally_quantity numeric(30, 8)
+declare @tally_symbol varchar(50)
+declare @tally_price float
+declare @tally_trade_date datetime
+declare @tally_value_date datetime
+declare @tally_fixing_date datetime
+declare @tally_sales_code varchar(50)
+declare @tally_identifier varchar(100)
+declare @tally_premium float
+declare @tally_prem_settle_date datetime
+declare @tally_prem_conversion_rate float
+declare @tally_spot_reference float
+declare @tally_strategy varchar(50)
+declare @tally_broker varchar(50)
+declare @tally_volatility float
+declare @tally_pipping_schedule varchar(50)
+declare @underlying_contract varchar(50)
+declare @tally_timezone varchar(25)
+declare @expiration datetime
+/*declare @put_call char(1) */
+declare @tally_strike numeric(30,4)
+declare @option_settledate datetime
+declare @contract_id int
+
+declare @source_id int
+declare @trade_id int
+declare @deal_id int
+declare @deployment_date datetime
+declare @ma_version_id int
+
+/* Attempt to find the @source. This should be removed */
+select
+    @source_id = source_id,
+    @tally_source = name
+from
+    sources
+where
+    name = @source
+if @tally_source = NULL
+begin
+    select
+        @source_id = source_id,
+        @tally_source = name
+    from
+        sources
+    where
+        lower(str_replace(name, " ", NULL)) = lower(str_replace(@source, " ", NULL))
+    if @tally_source = NULL
+    begin
+        select
+            status = "Error",
+            message = "Source not found",
+            source = @source
+        return
+    end
+end
+
+/* MARK: VALIDATE @fixing_date */
+if @fixing_date = ""
+    select
+        @fixing_date = NULL
+
+/* Conversions */
+select
+    @tally_identifier = @identifier,
+	@tally_price = NULL,
+	@tally_quantity = abs(convert(numeric(30, 8), @quantity)),
+	@tally_trade_date = convert(datetime, stuff(stuff(@trade_date, 14, 0, ":"), 12, 0, ":")),
+        /* Convert "20140422 070000" -> "20140422 07:00:00" -> datetime */
+	@tally_value_date = convert(datetime, @value_date),
+	@tally_fixing_date = convert(datetime, @fixing_date),
+    @tally_strike = convert(float, @opt_strike),
+    @tally_premium = convert(float, @premium),
+    @tally_prem_conversion_rate = convert(float, @premium_conversion_rate),
+    @tally_prem_settle_date = convert(datetime, @opt_prem_settle_date),
+	@tally_spot_reference = convert(float, @underlying_spot_reference),
+    @tally_sales_code = "None"
+
+/* MARK: VALIDATE @tally_volatility */
+select
+    @tally_volatility = convert(float, @volatility)
+
+/* MARK: VALIDATE @pipping_schedule */
+if @pipping_schedule != NULL and @pipping_schedule != ""
+    select
+        @tally_pipping_schedule = @pipping_schedule
+
+/* MARK: VALIDATE @trade_type */
+if @trade_type = "Option"
+begin
+    select
+        @tally_tally_type = "Option",
+        @tally_trade_type = "Option"
+end
+else
+begin
+    select
+        status = "Error",
+        message = "Trade type must be Option",
+        trade_type = @trade_type
+    return
+end
+
+/* MARK: VALIDATE @buy_sell and @tally_quantity */
+if lower(@buy_sell) = "sell"
+begin
+	select
+		@tally_quantity = @tally_quantity * -1
+end
+else if lower(@buy_sell) = "buy"
+begin
+    select
+        @tally_quantity = @tally_quantity
+end
+else
+begin
+    select
+        status = "Error",
+        message = "Buy/sell must be either 'BUY' or 'SELL' for options",
+        buy_sell = @buy_sell
+    return
+end
+
+/* MARK: FIND @tally_symbol */
+select
+	@underlying_contract = rtrim(@traded_currency) + rtrim(@counter_currency),
+    @expiration = convert(datetime, @value_date),
+    @put_call = convert(char(1), @put_call),
+    @tally_strike = convert(numeric(30,4), @opt_strike),
+    @option_settledate = convert(datetime, @opt_settle_date)
+
+/* MARK: FIND @timezone FROM timezones
+ * Use convert(varchar(10), convert(time, ...), 8) so that the import can 
+ * provide "9:15:00" to mean "09:15:00" */
+select
+    @tally_timezone = timezone
+from
+    timezones
+where
+    lower(symbol) = lower(@opt_time_zone_loc)
+and
+    expiration_time = convert(varchar(10), convert(time, @opt_time_zone_time), 8)
+if @tally_timezone = NULL
+begin
+    select
+        status = "Error",
+        message = "Timezone not found",
+        opt_time_zone_loc = @opt_time_zone_loc,
+        expiration_time = @opt_time_zone_time
+    return
+end
+
+/*
+/ * MARK: FIND @tally_symbol using r_spotoptioncontract * /
+select
+    underlying_contract = @underlying_contract,
+    expiration = @expiration,
+    put_call = @put_call,
+    strike = @strike,
+    option_settledate = @option_settledate
+
+select
+    debug = "r_spotoptioncontract",
+    underlying_contract = @underlying_contract,
+    timezone = @timezone,
+    expiration = @expiration,
+    put_call = @put_call,
+    strike = @strike,
+    option_settledate = @option_settledate
+
+exec
+    r_spotoptioncontract
+        @underlying_contract = @underlying_contract,
+        @timezone = @timezone,
+        @expiration = @expiration,
+        @put_call = @put_call,
+        @strike = @strike,
+        @option_settledate = @option_settledate,
+        @contract_id = @contract_id out
+
+if @contract_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Option contract could not be resolved",
+        underlying_contract = @underlying_contract,
+        timezone = @timezone,
+        expiration = @expiration,
+        put_call = @put_call,
+        strike = @strike,
+        option_settledate = @option_settledate
+    return
+end
+
+select
+    @tally_symbol = symbol
+from
+    contracts
+where
+    contract_id = @contract_id
+
+if @tally_symbol = NULL
+begin
+	select
+		message = "Contract not found",
+		contract_id = @contract_id
+	return
+end
+
+*/
+
+select
+    @tally_broker = symbol
+from
+    brokers
+where
+    symbol = @broker
+if @tally_broker = NULL
+begin
+    select
+        @tally_broker = a.symbol
+    from
+        brokers a,
+        broker_symbols b
+    where
+        a.broker_id = b.broker_id
+    and
+        b.source_id = @source_id
+    and
+        b.symbol = @broker
+    if @tally_broker = NULL
+    begin
+        select
+            status = "Error",
+            message = "Broker not found",
+            @broker
+        return
+    end
+end
+
+
+select
+	@tally_strategy = @strategy
+
+/* MARK: LOOKUP @ma_version_id from EXEC r_sourcemasterallocation */
+select
+    @deployment_date = convert(datetime, @allocation_template)
+exec
+    r_sourcemasterallocation
+        @login = @login,
+        @source = @tally_source,
+        @strategy = @tally_strategy,
+        @deployment_date = @deployment_date,
+        @ma_version_id = @ma_version_id output,
+        @external_account = @tally_external_account output
+if @ma_version_id = NULL
+begin
+    select
+        status = "Error",
+        message = "No such allocation template",
+        source = @tally_source,
+        strategy = @strategy,
+        deployment_date = @deployment_date
+    return
+end
+
+/* DEBUGGING
+select
+    "exec fxa_tallyoptiontrade",
+    login = @login,
+    source = @tally_source,
+    trade_date = @tally_trade_date,
+    identifier = @tally_identifier,
+    trade_id = @trade_id,
+    deal_id = @deal_id,
+    tally_type = @tally_tally_type,
+    deal_type = "Market Option",
+    trade_type = @tally_trade_type,
+    external_account = @tally_external_account,
+    counterparty = @tally_counterparty_account,
+    trader = @trader,
+    quantity = @tally_quantity,
+    biproduct = @underlying_contract,
+    timezone = @tally_timezone,
+    expiration = @expiration,
+    option_settledate = @option_settledate,
+    strike = @tally_strike,
+    put_call = @put_call,
+    value_date = @tally_value_date,
+    fixing_date = @tally_fixing_date,
+    price = @tally_price,
+    broker = @tally_broker,
+    strategy = @tally_strategy,
+    sales_code = @tally_sales_code,
+    premium = @tally_premium,
+    premium_currency = @premium_ccy,
+    prem_settle_date = @tally_prem_settle_date,
+    conversion_rate = @tally_prem_conversion_rate,
+    spot_reference = @tally_spot_reference,
+    volatility = @tally_volatility,
+    pipping_schedule = @tally_pipping_schedule
+*/
+
+exec
+	fxa_tallyoptiontrade
+		@login = @login,
+		@source = @tally_source,
+		@trade_date = @tally_trade_date,
+		@identifier = @tally_identifier,
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_tally_type,
+		@deal_type = "Market Option",
+		@trade_type = @tally_trade_type,
+		@external_account = @tally_external_account,
+		@counterparty = @tally_counterparty_account,
+        	@trader = @trader,
+		@quantity = @tally_quantity,
+		@biproduct = @underlying_contract,
+		@timezone = @tally_timezone,
+		@expiration = @expiration,
+		@option_settledate = @option_settledate,
+		@strike = @tally_strike,
+		@put_call = @put_call,
+		@value_date = @tally_value_date,
+		@fixing_date = @tally_fixing_date,
+		@price = @tally_price,
+		@broker = @tally_broker,
+		@strategy = @tally_strategy,
+		@sales_code = @tally_sales_code,
+		@premium = @tally_premium,
+		@premium_currency = @premium_ccy,
+		@prem_settle_date = @tally_prem_settle_date,
+        	@conversion_rate = @tally_prem_conversion_rate,
+		@spot_reference = @tally_spot_reference,
+        	@implied_volatility = @tally_volatility,
+		@pipping_schedule = @tally_pipping_schedule
+
+if @deal_id != NULL
+begin
+
+    select
+        status = "OK",
+        action = "Tallied",
+        deal_id = convert(numeric(10,0), a.deal_id),
+        trade_id = convert(numeric(10,0), a.trade_id),
+        identifier = convert(varchar(25), a.identifier),
+        trade_date = convert(varchar(19), a.trade_date, 23),
+        "user" = convert(varchar(15), b.login),
+        "type" = convert(varchar(7), c.name),
+        internal_account = convert(varchar(16), d.symbol),
+        external_account = convert(varchar(16), e.symbol),
+        counterparty = convert(varchar(12), f.name),
+        trader = convert(varchar(12), g.symbol),
+        quantity = str(a.quantity, 14, 2),
+        contract = convert(varchar(40), h.symbol),
+        value_date = convert(varchar(10), a.value_date, 101),
+        fixing_date = convert(varchar(10), a.fixing_date, 101),
+        price = str(a.price, 14, 6),
+        pct_price = str(a.pct_price, 14, 6),
+        spot_ref = str(a.spot_reference, 14, 6),
+        strategy = convert(varchar(10), j.name),
+        premium = str(l.amount, 12, 4),
+        prem_ccy = convert(varchar(5), n.symbol)
+    from
+        trades a,
+        tico_accounts b,
+        trade_types c,
+        internal_accounts d,
+        external_accounts e,
+        counterparties f,
+        traders g,
+        contracts h,
+        brokers i,
+        strategies j,
+        account_transaction_trades k,
+        account_transactions l,
+        transaction_types m,
+        products n
+    where
+        a.user_id = b.account_id
+    and
+        a.trade_type_id = c.trade_type_id
+    and
+        a.internal_account_id = d.internal_account_id
+    and
+        a.external_account_id = e.external_account_id
+    and
+        a.counterparty_id = f.counterparty_id
+    and
+        a.trader_id = g.trader_id
+    and
+        a.contract_id = h.contract_id
+    and
+        a.broker_id = i.broker_id
+    and
+        a.strategy_id = j.strategy_id
+    and
+        a.trade_id = k.trade_id
+    and
+        k.account_transaction_id = l.account_transaction_id
+    and
+        l.transaction_type_id = m.transaction_type_id
+    and
+        l.currency_id = n.product_id
+    and
+        a.trade_id = @trade_id
+    and
+        m.name = "Option Premium"
+
+end
+
+go

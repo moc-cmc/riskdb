@@ -1,0 +1,759 @@
+create or replace procedure
+	r_processledgerrequest
+		@login varchar(100),
+		@ledger_request_id int
+as
+
+declare @tico_account_id int
+declare @transaction_type varchar(50)
+declare @status varchar(50)
+declare @note varchar(255)
+
+declare @transaction_type_id int
+declare @account_transaction_id int
+declare @external_account_id int
+declare @status_id int
+declare @timestamp datetime
+
+
+declare @requestor_id int
+declare @request_status_id int
+declare @outside_account_id int
+declare @bo_master_account_id int
+declare @custodial_account_id int
+declare @ledger_request_type_id int
+declare @ledger_request_type varchar(50)
+declare @product_id int
+declare @amount float
+declare @transaction_date datetime
+declare @request_date datetime
+
+declare @amount1 float
+declare @amount2 float
+declare @external_account_id1 int
+declare @external_account_id2 int
+declare @transaction_id1 int
+declare @transaction_id2 int
+declare @transfer_credit_account_id int
+declare @transfer_debit_account_id int
+declare @bo_master_ext_account_id int
+declare @transfer_credit_extacct_id int
+declare @transfer_debit_extacct_id int
+
+declare @create_pending_status_id int
+declare @sweep_pending_status_id int
+declare @cancel_pending_status_id int
+
+declare @should_create_pending char(1)
+declare @should_sweep_pending char(1)
+declare @should_cancel_pending char(1)
+
+declare @pending_already_exists char(1)
+declare @sweep_count int
+declare @swept_count int
+declare @ledger_request_fees_count int
+declare @ledger_fees_offset_count int
+declare @cancelled_status_id int
+
+
+declare @debug char(1)
+select
+	@debug = "N"
+
+
+
+declare @fee_offset_account_id int
+declare @offset_acct_transaction_id int
+
+/* HARDCODED ACCOUNT FOR SJM DEMO PURPOSES */
+select
+        @fee_offset_account_id = external_account_id
+from
+        external_accounts
+where
+        name = "SJM BANK"
+
+
+
+/* --------------------------------------------------------------------------
+ * This proc takes the data from ledger requests and trusts
+ * that the data is valid. no checks are done on this data
+ * outside of validating the type of transaction and processsing
+ * according to logic necessary for the ledger_request_type
+ * 
+ */
+select
+	@requestor_id = requestor_id,
+	@request_status_id = status_id,
+	@outside_account_id = outside_account_id,
+	@bo_master_account_id = bo_master_account_id,
+	@custodial_account_id = custodial_account_id,
+	@ledger_request_type_id = ledger_request_type_id,
+	@product_id = product_id,
+	@amount = amount,
+	@transaction_date = transaction_date,
+	@request_date = request_date,
+	@transfer_credit_account_id = NULL, /* these transfer accounts do not exist in the table yet */
+	@transfer_debit_account_id = NULL
+from
+	ledger_requests
+where
+	ledger_request_id = @ledger_request_id
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Unable to find ledger request for provided ledger_request_id",
+		ledger_request_id = @ledger_request_id
+	return
+end
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+/* --------------------------------------------------------------------------
+ * STEP: Check to see if we need to do anything for this ledger request
+ * 
+ * 
+ * Each time we change the status on a ledger request, we want to check the 
+ * newly set status against the actionable statuses defined by ledger_request_type
+ * For a ledger request, we support the following flows:
+ * 
+ * Create Pending: This creates the pending account transaction of if the status matches
+ * Sweep Pending:  This sweeps the pending transactions into account transactions on
+ *                 status match. If the status = NULL, sweeping is not this proc's 
+ *                 responsibility and the sweet likely falls to the commit process
+ * Cancel Pending: This cancels a pending transaction by setting the status of the 
+ *                 pending transaction to cancel. If the status = NULL, then cancelling
+ *                 is not supported at all
+ */
+
+select
+	@create_pending_status_id = create_pending_status_id,
+	@sweep_pending_status_id = sweep_pending_status_id,
+	@cancel_pending_status_id = cancel_pending_status_id,
+	@ledger_request_type = name
+from
+	ledger_request_types
+where
+	ledger_request_type_id = @ledger_request_type_id
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Problem finding detail for ledger request type",
+		ledger_request_type_id = @ledger_request_type_id
+	return
+end
+
+if @request_status_id = @create_pending_status_id
+begin
+	select
+		@should_create_pending = "Y"
+end
+if @request_status_id = @sweep_pending_status_id
+begin
+        select
+                @should_sweep_pending = "Y"
+end
+
+/* there could be many statuses that force a cancel, so hardcoding cancel and reject */
+if @request_status_id = @cancel_pending_status_id or (@request_status_id in(select status_id from statuses where name in("Cancelled", "Rejected")))
+begin
+        select
+                @should_cancel_pending = "Y"
+end
+
+if @debug = "Y"
+	select
+		should_create_pending = @should_create_pending,
+		should_sweep_pending = @should_sweep_pending,
+		should_cancel_pending = @should_cancel_pending
+
+
+if (
+	@should_create_pending != "Y" and
+	@should_sweep_pending != "Y" and
+	@should_cancel_pending != "Y"
+)
+begin
+	/* nothing for this proc to do if no action */
+	return
+end
+
+
+	
+
+/* --------------------------------------------------------------------------
+ * STEP: Set the external account for the transaction 
+ * 
+ * The transaction type is the driver on how a transaction should be booked
+ *  create
+ *    deposit   : two records into pending_transactions
+ *      book (+) to using the bo_master_account
+ *      book (+) to using the custodial_account
+ *    withdrawal: two records into pending_transactions
+ *      book (-) to the bo_master_account
+ *      book (-) to the custodial_account
+ *    transfer  : two transactions (NOT YET SUPPORTED)
+ *      book (+) to the bo_master_credit_account
+ *      book (-) to the bo_master_debit_account
+ *    (all):
+ *      check for ledger_request_fees to follow along with request bookings
+ * 
+ *  sweep
+ *      insert pending_transactions for ledger_request_id into account_transactions
+ *      insert ledger_request_id into ledger_request_transactions
+ *      delete pending_transactions for ledger_request_id
+ *  cancel
+ *      tbd
+ */
+select
+	@pending_already_exists = "Y"
+from
+	pending_transactions
+where
+	ledger_request_id = @ledger_request_id
+
+select
+	@ledger_request_fees_count = count(*)
+from
+	ledger_request_fees
+where
+	ledger_request_id = @ledger_request_id
+
+select
+	@ledger_fees_offset_count = count(*)
+from
+	ledger_request_fees
+where
+        ledger_request_id = @ledger_request_id
+and
+	offset_acct_transaction_id != NULL
+	
+	
+
+if @should_create_pending = "Y" and @pending_already_exists != "Y"
+begin
+	select
+		@bo_master_ext_account_id = external_account_id
+	from
+		bo_master_accounts
+	where
+		bo_master_account_id = @bo_master_account_id
+
+	if @ledger_request_type = "Deposit"
+	begin
+		select
+			@transaction_type = "Deposit",
+			@amount1 = abs(@amount),
+			@amount2 = abs(@amount),
+			@external_account_id1=@bo_master_ext_account_id,
+			@external_account_id2=@custodial_account_id,
+			@status="New"
+	end
+	else if @ledger_request_type = "Withdrawal"
+	begin
+                select
+                        @transaction_type = "Withdrawal",
+			@amount1 = abs(@amount) * -1,
+			@amount2 = abs(@amount) * -1,
+                        @external_account_id1=@bo_master_ext_account_id,
+                        @external_account_id2=@custodial_account_id,
+                        @status="New"
+	end
+	else if @ledger_request_type = "Transfer"
+	begin
+		select
+			@transfer_credit_extacct_id = external_account_id
+		from
+			bo_master_accounts
+		where
+			bo_master_account_id = @transfer_credit_account_id
+	
+		select
+			@transfer_debit_extacct_id = external_account_id
+		from
+			bo_master_accounts
+		where
+			bo_master_account_id = @transfer_debit_account_id
+
+		select
+			@transaction_type = "Transfer",
+                        @amount1 = abs(@amount),
+                        @amount2 = abs(@amount) * -1,
+                        @external_account_id1=@transfer_credit_account_id,
+                        @external_account_id2=@transfer_debit_account_id,
+                        @status="New"
+			
+		select
+			status = "Error",
+			msg = "Transfer not net supported for processing",
+			ledger_request_type = @ledger_request_type,
+			ledger_request_id = @ledger_request_id
+		return	
+	end
+	else
+	begin
+		select
+			status = "Error",
+			msg = "Type not net supported for processing",
+			ledger_request_type = @ledger_request_type,
+			ledger_request_id = @ledger_request_id
+		return	
+	end
+
+
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = @status
+	if @status_id = NULL
+	begin
+		select
+			status = "Error",
+			msg = "Unable to find id for status provided",
+			status_provided = @status
+		return
+	end
+	select
+		@transaction_type_id = transaction_type_id
+	from
+		transaction_types
+	where
+		name = @transaction_type
+	if @transaction_type_id = NULL
+	begin
+		select
+			status = "Error",
+			msg = "Problem finding transaction type id for transaction type",
+			transaction_type = @transaction_type
+		return
+	end
+		
+	
+	/* pending_transactions takes an ID from account_transactions
+ 	* because we fully intend to book a pending_transaction into
+ 	* account_transactions. They are essentially one and the same 
+ 	* except that account_transactions do not have a status_id 
+ 	* because they are considered cash
+ 	*/
+	exec
+		j_nextkey
+			"account_transactions",
+				@transaction_id1 output
+	exec
+		j_nextkey
+			"account_transactions",
+				@transaction_id2 output
+
+
+        /* BEGIN TRANSACTION
+         *      FOR BOOKING PENDING TRANSACTIONS
+         */	
+	begin tran
+		insert into
+			pending_transactions(
+				account_transaction_id,
+				entered_by,
+				external_account_id,
+				transaction_type_id,
+				transaction_date,
+				currency_id,
+				amount,
+				create_date,
+				status_id,
+				ledger_request_id,
+				note)
+		values(
+                	@transaction_id1,
+                	@tico_account_id,
+			@external_account_id1,
+                	@transaction_type_id,
+                	@transaction_date,
+                	@product_id,
+                	@amount1,
+                	getdate(),
+                	@status_id,
+                	@ledger_request_id,
+                	@note)
+        	if @@rowcount != 1
+		begin 
+			select
+                        	status = "Error",
+                        	messsage = "Unable to book firstd pending transaction",
+                        	transaction_id = @transaction_id1,
+                        	account = @external_account_id1,
+                        	amount = @amount1,
+                        	product = @product_id,
+                        	transaction_type = @transaction_type,
+                        	transaction_date = @transaction_date,
+                        	transaction_status = @status,
+                        	ledger_request_id = @ledger_request_id
+                	rollback tran
+			return
+		end
+	
+        	insert into
+                	pending_transactions(
+                        	account_transaction_id,
+                        	entered_by,
+                        	external_account_id,
+                        	transaction_type_id,
+                        	transaction_date,
+                        	currency_id,
+                        	amount,
+                        	create_date,
+                        	status_id,
+                        	ledger_request_id,
+                        	note)
+        	values(
+                	@transaction_id2,
+                	@tico_account_id,
+			@external_account_id2,
+                	@transaction_type_id,
+			@transaction_date,
+                	@product_id,
+                	@amount2,
+                	getdate(),
+                	@status_id,
+                	@ledger_request_id,
+                	@note)
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status = "Error",
+                        	messsage = "Unable to book second pending transaction",
+                        	transaction_id = @transaction_id2,
+                        	account = @external_account_id2,
+                        	amount = @amount2,
+                        	product = @product_id,
+                        	transaction_type = @transaction_type,
+                        	transaction_date = @transaction_date,
+                        	transaction_status = @status,
+                        	ledger_request_id = @ledger_request_id
+                	rollback tran
+                	return
+        	end
+		/* process the fees */
+		insert into
+			pending_transactions(
+                        	account_transaction_id,
+                        	entered_by,
+                        	external_account_id,
+                        	transaction_type_id,
+                        	transaction_date,
+                        	currency_id,
+                        	amount,
+                        	create_date,
+                        	status_id,
+                        	ledger_request_id,
+                        	note)
+        	select
+                	account_transaction_id,
+                	@tico_account_id,
+			@external_account_id1, /* the external_account_id1 is the bo_master_ext_account_id. client only */
+                	transaction_type_id,
+			@transaction_date,
+                	product_id,
+                	amount,
+                	getdate(),
+                	@status_id,
+                	@ledger_request_id,
+                	@note
+		from
+        		ledger_request_fees
+		where
+        		ledger_request_id = @ledger_request_id
+        	if @@rowcount != @ledger_request_fees_count
+        	begin
+                	select
+				status = "Error",
+				message = "Unable to book fees associated with ledger request",
+				ledger_request_fees_count = @ledger_request_fees_count,
+				ledger_request_id = @ledger_request_id
+			rollback tran
+			return
+		end
+
+		if @ledger_fees_offset_count > 0
+		begin
+
+                	insert into
+                        	pending_transactions(
+                                	account_transaction_id,
+                                	entered_by,
+                                	external_account_id,
+                                	transaction_type_id,
+                                	transaction_date,
+                                	currency_id,
+                                	amount,
+                                	create_date,
+                                	status_id,
+                                	ledger_request_id,
+                                	note)
+                	select
+                        	offset_acct_transaction_id,
+                        	@tico_account_id,
+                        	@fee_offset_account_id, /* the external_account_id1 is the bo_master_ext_account_id. client only */
+                        	transaction_type_id,
+                        	@transaction_date,
+                        	product_id,
+                        	amount * -1,
+                        	getdate(),
+                        	@status_id,
+                        	@ledger_request_id,
+                        	@note
+                	from
+                        	ledger_request_fees
+                	where
+                        	ledger_request_id = @ledger_request_id
+			and
+				offset_acct_transaction_id != NULL
+                	if @@rowcount != @ledger_fees_offset_count
+                	begin
+                        	select
+                                	status = "Error",
+                                	message = "Unable to book fees associated with ledger request offset",
+                                	ledger_request_fees_count = @ledger_request_fees_count,
+                                	ledger_request_id = @ledger_request_id
+                        	rollback tran
+                        	return
+                	end
+		end
+
+		insert into
+			ledger_request_fees_archive(
+				ledger_request_id,
+				account_transaction_id,
+				transaction_type_id,
+				product_id,
+				amount,
+				archived_by_id,
+				timestamp)
+		select
+			ledger_request_id,
+			account_transaction_id,
+			transaction_type_id,
+			product_id,
+			amount,
+			@tico_account_id,
+			getdate()
+		from
+			ledger_request_fees
+		where
+			ledger_request_id = @ledger_request_id
+		if @@rowcount != @ledger_request_fees_count
+		begin
+                	select
+				status = "Error",
+				message = "Unable to archive fees associated with ledger request",
+				ledger_request_fees_count = @ledger_request_fees_count,
+				ledger_request_id = @ledger_request_id
+			rollback tran
+			return
+		end
+	commit tran
+	
+	select
+		status = "Success",
+		msg = "Booked pending transactions and fees",
+		transaction_id1 = @transaction_id1,
+		transaction_id2 = @transaction_id2,
+		account1 = @external_account_id1,
+		account2 = @external_account_id2,
+		product = @product_id,
+		amount1 = @amount1,
+		amount2 = @amount2,
+		transaction_type = @transaction_type,
+		transaction_date = @transaction_date,
+		transaction_status = @status,
+		ledger_request_id = @ledger_request_id
+
+end /* end of create pending transactions */
+
+
+if @should_sweep_pending = "Y" or @should_cancel_pending = "Y"
+begin
+	create table
+		#pending_transactions (
+			account_transaction_id int,
+			entered_by int,
+			external_account_id int,
+			transaction_type_id int,
+			transaction_date datetime,
+			currency_id int,
+			amount float,
+			create_date datetime,
+			status_id int,
+			ledger_request_id int,
+			note char(255) null
+	)
+	insert into
+		#pending_transactions
+	select
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		create_date,
+		status_id,
+		ledger_request_id,
+		note
+	from
+		pending_transactions
+	where
+		ledger_request_id = @ledger_request_id
+	/* save the rowcount down */
+	select
+		@sweep_count = @@rowcount
+
+	if @sweep_count = 0
+	begin
+		select
+			status = "OK",
+			message = "No pending transactions to sweep or cancel into account transactions for ledger request_id",
+			ledger_request_id = @ledger_request_id,
+			sweep_count = @sweep_count,
+			should_sweep_pending = @should_sweep_pending,	
+			should_cancel_pending = @should_cancel_pending
+		return
+	end
+
+	/* check that we have not already processed this ledger request */
+	select
+		@swept_count = count(*)
+	from
+		pending_transactions_archive
+	where
+		ledger_request_id = @ledger_request_id 
+	if @swept_count > 0 
+	begin
+		select
+			status = "Error",
+			message = "Found archived pending transactions for ledger request. Not processing, check data",
+			ledger_request_id = @ledger_request_id,
+			swept_count = @swept_count
+		return
+	end
+		
+		
+	/* Process a sweep
+         * 	- copy pending_transactions into account_transactions
+         * Both sweep and cancel
+	 * 	- copy pending_transactions into pending_transactions_archive
+	 *      - delete pending_transactions
+         */
+	begin tran
+		if @should_sweep_pending = "Y"
+		begin
+			insert into
+				account_transactions(
+					account_transaction_id,
+					entered_by,
+					external_account_id,
+					transaction_type_id,
+					transaction_date,
+					currency_id,
+					amount,
+					note)
+			select
+                        	account_transaction_id,
+                        	entered_by,                             
+                        	external_account_id,
+                        	transaction_type_id,
+                        	transaction_date,
+                        	currency_id,
+                        	amount, 
+                        	note
+			from 
+				#pending_transactions
+			if @@rowcount != @sweep_count
+			begin
+				select
+					status = "Error",
+					message = "Problem sweeping pending transactions into account transactions",
+					ledger_request_id = @ledger_request_id
+				rollback tran
+				return
+			end
+		end
+			
+
+		insert into
+			pending_transactions_archive(
+				account_transaction_id,
+				entered_by,
+				external_account_id,
+				transaction_type_id,
+				transaction_date,
+				currency_id,
+				amount,
+				create_date,
+				status_id,
+				ledger_request_id,
+				note,
+				archived_at)
+		select
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			create_date,
+			status_id,
+			ledger_request_id,
+			note,
+			getdate()
+		from 
+			#pending_transactions
+		if @@rowcount != @sweep_count
+		begin
+			select
+				status = "Error",
+				message = "Problem sweeping pending transactions into archive",
+				ledger_request_id = @ledger_request_id
+			rollback tran
+			return
+		end
+
+		delete 
+			pending_transactions
+		from
+			pending_transactions a,
+			#pending_transactions b
+		where
+			a.account_transaction_id = b.account_transaction_id
+		if @@rowcount != @sweep_count
+		begin
+			select
+				status = "Error",
+				message = "Problem deleteing pending transaction records after moving to archive",
+				ledger_request_id = @ledger_request_id
+			rollback tran
+			return
+		end
+	commit tran
+end
+
+
+go
+

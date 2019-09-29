@@ -1,0 +1,182 @@
+
+drop procedure
+	mn_maversions
+go
+
+create procedure
+	mn_maversions
+		@login varchar(50),
+		@master_allocation varchar(50)
+as
+
+declare @queued_versions int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"copy_to_queue",
+	"Copy Allocation Version",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"remove_alloc",
+	"Delete Allocation Version",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"inspect",
+	"Inspect Sub Accounts",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_version",
+	"Add MA Version",
+	NULL)
+
+select * from #meta
+
+select
+	new_version = "Create New Version",
+	master_allocation = @master_allocation
+
+
+create table
+	#versions(
+		ma_version_id int,
+		master_allocation varchar(50),
+		version int,
+		sub_accounts int NULL,
+		allocation_mode varchar(50),
+		status varchar(50),
+		creation_date datetime NULL,
+		deployment_date datetime NULL,
+		retirement_date datetime NULL,
+		inspect varchar(50) NULL,
+		remove_alloc varchar(50) NULL,
+		copy_to_queue varchar(50) NULL)
+insert into
+	#versions(
+		ma_version_id,
+		master_allocation,
+		version,
+		sub_accounts,
+		allocation_mode,
+		status,
+		creation_date,
+		deployment_date,
+		retirement_date,
+		inspect)
+select
+	a.ma_version_id,
+	master_allocation = b.name,
+	a.version,
+	sub_accounts = 0,
+	allocation_mode = c.name,
+	status = d.name,
+	a.creation_date,
+	a.deployment_date,
+	a.retirement_date,
+	inspect = "Inspect"
+from
+	ma_versions a,
+	master_allocations b,
+	allocation_modes c,
+	statuses d
+where
+	a.master_allocation_id = b.master_allocation_id
+and
+	a.allocation_mode_id = c.allocation_mode_id
+and
+	a.status_id = d.status_id
+and
+	b.name = @master_allocation
+
+update
+	#versions
+set
+	remove_alloc = "DELETE"
+where
+	status = "Queued"
+
+create table
+	#sub_accounts(
+		ma_version_id int,
+		num_accounts int)
+insert into
+	#sub_accounts
+select
+	ma_version_id,
+	count(external_account_id)
+from
+	sub_accounts
+group by
+	ma_version_id
+
+update
+	#versions
+set
+	a.sub_accounts = b.num_accounts
+from
+	#versions a,
+	#sub_accounts b
+where
+	a.ma_version_id = b.ma_version_id
+	
+	
+select
+	@queued_versions = count(*)
+from
+	#versions
+where
+	status = "Queued"
+if @queued_versions = 0
+	update
+		#versions
+	set
+		copy_to_queue = "Copy To Queue"
+
+select
+	master_allocation,
+	version,
+	/* sub_accounts, */
+	allocation_mode,
+	status,
+	creation_date,
+	deployment_date,
+	retirement_date,
+	inspect,
+	remove_alloc,
+	copy_to_queue
+from
+	#versions
+order by
+	creation_date
+
+
+go

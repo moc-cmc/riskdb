@@ -1,0 +1,116 @@
+use
+	risk_firsel
+go
+
+drop procedure
+	lw_modelflows
+go
+
+create procedure
+	lw_modelflows
+		@login varchar(50),
+		@collection_model varchar(200)
+as
+
+
+declare @collection_model_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"collection_model",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"identifier",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_event",
+	"Edit Collection Event",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_event",
+	"Add Collection Event",
+	NULL)
+
+
+select * from #meta
+
+select
+	@collection_model_id = collection_model_id
+from
+	collection_models
+where
+	name = @collection_model
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Collection model not found",
+		name = @collection_model
+	return
+end
+
+select
+	collection_model = @collection_model,
+	model = @collection_model,
+	add_event = "ADD COLLECTION EVENT"
+
+
+select
+	collection_model = @collection_model,
+	identifier = a.id,
+	jurisdiction = b.name,
+	collection_event = c.name,
+	days_offset = a.offset_days,
+	a.fixed_cost,
+	a.settlement_offset,
+	a.collection_rate,
+	confidence_rating = a.confidence,
+	edit_event = "EDIT"
+from
+	jurisdiction_flows a,
+	jurisdictions b,
+	strategies c
+where
+	a.jurisdiction_id = b.jurisdiction_id
+and
+	a.collection_event_id = c.strategy_id
+and
+	a.collection_model_id = @collection_model_id
+order by
+	b.name,
+	a.offset_days
+	
+
+
+go
+

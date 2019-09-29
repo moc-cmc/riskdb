@@ -1,0 +1,71 @@
+drop procedure
+	r_changeloginstatus
+go
+
+create procedure r_changeloginstatus 
+	@login varchar(25), 
+	@login_name varchar(25), 
+	@status varchar(20) 
+as
+
+declare @status_id int
+
+select
+	@status_id = login_type_id
+from
+	login_types	
+where
+	name=@status
+
+if @@rowcount < 1
+begin
+	select
+		status="Error",
+		msg="Status does not exist",
+		status_name=@status
+
+	return
+end
+
+begin tran
+
+	update
+		tico_account_types
+	set
+		login_type_id=@status_id
+	from
+		tico_account_types a,
+		tico_accounts b
+	where
+		b.login=@login_name
+	and
+		b.account_id=a.tico_account_id
+
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			msg="Status update failed",
+			login=@login_name
+
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Status updated for login",
+	login=@login_name,
+	status_name=@status
+
+exec 
+	r_managelogins @login
+
+return
+
+go
+	
+		

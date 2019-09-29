@@ -1,0 +1,86 @@
+
+if object_id("cm_counterparties") != NULL
+    drop procedure
+        cm_counterparties
+go
+
+create procedure
+	cm_counterparties
+		@login varchar(30)
+as
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"mappings",
+	"Counterparty Mappings",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"delete_counterparty",
+	"Delete Counterparty",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"new_counterparty",
+	"Add Counterparty",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_counterparty",
+	"Edit Counterparty",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"limits",
+	"Counterparty Limits",
+	NULL,
+	NULL)
+
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+select
+	new_counterparty = "ADD NEW COUNTERPARTY"
+
+select
+	counterparty = name,
+	edit_counterparty = "EDIT",
+	delete_counterparty = "DELETE",
+	mappings = "MAPPINGS",
+	limits="LIMITS"
+
+from
+	counterparties
+order by
+	name
+
+
+go

@@ -1,0 +1,120 @@
+
+drop procedure
+	api_addtradetypesymbol
+go
+
+
+create procedure
+	api_addtradetypesymbol
+			@login varchar(25),
+			@name varchar(25),
+			@symbol varchar(25),
+			@source varchar(100)
+as
+
+declare @trade_type_id int
+declare @source_id int
+declare @source_type_id int
+declare @source_type varchar(50)
+
+select
+	@trade_type_id=trade_type_id
+from
+	trade_types
+where
+	name=@name
+
+if(@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Trade Type does not exist",
+		trade_type=@name
+
+	return
+end
+
+select
+	@source_id = source_id,
+	@source_type_id = source_type_id
+from
+	sources
+where
+	name=@source
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Source does not exist",
+		source=@source
+	
+	return
+end
+
+select
+        @source_type=name
+from
+        source_types
+where
+        source_type_id=@source_type_id
+
+if (@source_type="Outbound")
+begin
+        if exists (select 
+                        trade_type_id
+                   from
+                        trade_type_symbols
+                   where
+                        source_id=@source_id
+                   and
+                        trade_type_id=@trade_type_id)
+
+        begin
+                select
+                        status="Error",
+                        msg="Trade Type already has an Outbound Source",
+                        name=@name
+
+                return
+        end
+end
+
+insert into
+	trade_type_symbols (
+		trade_type_id,
+		source_id,
+		symbol )
+values
+	(
+	@trade_type_id,
+	@source_id,
+	@symbol )
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Problem adding Trade Type Symbol",
+		trader_type_symbol=@symbol
+
+	return
+end
+
+select
+	status="OK",
+	msg="Successfully added trade type symbol",
+	trade_type_symbol=@symbol
+
+return
+
+go
+
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Problem adding Trade Type Symbol",
+		trade_type_symbol=@symbol
+

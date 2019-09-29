@@ -1,0 +1,37 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_processwire
+go
+
+create procedure
+	ag_processwire
+		@login varchar(50),
+		@pb_wire_signoff_id int
+as
+
+
+declare @value_date datetime
+
+select
+	@value_date = convert(datetime, convert(date, value_date))
+from
+	pb_wire_signoffs
+where
+	pb_wire_signoff_id = @pb_wire_signoff_id
+
+
+exec
+	ag_processqueuedwire
+		@login = @login,
+		@pb_wire_signoff_id = @pb_wire_signoff_id
+
+
+exec
+	ag_confirmedsignoffs
+		@login = @login,
+		@value_date = @value_date
+
+go

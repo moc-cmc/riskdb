@@ -1,0 +1,1103 @@
+use
+	risk_elviro
+go
+
+drop procedure
+	ag_reconsourceladder
+go
+
+create procedure
+	ag_reconsourceladder
+		@login varchar(50),
+		@value_date datetime
+
+
+as
+
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+declare @fund_id int
+declare @fund varchar(50)
+declare @evaluation_currency_id int
+
+declare @external_account_id int
+declare @account varchar(50)
+declare @previous_date datetime
+
+declare @product_id int
+declare @product varchar(50)
+
+declare @id int
+declare @ids int
+
+declare @p_id int
+declare @p_ids int
+
+declare @begin_balance numeric(30,4)
+declare @maturing_fx numeric(30,4)
+declare @commissions numeric(30,4)
+declare @net_activity numeric(30,4)
+declare @end_balance numeric(30,4)
+declare @settled_fx numeric(30,4)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+/* insert into
+	#meta
+values(
+	"Column Hidden",
+	"account",
+	NULL,
+	NULL) */
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"settle_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"resid_rates",
+	"Resid Rates",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pb_products",
+	"Prime Broker Products",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_queued_settlements",
+	"Tally Queued Settlements",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"begin_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"maturing_Fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"end_balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_activity",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"commissions",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"settled_fx",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	/* @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold", */
+	@error_style = "background:#decafc",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	/* @style = "background:#FFFFFF;border: 1px solid white", */
+	@style = "background:#f0f0f8;color:#666",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id,
+	@fund = name
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found"
+	return
+end
+
+if @value_date = NULL
+	select
+		@value_date = max(balance_date)
+from
+	external_balances
+
+select
+	@previous_date = max(balance_date)
+from
+	external_balances
+where
+	balance_date < @value_date
+
+
+/***************************************************************/
+create table
+	#conversion_rates(
+		product_id int,
+		rate float NULL)
+insert into
+	#conversion_rates(
+		product_id)
+select
+	a.product_id
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+and
+	b.name = "Currency"
+
+update
+	#conversion_rates
+set
+	rate = 1.0
+where
+	product_id = @evaluation_currency_id
+
+/* get the begin rates */
+
+update
+	#conversion_rates
+set
+	a.rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @value_date)
+
+update
+	#conversion_rates
+set
+	a.rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	b.product_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @value_date)
+and
+	a.rate = NULL
+
+/***************************************************************/
+create table
+	#product_balances(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#product_balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	a.external_account_id,
+	b.product_id,
+	a.value_date,
+	sum(a.quantity)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+group by
+	a.external_account_id,
+	b.product_id,
+	a.value_date
+
+	
+insert into
+	#product_balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	a.external_account_id,
+	b.currency_id,
+	a.value_date,
+	sum(a.quantity * a.price * -1.0)
+from
+	trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, a.value_date) = convert(date, @value_date)
+group by
+	a.external_account_id,
+	b.currency_id,
+	a.value_date
+	
+create table
+	#end_balances(
+		external_account_id int,
+		product_id int,
+		balance numeric(30,4))
+insert into
+	#end_balances(
+		external_account_id,
+		product_id,
+		balance)
+select
+	external_account_id,
+	currency_id,
+	sum(amount)
+from
+	account_transactions
+where
+	transaction_date <= convert(date, @value_date)
+group by
+	external_account_id,
+	currency_id
+
+create table
+	#begin_balances(
+		external_account_id int,
+		product_id int,
+		balance numeric(30,4))
+insert into
+	#begin_balances(
+		external_account_id,
+		product_id,
+		balance)
+select
+	external_account_id,
+	currency_id,
+	sum(amount)
+from
+	account_transactions
+where
+	transaction_date < convert(date, @value_date)
+group by
+	external_account_id,
+	currency_id
+
+insert into
+	#product_balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	a.external_account_id,
+	a.currency_id,
+	convert(date, a.transaction_date),
+	sum(a.amount)
+from
+	account_transactions a,
+	account_transaction_trades b
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	convert(date, a.transaction_date) = convert(date, @value_date)
+group by
+	a.external_account_id,
+	a.currency_id,
+	convert(date, a.transaction_date)
+	
+	
+create table
+	#fx_settlement(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#fx_settlement(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	a.external_account_id,
+	a.currency_id,
+	convert(date, a.transaction_date),
+	sum(a.amount)
+from
+	account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	b.name = "FX Settlement"
+and
+	convert(date, a.transaction_date) = convert(date, @value_date)
+group by
+	a.external_account_id,
+	a.currency_id,
+	convert(date, a.transaction_date)
+
+	
+create table
+	#commissions(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#commissions(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	a.external_account_id,
+	a.currency_id,
+	convert(date, a.transaction_date),
+	sum(a.amount)
+from
+	account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	b.name = "Commission"
+and
+	convert(date, a.transaction_date) = convert(date, @value_date)
+group by
+	a.external_account_id,
+	a.currency_id,
+	convert(date, a.transaction_date)
+
+
+create table
+	#balances(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	external_account_id,
+	product_id,
+	value_date,
+	sum(balance)
+from
+	#product_balances
+group by
+	external_account_id,
+	product_id,
+	value_date
+
+create table
+	#source_balances(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		balance numeric(30,4))
+
+insert into
+	#source_balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	external_account_id,
+	product_id,
+	value_date,
+	sum(source_balance)
+from
+	source_ladder
+where
+	convert(date, value_date) = convert(date, @value_date)
+group by
+	external_account_id,
+	product_id,
+	value_date
+
+
+create table
+	#accounts(
+		external_account_id int)
+insert into
+	#accounts(
+		external_account_id)
+select
+	distinct(external_account_id)
+from
+	#balances
+
+insert into
+	#accounts(
+		external_account_id)
+select
+	distinct(external_account_id)
+from
+	#source_balances
+where
+	external_account_id not in(
+		select
+			external_account_id
+		from
+			#accounts)
+	
+
+create table
+	#products(
+		id int identity,
+		product_id int NULL,
+		symbol varchar(50))
+
+insert into
+	#products(
+		product_id,
+		symbol)
+select
+	a.product_id,
+	a.symbol
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+and
+	b.name = "Currency"
+and
+	a.product_id != @evaluation_currency_id
+order by
+	a.symbol
+
+insert into
+	#products(
+		product_id,
+		symbol)
+select
+	product_id,
+	symbol
+from
+	products
+where
+	product_id = @evaluation_currency_id
+
+
+create table
+	#ordered_accounts(
+		id int identity,
+		account varchar(50) NULL,
+		external_account_id int NULL)
+insert into
+	#ordered_accounts(
+		account)
+select
+	a.symbol
+from
+	external_accounts a,
+	#accounts b
+where
+	a.external_account_id = b.external_account_id
+order by
+	a.symbol
+
+
+update
+	#ordered_accounts
+set
+	a.external_account_id = b.external_account_id
+from
+	#ordered_accounts a,
+	external_accounts b
+where
+	a.account = b.symbol
+
+/*  Identify only active products */
+create table
+	#a_products(
+		product_id int)
+create table
+	#active_products(
+		product_id int)
+insert into
+	#a_products
+select
+	product_id
+from
+	#product_balances
+insert into
+	#a_products
+select
+	product_id
+from
+	#end_balances
+insert into
+	#a_products
+select
+	product_id
+from
+	#begin_balances
+insert into
+	#a_products
+select
+	product_id
+from
+	#commissions
+insert into
+	#a_products
+select
+	product_id
+from
+	#balances
+insert into
+	#a_products
+select
+	product_id
+from
+	#source_balances
+	
+insert into
+	#active_products(
+		product_id)
+select
+	distinct(product_id)
+from
+	#a_products
+
+delete
+
+from
+	#products
+where
+	product_id not in(
+		select
+			product_id
+		from
+			#active_products)
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		source varchar(50) NULL,
+		match_factor int NULL,
+		account varchar(50) NULL,
+		acct varchar(50) NULL,
+		external_account_id int NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		begin_balance numeric(30,4) NULL,	
+		begin_balance_diff numeric(30,4) NULL,
+		maturing_fx numeric(30,4) NULL,
+		maturing_fx_diff numeric(30,4) NULL,
+		settled_fx numeric(30,4) NULL,
+		settled_fx_diff numeric(30,4) NULL,
+		commissions numeric(30,4) NULL,
+		commissions_diff numeric(30,4) NULL,
+		net_activity numeric(30,4) NULL,
+		net_activity_diff numeric(30,4) NULL,
+		end_balance numeric(30,4) NULL,
+		end_balance_diff numeric(30,4) NULL)
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#ordered_accounts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#ordered_accounts
+	where
+		id > @id
+
+	select
+		@external_account_id = NULL,
+		@account = NULL,
+		@begin_balance = NULL,
+		@maturing_fx = NULL,
+		@commissions = NULL,
+		@net_activity = NULL,
+		@end_balance = NULL,
+		@settled_fx = NULL
+
+	select
+		@external_account_id = external_account_id,
+		@account = account
+	from
+		#ordered_accounts
+	where
+		id = @id
+
+	insert into
+		#output(
+			style,
+			account)
+	values(
+		@total_style,
+		@account)
+
+	select
+		@p_id = 0
+	select
+		@p_ids = count(*)
+	from
+		#products
+	where
+		id > @p_id
+
+	while @p_ids > 0
+	begin
+		select
+			@p_id = min(id)
+		from
+			#products
+		where
+			id > @p_id
+
+		select
+			@product_id = product_id,
+			@product = symbol
+		from
+			#products
+		where
+			id = @p_id
+
+		select
+			@begin_balance = NULL,
+			@maturing_fx = NULL,
+			@commissions = NULL,
+			@net_activity = NULL,
+			@end_balance = NULL,
+			@settled_fx = NULL
+
+		select
+			@begin_balance = balance
+		from
+			external_balances
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		and
+			convert(date, balance_date) = convert(date, @previous_date)
+		if @begin_balance = NULL
+			select
+				@begin_balance = 0.0
+
+		select
+			@maturing_fx = balance
+		from
+			#source_balances
+		where
+			product_id = @product_id
+		and
+			external_account_id = @external_account_id
+		if @maturing_fx = NULL
+			select
+				@maturing_fx = 0.0
+
+		select
+			@commissions = sum(amount)
+		from
+			external_commissions
+		where
+			product_id = @product_id
+		and
+			external_account_id = @external_account_id
+		if @commissions = NULL
+			select
+				@commissions = 0.0
+
+		select
+			@end_balance = balance
+		from
+			external_balances
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		and
+			convert(date, balance_date) = convert(date, @value_date)
+		if @end_balance = NULL
+			select
+				@end_balance = 0.0
+
+
+		insert into
+			#output(
+				style,
+				source,
+				match_factor,
+				acct,
+				external_account_id,
+				product_id,
+				product,
+				begin_balance,
+				maturing_fx,
+				settled_fx,
+				commissions,
+				net_activity,
+				end_balance)
+		values(
+			@style,
+			"Velocity",
+			-1,
+			@account,
+			@external_account_id,
+			@product_id,
+			@product,
+			@begin_balance,
+			@maturing_fx,
+			0.0,
+			@commissions,
+			0.00,
+			@end_balance)
+				
+		select
+			@begin_balance = NULL,
+			@maturing_fx = NULL,
+			@commissions = NULL,
+			@net_activity = NULL,
+			@end_balance = NULL,
+			@settled_fx = NULL
+
+		select
+			@begin_balance = balance
+		from
+			#begin_balances
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		if @begin_balance = NULL
+			select
+				@begin_balance = 0.0
+
+		select
+			@maturing_fx = balance
+		from
+			#balances
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		if @maturing_fx = NULL
+			select
+				@maturing_fx = 0.0
+
+		select
+			@settled_fx = balance
+		from
+			#fx_settlement
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		if @settled_fx = NULL
+			select
+				@settled_fx = 0.0
+
+		select
+			@commissions = balance
+		from
+			#commissions
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		if @commissions = NULL
+			select
+				@commissions = 0.0
+
+		select
+			@end_balance = balance
+		from
+			#end_balances
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		if @end_balance = NULL
+			select
+				@end_balance = 0.0
+
+		insert into
+			#output(
+				style,
+				source,
+				match_factor,
+				acct,
+				external_account_id,
+				product_id,
+				product,
+				begin_balance,
+				maturing_fx,
+				settled_fx,
+				commissions,
+				net_activity,
+				end_balance)
+		values(
+			@style,
+			@fund,
+			1,
+			@account,
+			@external_account_id,
+			@product_id,
+			@product,
+			@begin_balance,
+			@maturing_fx,
+			@settled_fx,
+			@commissions,
+			0.00,
+			@end_balance)	
+
+		select
+			@p_ids = count(*)
+		from
+			#products
+		where
+			id > @p_id
+
+		select
+			@begin_balance = sum(match_factor * begin_balance)
+		from
+			#output
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		update
+			#output
+		set
+			begin_balance_diff = @begin_balance
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+
+		select
+			@maturing_fx = sum(match_factor * maturing_fx)
+		from
+			#output
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		update
+			#output
+		set
+			maturing_fx_diff = @maturing_fx
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+
+		select
+			@commissions = sum(match_factor * commissions)
+		from
+			#output
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		update
+			#output
+		set
+			commissions_diff = @commissions
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+
+		select
+			@net_activity = sum(match_factor * net_activity)
+		from
+			#output
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		update
+			#output
+		set
+			net_activity_diff = @net_activity
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+
+		select
+			@end_balance = sum(match_factor * end_balance)
+		from
+			#output
+		where
+			external_account_id = @external_account_id
+		and
+			product_id = @product_id
+		update
+			#output
+		set
+			end_balance_diff = @end_balance
+		where
+			product_id = @product_id
+		and
+			external_account_id = @external_account_id
+	end
+	
+
+	select
+		@ids = count(*)
+	from
+		#ordered_accounts
+	where
+		id > @id
+end
+
+
+update
+	#output
+set
+	settled_fx = maturing_fx
+where
+	source = "Velocity"
+and
+	product_id = @evaluation_currency_id
+
+update
+	#output
+set
+	net_activity = settled_fx + commissions
+where
+	product_id = @evaluation_currency_id
+
+update
+	#output
+set
+	style = "background:#decafc"
+where
+	begin_balance_diff > 0.01
+
+update
+	#output
+set
+	style = "background:#decafc"
+where
+	end_balance_diff > 0.01
+
+select
+	style,
+	account,
+	acct,
+	product,
+	source,
+	begin_balance,
+	maturing_fx,
+	settled_fx,
+	commissions,
+	net_activity,
+	end_balance /* ,
+	begin_balance_diff,
+	maturing_fx_diff,
+	commissions_diff,
+	net_activity_diff,
+	end_balance_diff */
+from
+	#output
+order by
+	id
+		
+
+go
+

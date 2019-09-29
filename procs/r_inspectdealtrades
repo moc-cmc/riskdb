@@ -1,0 +1,1727 @@
+drop procedure
+	r_inspectdealtrades
+go
+
+create procedure
+	r_inspectdealtrades
+		@login char(50),
+		@deal_id int
+as
+
+declare @deal_type varchar(50)
+declare @tally_type varchar(50)
+declare @dealt_currency varchar(20)
+declare @counter_currency varchar(20)
+declare @price float
+declare @client_near_price numeric(30,6)
+declare @client_far_price numeric(30,6)
+declare @quantity numeric(30,4)
+declare @client_near_quantity numeric(30,4)
+declare @client_far_quantity numeric(30,4)
+declare @value_date datetime
+declare @fixing_date datetime
+declare @market_price numeric(30,6)
+declare @market_premium_settle datetime
+declare @market_total_premium numeric(30,6)
+declare @market_premium_currency varchar(50)
+declare @market_quantity numeric(30,4)
+declare @market_near_quantity numeric(30,4)
+declare @market_far_quantity numeric(30,4)
+declare @market_near_date datetime
+declare @market_near_fixing_date datetime
+declare @market_far_date datetime
+declare @market_far_fixing_date datetime
+declare @market_near_trade_id int
+declare @market_far_trade_id int
+declare @market_near_price numeric(30,6)
+declare @market_far_price numeric(30,6)
+declare @client_premium_settle datetime
+declare @client_total_premium numeric(30,6)
+declare @client_premium_currency varchar(50)
+declare @client_price numeric(30,6)
+declare @client_user varchar(25)
+declare @client_trade_id int
+declare @client_val_date datetime
+declare @client_fixing_date datetime
+declare @market_val_date datetime
+declare @market_trade_id int
+declare @market_fixing_date datetime
+declare @client_quantity numeric(30,4)
+declare @client_near_trade_id int
+declare @client_far_trade_id int
+declare @client_near_date datetime
+declare @client_near_fixing_date datetime
+declare @client_far_date datetime
+declare @client_far_fixing_date datetime
+declare @client_buys_sells varchar(25)
+declare @buy_sell varchar(10)
+declare @counterparty varchar(50)
+declare @biproduct varchar(50)
+declare @timezone varchar(50)
+declare @expiration datetime
+declare @strike numeric(30,6)
+declare @call_put varchar(5)
+declare @option_settlement datetime
+declare @client_price_format varchar(10)
+declare @client_pct_price numeric(30,8)
+declare @market_price_format varchar(10)
+declare @market_pct_price numeric(30,8)
+declare @spot_reference numeric(30,6)
+declare @net_quantity numeric(30,6)
+declare @deal_contracts int
+declare @price_style varchar(50)
+declare @contract_id int
+
+declare @trade_id int
+declare @trades int
+declare @trade_pl float
+declare @p_l float
+declare @trade_price float
+declare @display_trade_price float
+declare @begin_value float
+declare @begin_date datetime
+declare @end_date datetime
+declare @close_price float
+declare @end_value float
+declare @native_currency_id int
+declare @native_pl float
+declare @pl_date datetime
+declare @iseditable int
+declare @days float
+declare @current_price numeric(30,6)
+declare @spot_price float
+declare @give_product_rate float
+declare @get_product_rate float
+
+
+create table
+	#deal_attributes(
+		deal_id int NULL,
+		deal_type varchar(50) NULL, 
+		timestamp datetime NULL,
+		p_l float NULL,
+		edit_deal varchar(10) NULL,
+		cancel_deal varchar(10) NULL,
+		append_market_fwd varchar(50) NULL,
+		append_client_fwd varchar(50) NULL,
+		tally_type varchar(25) NULL,
+		client_user varchar(50) NULL,
+		client_buys_sells varchar(25) NULL,
+		dealt_currency varchar(10) NULL,
+		counter_currency varchar(10) NULL,
+		quantity numeric(30,4) NULL,
+		price float NULL,
+		value_date datetime NULL,
+		fixing_date datetime NULL,
+		buy_sell varchar(20) NULL,
+		counterparty varchar(50) NULL,
+		near_date datetime NULL,
+		near_fixing_date datetime NULL,
+		near_price float NULL,
+		far_date datetime NULL,
+		far_fixing_date datetime NULL,
+		far_price float NULL,
+		biproduct varchar(25) NULL,
+		timezone varchar(50) NULL,
+		expiration datetime NULL,
+		option_settledate datetime NULL,
+		strike numeric(30,6) NULL,
+		call_put varchar(10) NULL,
+		implied_volatility numeric(30,6) NULL,
+		spot_reference numeric(30,6) NULL,
+		price_format varchar(10) NULL,
+		premium_settledate datetime NULL,
+		client_price float NULL,
+		client_val_date datetime NULL,
+		client_fixing_date datetime NULL,
+		market_price float NULL,
+		market_val_date datetime NULL,
+		market_fixing_date datetime NULL,
+		client_near_price float NULL,
+		market_near_price float NULL,
+		client_far_price float NULL,
+		market_far_price float NULL,
+		client_total_premium numeric(30,6) NULL,
+		client_premium_currency varchar(50) NULL,
+		client_premium_settle datetime NULL,
+		client_format varchar(10) NULL,
+		market_format varchar(10) NULL,
+		market_total_premium numeric(30,6) NULL,
+		market_premium_currency varchar(50) NULL,
+		market_premium_settle datetime NULL,
+		pips_price numeric(30,6) NULL,
+		option_settlement datetime NULL,
+		total_premium numeric(30,6) NULL,
+		premium_currency varchar(50) NULL,
+		premium_settle datetime NULL
+		)
+
+create table
+	#meta(
+		meta_type char(50),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"p_l",
+	"Number",
+	"#,##0.##;<span style='color:red'>-#,##0.##</span>")
+	/* "#,###.00") */
+
+
+insert into #meta values("Column Hidden", "client_user", NULL, NULL)
+insert into #meta values("Column Hidden", "counter_currency", NULL, NULL)
+insert into #meta values("Column Hidden", "dealt_currency", NULL, NULL)
+insert into #meta values("Column Hidden", "tally_type", NULL, NULL) 
+insert into #meta values("Column Hidden", "client_buys_sells", NULL, NULL)
+insert into #meta values("Column Hidden", "quantity", NULL, NULL)
+insert into #meta values("Column Hidden", "price", NULL, NULL)
+insert into #meta values("Column Hidden", "value_date", NULL, NULL)
+insert into #meta values("Column Hidden", "fixing_date", NULL, NULL)
+insert into #meta values("Column Hidden", "buy_sell", NULL, NULL)
+insert into #meta values("Column Hidden", "counterparty", NULL, NULL)
+insert into #meta values("Column Hidden", "near_date", NULL, NULL)
+insert into #meta values("Column Hidden", "near_fixing_date", NULL, NULL)
+insert into #meta values("Column Hidden", "near_price", NULL, NULL)
+insert into #meta values("Column Hidden", "far_date", NULL, NULL)
+insert into #meta values("Column Hidden", "far_fixing_date", NULL, NULL)
+insert into #meta values("Column Hidden", "far_price", NULL, NULL)
+insert into #meta values("Column Hidden", "biproduct", NULL, NULL)
+insert into #meta values("Column Hidden", "expiration", NULL, NULL)
+insert into #meta values("Column Hidden", "option_settledate", NULL, NULL)
+insert into #meta values("Column Hidden", "strike", NULL, NULL)
+insert into #meta values("Column Hidden", "call_put", NULL, NULL)
+insert into #meta values("Column Hidden", "implied_volatility", NULL, NULL)
+insert into #meta values("Column Hidden", "spot_reference", NULL, NULL)
+insert into #meta values("Column Hidden", "price_format", NULL, NULL)
+insert into #meta values("Column Hidden", "total_premium", NULL, NULL)
+insert into #meta values("Column Hidden", "premium_settledate", NULL, NULL)
+insert into #meta values("Column Hidden", "client_price", NULL, NULL)
+insert into #meta values("Column Hidden", "client_val_date", NULL, NULL)
+insert into #meta values("Column Hidden", "client_fixing_date", NULL, NULL)
+insert into #meta values("Column Hidden", "market_price", NULL, NULL)
+insert into #meta values("Column Hidden", "market_val_date", NULL, NULL)
+insert into #meta values("Column Hidden", "market_fixing_date", NULL, NULL)
+insert into #meta values("Column Hidden", "client_near_price", NULL, NULL)
+insert into #meta values("Column Hidden", "market_near_price", NULL, NULL)
+insert into #meta values("Column Hidden", "client_far_price", NULL, NULL)
+insert into #meta values("Column Hidden", "market_far_price", NULL, NULL)
+insert into #meta values("Column Hidden", "client_total_premium", NULL, NULL)
+insert into #meta values("Column Hidden", "client_premium_settle", NULL, NULL)
+insert into #meta values("Column Hidden", "client_format", NULL, NULL)
+insert into #meta values("Column Hidden", "market_format", NULL, NULL)
+insert into #meta values("Column Hidden", "market_total_premium", NULL, NULL)
+insert into #meta values("Column Hidden", "market_premium_settle", NULL, NULL)
+insert into #meta values("Column Hidden", "pips_price", NULL, NULL)
+insert into #meta values("Column Hidden", "option_settlement", NULL, NULL)
+insert into #meta values("Column Hidden", "total_premium", NULL, NULL)
+insert into #meta values("Column Hidden", "premium_settle", NULL, NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"mark_resid",
+	"Mark Trade Resid",
+	"suppressAutoexecute=YES")
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"delink_leg",
+	"Create New Deal From Trade",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_leg",
+	"Edit Deal Leg",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"cancel_deal",
+	"Cancel Deal",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"append_client_fwd",
+	"Append Client Trade To Deal",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"append_market_fwd",
+	"Append Market Trade To Deal",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Group",
+        "section",
+	NULL,
+        NULL)
+
+insert into
+	#meta
+values(
+        "Column Link",
+        "edit_note",
+        "Edit Trade Attributes",
+        NULL)
+
+
+insert into
+	#deal_attributes(
+		deal_id,
+		deal_type,
+		timestamp,
+		edit_deal,
+		cancel_deal)
+select
+	a.deal_id,
+	deal_type = b.name,
+	a.timestamp,
+	edit_deal = "",
+	cancel_deal = NULL
+from
+	deals a,
+	deal_types b
+where
+	a.deal_type_id = b.deal_type_id
+and
+	a.deal_id = @deal_id
+
+select
+	@deal_type = a.name
+from
+	deal_types a,
+	deals b
+where
+	a.deal_type_id = b.deal_type_id
+and
+	b.deal_id = @deal_id
+
+
+select
+	@deal_contracts = count(distinct(contract_id))
+from
+	trades
+where
+	deal_id = @deal_id
+if @deal_contracts = 1
+begin
+	update
+		#deal_attributes
+	set
+		append_market_fwd = "APPEND MARKET",
+		append_client_fwd = "APPEND CLIENT"
+end
+	
+
+if @deal_type in("Client Forward", "Client Forward+")
+begin
+
+	/*	
+	insert into
+		#meta
+	values(
+		"Column Link",
+		"edit_deal",
+		"Edit Client Spot/Fwd",
+		NULL)
+	*/
+
+	select
+		@client_trade_id = min(trade_id)
+	from
+		trades
+	where
+		deal_id = @deal_id
+
+	select
+		@tally_type = a.name,
+		@client_user = c.symbol,
+		@dealt_currency = e.symbol,
+		@counter_currency = f.symbol,
+		@quantity = b.quantity,
+		@price = b.price,
+		@value_date = b.value_date,
+		@fixing_date = b.fixing_date
+	from
+		trade_types a,
+		trades b,
+		traders c,
+		forwards d,
+		products e,
+		products f
+	where
+		a.trade_type_id = b.trade_type_id
+	and
+		b.trader_id = c.trader_id
+	and
+		b.contract_id = d.contract_id
+	and
+		d.product_id = e.product_id
+	and
+		d.currency_id = f.product_id
+	and
+		b.trade_id = @client_trade_id
+
+	if sign(@quantity) < 0
+	begin
+		select
+			@client_buys_sells = "Client Buys"
+	end
+	else
+	begin
+		select
+			@client_buys_sells = "Client Sells"
+	end
+
+	update
+		#deal_attributes
+	set
+		tally_type = @tally_type,
+		client_user = @client_user,
+		client_buys_sells = @client_buys_sells,
+		dealt_currency = @dealt_currency,
+		counter_currency = @counter_currency,
+		quantity = abs(@quantity),
+		price = @price,
+		value_date = @value_date,
+		fixing_date = @fixing_date
+
+	if((select count(*) from trades where deal_id = @deal_id) = 1)
+	begin
+	
+		insert into
+        #meta
+    	values(
+        "Column Link",
+        "edit_deal",
+        "Edit Client Spot/Fwd",
+        NULL)
+
+		update
+			#deal_attributes
+		set
+			edit_deal="EDIT"
+	end
+	
+	
+end
+
+if @deal_type in("Market Forward", "Market Forward+")
+begin
+	/* insert into
+		#meta
+	values(
+		"Column Link",
+		"edit_deal",
+		"Edit Market Spot/Forward",
+		NULL)
+	*/
+
+	select
+		@market_trade_id = min(trade_id)
+	from
+		trades
+	where
+		deal_id = @deal_id
+
+	select
+		@tally_type = a.name,
+		@dealt_currency = e.symbol,
+		@counter_currency = f.symbol,
+		@counterparty = c.name,
+		@quantity = b.quantity,
+		@price = b.price,
+		@value_date = b.value_date,
+		@fixing_date = b.fixing_date
+	from
+		trade_types a,
+		trades b,
+		counterparties c,
+		forwards d,
+		products e,
+		products f
+	where
+		a.trade_type_id = b.trade_type_id
+	and
+		b.counterparty_id = c.counterparty_id
+	and
+		b.contract_id = d.contract_id
+	and
+		d.product_id = e.product_id
+	and
+		d.currency_id = f.product_id
+	and
+		b.trade_id = @market_trade_id
+
+	if sign(@quantity) < 0
+	begin
+		select
+			@buy_sell = "Sell"
+	end
+	else
+	begin
+		select
+			@buy_sell = "Buy"
+	end
+
+	update
+		#deal_attributes
+	set
+		tally_type = @tally_type,
+		counterparty = @counterparty,
+		buy_sell = @buy_sell,
+		dealt_currency = @dealt_currency,
+		counter_currency = @counter_currency,
+		quantity = abs(@quantity),
+		price = @price,
+		value_date = @value_date,
+		fixing_date = @fixing_date
+
+	if((select count(*) from trades where deal_id = @deal_id) = 1)
+    begin
+
+        insert into
+        #meta
+        values(
+        "Column Link",
+        "edit_deal",
+        "Edit Market Spot/Forward",
+        NULL)
+
+        update
+            #deal_attributes
+        set
+            edit_deal="EDIT"
+    end
+
+end
+
+if @deal_type in("Client Swap", "Client Swap+")
+begin
+
+	select
+		@client_near_date = min(value_date),
+		@client_far_date = max(value_date),
+		@client_near_fixing_date = min(fixing_date),
+		@client_far_fixing_date = max(fixing_date)
+	from
+		trades
+	where
+		deal_id = @deal_id
+
+	select
+		@client_near_trade_id = trade_id
+	from
+		trades
+	where
+		value_date = @client_near_date
+	and
+		deal_id = @deal_id
+
+	select
+		@client_far_trade_id = trade_id
+	from
+		trades
+	where
+		value_date = @client_far_date
+	and
+		deal_id = @deal_id
+
+	select
+		@client_user = b.symbol,
+		@dealt_currency = d.symbol,
+		@counter_currency = e.symbol,
+		@client_near_quantity = a.quantity,
+		@client_near_price = a.price
+	from
+		trades a,
+		traders b,
+		forwards c,
+		products d,
+		products e
+	where
+		a.trader_id = b.trader_id
+	and
+		a.contract_id = c.contract_id
+	and
+		c.product_id = d.product_id
+	and
+		c.currency_id = e.product_id
+	and
+		a.trade_id = @client_near_trade_id
+
+	select
+		@client_far_quantity = quantity,
+		@client_far_price = price
+	from
+		trades
+	where
+		trade_id = @client_far_trade_id
+
+
+	if sign(@client_near_quantity) < 0
+	begin
+		select
+			@client_buys_sells = "Client Buys"
+	end
+	else
+	begin
+		select
+			@client_buys_sells = "Client Sells"
+	end
+
+	update
+		#deal_attributes
+	set
+		tally_type = @tally_type,
+		client_user = @client_user,
+		client_buys_sells = @client_buys_sells,
+		dealt_currency = @dealt_currency,
+		counter_currency = @counter_currency,
+		quantity = abs(@client_near_quantity),
+		near_date = @client_near_date,
+		near_fixing_date = @client_near_fixing_date,
+		near_price = @client_near_price,
+		far_date = @client_far_date,
+		far_fixing_date = @client_far_fixing_date,
+		far_price = @client_far_price
+
+	if((select count(*) from trades where deal_id = @deal_id) = 2)
+    begin
+
+        insert into
+        #meta
+        values(
+        "Column Link",
+        "edit_deal",
+        "Edit Client Swap",
+        NULL)
+
+        update
+            #deal_attributes
+        set
+            edit_deal="EDIT"
+    end
+
+end
+
+if @deal_type in("Market Swap", "Market Swap+")
+begin
+
+	select
+		@market_near_date = min(value_date),
+		@market_far_date = max(value_date),
+		@market_near_fixing_date = min(fixing_date),
+		@market_far_fixing_date = max(fixing_date)
+	from
+		trades
+	where
+		deal_id = @deal_id
+
+	select
+		@market_near_trade_id = trade_id
+	from
+		trades
+	where
+		value_date = @market_near_date
+	and
+		deal_id = @deal_id
+
+	select
+		@market_far_trade_id = trade_id
+	from
+		trades
+	where
+		value_date = @market_far_date
+	and
+		deal_id = @deal_id
+
+	select
+		@counterparty = b.name,
+		@dealt_currency = d.symbol,
+		@counter_currency = e.symbol,
+		@market_near_quantity = a.quantity,
+		@market_near_price = a.price
+	from
+		trades a,
+		counterparties b,
+		forwards c,
+		products d,
+		products e
+	where
+		a.counterparty_id = b.counterparty_id
+	and
+		a.contract_id = c.contract_id
+	and
+		c.product_id = d.product_id
+	and
+		c.currency_id = e.product_id
+	and
+		a.trade_id = @market_near_trade_id
+
+	select
+		@market_far_quantity = quantity,
+		@market_far_price = price
+	from
+		trades
+	where
+		trade_id = @market_far_trade_id
+
+
+	if sign(@market_near_quantity) < 0
+	begin
+		select
+			@buy_sell = "Sell"
+	end
+	else
+	begin
+		select
+			@buy_sell = "Buy"
+	end
+
+	update
+		#deal_attributes
+	set
+		tally_type = @tally_type,
+		counterparty = @counterparty,
+		buy_sell = @buy_sell,
+		dealt_currency = @dealt_currency,
+		counter_currency = @counter_currency,
+		quantity = abs(@market_near_quantity),
+		near_date = @market_near_date,
+		near_fixing_date = @market_near_fixing_date,
+		near_price = @market_near_price,
+		far_date = @market_far_date,
+		far_fixing_date = @market_far_fixing_date,
+		far_price = @market_far_price
+
+	if((select count(*) from trades where deal_id = @deal_id) = 2)
+    begin
+
+        insert into
+        #meta
+        values(
+        "Column Link",
+        "edit_deal",
+        "Edit Market Swap",
+        NULL)
+
+        update
+            #deal_attributes
+        set
+            edit_deal="EDIT"
+    end
+
+end
+
+if @deal_type in("Client Option", "Client Option+")
+begin
+	
+	exec
+		r_optiondealattributes
+			@login,
+			@deal_id,
+			@client_user output,
+			@client_buys_sells output,
+			@client_quantity output,
+			@biproduct output,
+			@timezone output,
+			@expiration output,
+			@strike output,
+			@call_put output,
+			@client_price output,
+			@client_total_premium output,
+			@client_premium_currency output,
+			@client_premium_settle output,
+			@counterparty output,
+			@market_quantity output,
+			@buy_sell output,
+			@market_price output,
+			@market_total_premium output,
+			@market_premium_currency output,
+			@market_premium_settle output,
+			@option_settlement output,
+			@client_price_format output,
+			@client_pct_price output,
+			@market_price_format output,
+			@market_pct_price output,
+			@spot_reference output
+
+	if @client_price_format = "Pct"
+		select
+			@client_price = @client_pct_price * 100.00
+
+	update
+		#deal_attributes
+	set
+		client_user = @client_user,
+		client_buys_sells = @client_buys_sells,
+		quantity = abs(@client_quantity),
+		biproduct = @biproduct,
+		timezone = @timezone,
+		expiration = @expiration,
+		option_settledate = @option_settlement,
+		strike = @strike,
+		call_put = @call_put,
+		price = @client_price,
+		total_premium = @client_total_premium,
+		client_premium_currency = @client_premium_currency,
+		premium_settledate = @client_premium_settle,
+		price_format = @client_price_format,
+		spot_reference = @spot_reference,
+		edit_deal = ""
+
+	if((select count(*) from trades where deal_id = @deal_id) = 1)
+    begin
+
+        insert into
+        #meta
+        values(
+        "Column Link",
+        "edit_deal",
+        "Edit Client Option",
+        NULL)
+
+        update
+            #deal_attributes
+        set
+            edit_deal="EDIT"
+    end
+
+	
+end
+
+if @deal_type in("Market Option", "Market Option+")
+begin
+
+	exec
+		r_optiondealattributes
+			@login,
+			@deal_id,
+			@client_user output,
+			@client_buys_sells output,
+			@client_quantity output,
+			@biproduct output,
+			@timezone output,
+			@expiration output,
+			@strike output,
+			@call_put output,
+			@client_price output,
+			@client_total_premium output,
+			@client_premium_currency output,
+			@client_premium_settle output,
+			@counterparty output,
+			@market_quantity output,
+			@buy_sell output,
+			@market_price output,
+			@market_total_premium output,
+			@market_premium_currency output,
+			@market_premium_settle output,
+			@option_settlement output,
+			@client_price_format output,
+			@client_pct_price output,
+			@market_price_format output,
+			@market_pct_price output,
+			@spot_reference output
+
+
+	if @market_price_format = "Pct"
+		select
+			@market_price = @market_pct_price * 100.00
+
+
+	update
+		#deal_attributes
+	set
+		counterparty = @counterparty,
+		buy_sell = @buy_sell,
+		quantity = abs(@market_quantity),
+		biproduct = @biproduct,
+		timezone = @timezone,
+		expiration = @expiration,
+		option_settledate = @option_settlement,
+		strike = @strike,
+		call_put = @call_put,
+		price = @market_price,
+		total_premium = @market_total_premium,
+		premium_currency = @market_premium_currency,
+		premium_settle = @market_premium_settle,
+		price_format = @market_price_format,
+		spot_reference = @spot_reference,
+		edit_deal = ""
+
+	if((select count(*) from trades where deal_id = @deal_id) = 1)
+    begin
+
+        insert into
+        #meta
+        values(
+        "Column Link",
+        "edit_deal",
+        "Edit Market Option",
+        NULL)
+
+        update
+            #deal_attributes
+        set
+            edit_deal="EDIT"
+    end
+
+end
+
+if @deal_type in("B2B Forward", "B2B Forward+")
+begin
+
+	select
+		@client_trade_id = min(a.trade_id)
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.external_account_type_id = c.external_account_type_id
+	and
+		a.deal_id = @deal_id
+	and
+		c.name = "Client"
+
+	select
+		@market_trade_id = min(a.trade_id)
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.external_account_type_id = c.external_account_type_id
+	and
+		a.deal_id = @deal_id
+	and
+		c.name = "Counterparty"
+
+	select
+		@tally_type = a.name,
+		@client_user = c.symbol,
+		@dealt_currency = e.symbol,
+		@counter_currency = f.symbol,
+		@quantity = b.quantity,
+		@client_price = b.price,
+		@client_val_date = b.value_date,
+		@client_fixing_date = b.fixing_date
+	from
+		trade_types a,
+		trades b,
+		traders c,
+		forwards d,
+		products e,
+		products f
+	where
+		a.trade_type_id = b.trade_type_id
+	and
+		b.trader_id = c.trader_id
+	and
+		b.contract_id = d.contract_id
+	and
+		d.product_id = e.product_id
+	and
+		d.currency_id = f.product_id
+	and
+		b.trade_id = @client_trade_id
+
+	if sign(@quantity) < 0
+	begin
+		select
+			@client_buys_sells = "Client Buys"
+	end
+	else
+	begin
+		select
+			@client_buys_sells = "Client Sells"
+	end
+
+	select
+		@counterparty = a.name,
+		@market_price = b.price,
+		@market_val_date = b.value_date,
+		@market_fixing_date = b.fixing_date
+	from
+		counterparties a,
+		trades b
+	where
+		a.counterparty_id = b.counterparty_id
+	and
+		b.trade_id = @market_trade_id
+
+	update
+		#deal_attributes
+	set
+		tally_type = @tally_type,
+		client_user = @client_user,
+		client_buys_sells = @client_buys_sells,
+		dealt_currency = @dealt_currency,
+		counter_currency = @counter_currency,
+		quantity = abs(@quantity),
+		client_price = @client_price,
+		client_val_date = @client_val_date,
+		client_fixing_date = @client_fixing_date,
+		counterparty = @counterparty,
+		market_price = @market_price,
+		market_val_date = @market_val_date,
+		market_fixing_date = @market_fixing_date
+
+	if((select count(*) from trades where deal_id = @deal_id) = 2)
+    begin
+
+        insert into
+        #meta
+        values(
+        "Column Link",
+        "edit_deal",
+        "Edit B2B Forward",
+        NULL)
+
+        update
+            #deal_attributes
+        set
+            edit_deal="EDIT"
+    end
+
+end
+
+
+if @deal_type in("B2B Swap", "B2B Swap+")
+begin
+
+	select
+		@client_near_date = min(a.value_date),
+		@client_far_date = max(a.value_date),
+		@client_near_fixing_date = min(a.fixing_date),
+		@client_far_fixing_date = max(a.fixing_date)
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.external_account_type_id = c.external_account_type_id
+	and
+		c.name = "Client"
+	and
+		a.deal_id = @deal_id
+
+	select
+		@client_near_trade_id = a.trade_id
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.external_account_type_id = c.external_account_type_id
+	and
+		c.name = "Client"
+	and
+		a.value_date = @client_near_date
+	and
+		a.deal_id = @deal_id
+
+	select
+		@client_far_trade_id = a.trade_id
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.external_account_type_id = c.external_account_type_id
+	and
+		c.name = "Client"
+	and
+		a.value_date = @client_far_date
+	and
+		a.deal_id = @deal_id
+
+	select
+		@market_near_date = min(a.value_date),
+		@market_far_date = max(a.value_date),
+		@market_near_fixing_date = min(a.fixing_date),
+		@market_far_fixing_date = max(a.fixing_date)
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.external_account_type_id = c.external_account_type_id
+	and
+		c.name = "Counterparty"
+	and
+		a.deal_id = @deal_id
+
+	select
+		@market_near_trade_id = a.trade_id
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.external_account_type_id = c.external_account_type_id
+	and
+		c.name = "Counterparty"
+	and
+		a.value_date = @market_near_date
+	and
+		a.deal_id = @deal_id
+
+	select
+		@market_far_trade_id = a.trade_id
+	from
+		trades a,
+		external_accounts b,
+		external_account_types c
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.external_account_type_id = c.external_account_type_id
+	and
+		c.name = "Counterparty"
+	and
+		a.value_date = @market_far_date
+	and
+		a.deal_id = @deal_id
+
+	select
+		@client_user = b.symbol,
+		@dealt_currency = d.symbol,
+		@counter_currency = e.symbol,
+		@client_near_quantity = a.quantity,
+		@client_near_price = a.price
+	from
+		trades a,
+		traders b,
+		forwards c,
+		products d,
+		products e
+	where
+		a.trader_id = b.trader_id
+	and
+		a.contract_id = c.contract_id
+	and
+		c.product_id = d.product_id
+	and
+		c.currency_id = e.product_id
+	and
+		a.trade_id = @client_near_trade_id
+
+	select
+		@client_far_quantity = quantity,
+		@client_far_price = price
+	from
+		trades
+	where
+		trade_id = @client_far_trade_id
+
+
+	if sign(@client_near_quantity) < 0
+	begin
+		select
+			@client_buys_sells = "Client Buys"
+	end
+	else
+	begin
+		select
+			@client_buys_sells = "Client Sells"
+	end
+
+	select
+		@market_near_price = a.price,
+		@counterparty = b.name
+	from
+		trades a,
+		counterparties b
+	where
+		a.counterparty_id = b.counterparty_id
+	and
+		a.trade_id = @market_near_trade_id
+
+	select
+		@market_far_price = price
+	from
+		trades
+	where
+		trade_id = @market_far_trade_id
+
+	update
+		#deal_attributes
+	set
+		tally_type = @tally_type,
+		client_user = @client_user,
+		client_buys_sells = @client_buys_sells,
+		dealt_currency = @dealt_currency,
+		counter_currency = @counter_currency,
+		quantity = abs(@client_near_quantity),
+		near_date = @client_near_date,
+		near_fixing_date = @client_near_fixing_date,
+		client_near_price = @client_near_price,
+		far_date = @client_far_date,
+		far_fixing_date = @client_far_fixing_date,
+		client_far_price = @client_far_price,
+		market_near_price = @market_near_price,
+		market_far_price = @market_far_price,
+		counterparty = @counterparty
+
+
+	if((select count(*) from trades where deal_id = @deal_id) = 4)
+    begin
+
+        insert into
+        #meta
+        values(
+        "Column Link",
+        "edit_deal",
+        "Edit B2B Swap",
+        NULL)
+
+        update
+            #deal_attributes
+        set
+            edit_deal="EDIT"
+    end
+
+end
+
+if @deal_type in("B2B Option", "B2B Option+")
+begin
+
+	exec
+		r_optiondealattributes
+			@login,
+			@deal_id,
+			@client_user output,
+			@client_buys_sells output,
+			@client_quantity output,
+			@biproduct output,
+			@timezone output,
+			@expiration output,
+			@strike output,
+			@call_put output,
+			@client_price output,
+			@client_total_premium output,
+			@client_premium_currency output,
+			@client_premium_settle output,
+			@counterparty output,
+			@market_quantity output,
+			@buy_sell output,
+			@market_price output,
+			@market_total_premium output,
+			@market_premium_currency output,
+			@market_premium_settle output,
+			@option_settlement output,
+			@client_price_format output,
+			@client_pct_price output,
+			@market_price_format output,
+			@market_pct_price output,
+			@spot_reference output
+
+	if @client_price_format = "Pct"
+		select
+			@client_price = @client_pct_price * 100.00
+
+	if @market_price_format = "Pct"
+		select
+			@market_price = @market_pct_price * 100.00
+
+	update
+		#deal_attributes
+	set
+		client_user = @client_user,
+		client_buys_sells = @client_buys_sells,
+		counterparty = @counterparty,
+		quantity = abs(@market_quantity),
+		biproduct = @biproduct,
+		timezone = @timezone,
+		expiration = @expiration,
+		strike = @strike,
+		call_put = @call_put,
+		client_price = @client_price,
+		client_total_premium = @client_total_premium,
+		client_premium_currency = @client_premium_currency,
+		client_premium_settle = @client_premium_settle,
+		market_price = @market_price,
+		market_total_premium = @market_total_premium,
+		market_premium_currency = @market_premium_currency,
+		market_premium_settle = @market_premium_settle,
+		option_settlement = @option_settlement,
+		client_format = @client_price_format,
+		market_format = @market_price_format,
+		spot_reference = @spot_reference
+
+	if((select count(*) from trades where deal_id = @deal_id) = 2)
+    begin
+
+        insert into
+        #meta
+        values(
+        "Column Link",
+        "edit_deal",
+        "Edit B2B Option",
+        NULL)
+
+        update
+            #deal_attributes
+        set
+            edit_deal="EDIT"
+    end
+
+end
+
+update
+	#deal_attributes
+set
+	a.price = 1.0 / a.price,
+	a.near_price = 1.0 / a.near_price,
+	a.far_price = 1.0 / a.far_price,
+	a.client_price = 1.0 / a.client_price,
+	a.market_price = 1.0 / a.market_price,
+	a.client_near_price = 1.0 / a.client_near_price,
+	a.market_near_price = 1.0 / a.market_near_price,
+	a.client_far_price = 1.0 / a.client_far_price,
+	a.market_far_price = 1.0 / a.market_far_price
+from
+	#deal_attributes a,
+	products b,
+	products c,
+	forwards d,
+	contract_price_styles e,
+	price_styles f
+where
+	a.dealt_currency = b.symbol
+and
+	a.counter_currency = c.symbol
+and
+	b.product_id = d.product_id
+and
+	c.product_id = d.currency_id
+and
+	d.contract_id = e.contract_id
+and
+	e.price_style_id = f.price_style_id
+and
+	f.name = "Inverted"
+	
+
+/* Display the individual legs of the deal */
+create table
+	#legs(
+		style varchar(50) NULL,
+		trade_id int,
+		deal_id int,
+		trade_date datetime,
+		entered_by varchar(50),
+		trade_type varchar(50),
+		external_account varchar(50),
+		counterparty varchar(50),
+		quantity numeric(30,4),
+		symbol varchar(50),
+		value_date datetime,
+		fixing_date datetime NULL,
+		price numeric(30,6),
+		premium float NULL,
+		premium_ccy varchar(50) NULL,
+		trader varchar(20),
+		broker varchar(25),
+		sales_code varchar(25) NULL,
+		forward_price numeric(30,6) NULL,
+		p_l float NULL,
+		edit_leg varchar(25) NULL,
+		delink_leg varchar(20) NULL,
+		mark_resid varchar(20) NULL)
+insert into
+	#legs	
+select
+	style = NULL,
+	a.trade_id,
+	a.deal_id,
+	a.trade_date,
+	entered_by = b.login,
+	trade_type = c.name,
+	external_account = d.symbol,
+	counterparty = e.name,
+	a.quantity,
+	f.symbol,
+	a.value_date,
+	a.fixing_date,
+	a.price,
+	premium = NULL,
+	premium_ccy = NULL,
+	trader= g.symbol,
+	broker = h.symbol,
+	sales_code = i.name,
+	foward_price = NULL,
+	p_l = NULL,
+	edit_leg = "EDIT",
+	delink_leg = "DELINK",
+	mark_resid = "Mark Resid"
+from
+	trades a,
+	tico_accounts b,
+	trade_types c,
+	external_accounts d,
+	counterparties e,
+	contracts f,
+	traders g,
+	brokers h,
+	sales_codes i
+where
+	a.user_id = b.account_id
+and
+	a.trade_type_id = c.trade_type_id
+and
+	a.external_account_id = d.external_account_id
+and
+	a.counterparty_id = e.counterparty_id
+and
+	a.contract_id = f.contract_id
+and
+	a.trader_id = g.trader_id
+and
+	a.broker_id = h.broker_id
+and
+	a.sales_code_id = i.sales_code_id
+and
+	a.deal_id = @deal_id
+
+update
+	#legs
+set
+	a.premium = c.amount,
+	a.premium_ccy = d.symbol
+from
+	#legs a,
+	account_transaction_trades b,
+	account_transactions c,
+	products d
+where
+	a.trade_id = b.trade_id
+and
+	b.account_transaction_id = c.account_transaction_id
+and
+	c.currency_id = d.product_id
+
+update
+	#legs
+set
+	a.style = "background:#CCFF99"
+from
+	#legs a,
+	trades b,
+	external_accounts c,
+	external_account_types d
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = c.external_account_id
+and
+	c.external_account_type_id = d.external_account_type_id
+and
+	d.name = "Client"
+
+update
+	#legs
+set
+	a.style = "background:#FFFF99"
+from
+	#legs a,
+	trades b,
+	external_accounts c,
+	external_account_types d
+where
+	a.trade_id = b.trade_id
+and
+	b.external_account_id = c.external_account_id
+and
+	c.external_account_type_id = d.external_account_type_id
+and
+	d.name = "Counterparty"
+
+select
+	@pl_date = timestamp
+from
+	deals
+where
+	deal_id = @deal_id
+
+
+exec
+	r_daterangefordate
+		@pl_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@trade_id = 0
+select
+	@trades = count(*)
+from
+	trades
+where
+	deal_id = @deal_id
+and
+	trade_id > @trade_id
+
+while @trades > 0
+begin
+	select
+		@trade_id = min(trade_id)
+	from
+		trades
+	where
+		deal_id = @deal_id
+	and
+		trade_id > @trade_id
+
+	select
+		@quantity = quantity,
+		@trade_price = price,
+		@contract_id = contract_id,
+		@value_date = value_date
+	from
+		trades
+	where
+		trade_id = @trade_id
+
+
+	select
+		@price_style = NULL
+	select
+		@price_style = a.name
+	from
+		price_styles a,
+		contract_price_styles b
+	where
+		a.price_style_id = b.price_style_id
+	and
+		b.contract_id = @contract_id
+
+	if @price_style = NULL
+		select
+			@price_style = "Standard"
+
+	if @price_style = "Inverted"
+		select
+			@display_trade_price = 1.0 / @trade_price
+	else
+		select
+			@display_trade_price = @trade_price
+
+
+	select
+		@begin_value = NULL,
+		@close_price = NULL,
+		@end_value = NULL,
+		@p_l = NULL,
+		@native_currency_id = NULL,
+		@native_pl = NULL
+
+	select
+		@quantity = convert(numeric(30,2), @quantity)
+	exec
+		zr_tradeplfordate
+			"Intraday",
+			@trade_id,
+			@quantity,
+			@trade_price,
+			@begin_value output,
+			@end_date,
+			@close_price output,
+			@end_value output,
+			@p_l output,
+			@native_currency_id output,
+			@native_pl output
+
+	exec
+	        r_forwardpriceasof
+                	@contract_id,
+                	@end_date,
+                	@value_date,
+                	@days output,
+                	@spot_price output,
+                	@current_price output,
+                	@give_product_rate output,
+                	@get_product_rate output
+
+		
+	update
+		#legs
+	set
+		p_l = @p_l,
+		price = @display_trade_price,
+		forward_price = @current_price
+	where
+		trade_id = @trade_id
+
+	select
+		@trades = count(*)
+	from
+		trades
+	where
+		deal_id = @deal_id
+	and
+		trade_id > @trade_id
+end
+
+select
+	@p_l = sum(p_l)
+from
+	#legs
+
+update
+	#deal_attributes
+set
+	p_l = @p_l
+
+
+
+select
+	#meta.meta_type, #meta.name, #meta.action, #meta.value
+from
+	#meta
+
+exec
+	@iseditable = r_isdealeditable @deal_id
+
+if (@iseditable != 0)
+begin
+	update 
+		#deal_attributes
+	set
+		edit_deal=NULL,
+		cancel_deal=NULL
+end
+	
+
+
+select
+	#deal_attributes.deal_id, #deal_attributes.deal_type, #deal_attributes.timestamp, #deal_attributes.p_l, #deal_attributes.edit_deal, #deal_attributes.append_market_fwd, #deal_attributes.append_client_fwd, #deal_attributes.tally_type, #deal_attributes.client_user, #deal_attributes.client_buys_sells, #deal_attributes.dealt_currency, #deal_attributes.counter_currency, #deal_attributes.quantity, #deal_attributes.price, #deal_attributes.value_date, #deal_attributes.fixing_date, #deal_attributes.buy_sell, #deal_attributes.counterparty, #deal_attributes.near_date, #deal_attributes.near_fixing_date, #deal_attributes.near_price, #deal_attributes.far_date, #deal_attributes.far_fixing_date, #deal_attributes.far_price, #deal_attributes.biproduct, #deal_attributes.timezone, #deal_attributes.expiration, #deal_attributes.option_settledate, #deal_attributes.strike, #deal_attributes.call_put, #deal_attributes.implied_volatility, #deal_attributes.spot_reference, #deal_attributes.price_format, #deal_attributes.premium_settledate, #deal_attributes.client_price, #deal_attributes.client_val_date, #deal_attributes.client_fixing_date, #deal_attributes.market_price, #deal_attributes.market_val_date, #deal_attributes.market_fixing_date, #deal_attributes.client_near_price, #deal_attributes.market_near_price, #deal_attributes.client_far_price, #deal_attributes.market_far_price, #deal_attributes.client_total_premium, #deal_attributes.client_premium_currency, #deal_attributes.client_premium_settle, #deal_attributes.client_format, #deal_attributes.market_format, #deal_attributes.market_total_premium, #deal_attributes.market_premium_currency, #deal_attributes.market_premium_settle, #deal_attributes.pips_price, #deal_attributes.option_settlement, #deal_attributes.total_premium, #deal_attributes.premium_currency, #deal_attributes.premium_settle
+from
+	#deal_attributes
+
+delete
+
+from
+	#meta
+where
+	meta_type = "Column Hidden"
+
+
+select
+	#meta.meta_type, #meta.name, #meta.action, #meta.value
+from
+	#meta
+
+if (@iseditable != 0)
+begin
+	update
+		#legs
+	set
+		edit_leg=NULL
+end
+
+select
+	trade_id,
+	deal_id,
+	edit_leg,
+	trade_date,
+	trade_type,
+	external_account,
+	counterparty,
+	quantity,
+	symbol,
+	value_date = convert(char(11), value_date, 1),
+	fixing_date = convert(char(11), fixing_date, 1),
+	price,
+	premium,
+	premium_ccy,
+	trader,
+	broker,
+	sales_code,
+	forward_price,
+	p_l,
+	delink_leg,
+	mark_resid
+from
+	#legs
+
+
+create table
+	#trade_attributes(
+		trade_id int,
+		deal_id int,
+		mid_mark float NULL,
+		note varchar(255) NULL)
+
+insert into
+	#trade_attributes 
+select
+	a.trade_id,
+	b.deal_id,
+	a.mid_mark,
+	a.note
+from
+	trade_attributes a,
+	#legs b
+where
+	a.trade_id = b.trade_id
+if @@rowcount != 0
+begin
+	select
+		section = "Notes",
+		trade_id,
+		mid_mark,
+		note,
+		edit_note = "EDIT"
+	from
+		#trade_attributes
+end
+
+
+go

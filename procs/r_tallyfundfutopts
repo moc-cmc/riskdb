@@ -1,0 +1,43 @@
+if object_id("r_tallyfundfutopts") != NULL
+    drop procedure
+	r_tallyfundfutopts
+go
+ 
+create procedure
+	r_tallyfundfutopts
+		@login char(25),
+		@buy_sell char(5),
+		@quantity numeric(30,4),
+		@expiration_symbol char(25),
+		@strike varchar(50),
+		@put_call char(1),
+		@price char(100),
+		@vol float
+as
+
+declare @deal_id int
+declare @trade_id int
+
+declare @api_price float
+
+select
+	@api_price = convert(float, @price)
+
+exec
+	api_tallymarketfutoption
+		@login = @login,
+		@buy_sell = @buy_sell,
+		@quantity = @quantity,
+		@expiration_symbol = @expiration_symbol,
+		@strike = @strike,
+		@put_call = @put_call,
+		@price = @api_price,
+		@vol = @vol,
+		@deal_id = @deal_id output,
+		@trade_id = @trade_id output
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+go

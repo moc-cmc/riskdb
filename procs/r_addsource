@@ -1,0 +1,81 @@
+drop procedure
+	r_addsource
+go
+
+create procedure
+	r_addsource
+		@login varchar(50),
+		@source varchar(100),
+		@source_type varchar(50)
+
+as
+
+declare @dupe_source varchar(10)
+declare @source_type_id int
+declare @status_id int
+declare @source_id int
+
+select
+	@dupe_source = "Y"
+from
+	sources
+where
+	name = @source
+
+if @dupe_source = "Y"
+begin
+	select
+		msg = "Source has already been created. Please use a different name",
+		source = @source
+	return
+end
+else
+begin
+
+	select
+		@source_type_id = source_type_id
+	from
+		source_types
+	where
+		name = @source_type
+
+	select
+		@status_id = status_id
+	from	
+		statuses
+	where
+		name = "New"
+	if @status_id = NULL
+	begin
+        	exec
+                	j_nextkey
+                        	"statuses",
+                        	@status_id output
+
+        	insert into
+                	statuses
+        	values(
+                	@status_id,
+                	"New")
+	end
+
+	exec
+        	j_nextkey
+                	"sources",
+                	@source_id output
+
+	insert into
+        	sources
+	values(
+        	@source_id,
+		@source,
+        	@status_id,
+        	@source_type_id)
+	
+	exec
+        	r_viewsources
+                	@login
+end
+
+
+go

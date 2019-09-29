@@ -1,0 +1,93 @@
+use
+	risk_tradenext_test
+go
+
+drop procedure
+	cbo_editacctsettlerate
+go
+
+create procedure
+	cbo_editacctsettlerate
+		@login varchar(50),
+		@account varchar(50),
+		@currency varchar(50),
+		@closing_date datetime,
+		@closing_rate float=NULL,
+		@roll_date datetime=NULL,
+		@roll_rate float=NULL
+as
+
+declare @external_account_id int
+declare @product_id int
+
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+
+select
+	@closing_date = convert(datetime, convert(date, @closing_date))
+
+update
+	ext_account_settle_rates
+set
+	closing_rate = @closing_rate,
+	roll_date = @roll_date,
+	roll_rate = @roll_rate
+where
+	external_account_id = @external_account_id
+and
+	product_id = @product_id
+and
+	convert(date, closing_date) = convert(date, @closing_date)
+if @@rowcount = 0
+begin
+	insert into
+		ext_account_settle_rates
+	values(
+		@external_account_id,
+		@product_id,
+		@closing_date,
+		@closing_rate,
+		@roll_date,
+		@roll_rate)
+end
+
+
+exec
+	cbo_settlecash
+		@login,
+		@closing_date
+
+
+
+
+go

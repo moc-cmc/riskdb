@@ -1,0 +1,104 @@
+
+if object_id("r_importproductratepoint") != NULL
+    drop procedure
+        r_importproductratepoint
+go
+
+create procedure
+	r_importproductratepoint
+		@identifier varchar(30),
+		@source varchar(30),
+		@days float,
+		@rate float
+as
+
+declare @product_rate_id int
+declare @source_id int
+declare @status_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = "Active"
+	if @status_id = NULL
+	begin
+		exec
+			j_nextkey
+				"statuses",
+				@status_id output
+		insert into
+			statuses
+		values(
+			@status_id,
+			"Active")
+	end
+
+	exec
+		j_nextkey
+			"sources",
+			@source_id output
+
+	declare @internal_source_type_id int
+	select
+		@internal_source_type_id = source_type_id
+	from
+		source_types
+	where
+		name = "Internal"
+
+	insert into
+		sources(source_id,
+			name,
+			status_id,
+			source_type_id)
+	values(
+		@source_id,
+		@source,
+		@status_id,
+		@internal_source_type_id)
+end
+
+select
+	@product_rate_id = product_rate_id
+from
+	product_rate_symbols
+where
+	source_id = @source_id
+and
+	symbol = @identifier
+if @product_rate_id = NULL
+begin
+	/* Ignore */
+	return
+end
+
+update
+	product_rate_points
+set
+	rate = @rate
+where
+	days = @days
+and
+	product_rate_id = @product_rate_id
+if @@rowcount = 0
+begin
+	insert into
+		product_rate_points
+	values(
+		@product_rate_id,
+		@days,
+		@rate)
+end
+
+
+go

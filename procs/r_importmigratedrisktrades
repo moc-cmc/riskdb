@@ -1,0 +1,342 @@
+
+drop procedure
+	r_importmigratedrisktrades
+go
+
+
+create procedure	
+	r_importmigratedrisktrades
+        	@trade_id int,
+        	@deal_id int,
+        	@user_login varchar(50),
+        	@trade_type varchar(25)=NULL,
+        	@internal_account varchar(50), 
+        	@external_account varchar(50), 
+        	@external_account_type varchar(50),
+        	/* @ext_account_lim numeric(30, 4),  */
+        	@ext_account_limit varchar(30),
+        	@counterparty varchar(50)=NULL,
+        	@quantity numeric(30, 4), 
+        	@contract varchar(30), 
+        	@value_date datetime, 
+        	@fixing_date datetime=NULL,
+        	@price float, 
+        	@trade_date datetime,
+        	@trader varchar(50),
+        	@strategy varchar(50),
+        	@status varchar(50),
+        	@broker varchar(50),
+		@sales_code varchar(20),
+        	@trade_identifier varchar(100)=NULL,
+		@deal_identifier varchar(100)=NULL,
+        	@spot_reference float=NULL,
+        	@trade_notification_id int=NULL,
+        	@trade_notification_source varchar(50)=NULL,
+        	@trade_notification_status varchar(50)=NULL,
+        	@capture_date datetime=NULL,
+        	@notify_date datetime=NULL,
+        	@error varchar(50)=NULL
+	
+
+as
+
+
+declare @login varchar(50)
+declare @source varchar(20)
+declare @source_id int
+declare @ext_account_lim numeric(30,4)
+
+
+if @quantity in(0, -0)
+begin
+	select 
+		status = "PASS",
+		msg ="@quantity = 0",
+		trade_id=@trade_id
+	return
+end
+
+if @trader = "CFS Internal" and @quantity != 0
+	select
+                @trader = "CFS-GROUP",
+		@external_account = "BAML FXPB"
+
+if @trader = "CFS-API"
+	select
+		@trader = "CFS-GROUP",
+                @external_account = "BAML FXPB"
+
+if @external_account = "BAPB Rolls"
+	select
+		@trader = "BAPB Rolls",
+                @external_account = "BAML FXPB"
+
+if @external_account = "BofA Residual"
+	select
+		@trader = "BofAResidual",
+		@external_account = "BAML FXPB"
+
+
+
+        	
+
+select
+	@ext_account_lim = convert(numeric(30,4), @ext_account_limit)
+
+select @source = "Cognotec"
+select @login = "chriso"
+
+if @trade_identifier = NULL
+	select
+		@trade_identifier = convert(varchar(30), @trade_id)
+
+if @trade_type = "S"
+	select @trade_type = "Spot"
+if @trade_type = "F"
+	select @trade_type = "Forward"
+if @trade_type = "1"
+	select @trade_type = "Swap Near"
+if @trade_type = "2"
+	select @trade_type = "Swap Far"
+if @trade_type = NULL
+	select @trade_type = "Spot"
+
+if @broker='CANTOR'
+	select @broker = 'MPT Tally'
+
+
+
+if not exists(select trade_type_id from trade_types where name = @trade_type)
+begin	
+               select  
+                        id = -1,
+                        error = "ERROR: trade_type not recognized: ",
+                        trade_type = @trade_type
+                return
+
+
+end
+
+if not exists(select internal_account_id from internal_accounts where symbol = @internal_account)
+begin
+                select
+                        id = -1,
+                        error = "ERROR: internal_account needs to be Clinet or Countperparty ",
+                        external_account = @external_account
+                return
+
+end
+
+
+
+
+if @external_account_type not in("Client", "Counterparty")
+begin
+       /* extenrnal_account id needs to be Clinet or Countperparty */
+        select 
+               id = -1,
+               error = "ERROR: extenrnal_account needs to be Clinet or Countperparty ",
+               external_account = @external_account
+        return
+
+end
+
+if not exists(select contract_id  from contracts where symbol = @contract)
+begin
+
+	/* do not create yet
+	select "ERROR: contract --> ", @contract
+	return */
+
+	/* create contract */
+	declare @evaluation_currency varchar(50)
+	declare @fund_id int
+	declare @dealt_currency char(3)
+        declare @counter_currency char(3)
+
+	select 
+		@dealt_currency = substring(@contract, 1, 3)
+	select 
+		@counter_currency = substring(@contract, 4, 6)
+
+
+	exec
+        r_defaultfundforlogin
+                @login,
+                @fund_id output
+
+	select
+        	@evaluation_currency = a.symbol
+	from
+        	products a,
+        	funds b
+	where
+        	a.product_id = b.evaluation_currency_id
+  
+	exec r_addbatchfwdsubscription
+			@login,
+			@contract,
+			@dealt_currency,
+			@counter_currency,
+			@evaluation_currency 
+
+	if not exists (select contract_id from contracts where symbol=@contract)
+	begin
+		select
+			status = "ERROR",
+			message = "Contract not found",
+			symbol=@contract
+
+		return
+	end
+end
+
+/* if not exists(select trader_id from traders where symbol = @trader)
+begin
+        select
+                status = "ERROR",
+                message = "trader not found",
+                trader=@trader
+
+        return
+	
+end */
+
+select 
+	@strategy = 'Agency'
+
+if not exists(select broker_id from brokers where symbol = @broker)
+begin
+        select
+                status = "ERROR",
+                message = "Broker not found",
+                broker=@broker
+
+        return
+
+end
+
+/* Notification data not being preserved
+if not exists(select source_id from sources where name = @trade_notification_source)
+begin
+	select
+                status = "ERROR",
+                message = "Source not found",
+                source=@trade_notification_source
+        return
+end
+*/
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		"@source_error"
+	return
+end
+
+
+if @external_account_type = "Client"
+begin
+	/* If client, counterparty is always CantorFXPro, external_account & trader determined by @trader */
+	select 
+		@counterparty = "CantorFXPro"
+	
+	
+end
+
+if @external_account_type = "Counterparty"
+begin
+	select 
+		@counterparty = a.name
+	from
+		counterparties a,
+		counterparty_symbols b
+	where
+		a.counterparty_id = b.counterparty_id
+	and
+		b.symbol = @trader
+	and
+		source_id = @source_id
+	if @@rowcount != 1
+	begin
+		select
+			err= "counterparty symbol not exist for",
+			trader = @trader,
+			source = @source
+		return
+	end
+
+	/* Street side trader on migration trades is CFS-GROUP */
+	select
+		@trader = "CFS-GROUP",
+		@external_account = "BAML FXPB"
+end
+/*
+if not exists(select external_account_id from external_accounts where symbol = @external_account and external_account_type_id = 3)
+begin
+		
+		select 
+			id = -1,
+			error = "ERROR: extenrnal_account",
+			external_account = @external_account
+		if @external_account_type = "Client"
+			return
+		
+end
+*/
+
+exec
+	fxa_tallytrade
+		@login=@login,
+		@source='Cognotec',
+		@trade_id=@trade_id,
+		@deal_id=@deal_id,
+		@tally_type=@trade_type,
+		@deal_type='B2B Forward',
+		@trade_type=@trade_type,
+		@internal_account=@internal_account,
+		@external_account=@external_account,
+		@counterparty=@counterparty,
+		@quantity=@quantity,
+		@symbol=@contract,
+		@value_date=@value_date,
+		@price=@price,
+		@trade_date=@trade_date,
+		@trader=@trader,
+		@strategy=@strategy,
+		@status=NULL,
+		@broker=@broker,
+		@identifier=@trade_identifier,
+		@sales_code=@sales_code,
+		@premium=NULL,
+		@prem_settle_date=NULL,
+		@pct_price=NULL,
+		@spot_reference=NULL,
+		@fixing_date=NULL
+
+
+if not exists(select deal_id from deal_exec_symbols where deal_id = @deal_id)
+begin
+	select "Inserting deal_exec_symbol", @deal_id, @deal_identifier
+        if @deal_identifier = NULL
+		select @deal_identifier = "Migrate - " + convert(varchar(10), @deal_id)
+
+	insert into 
+		deal_exec_symbols
+	values(
+		@deal_id,
+		@deal_identifier
+		)
+end
+
+
+
+go
+

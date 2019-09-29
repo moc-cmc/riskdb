@@ -1,0 +1,279 @@
+
+if object_id("r_runintradaypllinks") != NULL
+    drop procedure
+        r_runintradaypllinks
+go
+
+create procedure
+	r_runintradaypllinks
+		@login char(30)
+as
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL) 
+
+insert into
+	#links
+values(
+	"Column Link",
+	"set_view",
+	"Preferences",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"set_fwd_view",
+	"Forward P&L Preferences",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Format Number",
+	"pos_pl",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"trades_pl",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"trades_quantity",
+	NULL,
+	NULL,
+	"#,##0")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"starting_pos",
+	NULL,
+	NULL,
+	"#,##0")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"quantity",
+	NULL,
+	NULL,
+	"#,##0")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"last",
+	NULL,
+	NULL,
+	"#,##0.0000")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"total_pl",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"trading_profit_loss",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"total_position",
+	NULL,
+	NULL,
+	"#,##0")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"starting_position",
+	NULL,
+	NULL,
+	"#,##0")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"option_delta",
+	NULL,
+	NULL,
+	"#,##0")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"total_delta",
+	NULL,
+	NULL,
+	"#,##0")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"delta",
+	NULL,
+	NULL,
+	"#,##0")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"position_profit_loss",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"profit_loss",
+	NULL,
+	NULL,
+	"#,##0.00")
+
+insert into
+	#links
+values(
+	"Format Number",
+	"total_profit_loss",
+	NULL,
+	NULL,
+	"#,##0.00") 
+
+insert into
+	#links
+values(
+	"Column Link",
+	"previous_fwd",
+	"Previous Day FWD P&L",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"previous",
+	"Previous Day P&L",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"range",
+	"Date Range P&L",
+	"suppressAutoexecute=YES",
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"mtd",
+	"MTD P&L Run",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"limits",
+	"Limits",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"deltas",
+	"Deltas",
+	NULL,
+	NULL)
+
+if @login not in("crgadmin", "bosadmin")
+insert into
+	#links
+values(
+	"Column Link",
+	"run_name",
+	"Run Filters",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"edit_values",
+	"Deal Trade Inspector",
+	NULL,
+	NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"orders",
+	"Run Orders",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"sorting",
+	"Intraday P&L",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select
+	#links.meta_type, #links.column, #links.link, #links.arguments, #links.format
+from
+	#links
+
+go

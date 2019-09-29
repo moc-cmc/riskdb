@@ -1,0 +1,87 @@
+
+drop procedure
+	ag_editmarginmultiplier
+go
+
+create procedure
+	ag_editmarginmultiplier
+		@login varchar(50),
+		@account varchar(50),
+		@multiplier float
+as
+
+declare @tico_account_id int
+declare @external_account_id int
+declare @prime_broker varchar(50)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "External account not found",
+		account = @account
+	return
+end
+
+select
+	@prime_broker = a.name
+from
+	sources a,
+	prime_brokers b,
+	external_account_prime_brokers c
+where
+	a.source_id = b.source_id
+and
+	b.prime_broker_id = c.prime_broker_id
+and
+	c.external_account_id = @external_account_id
+
+insert into
+	ext_account_multiplier_edits(
+		tico_account_id,
+		timestamp,
+		external_account_id,
+		multiplier)
+select
+	tico_account_id = @tico_account_id,
+	timestamp = getdate(),
+	external_account_id,
+	margin_multiplier
+from
+	external_accounts
+where
+	external_account_id = @external_account_id
+
+update
+	external_accounts
+set
+	margin_multiplier = @multiplier
+where
+	external_account_id = @external_account_id
+
+exec
+	ag_primebrokeraccounts
+		@login,
+		@prime_broker
+
+go

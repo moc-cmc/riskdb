@@ -1,0 +1,41 @@
+drop procedure test_sybwrapformatresults
+go
+
+create procedure
+	test_sybwrapformatresults
+
+
+as
+
+declare @trade_id int
+declare @trade_date datetime
+declare @contract varchar(50)
+declare @quantity numeric(30, 4)
+declare @sell_quantity numeric(30, 4)
+declare @would_be_sci_notiation numeric(30, 4)
+declare @price float
+
+
+select
+	@trade_id = 123,
+	@trade_date = "20171020 10:10AM",
+	@contract = "EURUSD",
+        @price = 1.17234,
+	@quantity = 11203983.83,
+	@sell_quantity = -1222313.12,
+	@would_be_sci_notiation = 3400000000000.00
+
+select
+	trade_id = @trade_id,
+	trade_date = @trade_date,
+	contract = @contract,
+	price = @price,
+	quantity = @quantity,
+	sell_quantity = @sell_quantity,
+	would_be_sci_notiation = @would_be_sci_notiation,
+	null_value = NULL,
+        empty_string = "",
+        would_be_sci_notiation_as_str = convert(varchar(50), @would_be_sci_notiation )
+
+go
+	

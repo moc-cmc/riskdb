@@ -1,0 +1,31 @@
+
+drop procedure
+	ag_commitscheduledfees
+go
+
+create procedure
+	ag_commitscheduledfees
+		@login varchar(50),
+		@trade_date datetime
+as
+
+
+exec
+	api_feerecon
+		@login = @login,
+		@trade_date = @trade_date,
+		@tally_fees = "Yes",
+		@display_output = "No"
+
+exec
+	api_pipsreadfeerecon
+		@login = @login,
+		@trade_date = @trade_date,
+		@tally_fees = "Yes",
+		@display_output = "No"
+
+
+
+
+
+go

@@ -1,0 +1,116 @@
+drop procedure
+	zmr_editsettle
+go
+
+create procedure
+	zmr_editsettle
+		@symbol char(50),
+		@price_date datetime,
+		@calc_settle float
+as
+
+declare @close_price_type_id int
+declare @contract_id int
+declare @instrument char(100)
+declare @price_id int
+declare @price float
+
+select
+	@price = @calc_settle
+
+select
+	@price_date = convert(char(2), datepart(month, @price_date)) + "/" +
+			convert(char(2), datepart(day, @price_date)) + "/" +
+			convert(char(4), datepart(year, @price_date))
+
+select
+	@price_date = dateadd(hour, 17, @price_date)
+
+select
+	@contract_id = a.contract_id,
+	@instrument = b.name
+from
+	contracts a,
+	instruments b
+where
+	a.symbol = @symbol
+and
+	b.instrument_id = a.instrument_id
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding contract with symbol",	
+		sybmol = @symbol
+	return
+end
+
+select
+	@close_price_type_id = price_type_id
+from
+	price_types
+where
+	name = "Close"
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding the Close price type"
+	return
+end
+
+select
+	@price_id = price_id
+from
+	prices
+where
+	price_date = @price_date
+and
+	price_type_id = @close_price_type_id
+and
+	contract_id = @contract_id
+
+if @@rowcount = 1
+begin
+	begin tran
+		update
+			prices
+		set
+			price = @price
+		where
+			price_id = @price_id
+		if @@rowcount != 1
+		begin
+			select
+				id = -1,
+				error = "Problem editing price"
+			rollback tran
+			return
+		end
+	
+	commit tran
+	select
+		id = 0,
+		msg = "Successfully edited settle",
+		symbol = @symbol,
+		price = @price
+		
+end
+else
+begin
+
+	select
+		id = -1,
+		error = "Problem finding settle for contract for date",
+		contract = @symbol,
+		date = @price_date
+
+end
+
+
+exec
+	r_crossdebugger
+		@price_date
+
+go
+

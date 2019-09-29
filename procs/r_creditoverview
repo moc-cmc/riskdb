@@ -1,0 +1,277 @@
+drop procedure
+	r_creditoverview
+go
+
+create procedure
+	r_creditoverview
+		@login varchar(50)
+as
+
+declare @external_account_id int
+declare @external_accounts int
+declare @nop float
+declare @dsl float
+declare @ext_account varchar(50)
+declare @ext_details int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Column Link",
+	"external_account",
+	"Account Credit Summary",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dsl_use",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"nop_use",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dsl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"nop",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+create table
+	#credit(
+		style varchar(200) NULL,
+		external_account_id int,
+		account_type varchar(50),
+		ext_account varchar(50),
+		status varchar(50) NULL,
+		nop float NULL,
+		nop_type varchar(50) NULL,
+		nop_limit float NULL,
+		nop_use float NULL,
+		dsl float NULL,
+		dsl_type varchar(50) NULL,
+		dsl_limit float NULL,
+		dsl_use float NULL,
+		notice_level float NULL,
+		warning_level float NULL,
+		blocked_level float NULL)
+insert into
+	#credit
+select
+	style = NULL,
+	b.external_account_id,
+	account_type = a.name,
+	account = b.symbol,
+	status = NULL,
+	nop = NULL,
+	nop_type = NULL,
+	nop_limit = NULL,
+	nop_use = NULL,
+	dsl = NULL,
+	dsl_type = NULL,
+	dsl_limit = NULL,
+	dsl_use = NULL,
+	notice_level = NULL,
+	warnin_level = NULL,
+	blocked_level = NULL
+from
+	external_account_types a,
+	external_accounts b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	a.name = "Client"
+
+update
+	#credit
+set
+	a.nop_limit = b.nop_limit,
+	a.nop_type = c.name,
+	a.dsl_limit = b.dsl_limit,
+	a.dsl_type = d.name,
+	a.notice_level = b.notice_level,
+	a.warning_level = b.warning_level,
+	a.blocked_level = b.blocked_level
+from
+	#credit a,
+	ext_account_limits b,
+	nop_types c,
+	dsl_types d
+where
+	a.external_account_id = b.external_account_id
+and
+	b.nop_type_id = c.nop_type_id
+and
+	b.dsl_type_id = d.dsl_type_id
+
+	
+select
+	@external_account_id = 0
+select
+	@external_accounts = count(*)
+from
+	#credit
+where
+	external_account_id > @external_account_id
+
+while @external_accounts > 0
+begin
+	select
+		@external_account_id = min(external_account_id)
+	from
+		#credit
+	where
+		external_account_id > @external_account_id
+	
+	select
+		@ext_account = symbol
+	from
+		external_accounts
+	where
+		external_account_id = @external_account_id
+
+	select
+		@dsl = NULL,
+		@nop = NULL
+	
+	select
+		@ext_details = count(*)
+	from
+		ext_account_ladder_details
+	where
+		ext_account = @ext_account
+
+	if @ext_details > 0
+		exec
+			r_extaccountusage
+				@login,
+				@external_account_id,
+				@nop output,
+				@dsl output
+		
+		
+	update
+		#credit
+	set
+		nop = @nop,
+		dsl = @dsl
+	where
+		external_account_id = @external_account_id
+		
+		
+	select
+		@external_accounts = count(*)
+	from
+		#credit
+	where
+		external_account_id > @external_account_id
+end
+		
+
+update
+	#credit
+set
+	nop_use = nop / nop_limit
+where
+	nop_limit != 0
+
+update
+	#credit
+set
+	dsl_use = dsl / dsl_limit
+where
+	dsl_limit != 0
+
+update
+	#credit
+set
+	style = "background:#FFFFCC;border: 1px solid white",
+	status = "Notice"
+where
+	nop_use > notice_level
+or
+	dsl_use > notice_level
+
+update
+	#credit
+set
+	style = "background:#FFCC99;border: 1px solid white",
+	status = "Warning"
+where
+	nop_use > warning_level
+or
+	dsl_use > warning_level
+
+update
+	#credit
+set
+	style = "background:#FF9999;border: 1px solid white",
+	status = "Blocked"
+where
+	nop_use > blocked_level
+or
+	dsl_use > blocked_level
+
+select
+	style,
+	account_type,
+	external_account = ext_account,
+	nop_type,
+	nop,
+	nop_limit = case
+		when
+			nop_limit != NULL then rtrim(convert(varchar(30), nop_limit / 1000000.0)) + "mm"
+		else
+			NULL
+		end,
+	nop_use,
+	dsl_type,
+	dsl,
+	dsl_limit = case
+		when
+			dsl_limit != NULL then rtrim(convert(varchar(30), dsl_limit / 1000000.0)) + "mm"
+		else
+			NULL
+		end,
+	dsl_use
+from
+	#credit
+order by
+	ext_account
+
+
+go

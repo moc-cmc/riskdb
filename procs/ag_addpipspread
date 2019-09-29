@@ -1,0 +1,45 @@
+drop procedure
+	ag_addpipspread
+go
+
+create procedure
+	ag_addpipspread
+		@login varchar(50),
+		@name varchar(200)
+as
+
+declare @pip_spread_id int
+
+select
+	@pip_spread_id = pip_spread_id
+from
+	pip_spreads
+where
+	name = @name
+if @pip_spread_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Pip spread already exists",
+		pip_spread = @name
+	return
+end
+
+exec
+	j_nextkey
+		"pip_spreads",
+		@pip_spread_id output
+
+insert into
+	pip_spreads(
+		pip_spread_id,
+		name)
+values(
+	@pip_spread_id,
+	@name)
+
+exec
+	ag_pipspreadshome
+		@login = @login
+
+go

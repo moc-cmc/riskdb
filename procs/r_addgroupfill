@@ -1,0 +1,79 @@
+
+if object_id("r_addgroupfill") != NULL
+    drop procedure
+        r_addgroupfill
+go
+
+create procedure
+	r_addgroupfill
+		@login varchar(50),
+        @group_deal_id int,
+        @deal_id int,
+        @client_trade_id int = NULL,
+        @market_trade_id int = NULL,
+        @leg varchar(25) = NULL
+as
+
+if @group_deal_id = @deal_id
+    return
+
+if @leg = "Client" and @client_trade_id != NULL
+begin
+
+    update
+        trades
+    set
+        deal_id = @group_deal_id
+    where
+        trade_id = @client_trade_id
+        
+end
+else if @leg = "Counterparty" and @market_trade_id != NULL
+begin
+
+    update
+        trades
+    set
+        deal_id = @group_deal_id
+    where
+        trade_id = @market_trade_id
+        
+end
+else if @leg = NULL and @deal_id != NULL
+begin
+
+    update
+        trades
+    set
+        deal_id = @group_deal_id
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deal_aliases
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deal_exec_symbols
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deal_notes
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deal_notifications
+    where
+        deal_id = @deal_id
+    
+    delete from
+        deals
+    where
+        deal_id = @deal_id
+    
+end
+
+go

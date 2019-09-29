@@ -1,0 +1,249 @@
+
+if object_id("r_currentprices") != NULL
+    drop procedure
+        r_currentprices
+go
+
+create procedure
+	r_currentprices
+		@login varchar(50)
+as
+
+declare @id int
+declare @ids int
+declare @instrument varchar(50)
+declare @contract_id int
+declare @spot_price float
+declare @days float
+declare @forward_price float
+declare @product_rate float
+declare @currency_rate float
+declare @value_date datetime
+declare @now timestamp
+declare @future_type varchar(50)
+declare @forward_id int
+
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+insert into
+	#links
+values(
+	"Column Link",
+	"set_price",
+	"Set Current Price",
+	NULL,
+	NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
+
+select
+	@now = getdate()
+
+create table
+	#prices(
+		id int identity,
+		contract_id int,
+		forward_id int,
+		value_date datetime NULL,
+		price float NULL)
+insert into
+	#prices(
+		contract_id,
+		forward_id)
+select
+	contract_id,
+	contract_id
+from
+	forwards
+
+delete
+	#prices
+from
+	#prices a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+insert into
+	#prices(
+		contract_id,
+		forward_id,
+		value_date)
+select
+	a.contract_id,
+	b.forward_id,
+	a.expiration
+from
+	future_contracts a,
+	futures b
+where
+	a.future_id = b.future_id
+and
+	a.expiration >= convert(datetime, convert(char(11), getdate(), 1))
+	
+		
+update
+	#prices
+set
+	a.price = b.price
+from
+	#prices a,
+	current_prices b
+where
+	a.contract_id = b.contract_id
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#prices
+where
+	price = NULL
+and
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#prices
+	where
+		id > @id
+	and
+		price = NULL
+
+	select
+		@contract_id = contract_id,
+		@value_date = value_date
+	from
+		#prices
+	where
+		id = @id
+
+	
+	select
+		@instrument = a.name
+	from
+		instruments a,
+		contracts b
+	where
+		a.instrument_id = b.instrument_id
+	and
+		b.contract_id = @contract_id
+
+	select
+		@days = NULL,
+		@spot_price = NULL,
+		@forward_price = NULL,
+		@currency_rate = NULL,
+		@product_rate = NULL,
+		@forward_id = NULL
+
+	if @instrument = "Forward"
+	begin
+		exec
+			r_forwardpriceasof
+				@contract_id,
+				@now,
+				@value_date,
+				@days output,
+				@spot_price output,
+				@forward_price output,
+				@currency_rate output,
+				@product_rate output
+	end
+
+	if @instrument = "Future"
+	begin
+		select
+			@future_type = a.name,
+			@forward_id = b.forward_id
+		from
+			future_types a,
+			futures b,
+			future_contracts c
+		where
+			a.future_type_id = b.future_type_id
+		and
+			b.future_id = c.future_id
+		and
+			c.contract_id = @contract_id
+	
+		if @future_type = "Val Date"
+		begin
+			exec
+				r_forwardpriceasof
+					@forward_id,
+					@now,
+					@value_date,
+					@days output,
+					@spot_price output,
+					@forward_price output,
+					@currency_rate output,
+					@product_rate output
+		end
+
+	end
+
+	if @forward_price != NULL
+		update
+			#prices
+		set
+			price = @forward_price
+		where
+			id = @id
+
+	select
+		@ids = count(*)
+	from
+		#prices
+	where
+		price = NULL
+	and
+		id > @id
+end
+
+
+
+
+select
+	a.symbol,
+	underlying = b.symbol,
+	c.value_date,
+	c.price,
+	set_price = "SET PRICE"
+from
+	contracts a,
+	contracts b,
+	#prices c
+where
+	a.contract_id = c.contract_id
+and
+	b.contract_id = c.forward_id
+order by
+	b.symbol,
+	c.value_date
+
+	
+
+	
+		
+
+
+go

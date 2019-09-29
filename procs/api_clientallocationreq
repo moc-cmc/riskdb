@@ -1,0 +1,74 @@
+create or replace procedure
+	api_clientallocationreq
+		@login varchar(50),
+		@product varchar(50),
+		@amount numeric(30, 8),
+		@from_account varchar(50),
+		@to_account varchar(50),
+		@allocation_request_id int output
+as
+
+declare @fo_sub_ext_account varchar(100)
+declare @bo_master_ext_account varchar(100)
+declare @deposit_withdrawal varchar(50)
+declare @is_valid_fo_sub char(1)
+declare @from_account_type varchar(50)
+declare @to_account_type varchar(50)
+
+
+		
+exec
+	r_checkmasterorsubtype
+		@external_account = @from_account,
+		@account_type = @from_account_type output
+exec
+	r_checkmasterorsubtype
+		@external_account = @to_account,
+		@account_type = @to_account_type output
+
+if @from_account_type = "BO Master"
+begin
+	/* if youre moving funds FROM a bo_master, its a deposit TO the fo_sub */
+	select
+		@bo_master_ext_account = @from_account,
+		@fo_sub_ext_account = @to_account,
+		@deposit_withdrawal = "Deposit",
+		@amount = abs(@amount) 
+end
+
+if @to_account_type = "BO Master"
+begin
+	/* if youre moving funds TO a bo_master, its a withdrawal FROM  the fo_sub */
+	select
+		@bo_master_ext_account = @to_account,
+		@fo_sub_ext_account = @from_account,
+		@deposit_withdrawal = "Withdrawal",
+		@amount = abs(@amount) * -1
+end
+
+exec
+	r_checkfosubvsmaster
+		@fo_sub_account = @fo_sub_ext_account,
+		@bo_master_account = @bo_master_ext_account,
+		@is_valid_fo_sub = @is_valid_fo_sub output
+
+if @is_valid_fo_sub != "Y"
+begin
+	select
+		status = "Error",
+		message = "Mismatched from and to accounts. Fo Sub not valid"
+	return
+end
+		
+
+exec
+	api_addallocationrequest
+		@login=@login,
+		@sub_account=@fo_sub_ext_account,
+		@product=@product,
+		@amount=@amount,
+		@allocation_request_id=@allocation_request_id output
+		
+
+
+go

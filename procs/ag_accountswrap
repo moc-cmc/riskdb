@@ -1,0 +1,40 @@
+drop procedure
+	ag_accountswrap
+go
+
+create procedure
+	ag_accountswrap
+		@login varchar(50) 
+
+
+as
+
+declare @fund_sub_type varchar(50)
+
+select
+	@fund_sub_type = name
+from
+	fund_sub_types
+if @@rowcount != 1
+begin
+	/* Default to Agency */
+	select
+		@fund_sub_type = 'FX Agency'
+end
+
+if @fund_sub_type = "Prime of Prime"
+begin
+	exec
+		ag_accountspop
+			@login
+end
+else
+begin
+	/* FX Agency */
+	exec 
+		ag_accountsagency
+			@login
+end
+
+
+go

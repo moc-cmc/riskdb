@@ -1,0 +1,106 @@
+
+if object_id("cm_toggleruncounterparty") != NULL
+    drop procedure
+        cm_toggleruncounterparty
+go
+
+create procedure
+	cm_toggleruncounterparty
+		@login varchar(30),
+		@run_name varchar(50),
+		@counterparty varchar(50)
+as
+
+
+declare @tico_account_id int
+declare @run_id int
+declare @counterparty_id int
+declare @is_included int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run Not Found"
+	return
+end
+
+select
+	@counterparty_id = counterparty_id
+from
+	counterparties
+where
+	name = @counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Counterparty not found",
+		counterparty = @counterparty
+	return
+end
+
+
+select
+	@is_included = count(*)
+from
+	run_counterparties
+where
+	run_id = @run_id
+and
+	counterparty_id = @counterparty_id
+
+if @is_included > 0
+begin
+	delete
+
+	from
+		run_counterparties
+	where
+		run_id = @run_id
+	and
+		counterparty_id = @counterparty_id
+end
+else
+begin
+	insert into
+		run_counterparties
+	values(
+		@run_id,
+		@counterparty_id)
+end
+
+exec
+	cm_runcounterpartyfilters
+		@login,
+		@run_name,
+		"Broker"
+
+
+
+go

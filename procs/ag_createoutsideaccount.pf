@@ -1,0 +1,10 @@
+use
+	tico_agency_dev
+go
+exec ti_manageprocfield "add", "ag_createoutsideaccount", "outsideAccountType", "Select Button", "r_outsideaccounttypes", "Editable", "OUTSIDE ACCOUNT TYPE", NULL, NULL
+go
+exec ti_manageprocfield "add", "ag_createoutsideaccount", "externalAccount", "Select Button", "r_externalaccounts", "Editable", "EXTERNAL ACCOUNT", NULL, NULL
+go
+exec ti_manageprocfield "add", "ag_createoutsideaccount", "provider", "Select Button", "r_providers", "Editable", "PROVIDER", NULL, NULL
+go
+

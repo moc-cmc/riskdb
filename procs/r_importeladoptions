@@ -1,0 +1,238 @@
+use
+	risk_elad2
+go
+
+drop procedure
+	r_importeladoptions
+go
+
+create procedure
+	r_importeladoptions
+		@login varchar(50),
+		@username varchar(50)=NULL,
+		@deal_type varchar(50)=NULL,
+		@expiry_date varchar(50)=NULL,
+		@call_put varchar(50)=NULL,
+		@buy_ccy varchar(50)=NULL,
+		@buy_amount varchar(50)=NULL,
+		@sell_ccy varchar(50)=NULL,
+		@sell_amount varchar(50)=NULL,
+		@strike varchar(50)=NULL,
+		@prem_ccy varchar(50)=NULL,
+		@premium varchar(50)=NULL,
+		@market_value_prem_ccy varchar(50)=NULL,
+		@market_value_usd varchar(50)=NULL,
+		@p_l varchar(50)=NULL,
+		@deal_no varchar(50)=NULL,
+		@delivery_date varchar(50)=NULL,
+		@trade_date varchar(50)=NULL,
+		@enter_date varchar(50)=NULL,
+		@bank varchar(50)=NULL,
+		@lock_no varchar(50)=NULL,
+		@delta_amount_major varchar(50)=NULL,
+		@delta_amount_minor varchar(50)=NULL,
+		@major_ccy varchar(50)=NULL
+as
+
+
+declare @deal_id int
+declare @contract_id int
+declare @trade_id int
+declare @quantity numeric(30,4)
+declare @quantity_string varchar(30)
+declare @underlying varchar(50)
+declare @timezone varchar(50)
+declare @expiration datetime
+declare @float_strike float
+declare @option_settledate datetime
+declare @symbol varchar(50)
+declare @price float
+declare @traded_date datetime
+declare @prem numeric(30,2)
+declare @premium_string varchar(50)
+declare @buy_amount_string varchar(50)
+declare @sell_amount_string varchar(50)
+declare @premium_float float
+declare @buy_amount_float float
+declare @sell_amount_float float
+declare @external_account varchar(50)
+declare @source_id int
+declare @product varchar(3)
+declare @currency varchar(3)
+
+
+if @username = "Username" or @username = NULL or @username = ""
+	return
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "Elad"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Elad source not found"
+	return
+end
+
+select
+	@external_account = b.symbol
+from
+	external_account_symbols a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.source_id = @source_id
+and
+	a.symbol = @username
+if @external_account = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @username
+	return
+end
+
+if @major_ccy = @buy_ccy
+begin
+	select
+		@underlying = rtrim(@buy_ccy) + rtrim(@sell_ccy),
+		@product = @buy_ccy,
+		@currency = @sell_ccy,
+		@quantity = convert(numeric(30,4), @buy_amount_string)
+end
+if @major_ccy = @sell_ccy
+begin
+	select
+		@underlying = rtrim(@sell_ccy) + rtrim(@buy_ccy),
+                @product = @sell_ccy,
+                @currency = @buy_ccy,
+		@quantity = convert(numeric(30,4), @sell_amount_string)
+end
+
+
+if lower(convert(char(1), @deal_type)) = "s" 
+	select @quantity = @quantity * -1.0
+
+select
+	major_ccy = @major_ccy,
+	buy_ccy = @buy_ccy,
+	sell_ccy = @sell_ccy,
+	underyling = @underlying /* MARKR */
+
+
+
+select
+	@timezone = "New York 10:00",
+	@expiration = convert(datetime, @expiry_date),
+	@float_strike = convert(numeric(30,4), @strike),
+	@option_settledate = convert(datetime, @delivery_date),
+	@traded_date = convert(datetime, @trade_date)
+
+exec
+	r_spotoptioncontract
+		@underlying,
+		@timezone,
+		@expiration,
+		@call_put,
+		@float_strike,
+		@option_settledate,
+		@contract_id output
+
+select
+	@symbol = symbol
+from
+	contracts
+where
+	contract_id = @contract_id
+if @symbol = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found"
+	return
+end
+
+exec
+	u_stripcommas
+		@buy_amount,
+		@buy_amount_string output
+exec
+	u_stripcommas
+		@sell_amount,
+		@sell_amount_string output
+
+exec
+	u_stripcommas
+		@premium,
+		@premium_string output
+
+select
+	@premium_float = convert(numeric(30,4), @premium_string)
+
+
+exec
+	r_pipspriceforoption
+		@dealt_ccy=@product,
+		@counter_ccy=@currency,
+		@dealt_amount=@quantity,
+		@premium_ccy=@prem_ccy,
+		@premium_amount=@premium_float,
+		@spot_reference=NULL,
+		@conversion_rate=NULL,
+		@pips_price=@price output
+
+if @price = NULL
+begin
+	select
+		error="Error",
+		msg = "Can not find underlying current price to calculate pips price for record",
+                source = "Elad",
+                identifier = @deal_no,
+                external_account = @external_account,
+                deal_id = @deal_id output,
+                deal_type = "Market Option",
+                tally_type = "Option",
+                trade_type = "Option",
+                quantity = @quantity,
+                symbol = @symbol,
+                value_date = @option_settledate,
+                price = @price,
+                trade_date = @traded_date,
+                sales_code = "None",
+                premium = @premium_float,
+                premium_currency = @prem_ccy
+
+	return
+end
+
+exec
+	fxa_tallytrade
+		@login = "akahanov@eladgroup",
+		@source = "Elad",
+		@identifier = @deal_no,
+		@trade_id = @trade_id output,
+		@external_account = @external_account,
+		@deal_id = @deal_id output,
+		@deal_type = "Market Option",
+		@tally_type = "Option",
+		@trade_type = "Option",
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @option_settledate,
+		@price = @price,
+		@trade_date = @traded_date,
+		@sales_code = "None",
+		@premium = @premium_float,
+		@premium_currency = @prem_ccy,
+		@prem_settle_date = @traded_date,
+		@strategy = "SPEC"
+		
+
+go

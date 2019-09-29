@@ -1,0 +1,150 @@
+
+if object_id("r_managetimer") != NULL
+    drop procedure
+        r_managetimer
+go
+
+create procedure
+    r_managetimer
+        @timer_id int = NULL out,
+        @name varchar(75) = NULL out,
+        @next_date datetime = NULL out,
+        @interval float = NULL out,
+        @iterations int = NULL out,
+        @sql varchar(255) = NULL out
+as
+
+/*
+ * Check arguments
+ */
+if @timer_id = NULL and @sql = NULL
+begin
+    select
+        status = "Error",
+        message = "Either @timer_id or @sql is required"
+    return
+end
+
+/* If no @timer_id was specified, look it up by @name */
+if @timer_id = NULL and @name != NULL
+    select
+        @timer_id = timer_id
+    from
+        timers
+    where
+        name = @name
+
+/* If we should create a new timer, then default to reasonable values and insert
+ * the timer */
+if @timer_id = NULL
+begin
+
+    if @interval = NULL
+        select
+            @interval = 0
+    if @next_date = NULL
+        select
+            @next_date = dateadd(second, @interval, getdate())
+    if @iterations = NULL
+        select
+            @iterations = 1
+    
+    /* 
+     * INSERT timers: with the defaulted values.
+     */
+    insert into
+        timers
+    values (
+        @name,
+        @next_date,
+        @interval,
+        @iterations,
+        @sql
+    )
+    select
+        @timer_id = @@identity
+    
+end
+else if @iterations = 0
+begin
+    
+    /* 
+     * DELETE timers: If the user is forcing the iterations to zero, then delete
+     * the timer.
+     */
+    delete 
+        timers
+    where
+        timer_id = @timer_id
+    
+end
+else
+begin
+    
+    /* Make sure we don't clobber any data that wasn't specified in the
+     * parameters */
+    select
+        @next_date = case when @next_date != NULL then @next_date else next_date end,
+        @interval = case when @interval != NULL then @interval else interval end,
+        @iterations = case when @iterations != NULL then @iterations else iterations end,
+        @sql = case when @sql != NULL then @sql else sql end
+    from
+        timers
+    where
+        timer_id = @timer_id
+    
+    /* Otherwise, update the timer if necessary */
+    if exists (
+        select
+            *
+        from
+            timers
+        where
+            timer_id = @timer_id
+        and (
+                name != @name
+            or
+                next_date != @next_date
+            or
+                interval != @interval
+            or
+                iterations != @iterations
+            or
+                sql != @sql
+            )
+    )
+    begin
+    
+        /*
+         * UPDATE timers: with new information
+         */
+        update
+            timers
+        set
+            name = @name,
+            next_date = @next_date,
+            interval = @interval,
+            iterations = @iterations,
+            sql = @sql
+        where
+            timer_id = @timer_id
+        
+    end
+    
+end
+
+/*
+ * If any of the parameters were provided as output set them now
+ */
+select
+    @name = name,
+    @next_date = next_date,
+    @interval = interval,
+    @iterations = iterations,
+    @sql = sql
+from
+    timers
+where
+    timer_id = @timer_id
+    
+go

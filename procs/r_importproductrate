@@ -1,0 +1,149 @@
+
+if object_id("r_importproductrate") != NULL
+    drop procedure
+        r_importproductrate
+go
+
+create procedure
+	r_importproductrate
+		@identifier varchar(30),	
+		@source varchar(30),
+		@product varchar(30),
+		@rate_date datetime
+as
+
+declare @product_id int
+declare @product_rate_id int
+declare @source_id int
+declare @status_id int
+
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @@rowcount != 1
+begin
+	/* Ignore it */
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		@status_id = status_id
+	from
+		statuses
+	where
+		name = "Active"
+	if @status_id = NULL
+	begin
+		exec
+			j_nextkey
+				"statuses",
+				@status_id output
+		insert into
+			statuses
+		values(
+			@status_id,
+			"Active")
+	end
+	
+	exec
+		j_nextkey
+			"sources",
+			@source_id output
+
+        declare @internal_source_type_id int
+        select
+                @internal_source_type_id = source_type_id
+        from
+                source_types
+        where
+                name = "Internal"
+
+        insert into
+                sources(source_id,
+                        name,
+                        status_id,
+                        source_type_id)
+        values(
+                @source_id,
+                @source,
+                @status_id,
+                @internal_source_type_id)
+
+end
+
+select
+	@product_rate_id = product_rate_id
+from
+	product_rate_symbols
+where
+	source_id = @source_id
+and
+	symbol = @identifier
+if @product_rate_id != NULL
+begin
+	select
+		status = "Dupe",
+		message = "Product rate for identifier already exists",
+		identifier = @identifier
+	return
+end
+	
+
+exec
+	j_nextkey
+		"product_rates",
+		@product_rate_id output
+
+delete
+
+from
+	product_rate_points
+where
+	product_rate_id in(
+		select
+			product_rate_id
+		from
+			product_rates
+		where
+			product_id = @product_id
+		and
+			rate_date = @rate_date)
+
+
+delete
+
+from
+	product_rates
+where
+	product_id = @product_id
+and
+	rate_date = @rate_date
+
+
+insert into
+	product_rates
+values(
+	@product_rate_id,
+	@product_id,
+	@rate_date)
+
+insert into
+	product_rate_symbols
+values(
+	@product_rate_id,
+	@source_id,
+	@identifier)
+
+go

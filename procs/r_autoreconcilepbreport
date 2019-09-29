@@ -1,0 +1,1018 @@
+
+if object_id("r_autoreconcilepbreport") != NULL
+    drop procedure
+        r_autoreconcilepbreport
+go
+
+create procedure
+    r_autoreconcilepbreport
+        @login char(50),
+		@prime_broker varchar(75),
+        @trade_date datetime,
+        @action char(100),
+        @mismatch_strength float, 
+        @reconciled_strength float,
+        @external_account_filter char(100),
+        @contract_filter char(100),
+        @value_date_filter datetime,
+        @broker_filter char(100)
+as
+
+declare @fund char(100)
+declare @external_report char(100)
+declare @prime_broker_id int
+declare @external_report_id int
+declare @prime_broker_source_id int
+declare @report_commit_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @fund_id int
+declare @match_broker bit
+declare @status char(50)
+declare @source_id int
+declare @mismatched_status_id int
+declare @matched_status_id int
+declare @committed_status_id int
+declare @quantity numeric(30,4)
+declare @price float
+declare @generic_broker_id int
+declare @trade_day datetime
+
+
+/*
+ * Save 12:00AM trade date into @trade_day
+ */
+select
+	@trade_day = @trade_date
+
+/* 
+ * Calculate @begin_date and @end_day
+ */
+exec
+    r_gettradingday
+        @trade_date,
+        @trade_date output,
+        @begin_date output,
+        @end_date output
+
+/* 
+ * Default the @mismatch_strength and @reconciled_strength
+ */
+if @mismatch_strength = NULL
+    select
+        @mismatch_strength = 0.75 /* 0.818 ~0.5 pips (0.999818) */
+if @reconciled_strength = NULL
+    select
+        @reconciled_strength = 0.998000 /* Full match (empirical) */
+if @action like "%Non-Broker%"
+    select
+        @match_broker = 0
+else
+    select
+        @match_broker = 1
+
+select
+    @generic_broker_id = broker_id
+from
+    brokers
+where
+    symbol = "External"
+
+
+
+select
+	@prime_broker_id = a.prime_broker_id,
+	@prime_broker_source_id = a.source_id
+from	
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id 
+and
+	b.name = @prime_broker
+if @@rowcount != 1
+begin	
+	select
+			id = -1,
+			error = "Problem determining prime broker",	
+			prime = @prime_broker
+	return
+end
+
+select
+	@external_report = a.name,
+	@external_report_id = external_report_id
+from
+	external_reports a,
+	report_types b
+where
+	a.report_type_id = b.report_type_id 
+and
+	a.source_id = @prime_broker_source_id
+and
+	b.name = "Trade Recon"
+if @@rowcount = 0
+begin   
+    select
+            id = -1,
+            error = "Problem determining 'Trade Recon' report for prime broker",
+			prime = @prime_broker
+    return
+end
+if @@rowcount > 1
+begin   
+    select
+            id = -1,
+            error = "More than 1 'Trade Recon' report for designated for prime broker",
+			prime = @prime_broker
+    return
+end
+
+select
+	@fund = a.name
+from
+	funds a,
+	fund_reports b
+where
+	a.fund_id = b.fund_id
+and
+	b.external_report_id = @external_report_id
+if @@rowcount != 1
+begin
+	select 
+			id = -1,
+			error = "Problem determining a single fund from external'Trade Recon' report"
+	return
+end
+
+
+
+/* -------------------- MARK: Find the @report_commit_id -------------------- */
+
+exec
+    r_reportcommitfordate
+        @fund,
+        @external_report,
+        @trade_date,
+        @report_commit_id output
+if @report_commit_id = NULL
+begin
+    select
+        id = -1,
+        error = "Couldn't find the requested report commit"
+    return
+end
+/*
+select
+    trade_date = @trade_date,
+    begin_date = @begin_date,
+    end_date = @end_date,
+    report_commit_id = @report_commit_id
+*/
+/* 
+ * Find the @fund_id, commit @status and @source_id from the @report_commit_id,
+ * we could've also gotten this using @fund and @external_report but this should
+ * be more consistent
+ */
+select
+    @fund_id = b.fund_id,
+    @source_id = c.source_id,
+    @status = d.name
+from
+    report_commits a,
+    fund_reports b,
+    external_reports c,
+    statuses d
+where
+    a.report_commit_id = @report_commit_id
+and
+    a.fund_report_id = b.fund_report_id
+and
+    b.external_report_id = c.external_report_id
+and
+    a.status_id = d.status_id
+if @@rowcount != 1
+begin
+    select
+        id = -1,
+        error = "Couldn't find the external report, """ 
+                + rtrim(@external_report) + """"
+    return
+end
+
+
+
+/* ------------------------- MARK: Retrieve settings ------------------------ */
+
+select
+    @mismatched_status_id = status_id
+from
+    statuses
+where
+    name = "Mismatched"
+if @@rowcount != 1
+begin
+    select
+        id = -1,
+        error = "Couldn't find the ""Mismatched"" status"
+    return
+end
+
+select
+    @matched_status_id = status_id
+from
+    statuses
+where
+    name = "Matched"
+if @@rowcount != 1
+begin
+    select
+        id = -1,
+        error = "Couldn't find the ""Matched"" status"
+    return
+end
+
+select
+    @committed_status_id = status_id
+from
+    statuses
+where
+    name = "Committed"
+if @@rowcount != 1
+begin
+    select
+        id = -1,
+        error = "Couldn't find the ""Committed"" status"
+    return
+end
+
+/* 
+ * Group by: external_account_id, contract_id, value_date, broker_id 
+ */
+
+
+
+/*------- MARK: Ensure all external_accounts are tied to prime broker ------- */
+
+
+if exists (select * from external_accounts where external_account_id
+			not in(select external_account_id from external_account_prime_brokers))
+begin
+	
+	select
+		id = -1,
+		error = "Prime broker not defined for external account(s)"
+		
+	select
+		a.symbol
+	from
+		external_accounts a
+	where
+		external_account_id not in(
+					select
+						external_account_id
+					from
+						external_account_prime_brokers)
+
+	return
+end
+
+create table
+			#pb_external_accounts
+(
+			external_account_id int,
+			symbol varchar(100)
+)
+
+insert into #pb_external_accounts
+select
+	a.external_account_id,
+	a.symbol
+from
+	external_accounts a, 
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.prime_broker_id = @prime_broker_id
+if @@rowcount = 0
+begin
+	select
+		id = -1,
+		msg = "No external accounts defined for prime broker",
+		prime = @prime_broker
+	
+	return
+end
+
+
+/*+---------------------------------------------------------------------------* 
+ |                       MARK: Collect #external_trades                       | 
+ *----------------------------------------------------------------------------*/
+
+create table
+    #external_trades (
+        report_trade_id int,
+        inverted bit,
+        /* key */
+        external_account_id int NULL,
+        contract_id int NULL,
+        value_date datetime,
+        broker_id int NULL,
+        /* symbols */
+        trade_symbol char(100) NULL,
+        /* attributes */
+        qty1 numeric(30,10),
+        qty2 numeric(30,10),
+        price float
+        )
+
+/* ------------------ MARK: Add external trades as reported ----------------- */
+
+insert into
+    #external_trades
+select
+    a.report_trade_id,
+    0 /* not inverted */,
+    a.external_account_id,
+    b.contract_id,
+    a.value_date,
+    a.broker_id,
+    a.client_identifier,
+    a.ccy_1_quantity,
+    a.ccy_2_quantity,
+    - a.ccy_2_quantity / a.ccy_1_quantity
+from
+    report_trades a,
+    contracts b, /* not outer */
+	#pb_external_accounts c
+where
+    a.report_commit_id = @report_commit_id
+and
+	a.external_account_id = c.external_account_id
+and
+    b.symbol = rtrim(a.ccy_1) + rtrim(a.ccy_2)
+
+/* ------------------- MARK: Add external trades inverted ------------------- */
+
+insert into
+    #external_trades
+select
+    a.report_trade_id,
+    1 /* not inverted */,
+    a.external_account_id,
+    b.contract_id,
+    a.value_date,
+    a.broker_id,
+    a.client_identifier,
+    a.ccy_2_quantity,
+    a.ccy_1_quantity,
+    - a.ccy_1_quantity / a.ccy_2_quantity
+from
+    report_trades a,
+    contracts b, /* not outer */
+	#pb_external_accounts c
+where
+    a.report_commit_id = @report_commit_id
+and
+	a.external_account_id = c.external_account_id
+and
+    b.symbol = rtrim(a.ccy_2) + rtrim(a.ccy_1)
+
+
+    
+/*+---------------------------------------------------------------------------* 
+ |                       MARK: Cache external_accounts                        | 
+ *----------------------------------------------------------------------------*/
+ 
+
+/* #external_accounts is just a copy of #pb_external_accounts */
+create table
+    #external_accounts (
+        external_account_id int,
+		symbol varchar(100)
+        )
+
+insert into
+    #external_accounts
+select
+    a.external_account_id,
+	a.symbol
+from
+    #pb_external_accounts a,
+    external_accounts b
+where
+    a.external_account_id = b.external_account_id
+and
+    b.name not like "% INT"
+
+
+
+
+
+/*+---------------------------------------------------------------------------* 
+ |                       MARK: Collect #internal_trades                       | 
+ *----------------------------------------------------------------------------*/
+  
+create table
+    #internal_trades (
+        trade_id int,
+        external_account_id int,
+        contract_id int,
+        value_date datetime,
+        broker_id int,
+        trade_symbol char(100) NULL,
+        qty1 numeric(30,10),
+        qty2 numeric(30,10),
+        price float
+        )
+        
+insert into
+    #internal_trades 
+select
+    a.trade_id,
+    a.external_account_id,
+    a.contract_id,
+    a.value_date,
+    a.broker_id,
+    a.identifier,
+    a.quantity,
+    -1 * a.quantity * a.price,
+    a.price
+from
+    trades a,
+    #external_accounts c
+where
+    a.trade_date >= @begin_date
+and
+    a.trade_date < @end_date
+and
+    a.external_account_id = c.external_account_id
+and
+    a.quantity != 0
+and
+    a.price != 0
+order by
+    a.trade_date asc
+    
+
+
+/*+---------------------------------------------------------------------------* 
+ |                            MARK: Apply filters                             | 
+ *----------------------------------------------------------------------------*/
+
+if @external_account_filter != null
+begin
+    delete
+    from
+        #internal_trades
+    where
+        external_account_id not in (
+            select
+                a.external_account_id
+            from
+                external_accounts a,
+                external_account_symbols s
+            where
+                a.external_account_id *= s.external_account_id
+            and (
+                    s.symbol = @external_account_filter
+                or
+                    a.name = @external_account_filter
+            )
+        )
+    delete
+    from
+        #external_trades
+    where
+        external_account_id not in (
+            select
+                a.external_account_id
+            from
+                external_accounts a,
+                external_account_symbols s
+            where
+                a.external_account_id *= s.external_account_id
+            and (
+                    s.symbol = @external_account_filter
+                or
+                    a.name = @external_account_filter
+            )
+        )
+end
+  
+if @contract_filter != null
+begin
+    delete
+    from
+        #internal_trades
+    where
+        contract_id not in (
+            select
+                c.contract_id
+            from
+                contracts c
+            where
+                c.symbol = @contract_filter
+        )
+    delete
+    from
+        #external_trades
+    where
+        contract_id not in (
+            select
+                c.contract_id
+            from
+                contracts c
+            where
+                c.symbol = @contract_filter
+        )
+end
+
+if @value_date_filter != null
+begin
+    delete
+    from
+        #internal_trades
+    where
+        value_date != @value_date_filter
+    delete
+    from
+        #external_trades
+    where
+        value_date != @value_date_filter
+end
+
+if @broker_filter != null 
+begin
+    delete
+    from
+        #internal_trades
+    where
+        broker_id not in (
+            select
+                b.broker_id
+            from
+                brokers b,
+                broker_symbols s
+            where
+                b.broker_id *= s.broker_id
+            and
+                s.source_id = @source_id
+            and (
+                    s.symbol = @broker_filter
+                or
+                    b.symbol = @broker_filter
+            )
+        )
+    delete
+    from
+        #external_trades
+    where
+        broker_id = NULL
+    or
+        broker_id not in (
+            select
+                b.broker_id
+            from
+                brokers b,
+                broker_symbols s
+            where
+                b.broker_id *= s.broker_id
+            and
+                s.source_id = @source_id
+            and (
+                    s.symbol = @broker_filter
+                or
+                    b.symbol = @broker_filter
+            )
+        )
+end
+
+
+
+/*+---------------------------------------------------------------------------* 
+ |   MARK: Trim internal and external trades that have already been matched   | 
+ *----------------------------------------------------------------------------*/
+/* uses #internal_trades and #external_trades which have already been filtered to 
+	only include trades for that particular prime broker */
+
+delete
+from
+    #internal_trades
+where
+    trade_id in (
+        select
+            m.trade_id
+        from
+            report_trade_matches m,
+            trades i
+        where
+            m.trade_id = i.trade_id
+        and
+            i.trade_date >= @begin_date
+        and
+            i.trade_date < @end_date
+    )
+
+delete
+from
+    #external_trades
+where
+    report_trade_id in (
+        select
+            m.report_trade_id
+        from
+            report_trade_matches m,
+            trades i
+        where
+            m.trade_id = i.trade_id
+        and
+            i.trade_date >= @begin_date
+        and
+            i.trade_date < @end_date
+    )
+
+
+
+/*+---------------------------------------------------------------------------* 
+ |                          MARK: Calculate matches                           | 
+ *----------------------------------------------------------------------------*/
+  
+create table
+    #matches (
+        report_trade_id int,
+        inverted bit,
+        trade_id int,
+        match_strength float,
+        symbols_match bit,
+        notes varchar(200) NULL
+    )
+    
+/* 
+ *      abs(e - i)         
+ * 1 - ------------ * A - abs(e - i) * B
+ *        (e + i)
+ * 
+ * Where for quantities: A = 331, B = 0.001
+ * and prices: A = 4500, B = 0
+ */
+
+/* If we're doing a rate match, then match based on the price and not
+ * -qty1/qty2. This doesn't work so well for small quantities */
+if @action like "%rate-match%"
+begin
+    insert into
+        #matches
+    select
+        e.report_trade_id,
+        e.inverted,
+        i.trade_id,
+        1 + (
+          - abs(convert(float, e.qty1 - i.qty1) / i.qty1) * 10000
+             - abs(e.qty1 - i.qty1) * 0.5
+          - abs((e.price - i.price) / i.price) * 4500
+            /* - abs(e.price - i.price) * 0 */
+        ),
+        case 
+            when charindex(e.trade_symbol, i.trade_symbol)
+               + charindex(i.trade_symbol, e.trade_symbol) = 0 then 0
+            else 1
+        end,
+        NULL
+    from
+        #external_trades e,
+        #internal_trades i
+    where
+        e.external_account_id = i.external_account_id
+    and 
+        e.contract_id = i.contract_id
+    and
+        e.value_date = i.value_date
+    and (
+            @match_broker = 0
+        or
+            e.broker_id = i.broker_id
+        or
+            e.broker_id = @generic_broker_id
+        or
+            e.broker_id = NULL
+    )
+    and 
+        i.qty1 != 0
+    and 
+        e.qty1 != 0
+    and (
+            i.qty1 < 0 and e.qty1 < 0
+        or
+            i.qty1 > 0 and e.qty1 > 0
+    )
+end
+else
+begin
+    insert into
+        #matches
+    select
+        e.report_trade_id,
+        e.inverted,
+        i.trade_id,
+        1 + (
+          - abs(convert(float, e.qty1 - i.qty1) / i.qty1) * 5000
+             - abs(e.qty1 - i.qty1) * 0.25
+          - abs(convert(float, e.qty2 - i.qty2) / i.qty2) * 5000
+             - abs(e.qty2 - i.qty2) * 0.25
+        ),
+        case 
+            when charindex(e.trade_symbol, i.trade_symbol)
+               + charindex(i.trade_symbol, e.trade_symbol) = 0 then 0
+            else 1
+        end,
+        case when e.qty1 != i.qty1 then "e.qty1(" + convert(varchar(50), e.qty1) + ") != i.qty1(" + convert(varchar(50), i.qty1) + "). " else "" end
+        + case when e.qty2 != i.qty2 then " e.qty2(" + convert(varchar(50), e.qty2) + ") != i.qty2(" + convert(varchar(50), i.qty2) + "). " else "" end
+
+    from
+        #external_trades e,
+        #internal_trades i
+    where
+        e.external_account_id = i.external_account_id
+    and 
+        e.contract_id = i.contract_id
+    and
+        e.value_date = i.value_date
+    and (
+            @match_broker = 0
+        or
+            e.broker_id = i.broker_id
+        or
+            e.broker_id = @generic_broker_id
+        or
+            e.broker_id = NULL
+    )
+    and 
+        i.qty1 != 0
+    and 
+        e.qty1 != 0
+    and (
+            i.qty1 < 0 and e.qty1 < 0
+        or
+            i.qty1 > 0 and e.qty1 > 0
+    )
+end
+
+/* 
+ * If the symbols match, make trade details take the range of 95% - 100% instead
+ * of 0% - 100%.
+ */
+update
+    #matches
+set
+    match_strength = (match_strength - 1) * 0.05 + 1
+where
+    symbols_match = 1
+
+/*select
+    int = count(*)
+from
+    #internal_trades
+select
+    ext = count(*)
+from
+    #external_trades
+select
+    matches = count(*)
+from
+    #matches
+*/    
+
+/*
+select * from #internal_trades
+select * from #external_trades
+
+select 
+    mismatch_strength = @mismatch_strength,
+    reconciled_strength = @reconciled_strength,
+    begin_date = @begin_date,
+    end_date = @end_date,
+    generic_broker_id = @generic_broker_id,
+    match_broker = @match_broker
+
+set rowcount 100
+select
+    a.match_strength,
+    case
+        when convert(numeric(30,7), b.quantity) != convert(numeric(30,7), c.quantity) then convert(char(20), b.quantity) + " != " + convert(char(20), c.quantity) + "(" + rtrim(convert(char(50), abs(b.quantity - c.quantity)) )+ ")"
+        else ""
+    end,
+    case
+        when convert(numeric(30,7), b.price) != convert(numeric(30,7), c.price) then convert(char(20), b.price) + " != " + convert(char(20), c.price) + "(" + rtrim(convert(char(50), abs(b.price - c.price))) + ")"
+        else ""
+    end
+from
+    #matches a,
+    #internal_trades b,
+    #external_trades c
+where
+    a.match_strength >= @mismatch_strength
+and
+    a.trade_id = b.trade_id
+and
+    a.report_trade_id = c.report_trade_id
+and
+    a.inverted = c.inverted
+order by
+    a.match_strength desc,
+    a.symbols_match desc
+set rowcount 0
+*/
+
+/*+---------------------------------------------------------------------------* 
+ |                         MARK: Select best matches                          | 
+ *----------------------------------------------------------------------------*/
+
+declare @report_trade_id int
+declare @inverted bit
+declare @trade_id int
+declare @match_strength float
+declare @symbols_match bit
+declare @match_status_id int
+declare @report_trade_match_id int
+
+/* 
+ * Loop through each of the matches that are greater than @mismatch_strength
+ * and create a report_trade_matches for it.
+ */
+
+declare 
+    matching
+cursor for select
+    report_trade_id,
+    inverted,
+    trade_id,
+    match_strength,
+    symbols_match
+from
+    #matches
+where
+    match_strength >= @mismatch_strength
+order by
+    match_strength desc,
+    symbols_match desc
+
+open matching
+
+fetch matching into
+    @report_trade_id,
+    @inverted,
+    @trade_id,
+    @match_strength,
+    @symbols_match
+    
+while @@sqlstatus = 0
+begin
+
+    if not exists(
+            select
+                *
+            from
+                report_trade_matches
+            where
+                report_trade_id = @report_trade_id
+            or
+                trade_id = @trade_id )
+    begin
+    
+        /* Calculate the status */
+        if @match_strength >= @reconciled_strength
+            select
+                @match_status_id = @committed_status_id
+        else
+            select
+                @match_status_id = @mismatched_status_id
+        
+        select
+            @quantity = convert(numeric(30, 4), qty1),
+            @price = price
+        from
+            #external_trades
+        where
+            report_trade_id = @report_trade_id
+        and
+            inverted = @inverted
+        if @@rowcount != 1
+        begin
+            select
+                id = -1,
+                err = "Couldn't find report_trade_id = " + convert(varchar(10), @report_trade_id) + " and inverted = " + str(@inverted)
+            return
+        end
+                
+/*        select
+            report_trade_id = @report_trade_id,
+            trade_id = @trade_id,
+            match_strength = @match_strength,
+            difference = @reconciled_strength - @match_strength,
+            scaled = 1000 * (@reconciled_strength - @match_strength),
+            e_quantity = a.quantity, i_quantity = b.quantity, diff_quantity = (a.quantity - b.quantity) * 1000,
+            e_price = a.price, i_price = b.price, diff_price = (a.price - b.price) * 1000
+        from
+            #external_trades a,
+            #internal_trades b
+        where
+            a.report_trade_id = @report_trade_id
+        and
+            a.inverted = @inverted
+        and
+            b.trade_id = @trade_id
+        begin tran
+            update
+                keys
+            set
+                last_id = last_id + 1
+            where
+                relation = "report_trade_matches"
+            select
+                @report_trade_match_id = last_id
+            from
+                keys
+            where
+                relation = "report_trade_matches"
+        commit tran
+*/        
+        
+        insert into 
+            report_trade_matches
+        values (
+            @report_commit_id,
+            @trade_id,
+            @report_trade_id,
+            @inverted,
+            @match_strength,
+            @symbols_match,
+            @match_status_id,
+            getdate(),
+            @quantity,
+            @price
+        )
+        
+    end
+
+    fetch matching into
+        @report_trade_id,
+        @inverted,
+        @trade_id,
+        @match_strength,
+        @symbols_match
+end
+
+close matching
+deallocate cursor matching
+
+
+/* Update the report_commits row */
+
+update
+    report_commits
+set
+    update_date = getdate()
+where
+    report_commit_id = @report_commit_id
+
+/*
+select
+    internal_trade_id = i.trade_id,
+    external_trade_id = e.report_trade_id,
+    c.symbol,
+    inverted = case when m.inverted = 0 then "" else "Inverted" end,
+    m.match_strength,
+    
+    symbols_match = case when m.symbols_match = 0 then "No" else "Yes" end,
+    status = convert(char(25), s.name),
+    m.status_date
+from
+    report_trade_matches m,
+    trades i,
+    report_trades e,
+    statuses s,
+    contracts c
+where
+    m.trade_id = i.trade_id
+and
+    m.report_trade_id = e.report_trade_id
+and
+    m.status_id = s.status_id
+and
+    c.contract_id = i.contract_id
+*/
+/*
+/*+---------------------------------------------------------------------------*
+ |          MARK: Match small quant trades likely mismatching on price       |
+ *----------------------------------------------------------------------------*/
+
+exec 
+	r_matchpricemismatches
+			@login,
+			@fund,
+			@report_commit_id
+
+*/
+go

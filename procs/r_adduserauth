@@ -1,0 +1,128 @@
+
+if object_id("r_adduserauth") != NULL
+    drop procedure
+        r_adduserauth
+go
+
+create procedure
+    r_adduserauth
+        @login varchar(50),
+        @auth_type varchar(25),
+        @user varchar(50),
+        @name varchar(50) = NULL,
+        @pass varchar(100) = NULL,
+        @status varchar(25) = NULL,
+        @user_auth_id int = NULL out
+as
+
+declare @user_id int
+declare @auth_type_id int
+declare @status_id int
+
+/* MARK: FIND @user_id */
+select
+    @user_id = a.account_id
+from
+    tico_accounts a
+where
+    a.login = @user
+    
+if @user_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Couldn't find user",
+        'user' = @user
+    return
+end
+
+/* MARK: FIND @auth_type_id */
+select
+    @auth_type_id = a.auth_type_id
+from
+    auth_types a
+where
+    a.name = @auth_type
+    
+if @auth_type_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Couldn't find auth_type",
+        auth_type = @auth_type
+    return
+end
+
+/* MARK: FIND @status_id */
+select
+    @status_id = a.status_id
+from
+    statuses a
+where
+    a.name = @status
+    
+if @status_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Couldn't find status",
+        status_name = @status
+    return
+end
+
+if @name = NULL
+    select
+        @name = @user
+
+if @pass = NULL
+    select
+        @pass = ""
+
+select
+    @user_auth_id = user_auth_id
+from
+    user_auths
+where
+    user_id = @user_id
+and
+    auth_type_id = @auth_type_id
+and
+    name = @name
+
+if @user_auth_id != NULL
+begin
+    select
+        status = "Error",
+        message = "User auth already exists"
+    return
+end
+
+/* MARK: INSERT user_auths */
+insert into
+    user_auths (
+        user_id,
+        auth_type_id,
+        name,
+        pass,
+        status_id
+    )
+values (
+    @user_id,
+    @auth_type_id,
+    @name,
+    @pass,
+    @status_id
+)
+
+select
+    @user_auth_id = @@identity
+
+if @@rowcount != 1
+begin
+    select
+        status = "Error",
+        message = "User auth couldn't be inserted"
+    return
+end
+
+go

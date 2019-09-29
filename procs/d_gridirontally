@@ -1,0 +1,95 @@
+use
+	risk_sales
+go
+
+drop procedure
+	d_gridirontally
+go
+create procedure
+	d_gridirontally
+		@login char(25),
+		@symbol char(25),
+		@quantity numeric(30,6),
+		@price float,
+		@counterparty char(50),
+		@strategy char(50)=NULL
+
+
+as
+
+
+declare @tally_type varchar(25)
+declare @trade_date datetime
+declare @client_user varchar(25)
+declare @client_buys_sells varchar(50)
+declare @dealt_currency varchar(20)
+declare @counter_currency varchar(20)
+declare @client_price float
+declare @client_val_date datetime
+declare @market_price float
+declare @market_val_date datetime
+declare @deal_id int
+
+select
+	@trade_date = getdate()
+
+exec
+	r_nextbusinessday
+		@trade_date,
+		@client_val_date output
+
+
+if @symbol not in("USDCAD", "CADUSD")
+	exec
+		r_nextbusinessday
+			@client_val_date,
+			@client_val_date output
+
+select
+	@client_val_date = convert(datetime, convert(char(11), @client_val_date, 1))
+
+select
+	@market_val_date = @client_val_date
+
+select
+	@client_price = @price
+
+if @quantity > 0
+	select
+		@market_price = @client_price - .0003,
+		@client_buys_sells = "Client Buys"
+else
+	select
+		@market_price = @client_price + .0003,
+		@client_buys_sells = "Client Sells"
+		
+
+
+select
+	@dealt_currency = convert(varchar(3), @symbol),
+	@counter_currency = right(rtrim(@symbol), 3)
+
+
+select
+	@tally_type = "Spot"
+
+exec
+	api_tallyb2bforward
+		@login = @login,
+		@tally_type = @tally_type,
+		@client_user = "FX0012-t1",
+		@client_buys_sells = @client_buys_sells,
+		@quantity = @quantity,
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@client_price = @client_price,
+		@client_val_date = @client_val_date,
+		@market_price = @market_price,
+		@market_val_date = @market_val_date,
+		@deal_id = @deal_id output
+
+
+
+go
+
+

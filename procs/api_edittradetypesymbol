@@ -1,0 +1,88 @@
+
+drop procedure
+	api_edittradetypesymbol	
+go
+
+create procedure
+	api_edittradetypesymbol	
+			@login varchar(25),
+			@name varchar(50),
+			@source_name varchar(100),
+			@mapping varchar(50),
+			@new_mapping varchar(50)
+
+as
+
+declare @trade_type_id int
+declare @source_id int
+
+select
+	@trade_type_id = trade_type_id
+from
+	trade_types	
+where
+	name=@name
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		msg="Cannot find Trade Type",
+		name=@name
+	return
+end
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name=@source_name
+
+if (@@rowcount !=1)
+begin
+	select
+		status="Error",
+		msg="Source does not exist",
+		source=@source_name
+	return
+end
+
+begin tran
+	update
+		trade_type_symbols
+	set
+		symbol=@new_mapping
+	where
+		trade_type_id=@trade_type_id	
+	and
+		source_id=@source_id
+	and	
+		symbol=@new_mapping
+
+	if (@@rowcount !=1)
+	begin
+		select
+			status="Error",
+			msg="Could not edit Trade Type Symbols",
+			mapping=@mapping
+	
+		rollback tran
+
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Trade Type Symbol Edited",
+	name=@name
+
+exec
+	r_mappingoverview2 @login
+
+return
+
+go
+		

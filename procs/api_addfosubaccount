@@ -1,0 +1,155 @@
+create or replace procedure
+	api_addfosubaccount
+		@login varchar(50),
+		@symbol varchar(50),
+		@name varchar(50)=NULL,
+		@bo_master_account varchar(50),
+		@prime_broker varchar(50)
+
+
+
+as
+
+declare @external_account_id int
+declare @bo_master_account_id int
+declare @fo_sub_account_id int
+declare @evaluation_ccy varchar(3)
+declare @evaluation_ccy_id int
+declare @bo_external_account_id int
+declare @legal_entity varchar(150)
+declare @legal_entity_id int
+declare @legal_entity_run_id int
+
+
+/* get attributes from BO account */
+
+select
+	@bo_master_account_id = b.bo_master_account_id,
+	@bo_external_account_id = a.external_account_id,
+	@evaluation_ccy_id = a.evaluation_currency_id,
+	@legal_entity_id = b.legal_entity_id
+from
+        external_accounts a,
+        bo_master_accounts b
+where
+        a.external_account_id = b.external_account_id
+and
+        a.symbol = @bo_master_account
+
+if @bo_master_account_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Could not find bo master account",
+                bo_master_account = @bo_master_account
+        return
+end
+
+select
+	@legal_entity = name
+from
+	legal_entities
+where
+	legal_entity_id  = @legal_entity_id
+if @legal_entity = NULL
+begin
+	select
+		status = "Error",
+		message = "Could not find legal entity from bo master account",
+		bo_master_account = @bo_master_account,
+		legal_entity_id = @legal_entity_id
+	return
+end
+
+select
+	@legal_entity_run_id = run_id
+from
+	runs
+where
+	name = @legal_entity
+if @legal_entity_run_id = NULL
+begin
+	select
+		status = "Warning",
+		message = "Legal entity run not found. Not adding fo sub account to any legal entity run. Account creation will proceed"
+end
+
+
+
+select
+	@evaluation_ccy = name
+from
+	products
+where
+	product_id = @evaluation_ccy_id	
+
+/*
+select
+	@prime_broker = a.name
+from
+	sources a,
+	prime_brokers b,
+	external_account_prime_brokers c
+where
+	a.source_id = b.source_id
+and
+	b.prime_broker_id = c.prime_broker_id
+and
+	c.external_account_id = @bo_external_account_id
+*/
+
+exec
+	api_createextaccount
+		@login = @login,
+		@symbol = @symbol,
+		@name = @name,
+		@prime_broker = @prime_broker,
+		@account_type = "Client",
+		@evaluation_ccy = @evaluation_ccy
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @symbol
+
+
+if @external_account_id != NULL and @bo_master_account_id != NULL
+begin
+	exec
+		j_nextkey
+			"fo_sub_accounts",
+			@fo_sub_account_id out	
+
+	insert into
+		fo_sub_accounts(
+			fo_sub_account_id,
+			bo_master_account_id,
+			external_account_id)
+	values(
+		@fo_sub_account_id,
+		@bo_master_account_id,
+		@external_account_id)
+	if @legal_entity_run_id != NULL
+	begin
+		insert into
+			run_external_accounts(
+				run_id,
+				external_account_id)
+		values(
+			@legal_entity_run_id,
+			@external_account_id
+		)
+	end
+end
+
+go
+			
+		
+
+
+
+		
+		

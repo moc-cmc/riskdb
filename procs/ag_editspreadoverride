@@ -1,0 +1,77 @@
+drop procedure
+	ag_editspreadoverride
+go
+
+create procedure
+	ag_editspreadoverride
+		@login varchar(50),
+		@account varchar(50),
+		@symbol varchar(50),
+		@spread numeric(30,10)
+as
+
+
+declare @external_account_id int
+declare @contract_id int
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+update
+	pip_spread_overrides
+set
+	pip_spread = @spread
+where
+	external_account_id = @external_account_id
+and
+	contract_id = @contract_id
+if @@rowcount = 0
+begin
+	insert into
+		pip_spread_overrides(
+			external_account_id,
+			contract_id,
+			pip_spread)
+	values(
+		@external_account_id,
+		@contract_id,
+		@spread)
+end
+
+
+exec
+	ag_editpipspreadoverrides
+		@login = @login,
+		@account = @account
+
+go
+	
+

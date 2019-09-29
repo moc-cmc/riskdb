@@ -1,0 +1,6 @@
+exec ti_manageprocfield "add", "ag_wiperisksystem", "fundName", "Text",  NULL, "Not Editable", "FUND NAME", NULL, NULL
+exec ti_manageprocfield "add", "ag_wiperisksystem", "totalTrades", "Text",  NULL, "Not Editable", "TOTAL TRADES", NULL, NULL
+exec ti_manageprocfield "add", "ag_wiperisksystem", "totalTransactions", "Text",  NULL, "Not Editable", "TOTAL TRANSACTIONS", NULL, NULL
+exec ti_manageprocfield "add", "ag_wiperisksystem", "endDate", "Text",  NULL, "Not Editable", "END DATE", NULL, NULL
+exec ti_manageprocfield "add", "ag_wiperisksystem", "beginDate", "Text",  NULL, "Not Editable", "BEGIN DATE", NULL, NULL
+exec ti_manageprocfield "add", "ag_wiperisksystem", "wipeIdentifier", "Text",  NULL, "Not Editable", "WIPE IDENTIFIER", NULL, NULL

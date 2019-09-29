@@ -1,0 +1,152 @@
+
+if object_id("cm_deleteuser") != NULL
+    drop procedure
+        cm_deleteuser
+go
+
+create procedure
+	cm_deleteuser
+		@login varchar(30),
+		@user_name varchar(30)
+as
+
+declare @status varchar(30)
+declare @tico_account_id int
+declare @tico_server varchar(50)
+declare @tico_database varchar(50)
+declare @sql_string varchar(250)
+declare @has_trades varchar(1)
+
+select
+	@tico_server = tico_server,
+	@tico_database = tico_database
+from
+	funds
+
+select
+	@tico_account_id = a.account_id,
+	@status = b.name
+from
+	tico_accounts a,
+	statuses b
+where
+	a.status_id = b.status_id
+and
+	a.login = @user_name
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "user name not found",
+		user_name = @user_name
+	return
+end
+	
+if @status != "New"
+begin
+	select
+		status = "Error",
+		message = "This account cannot be deleted. It is not new"
+	return
+end
+
+select
+	@has_trades = "N"
+
+select 
+	@has_trades = "Y"
+from
+        trades
+where
+        user_id = @tico_account_id
+
+if @has_trades = "Y"
+begin
+	select 
+		status = "Error",
+        	message = "This account has trades. It will not be deleted"
+        return
+end
+
+
+delete
+
+from
+	group_accounts		
+where
+	tico_account_id = @tico_account_id
+
+delete
+
+from
+	user_runs		     
+where
+	tico_account_id = @tico_account_id
+
+delete
+
+from
+	fund_tico_accounts	    
+where
+	tico_account_id = @tico_account_id
+
+
+delete
+
+from
+	default_accounts	      
+where
+	tico_account_id = @tico_account_id
+
+
+delete
+
+from
+	traders		       
+where
+	tico_account_id = @tico_account_id
+
+
+delete
+
+from
+	orders		       
+where
+	user_id = @tico_account_id
+
+
+delete
+
+from
+	trades		       
+where
+	user_id = @tico_account_id
+
+
+delete
+
+from
+	trade_edits		       
+where
+	user_id = @tico_account_id
+
+
+delete
+
+from
+	tico_accounts
+where
+	account_id = @tico_account_id
+
+select
+        @sql_string = "exec " + rtrim(@tico_database) + "..ti_removelogin '" + rtrim(@user_name) + "'"
+
+exec
+	sp_remotesql
+		@tico_server,
+		@sql_string
+
+exec
+	cm_fundaccounts
+		@login
+go

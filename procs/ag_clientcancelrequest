@@ -1,0 +1,41 @@
+use
+	risk_sjmdemo
+go
+
+drop procedure
+	ag_clientcancelrequest
+go
+
+
+create procedure
+	ag_clientcancelrequest
+		@login varchar(50),
+		@ledger_request_id int
+as
+
+declare @edit_result varchar(100)
+
+exec
+	api_clientcancelrequest
+		@login = @login,
+		@ledger_request_id = @ledger_request_id,
+		@from_status = "New",
+		@to_status = "Cancelled",
+		@edit_result = @edit_result output
+
+
+if @edit_result != "Success"
+begin
+	select
+		status = "Error",
+		message = "Failed to Cancel ledger request status",
+		ledger_request_id = @ledger_request_id
+	return
+end
+
+
+exec
+	ag_bankclienthome
+		@login = @login
+
+go

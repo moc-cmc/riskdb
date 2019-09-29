@@ -1,0 +1,112 @@
+
+drop procedure
+	fxa_clientlogins
+go
+
+create procedure
+	fxa_clientlogins
+		@login varchar(50)
+as
+
+create table
+	#links(
+		meta_type char(200),
+		column char(30),
+		link char(200) NULL,
+		arguments char(255) NULL,
+		format char(20) NULL)
+
+insert into
+	#links
+values(
+	"Column Link",
+	"set_run",
+	"Client Runs",
+	NULL,
+	NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "add_login",
+	"Add Client Login Config",
+        NULL,
+        NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"set_view_style",
+	"Client View Styles",
+	NULL,
+	NULL)
+
+
+select * from #links
+
+select
+	add_login = "Create Client Login Config"
+
+
+create table
+	#output(
+		id int,
+		user_name varchar(50),
+		run_name varchar(100) NULL,
+		set_run varchar(50) NULL,
+		blotter_view_style varchar(100) NULL,
+		set_view_style varchar(50) NULL
+	)
+
+insert into
+	#output(
+		id,
+		user_name,
+		set_run,
+		set_view_style)
+select
+	a.id,
+	user_name = b.login,
+	set_run = "SET RUN",
+	set_view_style = "SET VIEW STYLE"
+from
+	client_login_configs a,
+	tico_accounts b
+where
+	a.tico_account_id = b.account_id
+
+
+update
+	#output
+set
+	a.run_name = b.name
+from
+	#output a,
+	runs b,
+	client_login_configs c
+where
+	a.id = c.id
+and
+	b.run_id = c.run_id
+
+update
+	#output
+set
+	a.blotter_view_style = b.name
+from
+	#output a,
+	blotter_view_styles b,
+	client_login_configs c
+where
+	a.id = c.id
+and
+	b.blotter_view_style_id = c.blotter_view_style_id
+
+
+
+select * from #output
+
+go

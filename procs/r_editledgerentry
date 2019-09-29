@@ -1,0 +1,138 @@
+drop procedure
+	r_editledgerentry
+go
+
+create procedure
+        r_editledgerentry
+		@login varchar(50),
+		@transaction_id int,
+		@account char(50),
+		@transaction_type char(50),
+		@transaction_date datetime,
+		@amount float,
+		@currency varchar(50),
+		@note char(255)=NULL
+as
+
+declare @account_transaction_id int
+declare @external_account_id int
+declare @transaction_type_id int
+declare @currency_id int
+declare @style varchar(50)
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(30),
+                action char(200) NULL,
+                value char(255) NULL
+)
+
+
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL
+)
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+        @style = "background:#FFFFFF;border: 1px solid white"
+
+select
+	@account_transaction_id = @transaction_id
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = @transaction_type
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Transaction Type not found",
+		transaction_type = @transaction_type
+	return
+end
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+
+begin tran
+	update
+		account_transactions
+	set
+		external_account_id = @external_account_id,
+		amount = @amount,
+		transaction_type_id = @transaction_type_id,
+		transaction_date = @transaction_date,
+		currency_id = @currency_id,
+		note = @note
+	where
+		account_transaction_id = @account_transaction_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			error = "<b><font color='FF0000'>Problem editing transaction</font></b>",
+			account_transaction_id = @account_transaction_id,
+			amount = @amount, 
+			currency = @currency,
+			note = @note
+		rollback tran
+		return
+	end
+commit tran
+
+select
+	style =  @style,
+	status = "Success",
+	message = "<b><font color='00CC00'>Successfully edited transaction</font></b>",
+	account_transaction_id = @account_transaction_id,
+	amount = @amount,
+	currency = @currency,
+	transaction_date = @transaction_date,
+	note = @note
+
+exec
+        ag_accounttransactions
+                @login,
+                @account=@account,
+                @begin_date=@transaction_date,
+                @end_date=@transaction_date
+
+go

@@ -1,0 +1,69 @@
+
+if object_id("mc2_tallyb2bswap") != NULL
+    drop procedure
+        mc2_tallyb2bswap
+go
+
+create procedure
+	mc2_tallyb2bswap
+		@login varchar(50),
+		@client_user varchar(50),
+		@client_buys_sells varchar(20),
+		@counterparty varchar(50),
+		@quantity numeric(30,4),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@near_date datetime,
+		@client_near_price float,
+		@market_near_price float,
+		@far_date datetime,
+		@client_far_price float,
+		@market_far_price float,
+		@client_near_mid float=NULL,	
+		@client_far_mid float=NULL,	
+		@client_near_note varchar(255)=NULL,
+		@client_far_note varchar(255)=NULL,
+		@market_near_note varchar(255)=NULL,
+		@market_far_note varchar(255)=NULL
+
+
+
+as
+
+declare @deal_id int
+
+exec
+	api_tallyb2bswap
+		@login=@login,
+		@client_user=@client_user,      
+		@client_buys_sells=@client_buys_sells,
+		@counterparty=@counterparty,    
+		@quantity=@quantity,            
+		@dealt_currency=@dealt_currency,
+		@counter_currency=@counter_currency,
+		@near_date=@near_date,          
+		@client_near_price=@client_near_price,
+		@market_near_price=@market_near_price,
+		@far_date=@far_date,            
+		@client_far_price=@client_far_price,
+		@market_far_price=@market_far_price,
+		@deal_id=@deal_id,
+		@near_fixing_date=NULL,
+		@far_fixing_date=NULL,  
+		@client_near_mid=@client_near_mid,
+		@client_far_mid=@client_far_mid,
+		@client_near_note=@client_near_note,
+		@client_far_note=@client_far_note,
+		@market_near_note=@market_near_note,
+		@market_far_note=@market_far_note
+
+exec
+	mc_inspectdealtrades
+		@login,
+		@deal_id
+
+
+
+
+
+go

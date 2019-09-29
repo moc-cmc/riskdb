@@ -1,0 +1,48 @@
+drop procedure
+	u_fieldsfromslashseparator
+go
+
+create procedure
+	u_fieldsfromslashseparator
+		@string varchar(200),
+		@field_one varchar(100) output,
+		@field_two varchar(100) output
+as
+
+declare @separator int
+declare @length int
+
+
+
+select
+	@separator = charindex("/", @string)
+
+
+if @separator = 0
+begin
+	select
+		@field_one = @string,
+		@field_two = NULL
+	return
+end
+
+select
+	@length = char_length(@string)
+
+select
+	@field_one = left(@string, @separator -1),
+	@field_two = right(@string, @length - @separator)
+
+exec
+	u_stripcommas
+		@field_one,
+		@field_one output
+
+exec
+	u_stripcommas
+		@field_two,
+		@field_two output
+
+go
+
+

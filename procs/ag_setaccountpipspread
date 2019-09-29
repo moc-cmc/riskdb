@@ -1,0 +1,62 @@
+drop procedure
+	ag_setaccountpipspread
+go
+
+create procedure
+	ag_setaccountpipspread
+		@login varchar(50),
+		@account varchar(50),
+		@pip_spread varchar(200)=NULL
+as
+
+declare @external_account_id int
+declare @pip_spread_id int
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+	
+if @pip_spread = NULL or @pip_spread = ""
+begin
+	update
+		external_accounts
+	set
+		pip_spread_id = NULL
+	where
+		external_account_id = @external_account_id
+end
+else
+begin
+	select
+		@pip_spread_id = pip_spread_id
+	from
+		pip_spreads
+	where
+		name = @pip_spread
+
+
+	update
+		external_accounts
+	set
+		pip_spread_id = @pip_spread_id
+	where
+		external_account_id = @external_account_id
+end
+
+exec
+	ag_pipspreadshome
+		@login = @login
+
+go

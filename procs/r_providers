@@ -1,0 +1,14 @@
+create or replace procedure
+	r_providers
+		@login varchar(50)
+
+as
+
+select
+	name
+from
+	providers
+order by
+	name
+
+go

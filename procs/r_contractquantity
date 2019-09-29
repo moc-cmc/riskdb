@@ -1,0 +1,34 @@
+
+if object_id("r_contractquantity") != NULL
+    drop procedure
+        r_contractquantity
+go
+ 
+create procedure
+	r_contractquantity
+		@contract_id int,
+		@quantity int output
+as
+
+select
+	@quantity = quantity
+from
+	forwards
+where
+	contract_id = @contract_id
+
+if @quantity = NULL
+	select
+		@quantity = a.quantity * b.quantity
+	from
+		forwards a,
+		futures b,
+		future_contracts c
+	where
+		a.contract_id = b.forward_id
+	and
+		b.future_id = c.future_id
+	and
+		c.contract_id = @contract_id
+
+go

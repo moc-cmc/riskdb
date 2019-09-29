@@ -1,0 +1,92 @@
+use
+	risk_alumfx
+go
+
+drop procedure
+	fxa_tallymarketresid
+go
+
+create procedure
+	fxa_tallymarketresid
+		@login char(25),
+		@trade_date datetime=NULL,
+		@buy_sell varchar(50),
+		@counterparty varchar(50),
+		@quantity numeric(30,4),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@value_date datetime,
+		@price float
+as
+
+declare @deal_id int
+declare @trade_id int
+declare @resid_tico_account_id int
+declare @external_account_id int
+declare @fund_id int
+declare @resid_trader_id int
+declare @trader varchar(50)
+declare @symbol varchar(50)
+declare @contract_id int
+declare @now datetime
+
+
+if @trade_date = NULL
+begin
+
+	select
+		@trade_date = getdate()
+end
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@resid_trader_id = resid_trader_id
+from
+	fund_resid_traders
+where
+	fund_id = @fund_id
+
+select
+	@trader = symbol
+from
+	traders
+where
+	trader_id = @resid_trader_id
+if @trader = NULL
+begin
+	select
+		status = "Error",
+		message = "Roll trader not found"
+	return
+end
+
+
+exec
+	api_tallymarketresid
+		@login = @login,
+		@tally_type = "Forward",
+		@strategy = "Resid",
+		@trader = @trader,
+		@buy_sell = @buy_sell,
+		@dealt_currency = @dealt_currency,
+		@counter_currency = @counter_currency,
+		@quantity = @quantity,
+		@price = @price,
+		@value_date = @value_date,
+		@deal_id = @deal_id output,
+		@trade_id = @trade_id output
+
+
+	
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+go
+

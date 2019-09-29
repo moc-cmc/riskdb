@@ -1,0 +1,56 @@
+drop procedure r_routecommitaction
+go
+
+create procedure
+	r_routecommitaction
+		@login varchar(50),
+		@action varchar(50),
+		@trade_date datetime=NULL,
+		@commit_session_id int=NULL
+
+as
+
+if @commit_session_id = NULL
+begin	
+	exec
+		j_nextkey
+			"sessions",
+			@commit_session_id output
+end
+
+if @action like "REVAL TRADES%"
+begin
+	exec
+		cbo_revaltrades
+			@login,
+			@trade_date
+end
+else if @action like "CALCULATE COMMITS%"
+begin
+	exec
+		cm_commitplsforday
+			@login,
+			@trade_date,
+			@commit_session_id
+
+end
+else if @action like "CONFIRM P&L%"
+begin
+	exec 
+		cm_savesessionpls
+			@login,
+			@commit_session_id
+	
+	select
+		@commit_session_id = NULL
+
+end
+
+exec
+	r_revalandcommittrades
+		@login,
+		@commit_session_id
+	
+go
+
+

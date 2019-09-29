@@ -1,0 +1,84 @@
+use
+	risk_jeff
+go
+
+drop procedure
+	ag_editfeeschedproduct
+go
+
+create procedure
+	ag_editfeeschedproduct
+		@login varchar(50),
+		@fee_schedule varchar(200),
+		@product varchar(50),
+		@multiplier numeric(30,4),
+		@min_size numeric(30,4)
+as
+
+declare @product_id int
+declare @fee_schedule_id int
+
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Product not found",
+		product = @product
+	return
+end
+
+
+select
+	@fee_schedule_id = fee_schedule_id
+from
+	fee_schedules
+where
+	name = @fee_schedule
+if @fee_schedule_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Fee schedule not found",
+		fee_schedule = @fee_schedule
+	return
+end
+
+
+update
+	fee_schedule_products
+set
+	multiplier = @multiplier,
+	min_size = @min_size
+where
+	fee_schedule_id = @fee_schedule_id
+and
+	product_id = @product_id
+if @@rowcount != 1
+begin
+	insert into
+		fee_schedule_products(
+			fee_schedule_id,
+			product_id,
+			multiplier,
+			min_size)
+	values(
+		@fee_schedule_id,
+		@product_id,
+		@multiplier,
+		@min_size)
+end
+
+exec
+	ag_editfeeschedproducts
+		@login = @login,
+		@fee_schedule = @fee_schedule
+
+go
+		

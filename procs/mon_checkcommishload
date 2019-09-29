@@ -1,0 +1,63 @@
+
+drop procedure mon_checkcommishload 
+go
+
+create procedure
+	mon_checkcommishload	
+
+as
+
+declare @source_id int
+declare @max_transaction_date datetime
+declare @today datetime
+declare @weekday varchar(12)
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name="Spectrum"
+
+if @@rowcount != 1
+begin
+	select
+		Status="Error",
+	        msg="Could not locate source Spectrum in database"	
+	return
+end
+
+select
+        @weekday = datename(weekday, getdate())
+
+if (@weekday = 'Saturday' or @weekday = 'Sunday')
+begin
+        return
+end
+
+select
+	@max_transaction_date = max(trade_date)
+from
+	external_commissions
+where
+	source_id=@source_id
+
+select
+	@today = getdate()
+
+if (@today != @max_transaction_date)
+begin
+	select
+		Status = "Failed",
+		msg = "External Commissions table not loaded for today"	
+
+	return
+
+end
+
+select
+	Status = "Ok",
+	msg = "Commissions loaded"
+
+go
+

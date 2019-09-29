@@ -1,0 +1,54 @@
+drop procedure fxa_unmarkresid
+go
+		
+create procedure
+	fxa_unmarkresid
+		@login varchar(50),
+		@trade_id int,
+		@run_name varchar(50)=NULL,
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+
+as
+
+
+declare @user_review_status_id int
+
+
+select
+	@user_review_status_id = status_id
+from
+	statuses
+where
+	name = "User Review"
+if @@rowcount != 1
+begin
+	select
+		error = -1,
+		msg = "Problem finding status with name 'User Review'"
+	return
+end
+
+update
+	trades
+set 
+	status_id = @user_review_status_id
+where
+	trade_id = @trade_id
+if @@rowcount != 1
+begin
+	select
+		error = -1,
+		msg = "Problem finding trade",
+		trade_id = @trade_id
+	return
+end
+
+exec
+	fxa_batchmarkresids
+		@login,
+		@run_name,
+		@begin_date,
+		@end_date
+go
+

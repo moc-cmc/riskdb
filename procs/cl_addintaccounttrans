@@ -1,0 +1,30 @@
+
+if object_id("cl_addintaccounttrans") != NULL
+    drop procedure
+        cl_addintaccounttrans
+go
+
+create procedure
+	cl_addintaccounttrans
+		@login char(30),
+		@track_record char(50),
+		@category char(100),
+		@date datetime,
+		@amount float,
+		@note char(255)=NULL
+as
+
+declare @internal_account char(50)
+
+select @internal_account = @track_record
+
+exec
+	s_addintaccounttrans
+		@login,
+		@internal_account,
+		@category,
+		@date,
+		@amount,
+		@note
+
+go

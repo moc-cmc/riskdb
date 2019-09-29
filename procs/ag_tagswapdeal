@@ -1,0 +1,232 @@
+use
+	risk_admis
+go
+
+drop procedure
+	ag_tagswapdeal
+go
+
+create procedure
+	ag_tagswapdeal
+		@login varchar(50),
+		@deal_id int,
+		@tag varchar(50)
+
+as
+
+declare @trader_id int
+declare @fund_roll_trader_id int
+declare @fund_id int
+declare @trades int
+declare @trade_id int
+declare @timestamp datetime
+declare @new_trader_id int
+declare @edits int
+declare @trade_date datetime
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund_roll_trader_id = roll_trader_id
+from
+	fund_roll_traders
+where
+	fund_id = @fund_id
+if @fund_roll_trader_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Fund roll trader not found"
+	return
+end
+
+select
+	@trade_date = min(trade_date)
+from	
+	trades
+where
+	deal_id = @deal_id
+
+create table
+	#traders(
+		trade_id int,
+		trader_id int)
+
+select
+	@trade_id = 0
+select
+	@trades = count(*)
+from
+	trades
+where
+	deal_id = @deal_id
+
+while @trades > 0
+begin
+	select
+		@trade_id  = min(trade_id)
+	from
+		trades
+	where
+		deal_id = @deal_id
+	and
+		trade_id > @trade_id
+
+	select
+		@trader_id = trader_id
+	from
+		trades
+	where
+		trade_id = @trade_id
+
+	if @tag = "Tag as Roll"
+	begin
+		select
+			@new_trader_id = @fund_roll_trader_id
+	end
+	if @tag = "Tag as Market Swap"
+	begin
+		select
+			@timestamp = max(timestamp)
+		from
+			trade_edits
+		where
+			trade_id = @trade_id
+		and
+			trader_id != @fund_roll_trader_id
+
+		select
+			@new_trader_id = trader_id
+		from
+			trade_edits
+		where
+			trade_id = @trade_id
+		and
+			timestamp = @timestamp
+		if @new_trader_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "Unable to find previous trader for trade",
+				trade_id = @trade_id
+		end
+
+	end
+
+	insert into
+		#traders(
+			trade_id,
+			trader_id)
+	values(
+		@trade_id,
+		@new_trader_id)
+
+	select
+		@trades = count(*)
+	from
+		trades
+	where
+		deal_id = @deal_id
+	and
+		trade_id > @trade_id
+end
+
+select
+	@edits = count(*)
+from
+	#traders
+
+begin tran
+	insert into
+		trade_edits(
+			trade_id,
+			deal_id,
+			user_id,
+			trade_type_id,
+			internal_account_id,
+			external_account_id,
+			counterparty_id,
+			quantity,
+			contract_id,
+			value_date,
+			fixing_date,
+			price,
+			trade_date,
+			trader_id,
+			strategy_id,
+			status_id,
+			broker_id,
+			sales_code_id,
+			identifier,
+			pct_price,
+			spot_reference,
+			timestamp)
+	select
+		trade_id,
+		deal_id,
+		user_id,
+		trade_type_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		contract_id,
+		value_date,
+		fixing_date,
+		price,
+		trade_date,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		sales_code_id,
+		identifier,
+		pct_price,
+		spot_reference,
+		timestamp = getdate()
+	from
+		trades
+	where
+		deal_id = @deal_id
+	if @@rowcount != @edits
+	begin
+		select
+			status = "Error",
+			message = "Unable to archive deal before editing. Edit aborted",
+			deal_id = @deal_id
+		rollback tran
+		return
+	end
+
+	update
+		trades
+	set
+		a.trader_id = b.trader_id
+	from
+		trades a,
+		#traders b
+	where
+		a.trade_id = b.trade_id
+	if @@rowcount != @edits
+	begin
+		select
+			status = "Error",
+			message = "Unable to edit deal trades",
+			deal_id = @deal_id
+		rollback tran
+		return
+	end
+commit tran
+
+exec
+	ag_tagrolls
+		@login = @login,
+		@trade_date = @trade_date
+
+
+	
+
+go

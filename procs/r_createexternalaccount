@@ -1,0 +1,46 @@
+drop procedure
+	r_createexternalaccount
+go
+
+create procedure
+	r_createexternalaccount
+		@login varchar(50),
+		@symbol varchar(50),
+		@prime_broker varchar(50),
+		@account_type varchar(50),
+		@evaluation_ccy varchar(10)=NULL,
+		@notional_amount float=NULL,
+		@aggregation_style varchar(10)=NULL,
+		@settlement_method varchar(20)=NULL,
+		@lp_transparency char(1)=NULL,
+		@max_mtd_statement_trades int=NULL,
+		@margin_multiplier int=NULL
+
+
+as
+
+
+exec
+	api_createexternalaccount
+		@login = @login,
+		@symbol = @symbol,
+		@prime_broker = @prime_broker,
+		@account_type = @account_type,
+		@evaluation_ccy = @evaluation_ccy,
+		@notional_amount = @notional_amount,
+		@aggregation_style = @aggregation_style,
+		@settlement_method = @settlement_method,
+		@lp_transparency = @lp_transparency,
+		@max_mtd_statement_trades = @max_mtd_statement_trades, 
+		@margin_multiplier = @margin_multiplier
+
+
+exec
+	r_accountslist
+		@login
+
+go
+	
+
+	
+

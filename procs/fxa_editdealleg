@@ -1,0 +1,116 @@
+drop procedure fxa_editdealleg
+go
+
+create procedure
+	fxa_editdealleg
+		@login varchar(50),
+		@trade_id int,
+		@deal_id int,
+		@trade_date datetime,
+		@external_account varchar(50),
+		@counterparty varchar(50),
+		@quantity numeric(30,4),
+		@symbol varchar(50),
+		@value_date datetime,
+		@fixing_date datetime,
+		@price float,
+		@trader varchar(25),
+		@broker varchar(50),
+		@sales_code varchar(25)
+as
+
+declare @trade_type varchar(25)
+declare @tally_type varchar(25)
+declare @deal_type varchar(50)
+declare @internal_account varchar(50)
+declare @identifier varchar(50)
+declare @strategy varchar(50)
+declare @status_id int
+
+select
+	@trade_type = a.name,
+	@deal_type = c.name,
+	@internal_account = e.symbol,
+	@identifier = b.identifier,
+	@strategy = f.name
+from
+	trade_types a,
+	trades b,
+	deal_types c,
+	deals d,
+	internal_accounts e,
+	strategies f
+where
+	a.trade_type_id = b.trade_type_id
+and
+	b.deal_id = d.deal_id
+and
+	d.deal_type_id = c.deal_type_id
+and
+	b.internal_account_id = e.internal_account_id
+and
+	b.strategy_id = f.strategy_id
+and
+	b.trade_id = @trade_id
+	
+
+if @trade_type in("Swap Near", "Swap Far")
+	select
+		@tally_type = "Swap"
+else
+	select
+		@tally_type = @trade_type
+
+exec
+	r_inserttradeedit @trade_id
+
+exec
+	fxa_edittrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @trade_id,
+		@deal_id = @deal_id,
+		@tally_type = @tally_type,
+		@deal_type = @deal_type,
+		@trade_type = @trade_type,
+		@internal_account = @internal_account,
+		@external_account = @external_account,
+		@counterparty = @counterparty,
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@fixing_date = @fixing_date,
+		@price = @price,
+		@trade_date = @trade_date,
+		@trader = @trader,
+		@strategy = @strategy,
+		@status = NULL,
+		@broker = @broker,
+		@identifier = @identifier,
+		@sales_code = @sales_code,
+		@premium = NULL,
+		@premium_currency = NULL,
+		@prem_settle_date = NULL,
+		@pct_price = NULL,
+		@spot_reference = NULL
+
+if (@quantity = 0)
+begin
+	exec
+		r_updatetradenotification @trade_id, "Cancelled"
+end
+else
+begin
+
+	exec
+		r_updatetradenotification @trade_id, "Edit" 
+end
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+go
+
+

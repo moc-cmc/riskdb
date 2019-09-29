@@ -1,0 +1,201 @@
+
+if object_id("r_resolvesource") != NULL
+    drop procedure
+        r_resolvesource
+go
+
+create proc
+	r_resolvesource
+        @login varchar(50),
+        
+        @source_id int = NULL out,
+        
+        @name varchar(50) = NULL out,
+        
+        @create char(1) = NULL out,
+        @report char(1) = NULL
+as
+
+/* messages */
+declare @to varchar(50)
+declare @issue varchar(250)
+declare @subject varchar(250)
+declare @content varchar(250)
+declare @check_sql varchar(250)
+
+/* FEATURE: sources.status_id */
+declare @status_id int
+
+declare @should_create char(1)
+
+select
+    @should_create = @create,
+    @create = "N"
+ 
+if @login = NULL
+begin
+    if @report != "N"
+        select
+            status = "Error",
+            message = "Login required",
+            login = @login
+    raiserror 99001, "@login required"
+    return
+end
+
+/* Lookup @source_id for @name */
+select
+    @source_id = source_id
+from
+    sources
+where
+    name = @name
+    
+if @source_id = NULL
+begin
+
+    if @should_create = "Y"
+    begin
+    
+        if @name = NULL
+        begin
+            
+            select
+                @issue = "unsupported:r_resolvesource():missing:source=@name",
+                @to = "support",
+                @subject = "Couldn't autocreate source without a name",
+                @content = "User does not exist. r_resolvesource attempted to create the source but no @name was provided."
+            exec
+                r_postmessage
+                    @login = @login,
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High"
+                    
+            if @report != "N"
+                select
+                    source = "Error",
+                    message = "Cannot create source without specifying name",
+                    name = @name
+                    
+            return
+        end
+        
+        /* FEATURE: sources.status_id */
+        select "exec r_resolvestatus", login=@login, source=@name, status_id=NULL, name="Active"
+        exec
+            r_resolvestatus
+                @login = @login,
+                @source = @name,
+                @status_id = @status_id out,
+                @name = "Active"
+        if @status_id = NULL
+        begin
+            
+            select
+                @issue = "unsupported:r_resolvesource():missing:status=Active",
+                @to = "support",
+                @subject = "Couldn't find status, 'Active'",
+                @content = "Status does not exist. r_resolvesource attempted to create the status 'Active' but couldn't."
+            exec
+                r_postmessage
+                    @login = @login,
+                    @name = @issue,
+                    @to = @to,
+                    @channel = "System",
+                    @subject = @subject,
+                    @content = @content,
+                    @priority = "High"
+                    
+            if @report != "N"
+                select
+                    source = "Error",
+                    message = "Cannot create source without an Active status",
+                    name = @name
+                    
+            return
+        end
+       
+        exec
+            j_nextkey
+                "sources",
+                @source_id out
+        
+        insert into
+            sources (
+                source_id,
+                name
+                /* FEATURE: sources.status_id */,
+                status_id
+            )
+            values (
+                @source_id,
+                @name
+                /* FEATURE: sources.status_id */,
+                @status_id
+            )
+        
+        if @@rowcount != 1
+        begin
+            raiserror 98010, "Failed to create source"
+            return
+        end
+        
+        select
+            @create = "Y"
+    
+        select
+            @to = "support",
+            @subject = "Source, """ + @name + """, created",
+            @content = "The source, """ + @name + """, was created by " + @login + "."
+        exec
+            r_postmessage
+                @login = @login,
+                @to = @to,
+                @channel = "General",
+                @subject = @subject,
+                @content = @content,
+                @priority = "Low"
+                
+    end
+    else
+    begin
+
+        select
+            @issue = "notfound:sources(name=" + @name + ")",
+            @to = "support",
+            @subject = "Source, """ + @name + """, not supported",
+            @content = "The source, """ + @name + """, could not be found.",
+            @check_sql = "if exists(select * from sources where name = """ + @name + """) exec r_manageissue @issue_id=#{id}, @status = 'Resolved'"
+        exec
+            r_manageissue
+                @login = @login,
+                @name = @issue,
+                @to = @to,
+                @channel = "General",
+                @subject = @subject,
+                @content = @content,
+                @priority = "High",
+                @check_sql = @check_sql
+                
+        if @report != "N"
+            select
+                status = "Error",
+                message = "Source not found",
+                source = @name
+        
+        return
+    end
+end
+
+select
+    @name = name
+from
+    sources
+where
+    source_id = @source_id
+
+go

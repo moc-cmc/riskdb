@@ -1,0 +1,18 @@
+
+if object_id("r_strategiesasname") != NULL
+    drop procedure
+        r_strategiesasname
+go
+
+create procedure
+	r_strategiesasname
+as
+
+select
+	name
+from
+	strategies
+order by
+	strategy_id
+
+go

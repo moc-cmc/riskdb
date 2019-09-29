@@ -1,0 +1,477 @@
+create or replace procedure 
+	r_importspectrumrates
+		@price_date varchar(50),
+		@value_date varchar(50),
+		@maturity_date varchar(50)=NULL,
+		@call_put varchar(1)=NULL,
+		@strike varchar(50)=NULL,
+		@ccy1 varchar(3),
+		@ccy2 varchar(3),
+		@reval_price varchar(50),
+		@spot_price varchar(50),
+		@yb_cou varchar(50),
+		@int_cou varchar(50),
+		@days_to_maturity varchar(50)
+
+as
+
+declare @bo_price_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @contract_id int
+declare @source_id int
+declare @symbol varchar(50)
+declare @pdate datetime
+declare @mdate datetime
+declare @vdate datetime
+declare @price float
+declare @s_price float
+declare @option_strike float
+declare @is_inverted varchar(5)
+declare @trade_date datetime
+declare @underlying_contract_id int
+declare @price_id int
+declare @bo_spot_settle_id int
+declare @standard_contract_id int
+declare @standard_symbol varchar(50)
+declare @standard_price float
+declare @standard_s_price float
+declare @price_type_id int
+declare @status_id int
+declare @dtm float
+declare @ybcou float
+declare @intcou float
+declare @bo_point_id int
+declare @discount_factor float
+
+select
+	@vdate = convert(datetime, substring(@value_date, 7,4) + substring(@value_date, 4,2) + substring(@value_date, 1,2)),
+	@mdate = convert(datetime, substring(@maturity_date, 7,4) + substring(@maturity_date, 4,2) + substring(@maturity_date, 1,2)),
+	@pdate = convert(datetime, substring(@price_date, 7,4) + substring(@price_date, 4,2) + substring(@price_date, 1,2)),
+	@option_strike = convert(float, @strike),
+	@price = convert(float, @reval_price),
+	@s_price = convert(float, @spot_price),
+	@standard_price =  convert(float, @reval_price),
+	@standard_s_price = convert(float, @spot_price),
+	@dtm = convert(float, @days_to_maturity),
+	@ybcou = convert(float, @yb_cou),
+	@intcou = convert(float, @int_cou)
+
+
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = "MPT"
+if @@rowcount != 1
+begin
+	select
+		error = "source not found",
+		source = "MPT"
+	return
+end
+
+select
+	@price_type_id = price_type_id
+from
+	price_types
+where
+	name = "Close"
+if @@rowcount != 1
+begin
+	select
+		error = "price type not found",
+		price_type = "Close"
+	return
+end
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "User Review"
+if @@rowcount != 1
+begin
+	select
+		error = "could not find status",
+		status = "User Review"
+	return
+end
+
+exec
+        r_daterangefordate
+                @pdate,
+                @begin_date output,
+                @end_date output
+
+if @ccy1 = "RUR"
+begin
+	select
+		@ccy1 = "RUB"
+end
+
+if @ccy2 = "RUR"
+begin
+	select
+		@ccy2 = "RUB"
+end
+
+if @call_put != NULL
+begin
+	select
+		@underlying_contract_id = contract_id
+	from
+		contracts
+	where
+		symbol = @ccy1+@ccy2
+	if @@rowcount != 1
+	begin
+		select
+			msg = "Could not find underlying contract",
+			ccy1 = @ccy1,
+			ccy2 = @ccy2
+		return
+	end
+
+	select
+		@contract_id = b.contract_id
+	from
+		option_contracts b,
+		option_expirations c,
+		options d
+	where
+		b.option_expiration_id = c.option_expiration_id
+	and
+		c.option_id = d.option_id
+	and
+		d.underlying_contract_id = @underlying_contract_id
+	and
+		b.put_call = @call_put
+	and
+		b.strike = @option_strike 
+	and
+		convert(date, c.expiration) = convert(date, @mdate)
+	if @@rowcount != 1
+	begin
+		select
+			msg = "Could not find option contract",
+			strike = @strike,
+			call_put = @call_put,
+			maturity = @mdate,
+			ccy1 = @ccy1,
+			ccy2 = @ccy2
+		return
+	end
+
+	select
+		@symbol = symbol
+	from
+		contracts
+	where
+		contract_id = @contract_id
+end
+else
+begin
+	select
+		@symbol = symbol,
+		@contract_id = contract_id,
+		@standard_contract_id = contract_id,
+		@standard_symbol = symbol
+	from
+		contracts
+	where
+		symbol = @ccy1+@ccy2
+	if @@rowcount != 1
+	begin
+		select
+			msg = "Could not find contract",
+			symbol = @ccy1+@ccy2
+		return
+	end
+	
+	select
+		@is_inverted = "Y"
+	from
+		contracts a,
+		price_styles b,
+		contract_price_styles c
+	where
+		a.contract_id = @contract_id
+	and
+		a.contract_id = c.contract_id
+	and
+		b.price_style_id = c.price_style_id
+	and
+		b.name = "Inverted"
+
+	if @is_inverted = "Y"
+	begin
+		select
+			@standard_contract_id = contract_id,
+			@standard_symbol = symbol
+		from
+			contracts
+		where
+			symbol = @ccy2+@ccy1
+		if @@rowcount != 1
+        	begin
+               		select
+                        	msg = "Could not find standard contract",
+                        	symbol = @ccy2+@ccy1
+                	return
+        	end
+
+		select
+			@price = 1/@price
+	end
+
+end
+
+
+/* check on price to make sure we only update it once since we get many files with the same spot rate */
+if @call_put = NULL
+begin
+	select
+		@price_id = price_id
+	from
+		prices
+	where
+		contract_id = @standard_contract_id
+	and
+		price_date = @end_date
+	and
+		price = @standard_s_price
+end
+
+if @price_id = NULL and @call_put = NULL
+begin
+
+	select
+        	@price_id = price_id
+	from
+        	prices
+	where
+        	contract_id = @standard_contract_id
+	and
+        	price_date = @end_date
+	and 
+		price_type_id = @price_type_id
+
+	if @price_id = NULL
+	begin	
+
+		exec
+                	j_nextkey
+                        	"prices",
+                        	@price_id output
+
+		insert into
+			prices(
+				price_id,
+				status_id,
+				contract_id,
+				price_date,
+				price_type_id,
+				price)
+			values(
+				@price_id,
+				@status_id,
+				@standard_contract_id,
+				@end_date,
+				@price_type_id,
+				@standard_s_price)
+	end
+	else
+        begin
+
+                update
+                        prices
+                set
+                        price = @standard_s_price
+                where
+                        price_id = @price_id
+	end
+
+
+	select
+		@bo_spot_settle_id = bo_spot_settle_id
+	from
+		bo_spot_settles
+	where
+		price_date = @end_date
+	and
+		contract_id = @standard_contract_id
+
+	if @bo_spot_settle_id = NULL
+	begin
+
+		insert into
+			bo_spot_settles(
+				contract_id,	
+				source_id,
+				price_date,
+				price)
+			values(
+				@standard_contract_id,
+				@source_id,
+				@end_date,
+				@standard_s_price)
+	end
+	else
+	begin
+		update
+			bo_spot_settles
+		set
+			price = @standard_s_price
+		where
+			bo_spot_settle_id = @bo_spot_settle_id
+	end
+
+	exec
+		u_setcurrentprice
+			@symbol = @standard_symbol,
+			@price = @standard_s_price
+
+end
+
+			
+select
+	@bo_price_id = bo_price_id
+from
+	bo_prices
+where
+	contract_id = @contract_id
+and
+	source_id = @source_id
+and
+	value_date = @vdate
+and
+	price_date = @end_date
+
+if @bo_price_id = NULL
+begin
+	exec 
+		j_nextkey
+			"bo_prices",
+			@bo_price_id output
+
+	insert into
+		bo_prices(
+			bo_price_id,
+			status_id,
+			contract_id,
+			price_date,
+			value_date,
+			source_id,
+			price)
+	values(
+		@bo_price_id,
+		3,
+		@contract_id,
+		@end_date,
+		@vdate,
+		@source_id,
+		@price)
+
+	select
+		msg = "price successfully inserted",
+		symbol = @symbol,
+		price_date = @end_date,
+		value_date = @vdate
+end
+else
+begin
+	update
+		bo_prices
+	set
+		price = @price
+	where
+		bo_price_id = @bo_price_id 
+
+	select
+		msg = "price successfully updated",
+	        symbol = @symbol,
+                price_date = @end_date,
+                value_date = @vdate,
+		bo_price_id = @bo_price_id
+end
+
+select
+        @bo_point_id = bo_point_id
+from
+        bo_points
+where
+        contract_id = @contract_id
+and
+	source_id = @source_id
+and
+        value_date = @vdate
+and
+        price_date = @end_date
+
+
+/* Calc discount price */
+select
+        @discount_factor = EXP(-@intcou/100 * @dtm/@ybcou)
+
+if @bo_point_id = NULL
+begin
+	exec
+                j_nextkey
+                        "bo_points",
+                        @bo_point_id output
+
+        insert into
+                bo_points(
+                        bo_point_id,
+                        status_id,
+                        contract_id,
+                        price_date,
+                        value_date,
+                        source_id,
+			discount_factor,
+			int_cou,
+			days_to_maturity,
+			year_basis_cou)
+        values(
+                @bo_point_id,
+                3,
+                @contract_id,
+                @end_date,
+                @vdate,
+                @source_id,
+		@discount_factor,
+		@intcou,
+		@dtm,
+		@ybcou)
+
+        select
+                msg = "points successfully inserted",
+                symbol = @symbol,
+                price_date = @end_date,
+                value_date = @vdate
+end
+else
+begin
+	update
+		bo_points
+	set
+		discount_factor = @discount_factor,
+		int_cou = @intcou,
+		days_to_maturity = @dtm,
+		year_basis_cou = @ybcou
+	where
+		bo_point_id = @bo_point_id
+
+        select
+                msg = "points successfully updated",
+                symbol = @symbol,
+                price_date = @end_date,
+                value_date = @vdate,
+                bo_point_id = @bo_point_id
+end		
+
+go

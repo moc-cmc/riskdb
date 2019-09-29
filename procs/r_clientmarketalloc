@@ -1,0 +1,211 @@
+drop procedure r_clientmarketalloc
+go
+
+create procedure
+	r_clientmarketalloc
+		@deal_id int=NULL
+
+as
+
+declare @client_alloc_ext_acct_id int
+declare @client_ext_acct_id int
+declare @client_accts_count int
+declare @id int
+declare @ids int
+declare @allocated_status_id int
+
+if @deal_id = NULL
+	return
+
+select
+	@allocated_status_id = status_id
+from
+	statuses
+where
+	name = "Allocated"
+
+/* QUERY unallocated accounts */
+create table	
+	#unalloc_ext_accts
+(
+	external_account_id int
+)
+
+insert into
+	#unalloc_ext_accts
+select
+	external_account_id
+from
+	external_accounts
+where
+	lower(symbol) like "%unalloc%"
+
+
+/* QUERY all trades in given deal */
+create table
+	#deal_trades
+(
+	trade_id int,
+	external_account_id int,
+	counterparty_id int
+)
+insert into
+	#deal_trades
+select
+	trade_id,
+	external_account_id,
+	counterparty_id
+from
+	trades
+where
+	deal_id = @deal_id
+
+/* QUERY client trades in deal */
+create table
+	#cl_deal_trades
+(
+        trade_id int,
+        external_account_id int
+)
+
+insert into
+	#cl_deal_trades
+select
+        a.trade_id,
+	a.external_account_id
+from
+        #deal_trades a,
+        fund_agency_counterparties b
+where
+        a.counterparty_id = b.counterparty_id
+
+/* FILTER client trades out of deal_trades */
+delete
+	#deal_trades
+from
+        #deal_trades a,
+        fund_agency_counterparties b
+where
+        a.counterparty_id = b.counterparty_id
+
+/* QUERY unallocated market tickets in deal */
+create table
+	#unalloc_trades
+(
+	trade_id int
+)
+
+insert into
+	#unalloc_trades 
+select
+	a.trade_id
+from
+	#deal_trades a,
+	#unalloc_ext_accts b
+where
+	a.external_account_id  = b.external_account_id
+
+
+/* CHECK there is only 1 client account in the deal */
+
+select
+	@client_accts_count = count(external_account_id)
+from	
+	#cl_deal_trades
+group by
+	external_account_id
+if @client_accts_count > 1
+begin
+	select
+		error="Error",
+		msg="Problem finding only 1 client account in deal"
+	return
+end
+
+/* QUERY the client external acount in the deal  */
+if @client_accts_count = NULL
+begin
+	return
+end
+else
+begin
+	select
+		@client_ext_acct_id = external_account_id
+	from
+		#cl_deal_trades
+	group by
+		external_account_id
+ 
+	if @client_ext_acct_id = NULL
+	begin
+        	select
+                	error="Error",
+                	msg="Problem finding client account for  deal"
+        	return
+	end 
+end
+
+
+/* QUERY the market allocation for the client account in the deal */
+select
+	@client_alloc_ext_acct_id = mkt_external_account_id
+from
+	client_mkt_accounts
+where
+	cl_external_account_id = @client_ext_acct_id
+if @client_alloc_ext_acct_id = NULL
+begin
+        select
+                error="Error",
+                msg="Problem finding market allocation for client account",
+		client_ext_acct_id = @client_ext_acct_id
+        return
+end
+
+
+/* UPDATE the external_account for unallocated trades in deal */
+update
+	trades
+set
+	a.external_account_id = @client_alloc_ext_acct_id,
+	a.status_id = @allocated_status_id 
+from	
+	trades a,
+	#unalloc_trades b
+where
+	a.trade_id = b.trade_id
+ 	
+
+/* Notify all trades */
+select
+        @id = 0
+select
+        @ids = count(*)
+from
+        #unalloc_trades
+where
+        trade_id > @id
+
+while @ids > 0
+begin
+        select
+                @id = min(trade_id)
+        from
+                #unalloc_trades
+        where
+                trade_id > @id
+
+	exec 
+		r_inserttradenotification
+			@trade_id = @id
+
+        select
+                @ids = count(*)
+        from
+                #unalloc_trades
+        where
+                trade_id > @id
+end
+
+
+go	

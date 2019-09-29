@@ -1,0 +1,473 @@
+
+if object_id("fix_deliverytrades") != NULL
+    drop procedure
+        fix_deliverytrades
+go
+
+create procedure
+	fix_deliverytrades
+        @login varchar(50),
+        @source varchar(25),
+        @begin_date datetime = NULL,
+        @end_date datetime = NULL,
+        @status varchar(25) = NULL,
+        @trade_notification_id int = NULL
+as
+
+declare @status_id int
+declare @source_id int
+
+/* ----------------------------- MARK: Defaults ----------------------------- */
+
+/* MARK: DEFAULT @source
+ */
+if @status = NULL
+    select
+        @status = "Active"
+        
+/* MARK: EXEC r_normalizedaterange
+ */
+/*
+exec
+    r_normalizedaterange
+        @begin_date out,
+        @end_date out
+ */
+
+/* ------------------------------ MARK: Lookup ------------------------------ */
+
+/* MARK: LOOKUP @source_id
+ */
+select
+    @source_id = source_id
+from
+    sources
+where
+    name = @source
+
+if @source_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Couldn't find the source, '" + @source + "'",
+        source = @source
+    return
+end
+
+/* MARK: LOOKUP @status_id
+ */
+select
+    @status_id = status_id
+from
+    statuses
+where
+    name = @status
+
+if @status_id = NULL and @status not in ("Any", "*")
+begin
+    select
+        status = "Error",
+        message = "Couldn't find the status, '" + @status + "'",
+        name = @status
+    return
+end
+
+
+
+/* ------------------------------- MARK: Query ------------------------------ */
+
+/* @MARK: CREATE #notify_trades
+ */
+create table
+    #notify_trades (
+        trade_notification_id int,
+        notification_status varchar(15),
+        notify_date datetime NULL,
+        deal_id int,
+        order_id varchar(50),
+        secondary_order_id varchar(50) NULL,
+        trade_id int,
+        exec_id varchar(50),
+        secondary_exec_id varchar(50) NULL,
+        trade_date datetime,
+        trade_day datetime NULL,
+        trade_type varchar(25),
+        contract_id int,
+        inverted char(1) NULL,
+        symbol varchar(10) NULL,
+        value_date datetime,
+        side varchar(5),
+        quantity numeric(30,4),
+        price float,
+        spot_reference float NULL,
+        forward_points float NULL,
+        external_account_id int,
+        executing_firm varchar(50) NULL,
+        trader_id int,
+        executing_trader varchar(50) NULL,
+        counterparty_id int,
+        contra_firm varchar(50) NULL,
+        broker_id int,
+        executing_system varchar(50) NULL,
+        account varchar(50) NULL,
+        currency varchar(5) NULL,
+        settl_curr_amt float NULL,
+        settl_currency varchar(5) NULL
+    )
+
+/* @MARK: INSERT #notify_trades from trades
+ */
+insert into
+    #notify_trades (
+        trade_notification_id,
+        notification_status,
+        notify_date,
+        deal_id,
+        order_id,
+        trade_id,
+        exec_id,
+        secondary_exec_id,
+        trade_date,
+        trade_type,
+        contract_id,
+        inverted,
+        value_date,
+        side,
+        quantity,
+        price,
+        spot_reference,
+        external_account_id,
+        trader_id,
+        counterparty_id,
+        broker_id,
+        settl_curr_amt
+    )
+select
+    a.trade_notification_id,
+    notification_status = aa.name,
+    a.notify_date,
+    b.deal_id,
+    order_id = convert(varchar(30), b.deal_id),
+    b.trade_id,
+    exec_id = convert(varchar(30), b.trade_id),
+    b.identifier,
+    b.trade_date,
+    trade_type = ba.name,
+    b.contract_id,
+    inverted = "N",
+    b.value_date,
+    side = "Sell",
+    b.quantity,
+    b.price,
+    b.spot_reference,
+    b.external_account_id,
+    b.trader_id,
+    b.counterparty_id,
+    b.broker_id,
+    settl_curr_amt = -b.quantity * b.price
+from
+    trade_notifications a,
+    statuses aa,
+    trades b,
+    trade_types ba,
+    contracts bb,
+    instruments bba
+where
+    a.status_id = aa.status_id
+and
+    a.trade_id = b.trade_id
+and
+    b.trade_type_id = ba.trade_type_id
+and
+    b.contract_id = bb.contract_id
+and
+    bb.instrument_id = bba.instrument_id
+and
+    a.source_id = @source_id
+and
+    a.status_id = @status_id
+and (
+        @begin_date = NULL
+    or
+        b.trade_date >= @begin_date
+    )
+and (
+        @end_date = NULL
+    or
+        b.trade_date < @end_date
+    )
+and (
+        @trade_notification_id = NULL
+    or
+        a.trade_notification_id = @trade_notification_id
+    )
+and
+    bba.name = "Forward"
+and
+    ba.name in ("Spot", "Forward")
+
+
+
+/* ------------------------------ MARK: Refine ------------------------------ */
+
+/* @MARK: UPDATE #notify_trades: secondary_order_id */
+update
+    #notify_trades
+set
+    secondary_order_id = b.symbol
+from
+    #notify_trades a,
+    deal_exec_symbols b
+where
+    a.deal_id = b.deal_id
+
+
+/* @MARK: UPDATE #notify_trades: trade_day */
+update
+    #notify_trades
+set
+    trade_day = case datepart(weekday, dateadd(hour, 7, trade_date))
+        when 7 then
+            dateadd(day, 2, dateadd(hour, 7, trade_date))
+        when 1 then 
+            dateadd(day, 1, dateadd(hour, 7, trade_date))
+        else
+            dateadd(hour, 7, trade_date)
+    end
+
+
+/* @MARK: UPDATE #notify_trades: executing_firm, account = external_account by @source_id */
+update
+    #notify_trades
+set
+    executing_firm = b.symbol,
+    account = b.symbol
+from
+    #notify_trades a,
+    external_account_symbols b
+where
+    a.external_account_id = b.external_account_id
+and
+    b.source_id = @source_id
+    
+/* @MARK: UPDATE #notify_trades: executing_firm, account = external_account by symbol */
+update
+    #notify_trades
+set
+    executing_firm = b.symbol,
+    account = b.symbol
+from
+    #notify_trades a,
+    external_accounts b
+where
+    a.external_account_id = b.external_account_id
+    
+
+
+/* @MARK: UPDATE #notify_trades: executing_trader = trader by @source_id */
+update
+    #notify_trades
+set
+    executing_trader = b.symbol
+from
+    #notify_trades a,
+    trader_symbols b
+where
+    a.trader_id = b.trader_id
+and
+    b.source_id = @source_id
+    
+/* @MARK: UPDATE #notify_trades: executing_trader = trader by symbol */
+update
+    #notify_trades
+set
+    executing_trader = b.symbol
+from
+    #notify_trades a,
+    traders b
+where
+    a.trader_id = b.trader_id
+    
+
+/* @MARK: UPDATE #notify_trades: contra_firm = counterparty by @source_id */
+update
+    #notify_trades
+set
+    contra_firm = b.symbol
+from
+    #notify_trades a,
+    counterparty_symbols b
+where
+    a.counterparty_id = b.counterparty_id
+and
+    b.source_id = @source_id
+    
+/* @MARK: UPDATE #notify_trades: contra_firm = counterparty by symbol */
+update
+    #notify_trades
+set
+    contra_firm = b.name
+from
+    #notify_trades a,
+    counterparties b
+where
+    a.counterparty_id = b.counterparty_id
+
+    
+/* @MARK: UPDATE #notify_trades: executing_system = broker by @source_id */
+update
+    #notify_trades
+set
+    executing_system = b.symbol
+from
+    #notify_trades a,
+    broker_symbols b
+where
+    a.broker_id = b.broker_id
+and
+    b.source_id = @source_id
+    
+/* @MARK: UPDATE #notify_trades: executing_system = broker  by symbol */
+update
+    #notify_trades
+set
+    executing_system = b.symbol
+from
+    #notify_trades a,
+    brokers b
+where
+    a.broker_id = b.broker_id
+
+    
+/* @MARK: UPDATE #notify_trades: currency, settl_currency */
+update
+    #notify_trades
+set
+    symbol = rtrim(ba.symbol) + "/" + rtrim(bb.symbol),
+    currency = ba.symbol,
+    settl_currency = bb.symbol
+from
+    #notify_trades a,
+    forwards b,
+    products ba,
+    products bb
+where
+    a.contract_id = b.contract_id
+and
+    b.product_id = ba.product_id
+and
+    b.currency_id = bb.product_id
+
+/* @MARK: UPDATE #notify_trades: forward_points, trim for non-Forwards */
+update
+    #notify_trades
+set
+    forward_points = price - spot_reference
+where
+    trade_type = "Forward"
+
+
+
+/* @MARK: UPDATE #notify_trades: inverted contracts as necesary */
+update
+    #notify_trades
+set
+    inverted = "Y",
+    symbol = rtrim(ea.symbol) + "/" + rtrim(eb.symbol),
+    currency = eb.symbol,
+    settl_currency = ea.symbol,
+    price = 1 / a.price,
+    quantity = a.settl_curr_amt,
+    settl_curr_amt = a.quantity
+from
+    #notify_trades a,
+    contract_price_styles b,
+    price_styles c,
+    forwards d,
+    forwards e,
+    products ea,
+    products eb
+where
+    a.contract_id = b.contract_id
+and
+    b.price_style_id = c.price_style_id
+and
+    a.contract_id = d.contract_id
+and
+    d.product_id = e.currency_id
+and
+    d.currency_id = e.product_id
+and
+    e.product_id = ea.product_id
+and
+    e.currency_id = eb.product_id
+and
+    c.name = "Inverted"
+    
+/* @MARK: UPDATE #notify_trades: side */
+update
+    #notify_trades
+set
+    side = "Buy"
+where
+    quantity < 0
+
+/* @MARK: UPDATE #notify_trades: abs(quantity), abs(settl_curr_amt) */
+update
+    #notify_trades
+set
+    quantity = abs(quantity),
+    settl_curr_amt = abs(settl_curr_amt)
+
+
+/* @MARK: SHOW #notify_trades: header */
+select
+    source = @source,
+    source_id = @source_id,
+    begin_date = @begin_date,
+    end_date = @end_date,
+    status = @status,
+    status_id = @status_id,
+    trade_notification_id = @trade_notification_id,
+    notification_count = count(*)
+from    
+    #notify_trades
+
+/* @MARK: SHOW #notify_trades: output */
+select
+    trade_notification_id,
+    notification_status,
+    notify_date,
+    deal_id,
+    order_id,
+    secondary_order_id,
+    trade_id,
+    trade_report_id = convert(varchar(30), trade_notification_id),
+    trade_link_id = convert(varchar(30), deal_id),
+    exec_id,
+    secondary_exec_id,
+    transact_time = trade_date,
+    symbol_sfx = trade_type,
+    symbol,
+    value_date,
+    side,
+    quantity,
+    price,
+    last_spot_rate = spot_reference,
+    forward_points,
+    trade_day,
+    leg_ref_id = convert(varchar(30), trade_id),
+    executing_firm,
+    executing_trader,
+    contra_firm,
+    executing_system,
+    account,
+    currency,
+    settl_curr_amt,
+    settl_currency
+from
+    #notify_trades
+order by
+    trade_notification_id
+
+go

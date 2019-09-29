@@ -1,0 +1,268 @@
+
+drop procedure
+	ag_importtlmcollateral
+go
+
+create procedure
+	ag_importtlmcollateral
+		@login varchar(50),
+		@trade_date varchar(25)=NULL,
+		@client_account varchar(50)=NULL,
+		@agreement_name varchar(50)=NULL,
+		@instrument_type varchar(50)=NULL, 
+		@instrument_currency varchar(50)=NULL,
+		@held_or_pledged varchar(50)=NULL,
+		@margin_type varchar(50)=NULL,
+		@notional varchar(50)=NULL,
+		@valuation_percentage varchar(50)=NULL,
+		@value_in_agreement_ccy varchar(50)=NULL,
+		@value_in_system varchar(50)=NULL
+as
+
+
+
+declare @tlm_collateral_id int
+declare @date datetime
+declare @source_id int
+declare @client_account_id int
+declare @collateral_agreement_id int
+declare @instrument_id int
+declare @currency_id int
+declare @possesion_status_id int
+declare @margin_type_id int
+declare @notional_amount numeric(30,4)
+declare @valuation_pct float
+declare @native_value numeric(30,4)
+declare @equiv numeric(30,4)
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "TLM"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = "TLM"
+	return
+end
+
+select
+	@client_account_id = external_account_id
+from
+	external_account_symbols
+where
+	source_id = @source_id
+and
+	symbol = @client_account
+if @client_account_id = NULL
+begin
+	select
+		@client_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = @client_account
+	if @client_account_id = NULL
+	begin
+		select
+			status = "error",
+			message = "Client account not found",
+			client_account = @client_account
+		return
+	end
+end
+
+select
+	@collateral_agreement_id = collateral_agreement_id
+from
+	collateral_agreements
+where
+	name = @agreement_name
+if @collateral_agreement_id = NULL
+begin
+	exec
+		j_nextkey
+			"collateral_agreements",
+			@collateral_agreement_id output
+
+	insert into
+		collateral_agreements(
+			collateral_agreement_id,
+			name)
+	values(
+		@collateral_agreement_id,
+		@agreement_name)
+end
+
+
+select
+	@instrument_id = transaction_type_id
+from
+	transaction_types
+where
+	name = @instrument_type
+if @instrument_id = NULL
+begin
+	exec
+		j_nextkey
+			"transaction_types",
+			@instrument_id output
+
+	insert into
+		transaction_types(
+			transaction_type_id,
+			name,
+			direction)
+	values(
+		@instrument_id,
+		@instrument_type,
+		1)
+end
+
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @instrument_currency
+if @currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @instrument_currency
+	return
+end
+
+
+select
+	@possesion_status_id = status_id
+from
+	statuses
+where
+	name = @held_or_pledged
+if @possesion_status_id = NULL
+begin
+	exec
+		j_nextkey
+			"statuses",
+			@possesion_status_id output
+
+	insert into
+		statuses(
+			status_id,
+			name)
+	values(
+		@possesion_status_id,
+		@held_or_pledged)
+end
+
+select
+	@margin_type_id = margin_type_id
+from
+	margin_types
+where
+	name = @margin_type
+if @margin_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"margin_types",
+			@margin_type_id output
+	insert into
+		margin_types(
+			margin_type_id,
+			name)
+	values(
+		@margin_type_id,
+		@margin_type)
+end
+
+
+select
+	@notional_amount = convert(numeric(30,4), @notional),
+	@valuation_pct = convert(float, @valuation_percentage),
+	@native_value = convert(numeric(30,4), @value_in_agreement_ccy),
+	@equiv = convert(numeric(30,4), @value_in_system),
+	@date = convert(datetime, @trade_date)
+
+select
+	@tlm_collateral_id = tlm_collateral_id
+from
+	tlm_collateral
+where
+	convert(date, trade_date) = convert(date, @date)
+and
+	collateral_agreement_id = @collateral_agreement_id
+and
+	instrument_type_id = @instrument_id
+and
+	currency_id = @currency_id
+
+if @tlm_collateral_id != NULL
+begin
+	select
+		status = "Dupe",
+		message = "TLM Collateral already posted for date",
+		date = @date,
+		collateral_agreement = @agreement_name,
+		instrument_type = @instrument_type,
+		currency = @instrument_currency
+	return
+end
+
+exec
+	j_nextkey
+		"tlm_collateral",
+		@tlm_collateral_id output
+
+insert into
+	tlm_collateral(
+		tlm_collateral_id,
+		trade_date,
+		client_account_id,
+		collateral_agreement_id,
+		instrument_type_id,
+		currency_id,
+		possesion_status_id,
+		margin_type_id,
+		notional,
+		valuation_percentage,
+		native_market_value,
+		market_value_equiv)
+values(
+	@tlm_collateral_id,
+	@date,
+	@client_account_id,
+	@collateral_agreement_id,
+	@instrument_id,
+	@currency_id,
+	@possesion_status_id,
+	@margin_type_id,
+	@notional_amount,
+	@valuation_pct,
+	@native_value,
+	@equiv)
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Failed to post TLM Collateral for date",
+		date = @date,
+		collateral_agreement = @agreement_name,
+		instrument_type = @instrument_type,
+		currency = @instrument_currency
+end
+
+
+go
+
+
+
+
+
