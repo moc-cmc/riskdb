@@ -1,7 +1,3 @@
-drop table
-	queued_transactions
-go
-
 create table
 	queued_transactions(
 		queued_transaction_id int,

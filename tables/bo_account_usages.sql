@@ -1,7 +1,3 @@
-drop table
-	bo_account_usages
-go
-
 create table
 	bo_account_usages(
 		external_account_id int,
