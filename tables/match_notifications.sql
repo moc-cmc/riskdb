@@ -13,14 +13,14 @@ go
 alter table match_notifications lock datarows
 go
 
-create unique index
+create unique nonclustered index
     u_tn
 on
     match_notifications (
         match_notification_id
     )
 
-create unique clustered index
+create unique nonclustered index
     st_tn
 on
     match_notifications (
