@@ -1,7 +1,3 @@
-drop table
-	account_product_margins
-go
-
 create table
 	account_product_margins(
 		product_id int,
