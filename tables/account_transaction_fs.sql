@@ -1,6 +1,3 @@
-Drop table account_transaction_fs
-go
-
 Create table account_transaction_fs(
         account_transaction_id int,
         fee_schedule_id int

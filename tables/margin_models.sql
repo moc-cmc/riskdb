@@ -1,6 +1,3 @@
-drop table margin_models
-go
-
 create table
 	margin_models(
 		margin_model_id int,

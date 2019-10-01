@@ -1,6 +1,3 @@
-Drop table wire_intermediaries
-go
-
 Create table 
 	wire_intermediaries(
         	wire_intermediary_id int,

@@ -1,9 +1,3 @@
-
-if object_id("bo_points") != NULL
-    drop table
-        bo_points
-go
-
 create table
     bo_points (
         bo_point_id int,

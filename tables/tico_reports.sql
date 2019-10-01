@@ -1,9 +1,4 @@
 
-if object_id("tico_reports") != NULL
-    drop table
-        tico_reports
-go
-
 create table
 	tico_reports (
 		tico_report_id int,

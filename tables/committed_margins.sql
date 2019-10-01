@@ -1,9 +1,3 @@
-
-drop table
-	committed_margins
-go
-
-
 create table
 	committed_margins(
 		external_account_id int,

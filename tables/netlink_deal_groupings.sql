@@ -1,5 +1,3 @@
-drop table netlink_deal_groupings
-go
 
 create table
 	netlink_deal_groupings(

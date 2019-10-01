@@ -1,6 +1,3 @@
-drop table report_requests
-go
-
 create table
 	report_requests(
 		report_request_id int,

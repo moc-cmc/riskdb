@@ -1,7 +1,3 @@
-use
-	risk_sjmdemo
-go
-
 drop table
 	queued_transactions
 go

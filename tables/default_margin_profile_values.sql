@@ -1,6 +1,3 @@
-drop table default_margin_profile_values
-go
-
 create table
 	default_margin_profile_values(
 		currency_id int,

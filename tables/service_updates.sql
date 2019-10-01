@@ -1,6 +1,3 @@
-drop table service_updates
-go
-
 create table
 	service_updates
 (

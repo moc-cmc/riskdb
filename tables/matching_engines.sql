@@ -1,7 +1,3 @@
-drop table
-	matching_engines
-go
-
 create table
 	matching_engines(
 		matching_engine_id int,

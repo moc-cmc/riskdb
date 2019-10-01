@@ -1,7 +1,3 @@
-use
-	risk_stater_dev
-go
-
 drop table
 	credit_positions
 go

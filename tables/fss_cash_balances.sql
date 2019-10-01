@@ -1,11 +1,3 @@
-use
-	risk_jeff
-go
-
-drop table
-	fss_cash_balances
-go
-
 create table
 	fss_cash_balances(
 		trade_date datetime,

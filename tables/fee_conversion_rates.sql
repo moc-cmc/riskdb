@@ -1,8 +1,3 @@
-if object_id("fee_conversion_rates") != NULL
-    drop table
-        fee_conversion_rates
-go
-
 create table
 	fee_conversion_rates(
 		fee_conversion_rate_id int,

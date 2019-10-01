@@ -1,8 +1,3 @@
-use
-	risk_jeff
-go
-
-
 drop table
 	account_product_margins
 go

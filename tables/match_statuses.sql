@@ -1,6 +1,3 @@
-drop table
-	match_statuses
-go
 
 create table
 	match_statuses(

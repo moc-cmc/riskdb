@@ -1,6 +1,3 @@
-drop table request_statuses
-go
-
 create table
 	request_statuses(
 		request_status_id int,	

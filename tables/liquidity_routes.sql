@@ -1,6 +1,3 @@
-drop table liquidity_routes
-go
-
 create table
 	liquidity_routes(
 		liquidity_route_id int,

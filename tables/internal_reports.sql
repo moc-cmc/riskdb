@@ -1,6 +1,3 @@
-drop table internal_reports
-go
-
 create table
 	internal_reports
 (

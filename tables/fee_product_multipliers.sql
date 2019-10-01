@@ -1,8 +1,3 @@
-
-drop table
-	fee_product_multipliers
-go
-
 create table
 	fee_product_multipliers(
 		fee_schedule_id int,

@@ -1,9 +1,3 @@
-
-if object_id("match_exclusions") != NULL
-    drop table
-        match_exclusions
-go
-
 create table
     match_exclusions (
         match_exclusion_id int identity,

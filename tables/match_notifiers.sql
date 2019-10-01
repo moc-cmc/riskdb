@@ -1,9 +1,3 @@
-
-if object_id("match_notifiers") != NULL
-    drop table
-        match_notifiers
-go
-
 create table
 	match_notifiers(
 		match_notifier_id int identity,

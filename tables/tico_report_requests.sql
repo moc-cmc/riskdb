@@ -1,9 +1,4 @@
 
-if object_id("tico_report_requests") != NULL
-    drop table
-        tico_report_requests
-go
-
 /* tico_reports(name="${run} - ", "run=QSON Trading&tradeDate=${today}") */
 /*
   * tico_reports() - reports themselves, templates, and base params, 

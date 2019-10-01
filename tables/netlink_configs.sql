@@ -1,6 +1,3 @@
-drop table netlink_configs
-go
-
 create table
 	netlink_configs(
 		prime_broker_id int,

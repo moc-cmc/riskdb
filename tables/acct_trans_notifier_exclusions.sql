@@ -1,8 +1,3 @@
-if object_id("acct_trans_notifier_exclusions") != NULL
-    drop table
-        acct_trans_notifier_exclusions
-go
-
 create table
     acct_trans_notifier_exclusions (
         exclusion_id int identity,

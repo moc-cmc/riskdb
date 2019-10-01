@@ -1,9 +1,3 @@
-
-if object_id("notifier_exclusions") != NULL
-    drop table
-        notifier_exclusions
-go
-
 create table
     notifier_exclusions (
         notifier_exclusion_id int identity,

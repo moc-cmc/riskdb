@@ -1,6 +1,3 @@
-drop table source_wire_exports
-go
-
 create table
 	source_wire_exports(
 		source_wire_export_id int,

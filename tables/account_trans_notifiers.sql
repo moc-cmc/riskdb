@@ -1,8 +1,3 @@
-if object_id("account_trans_notifiers") != NULL
-    drop table
-        account_trans_notifiers
-go
-
 create table
     account_trans_notifiers (
         account_trans_notifier_id int identity,
