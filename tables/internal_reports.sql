@@ -3,7 +3,7 @@ create table
 (
 	internal_report_id int,
 	name varchar(50),
-	procedure_name varchar(50)=NULL
+	procedure_name varchar(50) NULL
 )
 go
 
