@@ -1,15 +1,17 @@
-drop procedure
-	r_viewcreditprofile
-go
 
-create procedure	
+
+create or replace procedure
 	r_viewcreditprofile
 		@login varchar(50),
 		@credit_profile varchar(50)
-
 as
 
+
 declare @credit_profile_id int
+declare @dist_list varchar(25)
+declare @email_alerts varchar(12)
+declare @add_dist_list varchar(25)
+declare @dist_list_configured varchar(2)
 
 create table
         #meta(
@@ -74,6 +76,15 @@ values(
 )
 
 insert into
+	#meta
+values(
+	"Column Link",
+	"add_dist_list",
+	"Add Distribution List to Profile",
+	NULL
+)
+
+insert into
         #meta
 values(
         "Column Link",
@@ -107,6 +118,14 @@ values (
         NULL)
 
 insert into
+	#meta
+values (
+	"Column Link",
+	"remove_dist_list",
+	"Remove Dist List From Profile",
+	NULL)
+
+insert into
         #meta
 values (
         "Column Link",
@@ -126,10 +145,51 @@ where
 	name = @credit_profile
 
 select
-	back = "<< Back",
-	add_account = "Add Account",
-	add_ctpy = "Add Counterparty",
-	credit_profile = @credit_profile
+        @dist_list_configured = "Y"
+from
+        credit_profile_dist_lists a,
+        credit_profiles b
+where
+        a.credit_profile_id = b.credit_profile_id
+and
+        b.name =  @credit_profile
+
+
+if exists (select name from enabled_product_features where name="Credit Email Alerts")
+begin
+       
+	if @dist_list_configured = "Y"
+	begin
+		select @email_alerts = "Enabled" 
+	end
+	else
+	begin
+		select @email_alerts = "Unset"
+	end
+
+	select
+		@add_dist_list = "Add Distribution List"
+
+	select
+		back = "<< Back",
+		add_account = "Add Account",
+		add_ctpy = "Add Counterparty",
+		add_dist_list = @add_dist_list,
+		credit_profile = @credit_profile
+end
+else
+begin
+        select
+                @email_alerts = "Disabled",
+		@add_dist_list = "Not Enabled"
+
+	select
+		back = "<< Back",
+		add_account = "Add Account",
+		add_ctpy = "Add Counterparty",
+		add_distro_list = @add_dist_list,
+		credit_profile = @credit_profile
+end
 
 create table
 	#credit_profiles(
@@ -146,12 +206,24 @@ create table
 		notice_level float NULL,
 		warning_level float NULL,
 		blocked_level float NULL,
+		email_alerts varchar(10) NULL,
 		external_account_id int NULL,
 		external_account varchar(50) NULL,
 		counterparty_id int NULL,
 		counterparty varchar(50) NULL,
 		style varchar(50) NULL,
 		section varchar(50) NULL)
+
+create table
+	#credit_profile_dist_lists(
+		credit_profile_id int NULL,
+		dist_list_id      int NULL,
+		dist_list	varchar(25) NULL,
+		emails		varchar(100) NULL,
+		remove_dist_list  varchar(10) NULL,
+		style varchar(50) NULL,
+		section varchar(50) NULL)
+
 
 insert into
 	#credit_profiles(
@@ -165,6 +237,7 @@ insert into
                 notice_level,
                 warning_level,
                 blocked_level,
+		email_alerts,
 		style)
 select
 	credit_profile_id,
@@ -177,6 +250,7 @@ select
         notice_level,
         warning_level,
         blocked_level,
+	@email_alerts,
 	style = "background:#FFFFFF;border: 1px solid white"
 from
 	credit_profiles
@@ -206,8 +280,6 @@ from
 	credit_profile_counterparties
 where
         credit_profile_id = @credit_profile_id
-
-	
 
 update
 	#credit_profiles
@@ -263,7 +335,78 @@ from
 where
 	a.counterparty_id = b.counterparty_id
 
+insert into
+	#credit_profile_dist_lists(
+		credit_profile_id,
+		dist_list_id,
+		dist_list,
+		remove_dist_list,
+		section,
+		style)
+select
+	@credit_profile_id,
+	b.dist_list_id,
+	b.name,
+	"Remove",
+	section="Alert Distribution Lists",
+	style = "background:#FFFFFF;border: 1px solid white"
+from
+	credit_profiles a,
+	dist_lists b,
+	credit_profile_dist_lists c
+where
+	a.credit_profile_id=@credit_profile_id
+and
+	a.credit_profile_id=c.credit_profile_id
+and
+	c.dist_list_id=b.dist_list_id
 
+declare dist_cursor cursor for
+	
+	select
+		dist_list 
+	from
+		#credit_profile_dist_lists
+	order by
+		dist_list
+
+open dist_cursor 
+fetch dist_cursor into @dist_list			
+
+while @@sqlstatus = 0
+begin
+
+	insert into 
+		#credit_profile_dist_lists (
+			credit_profile_id,
+			dist_list_id,
+			emails,
+			section,
+			style)
+	select
+		@credit_profile_id,
+		b.dist_list_id,
+		c.email,
+		" ",
+		"color:#CCCCCC;background:#FFFFFF;border: 1px solid white"
+	from
+		dist_list_emails a,
+		dist_lists b,
+		emails c
+	where
+		b.name=@dist_list
+	and
+		b.dist_list_id=a.dist_list_id
+	and
+		a.email_id=c.email_id
+
+	fetch dist_cursor into @dist_list
+
+end
+
+close dist_cursor
+deallocate dist_cursor
+		
 select
 	cpid = credit_profile_id,
         name,
@@ -275,6 +418,7 @@ select
         notice_level,
         warning_level,
         blocked_level,
+	email_alerts,
 	style,
 	edit_profile = "EDIT"
 from
@@ -304,6 +448,32 @@ from
 where
 	counterparty != NULL
 
+declare
+	@dist_count int
 
+select 
+	@dist_count = count(*) 
+from
+	#credit_profile_dist_lists
+
+if(@dist_count > 0)
+begin
+
+	select
+		section="Alert Distribution Lists"
+
+	select
+		credit_profile = @credit_profile,
+		dist_list = dist_list,
+		emails,
+		remove_dist_list,
+		style
+	from
+		#credit_profile_dist_lists
+	order by
+		dist_list_id, emails, dist_list
 	
-go
+end
+
+go 
+
