@@ -1,7 +1,3 @@
-use
-	risk_finotec
-go
-
 drop procedure
 	ag_importcfhrolls
 go
