@@ -1,11 +1,9 @@
-drop procedure r_accountslist
-go
 
-create procedure
+create or replace procedure
 	r_accountslist
 		@login varchar(50)
-
 as
+
 
 declare @login_type varchar(50)
 
@@ -50,9 +48,11 @@ values(
 	"Add Account",
 	NULL
 )
+--Adaptive Server has expanded all '*' elements in the following statement
 
 
-select * from #meta
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
 declare @total_style varchar(250)
 declare @style varchar(250)
@@ -173,6 +173,6 @@ end
 
 
 
-go
-	
-	
+
+go 
+
