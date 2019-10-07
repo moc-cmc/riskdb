@@ -22,10 +22,14 @@ declare @archive_trade_count int
 declare @archive_agg_count int
 declare @archive_tn_count int
 declare @archive_tn_agg_count int
+declare @archive_booking_count int
+declare @archive_booking_agg_count int
 declare @deleted_trade_count int
 declare @deleted_tn_count int
 declare @deleted_agg_count int
 declare @deleted_tn_agg_count int
+declare @deleted_booking_count int
+declare @deleted_booking_agg_count int
 
 declare @first_batch_for_date int
 
@@ -136,16 +140,19 @@ values(
 
 create table
 	#trades(
-		trade_id int
+		trade_id int,
+		deal_id int
 )
 insert into
 	#trades
-select top 1000
-       a.trade_id
+select top  500
+       a.trade_id,
+       a.deal_id
 from
        trades a
 where
        a.value_date <= @archive_date
+
 
 /* Use transaction to manage deletes of trades*/
 begin tran
@@ -236,9 +243,120 @@ begin tran
         	where
                 	archive_date_id = @archive_date_id
 		return
-end
+	end
+	
 
 commit tran /* commit on trades */
+
+/* Use transaction to manage deletes of trade_bookings*/
+begin tran
+
+	insert into
+		archive_trade_bookings(
+			archive_batch_id,
+			trade_id,
+			booking_id)
+	select 
+		@archive_batch_id,
+		a.trade_id,
+		a.booking_id
+	from
+		trade_bookings a,
+		#trades b
+	where
+		a.trade_id = b.trade_id
+	select
+		@archive_booking_count = @@rowcount
+	
+	delete
+		trade_bookings
+	from
+		trade_bookings a,
+		#trades b
+	where
+		a.trade_id = b.trade_id
+	select
+		@deleted_booking_count = @@rowcount
+	
+	if @archive_booking_count != @deleted_booking_count
+	begin
+		select
+			status = "Error",
+			message = "Archive booking count and delete booking count did not match",
+			archive_count = @archive_booking_count,
+			deleted_count = @deleted_booking_count
+		rollback tran
+	
+        	update
+                	archive_dates
+        	set
+                	archive_date_status_id = @failed_status_id,
+                	end_date = getdate()
+        	where
+                	archive_date_id = @archive_date_id
+		return
+	end
+	
+
+commit tran /* commit on trade_bookings */
+
+/* Use transaction to manage deletes of trade_bookings for the aggregates*/
+begin tran
+
+	insert into
+		archive_trade_bookings(
+			archive_batch_id,
+			trade_id,
+			booking_id)
+	select 
+		@archive_batch_id,
+		a.trade_id,
+		a.booking_id
+	from
+		trade_bookings a,
+		#trades b,
+                aggregated_trades c
+        where
+		a.trade_id = c.trade_id
+        and
+                b.trade_id = c.aggregate_trade_id
+	select
+		@archive_booking_agg_count = @@rowcount
+	
+	delete
+		trade_bookings
+	from
+		trade_bookings a,
+		#trades b,
+                aggregated_trades c
+        where
+                a.trade_id = c.trade_id
+        and
+                b.trade_id = c.aggregate_trade_id
+	select
+		@deleted_booking_agg_count = @@rowcount
+	
+	if @archive_booking_agg_count != @deleted_booking_agg_count
+	begin
+		select
+			status = "Error",
+			message = "Archive booking aggd count and delete trade count did not match",
+			archive_count = @archive_booking_agg_count,
+			deleted_count = @deleted_booking_agg_count
+		rollback tran
+	
+        	update
+                	archive_dates
+        	set
+                	archive_date_status_id = @failed_status_id,
+                	end_date = getdate()
+        	where
+                	archive_date_id = @archive_date_id
+		return
+	end
+	
+
+commit tran /* commit on trade_bookings for the aggregates */
 
 
 /* Use transaction to manage deletes of trade_notifications */
@@ -468,6 +586,7 @@ begin tran
 	end
 	
 commit tan
+
 
 /* Done Archiving */
 
