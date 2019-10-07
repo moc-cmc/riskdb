@@ -112,7 +112,7 @@ from
 where
 	a.org_id = b.org_id
 
-/* debug  
+/* debug   
 select * from #outbound_sources
 */
 
@@ -148,6 +148,10 @@ and
 group by
 	d.id
 
+/* can track match_notifications in same temp table
+ * since the outbound sourcce for match notifications
+ * will not be the same as those for trade_notifications
+ */
 
 insert into
         #outbound_counts
@@ -162,6 +166,8 @@ from
 	trades e
 where
         a.trade_match_id = b.trade_match_id
+and
+	b.trade_id = e.trade_id
 and
         a.status_id = c.status_id
 and
