@@ -100,6 +100,7 @@ create table
 		strategy_id int,
 		strategy varchar(30) NULL,
 		identifier varchar(100) NULL,
+                rfmt_id varchar(80) NULL,
 		deal_identifier varchar(80) NULL,
 		deal_status_id int NULL,
 		deal_status varchar(20) NULL,
@@ -154,7 +155,7 @@ create table
 		opt_underlying_contract_id int NULL,
 		opt_underlying_contract varchar(10) NULL,
 		opt_exchange_id int NULL,
-		opt_exchange varchar(25) NULL,
+		opt_exchange varchar(20) NULL,
 		opt_def_exercise_style_id int NULL,
 		opt_def_exercise_style varchar(10) NULL,
 		opt_quantity float NULL,
@@ -181,7 +182,7 @@ create table
 		far_fixing_date datetime NULL,
 		far_trade_notification_id int NULL,
                 abs_far_qty float NULL,
-		swap_symbol varchar(30) NULL,
+		swap_symbol varchar(25) NULL,
 		cl_or_lp varchar(4) NULL,
 		old_qty_if_deleted float NULL,
                 client_prime_broker varchar(20) NULL,
@@ -1867,6 +1868,21 @@ where
 and
     a.broker_id = @manual_tally_broker_id
 
+update
+        #trades
+set
+        rfmt_id = left(identifier, len(identifier) - 2)
+where
+        right(identifier, 2) = '.c'
+
+update
+        #trades
+set
+        rfmt_id = left(identifier, len(identifier) - 2)
+where
+        right(identifier, 2) = '.m'
+
+
 select
 	trade_id,
 	deal_id,
@@ -1916,6 +1932,7 @@ select
 	strategy_id,
 	strategy,
 	identifier,
+	rfmt_id,
 	deal_identifier,
 	deal_status_id,
 	deal_status,
@@ -2001,9 +2018,9 @@ select
 	e_ub,     /* upper_barrier   */
 	e_inst,   /* instrument type */
 	e_ud,   /* up or down barrier */
-	allocation,
         trade_type_detailed,
-        mpt_tally_login
+        mpt_tally_login,
+	allocation
 from
         #trades
 order by
