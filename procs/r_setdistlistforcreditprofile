@@ -1,0 +1,86 @@
+
+create or replace procedure
+
+r_setdistlistforcreditprofile 
+	@login varchar(50),
+	@credit_profile varchar(50),
+	@distlist varchar(25)
+as
+
+declare @credit_profile_id	int
+declare @dist_list_id		int
+
+
+select
+	@credit_profile_id=credit_profile_id
+from
+	credit_profiles
+where
+	name=@credit_profile
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Credit Profile does not exist",
+		credit_profile=@credit_profile
+
+	return
+end
+
+select
+	@dist_list_id = dist_list_id
+from
+	dist_lists
+where
+	name=@distlist
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Distribution List does not exist",
+		distribution_list=@distlist
+	
+	return
+end
+
+begin tran
+
+	insert into
+		credit_profile_dist_lists (
+		credit_profile_id,
+		dist_list_id)
+	values(
+		@credit_profile_id,
+		@dist_list_id)
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			msg="Could not add Distribution List to Credit Profile",
+			credit_profile=@credit_profile,
+			dist_list=@distlist
+
+		rollback tran
+
+		return
+	end
+
+commit tran
+
+select
+	status = "Success",
+	msg="Distribution List added to Credit Profile",
+	credit_profile=@credit_profile,
+	dist_list=@distlist
+
+
+exec
+	r_viewcreditprofile @login, @credit_profile
+
+return
+
+go
+

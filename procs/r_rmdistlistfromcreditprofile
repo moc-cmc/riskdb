@@ -1,0 +1,84 @@
+
+create or replace procedure
+	r_rmdistlistfromcreditprofile
+		@login varchar(50),
+		@credit_profile varchar(50),
+		@dist_list varchar(25)
+as
+
+declare @credit_profile_id int
+declare @dist_list_id      int
+
+select
+	@credit_profile_id = credit_profile_id
+from
+	credit_profiles
+where
+	name=@credit_profile
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Credit Profile does not exist",
+		credit_profile=@credit_profile
+
+	return
+end
+
+select
+	@dist_list_id = dist_list_id
+from
+	dist_lists
+where
+	name=@dist_list
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Distribution List does not exist",
+		dist_list=@dist_list
+
+	return
+end
+
+begin tran
+	
+	delete from
+		credit_profile_dist_lists
+	where
+		credit_profile_id = @credit_profile_id
+	and
+		dist_list_id = @dist_list_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			msg="Could not remove Distribution List from Credit Profile",
+			credit_profile=@credit_profile,
+			dist_list=@dist_list
+
+		rollback tran
+
+		return
+
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Distribution List removed",
+	dist_list=@dist_list
+
+exec
+	r_viewcreditprofile
+		@login,
+		@credit_profile
+
+return
+
+go
+ 
