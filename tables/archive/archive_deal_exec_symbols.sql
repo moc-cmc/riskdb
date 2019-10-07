@@ -6,3 +6,11 @@ create table
         symbol varchar(100)
     )
 go
+
+create unique nonclustered index
+	pk
+on
+	archive_deal_exec_symbols(deal_id)
+go
+
+	

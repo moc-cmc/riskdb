@@ -4,7 +4,13 @@ create table
         deal_id int,
         deal_type_id int,
         timestamp datetime,
-        status_id int,
-	exec_symbol varchar(100) NULL
+        status_id int
     )
 go
+
+create nonclustered index
+	pk 
+on
+	archive_deals(deal_id)
+go
+

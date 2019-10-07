@@ -1,12 +1,4 @@
-use
-	risk_finotec
-go
-
-drop procedure
-	ag_importcfhrolls
-go
-
-create procedure
+create or replace procedure
 	ag_importcfhrolls
 		@login varchar(50),
 		@tradeId varchar(100)=NULL,
