@@ -45,6 +45,16 @@ begin
 	return
 end
 
+if exists (select credit_profile_id from credit_profile_dist_lists where credit_profile_id=@credit_profile_id and dist_list_id = @dist_list_id )
+begin
+	select
+		status="Error",
+		msg="Distribution List already added to profile",
+		distribution_list=@distlist
+
+	return
+end
+
 begin tran
 
 	insert into
