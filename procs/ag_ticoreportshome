@@ -46,6 +46,14 @@ values(
 	NULL) 
 
 insert into
+        #meta
+values(
+        "Column Link",
+        "remove_report",
+        "Delete Tico Report",
+        NULL)
+
+insert into
 	#meta
 values(
 	"Column Link",
@@ -142,7 +150,9 @@ select
 	a.params_tmpl,
 	report_user = c.login,
 	status = d.name,
-	requests = "Requests"
+	requests = "Requests",
+	remove_report = "Remove"
+	
 from
 	tico_reports a,
 	runs b,
