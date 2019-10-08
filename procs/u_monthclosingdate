@@ -1,0 +1,42 @@
+use
+	risk_jeff
+go
+
+drop procedure
+	u_monthclosingdate
+go
+
+create procedure
+	u_monthclosingdate
+		@trade_date datetime,
+		@month_closing_date datetime output
+as
+
+
+declare @first_of_next_month datetime
+declare @last_of_month datetime
+
+
+select
+	@month_closing_date = convert(datetime, convert(date, @trade_date))
+
+
+select
+	@first_of_next_month = convert(datetime, datename(month, dateadd(month, 1, @trade_date)) + " 1, " + datename(year, dateadd(month, 1, @trade_date)))
+
+select
+	@last_of_month = dateadd(day, -1, @first_of_next_month)
+
+if datename(weekday, @last_of_month) = "Sunday"
+	select
+		@last_of_month = dateadd(day, -2, @last_of_month)
+
+if datename(weekday, @last_of_month)  = "Saturday"
+	select
+		@last_of_month = dateadd(day, -1, @last_of_month)
+
+select
+	@month_closing_date = dateadd(hour, 17, @last_of_month)
+
+
+go
