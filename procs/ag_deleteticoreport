@@ -1,0 +1,89 @@
+create or replace procedure
+	ag_deleteticoreport
+		@login varchar(50),
+		@tico_report varchar(50),
+		@run varchar(50)
+
+as
+
+declare @tico_report_id int
+declare @run_id int
+declare @tico_account_id int
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+if @tico_account_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Unable to resolve login"
+        return
+end
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		msg = "Could not find run",
+		run = @run
+	return
+end
+
+select
+	@tico_report_id = tico_report_id 
+from
+	tico_reports
+where
+	run_id = @run_id
+and
+	name = @tico_report
+if @@rowcount !=1
+begin
+	select
+		status = "Error",
+		msg = "Could not find tico_report_id for tico_report and run",
+		tico_report = @tico_report,
+		run = @run
+	return
+end
+
+begin tran
+	delete from
+		tico_reports
+	where
+		tico_report_id = @tico_report_id
+	if @@rowcount !=1
+	begin
+		select
+			status = "Error",
+			msg = "Did not delete one record",
+			tico_report_id = @tico_report_id
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+        status = "Success",
+        msg = "Removed tico report for run",
+        tico_report = @tico_report,
+        run = @run
+
+
+	
+exec
+	ag_ticoreportshome
+		@login=@login
+
+go
