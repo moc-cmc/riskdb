@@ -1,12 +1,5 @@
-use
-	risk_jeff
-go
 
-drop procedure
-	u_monthclosingdate
-go
-
-create procedure
+create or replace procedure
 	u_monthclosingdate
 		@trade_date datetime,
 		@month_closing_date datetime output
