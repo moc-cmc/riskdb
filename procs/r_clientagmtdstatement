@@ -1,6 +1,3 @@
-use
-	risk_jeff
-go
  
 drop procedure
 	r_clientagmtdstatement
@@ -20,9 +17,10 @@ declare @evaluation_currency varchar(50)
 declare @run_id int
 declare @ledger_begin_date datetime
 declare @ledger_end_date datetime
-declare @begin_date datetime
+declare @trades_begin_date datetime
+declare @trades_end_date datetime
 declare @first_of_month datetime
-declare @end_date datetime
+declare @prev_month_date datetime
 declare @fx_transaction_type_id int
 declare @option_premium_type_id int
 declare @source_id int
@@ -82,47 +80,30 @@ select
 	@trade_date = convert(datetime, convert(date, @trade_date))
 
 select
+	@prev_month_date = dateadd(month, -1, @trade_date)
+exec
+	u_monthclosingdate
+		@trade_date = @prev_month_date,
+		@month_closing_date = @trades_begin_date output
+		
+exec
+	u_monthclosingdate
+		@trade_date = @trade_date,
+		@month_closing_date = @trades_end_date output
+
+
+select
 	@first_of_month = convert(datetime, datename(month, @trade_date) + " 1, " + datename(year, @trade_date))
 
 select
 	@ledger_begin_date = @first_of_month
 
-if datename(weekday, @first_of_month) = "Sunday"
-	select
-		@first_of_month = dateadd(day, -2, @first_of_month)
-
-if datename(weekday, @first_of_month) = "Saturday"
-	select
-		@first_of_month = dateadd(day, -1, @first_of_month)
-
-exec
-	r_daterangefordate
-		@trade_date,
-		@begin_date output,
-		@end_date output
-
-if datename(month, @begin_date) = datename(month, @first_of_month)
-begin
-	exec
-		r_prevbusinessday
-			@first_of_month,
-			@first_of_month output
-end
-
 select
-	@first_of_month = dateadd(hour, 17, @first_of_month)
-
+	@ledger_end_date = dateadd(month, 1, @first_of_month)
 select
-	@ledger_end_date = @end_date
+	@ledger_end_date = dateadd(day, -1, @ledger_end_date)
 
-/* select /* DATE DEBUG */ 
-	bbbegin_date = @begin_date, eeend_date = @end_date, ledger_begin_date = @ledger_begin_date, ledger_end_date = @ledger_end_date */
- 
-select
-	@begin_date = @first_of_month
 
-/* select /* DATE DEBUG */
-	bbbegin_date = @begin_date, eeend_date = @end_date, ledger_begin_date = @ledger_begin_date, ledger_end_date = @ledger_end_date  */
 
 select
 	@evaluation_currency_id = evaluation_currency_id
@@ -223,7 +204,7 @@ insert into
 values(
 	@name,
 	"Date:",
-	convert(varchar(11), @end_date))
+	convert(varchar(11), @trades_end_date))
 
 insert into
 	#header(
@@ -256,7 +237,7 @@ values(
 	@evaluation_currency)
 
 select
-	section = "Statement Date - " + convert(varchar(11), @end_date),
+	section = "Statement Date - " + convert(varchar(11), @trades_end_date),
 	style = @style,
 	customer,
 	label,
@@ -454,9 +435,9 @@ where
 and
 	a.contract_id = c.contract_id
 and
-	a.value_date >= @begin_date
+	a.value_date >= @trades_begin_date
 and
-	a.trade_date < @end_date
+	a.trade_date < @trades_end_date
 
 
 create table
@@ -507,7 +488,7 @@ from
 where
 	a.contract_id = b.contract_id
 and
-	a.trade_date >= @begin_date
+	a.trade_date >= @trades_begin_date
 
 update 
 	#new_trades
@@ -604,7 +585,7 @@ and
 and
 	c.name = "Inverted"
 /* MARKR and
-	a.trade_date < @begin_date */
+	a.trade_date < @trades_begin_date */
 
 update
 	#inverted_trades
@@ -725,11 +706,11 @@ and
 and
 	d.name = "CFD Roll"
 and
-	a.value_date >= @end_date
+	a.value_date >= @trades_end_date
 and
-	/*a.trade_date = convert(date, convert(varchar(8), @end_date, 112) + " 17:01")*/
+	/*a.trade_date = convert(date, convert(varchar(8), @trades_end_date, 112) + " 17:01")*/
 	/* These are the same since end date is correct when chopping of timestamp */
-	convert(date, a.trade_date) = convert(date, @end_date)
+	convert(date, a.trade_date) = convert(date, @trades_end_date)
 
 
 update
@@ -955,7 +936,7 @@ and
 and
 	b.contract_id = c.contract_id
 and
-	convert(date, c.price_date) = convert(date, @begin_date)
+	convert(date, c.price_date) = convert(date, @trades_begin_date)
 
 update
 	#conversion_rates
@@ -972,7 +953,7 @@ and
 and
 	b.contract_id = c.contract_id
 and
-	convert(date, c.price_date) = convert(date, @begin_date)
+	convert(date, c.price_date) = convert(date, @trades_begin_date)
 and
 	a.begin_rate = NULL
 
@@ -991,7 +972,7 @@ and
 and
 	b.contract_id = c.contract_id
 and
-	convert(date, c.price_date) = convert(date, @end_date)
+	convert(date, c.price_date) = convert(date, @trades_end_date)
 
 update
 	#conversion_rates
@@ -1008,7 +989,7 @@ and
 and
 	b.contract_id = c.contract_id
 and
-	convert(date, c.price_date) = convert(date, @end_date)
+	convert(date, c.price_date) = convert(date, @trades_end_date)
 and
 	a.end_rate = NULL
 
@@ -1072,7 +1053,7 @@ where
 and
 	a.value_date = b.value_date
 and
-	b.price_date = @end_date
+	b.price_date = @trades_end_date
 
 update
 	#trades
@@ -1089,7 +1070,7 @@ and
 and
 	a.value_date = b.value_date
 and
-	b.price_date = @end_date
+	b.price_date = @trades_end_date
 and
 	b.price != 0
 
@@ -1105,7 +1086,7 @@ where
 and
 	a.value_date = b.value_date
 and
-	b.price_date = @end_date
+	b.price_date = @trades_end_date
 
 update
 	#trades
@@ -1122,7 +1103,7 @@ and
 and
 	a.value_date = b.value_date
 and
-	b.price_date = @end_date
+	b.price_date = @trades_end_date
 and
 	b.discount_factor != 0
 
@@ -1155,7 +1136,7 @@ from
 where
 	a.trade_id = b.trade_id
 and
-	convert(date, b.trade_date) = convert(date, @end_date)  /* MTM */
+	convert(date, b.trade_date) = convert(date, @trades_end_date)  /* MTM */
 
 update
 	#trades
@@ -1218,7 +1199,7 @@ select
 from
 	#trades
 where
-	value_date > @end_date
+	value_date > @trades_end_date
 group by
 	external_account_id,
 	product_id
@@ -1232,7 +1213,7 @@ select
 from
 	#trades
 where
-	value_date > @end_date
+	value_date > @trades_end_date
 group by
 	external_account_id,
 	currency_id
@@ -1274,7 +1255,7 @@ select
 from
 	#trades
 where
-	convert(date, value_date) <= convert(date, @end_date)
+	convert(date, value_date) <= convert(date, @trades_end_date)
 group by
 	external_account_id,
 	product_id
@@ -1289,7 +1270,7 @@ select
 from
 	#trades
 where
-	convert(date, value_date) <= convert(date, @end_date)
+	convert(date, value_date) <= convert(date, @trades_end_date)
 group by
 	external_account_id,
 	currency_id
@@ -1312,7 +1293,7 @@ from
 	#trades a,
 	trade_types b
 where
-	convert(date, value_date) = convert(date, @end_date)
+	convert(date, value_date) = convert(date, @trades_end_date)
 and
 	a.trade_type_id = b.trade_type_id
 and
@@ -1389,7 +1370,7 @@ select
 from
 	#account_transactions
 where
-	/* convert(date, transaction_date) < convert(date, @end_date) */
+	/* convert(date, transaction_date) < convert(date, @trades_end_date) */
 	convert(date, transaction_date) < convert(date, @ledger_begin_date)
 /* MORE DATE DEBUGGING */
 group by
@@ -1412,7 +1393,7 @@ select
 from
 	#account_transactions
 where
-	convert(date, transaction_date) <= convert(date, @end_date)
+	convert(date, transaction_date) <= convert(date, @trades_end_date)
 group by
 	external_account_id,
 	currency_id
@@ -1630,9 +1611,9 @@ and
 and
 	d.option_id = e.option_id
 and
-	a.trade_date <= @end_date
+	a.trade_date <= @trades_end_date
 and
-	d.expiration >= @begin_date
+	d.expiration >= @trades_begin_date
 
 update
         #option_trades
@@ -1693,7 +1674,7 @@ from
 where
 	a.contract_id = b.contract_id
 and
-	convert(date, b.price_date) = convert(date, @end_date)
+	convert(date, b.price_date) = convert(date, @trades_end_date)
 
 update
 	#option_trades
@@ -1833,9 +1814,9 @@ select
 from
 	#option_trades
 where
-	convert(date, expiration) > convert(date, @end_date) /* TESTING */
+	convert(date, expiration) > convert(date, @trades_end_date) /* TESTING */
 /* where
-	trade_date < @begin_date */
+	trade_date < @trades_begin_date */
 order by
 	underlying,
 	expiration,
@@ -1878,8 +1859,8 @@ select
 from
 	#option_trades
 where
-	convert(date, expiration) > convert(date, @end_date)
-	/* trade_date < @begin_date */
+	convert(date, expiration) > convert(date, @trades_end_date)
+	/* trade_date < @trades_begin_date */
 group by
 	underlying,
 	expiration,
@@ -1992,7 +1973,7 @@ where
 and
 	a.contract_id = c.contract_id
 and
-	a.value_date >= @end_date
+	a.value_date >= @trades_end_date
 order by
 	c.symbol,
 	a.value_date
@@ -2033,7 +2014,7 @@ where
 and
 	convert(date, a.value_date) = convert(date, b.value_date)
 and
-	convert(date, b.price_date) = convert(date, @end_date)
+	convert(date, b.price_date) = convert(date, @trades_end_date)
 
 /* TESTING */
 update
@@ -2065,7 +2046,7 @@ and
 and
 	convert(date, a.value_date) = convert(date, c.value_date)
 and
-	convert(date, c.price_date) = convert(date, @end_date)
+	convert(date, c.price_date) = convert(date, @trades_end_date)
 	
 update
 	#open_trades
@@ -2089,7 +2070,7 @@ where
 and
 	a.value_date = b.value_date
 and
-	convert(date, b.price_date) = convert(date, @end_date)
+	convert(date, b.price_date) = convert(date, @trades_end_date)
 
 
 update
@@ -2120,7 +2101,7 @@ and
 and
 	convert(date, a.value_date) = convert(date, c.value_date)
 and
-	convert(date, c.price_date) = convert(date, @end_date) /* BO POINTS */
+	convert(date, c.price_date) = convert(date, @trades_end_date) /* BO POINTS */
 
 update
 	#open_trades
@@ -2144,7 +2125,7 @@ from
 where
         a.trade_id = b.trade_id
 and
-        convert(date, b.trade_date) = convert(date, @end_date)  /* MTM */
+        convert(date, b.trade_date) = convert(date, @trades_end_date)  /* MTM */
 
 
 update
@@ -2284,9 +2265,9 @@ and
 and
 	a.currency_id = e.product_id
 and
-	a.value_date >= @begin_date
+	a.value_date >= @trades_begin_date
 and
-	a.value_date < @end_date 
+	a.value_date < @trades_end_date 
 order by
 	c.symbol,
 	a.value_date,
@@ -2408,9 +2389,9 @@ from
 where 
 	a.trade_type_id = b.trade_type_id
 and
-	a.trade_date >= @begin_date
+	a.trade_date >= @trades_begin_date
 and
-	a.trade_date < @end_date
+	a.trade_date < @trades_end_date
 order by
 	a.ccy_pair,
 	a.trade_id
@@ -2455,7 +2436,7 @@ select
 from
 	#option_trades
 where
-	trade_date >= @begin_date
+	trade_date >= @trades_begin_date
 order by
 	underlying,
 	expiration,
@@ -2484,9 +2465,9 @@ select
 from
 	#option_trades
 where
-	datepart(month, expiration) = datepart(month, @end_date)
+	datepart(month, expiration) = datepart(month, @trades_end_date)
 and
-	datepart(year, expiration) = datepart(year, @end_date)
+	datepart(year, expiration) = datepart(year, @trades_end_date)
 and
 	exercise_trade_id = NULL
 order by
@@ -2563,9 +2544,9 @@ and
 and
 	a.currency_id = d.product_id
 and
-	a.trade_date >= @begin_date
+	a.trade_date >= @trades_begin_date
 and
-	a.trade_date < @end_date
+	a.trade_date < @trades_end_date
 and
 	b.name = "CFD" /* not including CFD Roll here */
 order by
@@ -2672,7 +2653,7 @@ and
 and
 	a.trade_id = f.trade_id
 and
-	convert(date, f.trade_date) = convert(date, @end_date)
+	convert(date, f.trade_date) = convert(date, @trades_end_date)
 order by
 	c.symbol,
 	d.symbol,
@@ -2755,9 +2736,9 @@ and
 and
 	a.external_account_id = d.external_account_id
 and
-	a.trade_date > @begin_date
+	a.trade_date > @trades_begin_date
 and
-	a.trade_date <= @end_date
+	a.trade_date <= @trades_end_date
 order by
 	a.round_turn_id
 
@@ -2903,9 +2884,9 @@ and
 and
 	c.currency_id = i.product_id
 and
-	a.trade_date < @end_date
+	a.trade_date < @trades_end_date
 and
-	c.transaction_date >= @end_date
+	c.transaction_date >= @trades_end_date
 	
 
 /* Select out the Maturing Totals */
@@ -2977,9 +2958,9 @@ and
 and
 	a.account_transaction_id *= e.account_transaction_id
 and
-	a.transaction_date >= @begin_date
+	a.transaction_date >= @trades_begin_date
 and
-	a.transaction_date < @end_date
+	a.transaction_date < @trades_end_date
 order by
 	d.symbol,
 	b.symbol,
@@ -3088,7 +3069,7 @@ if @begin_equiv = NULL
 from
 	#account_transactions
 where
-	convert(date, transaction_date) < convert(date, @end_date)
+	convert(date, transaction_date) < convert(date, @trades_end_date)
 if @begin_end_equiv = NULL
 	select
 		@begin_end_equiv = 0.0 */
@@ -3140,6 +3121,5 @@ order by
 exec
 	r_showdisclaimer
 	"Daily Trading Statement"
-
 
 go
