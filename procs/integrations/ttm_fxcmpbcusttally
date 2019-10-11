@@ -1,48 +1,37 @@
-drop procedure
-	ttm_fxcmpbcusttally
-go
 
-create procedure
+create or replace procedure
 	ttm_fxcmpbcusttally
-                /* Provided by FIX server config.properties & spring.xml */
-                @source varchar(50),
-                @default_login varchar(50),
-                @broker varchar(50),
-                @granularity varchar(15)=NULL,
-                /* Parsed from FIX message and provided by mapping.xml */
-                /* session variables */
-                @sender_comp varchar(50),
-                @target_comp varchar(50),
-                /* identifiers */
-                @trade_report_id varchar(98),
+		@source varchar(50),
+		@default_login varchar(50),
+		@broker varchar(50),
+		@granularity varchar(15)=NULL,
+		@sender_comp varchar(50), 
+		@target_comp varchar(50), 
+		@trade_report_id varchar(98), 
 		@order_id varchar(50),
-                @individual_alloc_id varchar(50)=NULL,
-                @trade_report_trans_type varchar(25),
-                @exec_type varchar(50)=NULL,
-                /*financials*/
-                @symbol varchar(50)=NULL,
-                @ccy1 varchar(50)=NULL,
-                @ccy2 varchar(50)=NULL,
-                @qty float,
+		@individual_alloc_id varchar(50)=NULL,
+		@trade_report_trans_type varchar(25),
+		@exec_type varchar(50)=NULL, 
+		@symbol varchar(50)=NULL, 
+		@ccy1 varchar(50)=NULL,
+		@ccy2 varchar(50)=NULL,
+		@qty float,
 		@counter_qty float=NULL,
-                @price float,
-                @side varchar(10),
-                @trade_date datetime,
-                @trade_day datetime=NULL,
-                @value_date datetime,
+		@price float,
+		@side varchar(10),
+		@trade_date datetime,
+		@trade_day datetime=NULL,
+		@value_date datetime,
 		@fixing_date datetime=NULL,
-		@last_spot_rate float=NULL,
-                /*swaps*/
-                @far_price float=NULL,
+		@last_spot_rate float=NULL, 
+		@far_price float=NULL,
 		@far_value_date datetime=NULL,
-		@far_fixing_date datetime=NULL,
-                /*parties*/
-                @exec_firm varchar(50)=NULL,
-                @order_origination_firm varchar(50)=NULL,
+		@far_fixing_date datetime=NULL, 
+		@exec_firm varchar(50)=NULL, 
+		@order_origination_firm varchar(50)=NULL,
 		@alloc_account varchar(50)=NULL
-
-
 as
+
 
 declare @client_or_market char(1)
 declare @platform_identifier varchar(100)
@@ -209,6 +198,13 @@ declare @c_tally_message varchar(25)
 declare @c_far_tally_status varchar(10)
 declare @c_far_tally_message varchar(25)
 
+/* required for custom VSJEFF-1 workflow */
+declare @fxcm_id_charindex int
+declare @deal_alias varchar(100)
+declare @existing_alias varchar(100)
+declare @netlink_pb_source_id int
+
+
 select
 	@ack_required = "Y"
 
@@ -283,7 +279,6 @@ select
         @trigger_symbol = @m_trader_lookup,
 	@trigger_symbol = @c_counterparty_lookup
 */
-
 
 /* --------------------------------------------------------------------------
  * --------------------------------------------------------------------------
@@ -631,6 +626,72 @@ end
 
 
 /* --------------------------------------------------------------------------
+ * STEP: Add deal alias for netlink pb flow. This tally is CUSTOM
+ *   https://elysiumtechgroup.atlassian.net/browse/VSJEFF-1A
+ * We need to provide a deal alias for downstream netlink pb matching
+ *
+ *
+ * substring of identifier that looks like 022eepllfq_FXCM208057937FXCM_JEFFLTD_20191007
+ * per instruction from FXCM the identifier should be everyting prior to '_FXCM'
+ */
+
+select
+	@netlink_pb_source_id = source_id
+from
+	sources
+where
+	name = "Netlink PB SFTP"
+
+
+select 
+	@fxcm_id_charindex = charindex('_FXCM', @trade_report_id),
+	@deal_alias = NULL
+
+if @fxcm_id_charindex != 0
+begin
+	select
+		@deal_alias = substring(@trade_report_id, 1, @fxcm_id_charindex-1)
+end
+else
+begin
+	select
+		identifier = @trade_report_id,
+		message = "Problem finding '_FXCM' in identfiier for netlink id flow"
+end
+
+
+select
+	@existing_alias = alias
+from
+	deal_aliases
+where
+	deal_id = @deal_id
+and
+	source_id = @netlink_pb_source_id
+if @existing_alias = NULL and @deal_alias != NULL and @deal_id != NULL
+begin
+	insert into
+		deal_aliases(
+			deal_id,
+			source_id,
+			alias)
+	values(
+		@deal_id,
+		@netlink_pb_source_id,
+		@deal_alias
+	)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting deal alias required for netlink reporting"
+		return
+	end
+
+end 
+
+
+/* --------------------------------------------------------------------------
  * STEP: Determine the contract
  *
  */
@@ -869,5 +930,5 @@ begin
 end
 
 
+go 
 
-go

@@ -100,7 +100,7 @@ create table
 		strategy_id int,
 		strategy varchar(30) NULL,
 		identifier varchar(100) NULL,
-                rfmt_id varchar(80) NULL,
+                deal_alias varchar(80) NULL,
 		deal_identifier varchar(80) NULL,
 		deal_status_id int NULL,
 		deal_status varchar(20) NULL,
@@ -633,6 +633,19 @@ from
 	deal_exec_symbols b
 where
 	a.deal_id =  b.deal_id
+
+update
+        #trades
+set
+        deal_alias = b.alias
+from
+        #trades a,
+        deal_aliases b
+where
+        a.deal_id =  b.deal_id
+and
+	b.source_id = @source_id
+
 
 update
 	#trades
@@ -1868,20 +1881,6 @@ where
 and
     a.broker_id = @manual_tally_broker_id
 
-update
-        #trades
-set
-        rfmt_id = left(identifier, len(identifier) - 2)
-where
-        right(identifier, 2) = '.c'
-
-update
-        #trades
-set
-        rfmt_id = left(identifier, len(identifier) - 2)
-where
-        right(identifier, 2) = '.m'
-
 
 select
 	trade_id,
@@ -1932,7 +1931,7 @@ select
 	strategy_id,
 	strategy,
 	identifier,
-	rfmt_id,
+	deal_alias,
 	deal_identifier,
 	deal_status_id,
 	deal_status,
