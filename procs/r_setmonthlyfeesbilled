@@ -1,0 +1,42 @@
+
+create or replace procedure
+		r_setmonthlyfeesbilled	
+			@login varchar(25),
+			@request_id int,
+			@monthly_fees_billed varchar(4),
+			@monthly_billing_date datetime
+as
+
+if (@monthly_fees_billed="No")
+begin
+	select @monthly_billing_date=NULL
+end
+
+begin tran
+	update
+		work_order_reqs
+	set
+		monthly_fees_billed=@monthly_fees_billed,
+		monthly_billing_date=@monthly_billing_date
+	where
+		work_order_req_id=@request_id
+
+	if @@rowcount !=1
+	begin
+		select
+			status="Error",
+			msg="Could not set monthly_fee_billed",
+			request_id="REQ" + convert(varchar(5), @request_id)
+
+		rollback tran
+		exec r_getworkorders @login
+		return
+	end
+
+commit tran
+
+exec
+	r_getworkorders @login
+
+go
+	
