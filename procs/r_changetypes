@@ -1,0 +1,13 @@
+
+create or replace procedure
+	r_changetypes
+as
+
+select
+	name	
+from
+	change_types
+
+go
+
+
