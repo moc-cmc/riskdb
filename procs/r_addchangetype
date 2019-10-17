@@ -1,0 +1,46 @@
+
+create or replace procedure
+	r_addchangetype
+			@login varchar(25),
+			@change_type varchar(100)
+as
+
+declare @change_type_id int
+
+exec
+	j_nextkey "change_types", @change_type_id out
+
+insert into
+	change_types (
+		change_type_id,
+		name)
+	values (
+		@change_type_id,
+		@change_type)
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not add change_type",
+		change_type=@change_type
+	
+	exec
+		r_getworkorders @login
+
+	return
+
+end
+
+select
+	status="Success",
+	msg="Change Type added",
+	change_type=@change_type
+
+exec
+	r_getworkorders @login
+
+go
+
+
+
