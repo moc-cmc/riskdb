@@ -35,6 +35,7 @@ create or replace procedure
 as
 
 
+
 /*
 select
         @source,
@@ -80,6 +81,7 @@ declare @deal_id int
 declare @fund_agency_lookup varchar(30)
 declare @is_fund_agency char(1)
 
+declare @flip_quantity numeric(30, 2)
 declare @quantity numeric(30, 2)
 declare @far_quantity numeric(30, 2)
 declare @contract varchar(20)
@@ -149,7 +151,9 @@ declare @ttl float
 declare @waitfor_delay varchar(11)
 declare @deal_exec_symbol_eb_to_pb varchar(100)
 declare @should_tally_eb_to_pb char(1)
+declare @should_tally_eb_to_pb_ls char(1)
 declare @eb_to_pb_trader varchar(50)
+declare @eb_to_pb_trader_ls varchar(50)
 
 
 select
@@ -1090,8 +1094,57 @@ begin
 				@cp_account=@counterparty
 	end
 end
+
+if @client_or_market = "M" and @far_trade_id = NULL
+begin
+        select
+                @should_tally_eb_to_pb_ls = "Y"
+        from
+                counterparty_symbols a,
+                sources b,
+                counterparties c
+        where
+                a.source_id = b.source_id
+        and
+                a.counterparty_id = c.counterparty_id
+        and
+                b.name = "Jeff EB to PB Liq Stream"
+        and
+                a.symbol = @fss_counterparty
+
+	select
+		should_tally_eb_to_pb_ls= @should_tally_eb_to_pb_ls,
+		eb_to_pb_trader_ls = @eb_to_pb_trader_ls,
+		fss_counterparty = @fss_counterparty,
+		platform_identifier = @platform_identifier
+		
+
+        if @should_tally_eb_to_pb_ls = "Y"
+        begin
+		select
+			@flip_quantity = @quantity * -1			
+                exec
+                        ttc_ebtopbcusttallyliqstream
+                                @source = "Jeff EB to PB Liq Stream",
+                                @default_login = @default_login,
+                                @broker = "Jefferies LiqStream",
+                                @exec_id = @platform_identifier,
+                                @order_id = @deal_exec_symbol_eb_to_pb,
+                                @symbol = @contract,
+                                @qty = @flip_quantity,
+                                @price = @tally_price,
+                                @trade_date = @tally_trade_date,
+                                @value_date = @tally_value_date,
+                                @fixing_date = @tally_fixing_date,
+                                @ea_account="FXNJEFFEB",
+                                @cp_account=@fss_counterparty,
+				@eb_trade_id = @trade_id
+        end
+
+end
 	
 	
+
 
 
 
