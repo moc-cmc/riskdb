@@ -180,6 +180,22 @@ select
 	@tally_far_fixing_date = convert(datetime, @far_fixing_date)
 
 
+/* tally_cover_price and tally_far_cover_price get saved as mid_mark if they exist
+ * but most of the time its the exact same. On our outbound reporter, if the cover_price is
+ * null we set it to the same rate as the trade price. Therefore, lets only save 
+ * it when its different so we are not unnecessarily saving extra records to trade_attributes
+ */
+if @tally_price = @tally_cover_price
+begin
+	select
+		@tally_cover_price = NULL
+end
+
+if @tally_far_price = @tally_far_cover_price
+begin
+	select
+		@tally_far_cover_price = NULL
+end
 	
 
 /* --------------------------------------------------------------------------
@@ -796,7 +812,8 @@ exec
 		@strategy = @strategy,
                 @identifier = @platform_identifier,
                 @spot_reference = @last_spot_rate,
-		@sales_code = @sales_code
+		@sales_code = @sales_code,
+		@mid_mark = @tally_cover_price
 
 if @trade_id = NULL
 begin
@@ -917,7 +934,8 @@ select
         trader = @trader,
         broker = @broker,
         identifier = @platform_identifier,
-        spot_reference = @last_spot_rate
+        spot_reference = @last_spot_rate,
+	mid_mark = @tally_cover_price
 
 if @tally_status = "Error"
 begin
@@ -950,7 +968,8 @@ begin
 			@strategy = @strategy,
 			@identifier = @far_platform_identifier,
 			@spot_reference = @last_spot_rate,
-			@sales_code  = @sales_code
+			@sales_code  = @sales_code,
+			@mid_mark = @tally_far_cover_price
 	
 	if @far_trade_id = NULL
 	begin
@@ -975,7 +994,8 @@ begin
                 	trader = @trader,
                 	broker = @broker,
                 	identifier = @far_platform_identifier,
-                	spot_reference = @last_spot_rate
+                	spot_reference = @last_spot_rate,
+			mid_mark = @tally_far_cover_price
 		return
 	end 
 
