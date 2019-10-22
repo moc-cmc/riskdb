@@ -94,6 +94,7 @@ create table
 		fixing_date varchar(15) NULL,
 		db_price float,
 		std_price float NULL,
+		markup_price float NULL,
 		spot_reference float NULL,
 		sales_code_id int,
 		sales_code varchar(15) NULL,
@@ -181,6 +182,7 @@ create table
 		far_value_date datetime NULL,
 		far_fixing_date datetime NULL,
 		far_trade_notification_id int NULL,
+		far_markup_price float NULL,
                 abs_far_qty float NULL,
 		swap_symbol varchar(25) NULL,
 		cl_or_lp varchar(4) NULL,
@@ -919,6 +921,24 @@ set
 where
 	fund_agency_trade = "Y"
 */
+
+/* sometimes we save a 'markup rate' in midmark since midmark */
+update
+	#trades
+set
+	markup_price = mid_mark
+from
+	#trades a,
+	trade_attributes b
+where
+	a.trade_id = b.trade_id
+
+update
+	#trades
+set
+	markup_price = std_price
+where
+	markup_price = NULL	
 
 update
 	#trades
@@ -1925,6 +1945,7 @@ select
 	fixing_date,
 	db_price,
 	std_price,
+	markup_price,
 	spot_reference,
 	sales_code_id,
 	sales_code,
