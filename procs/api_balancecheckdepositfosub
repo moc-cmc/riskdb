@@ -1,3 +1,4 @@
+
 create or replace procedure
 	api_balancecheckdepositfosub
 		@login varchar(50),
@@ -7,11 +8,13 @@ create or replace procedure
 as
 
 
+
 declare @bo_master_account_id int
 declare @bo_external_account_id int
 declare @fo_sub_account_id int
 declare @master_account varchar(50)
 declare @as_of_date datetime
+declare @today datetime
 declare @status varchar(10)
 declare @message varchar(50)
 declare @product_id int
@@ -21,6 +24,22 @@ declare @pending_balance numeric(30, 8)
 
 select
 	@as_of_date = getdate()
+
+
+/* we book allocations that happen after 17:00 for the next day at 12:00
+ * therefore, we need to include those instead of using a getdate if its between
+ * 17:00 and 23:59. 
+ */
+if datepart(hour, @as_of_date) >= 17
+begin
+	select
+		@today = convert(date, @as_of_date)
+	exec 
+		r_nextbusinessday
+			@today,
+			@as_of_date output
+end
+
 
 select
 	@amount = abs(@amount)
