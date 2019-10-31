@@ -1,0 +1,130 @@
+create or replace procedure
+	ag_editpbtransfer
+		@login varchar(50),
+		@from_pb varchar(50),
+		@from_pb_ext_account varchar(50),
+		@to_pb varchar(50),
+		@to_pb_cpty varchar(50)
+as
+
+declare @pb_transfer_id int
+declare @from_pb_id int
+declare @from_pb_ext_account_id int
+declare @to_pb_id int
+declare @to_pb_cpty_id int
+
+
+select
+	@from_pb_id = a.prime_broker_id
+from
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.name = @from_pb
+if @from_pb_id = NULL
+begin
+	select
+		status = "Error",
+		message = "From PB not found",
+		from_pb = @from_pb
+	return
+end
+
+select
+	@to_pb_id = a.prime_broker_id
+from
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.name = @to_pb
+if @to_pb_id = NULL
+begin
+	select
+		status = "Error",
+		message = "To PB not found",
+		to_pb = @to_pb
+	return
+end
+
+
+select
+	@from_pb_ext_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @from_pb_ext_account
+if @from_pb_ext_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "From PB External Account Not Found",
+		from_pb_ext_account = @from_pb_ext_account
+	return
+end
+
+
+select
+	@to_pb_cpty_id = counterparty_id
+from
+	counterparties
+where
+	name = @to_pb_cpty
+if @to_pb_cpty_id = NULL
+begin
+	select
+		status = "Error",
+		message = "To PB Counterparty not found",
+		to_pb_cpty_id = @to_pb_cpty_id
+	return
+end
+
+select
+	@pb_transfer_id = pb_transfer_id
+from
+	pb_transfers
+where
+	from_pb_id = @from_pb_id
+and
+	to_pb_id = @to_pb_id
+if @pb_transfer_id != NULL
+begin
+	update
+		pb_transfers
+	set
+		from_pb_ext_acct_id = @from_pb_ext_account_id,
+		to_pb_cpty_id = @to_pb_cpty_id
+	where
+		pb_transfer_id = @pb_transfer_id
+end
+else
+begin
+	exec
+		j_nextkey
+			"pb_transfers",
+			@pb_transfer_id output
+
+	insert into
+		pb_transfers(
+			pb_transfer_id,
+			from_pb_id,
+			from_pb_ext_acct_id,
+			to_pb_id,
+			to_pb_cpty_id)
+	values(
+		@pb_transfer_id,
+		@from_pb_id,
+		@from_pb_ext_account_id,
+		@to_pb_id,
+		@to_pb_cpty_id)
+end
+
+exec
+	ag_pbmanagement
+		@login
+
+go
+
