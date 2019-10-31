@@ -1,0 +1,238 @@
+
+create or replace procedure
+	fxa_productrolldates
+			@login	        varchar(50),
+			@trade_date	datetime=NULL,
+			@show_edits	char(5)=NULL
+as
+
+declare @product_type_id int
+declare @closing_date datetime
+declare @roll_date datetime
+declare @end_date datetime
+declare @total_rolldates int
+declare @total_confirmed int 
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into 
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "product_rolldate_id",
+        NULL,
+        NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"Confirmation",
+	"Confirm Product Roll Dates",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"Edit",
+	"Edit Product Roll Dates",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_all",
+	"Confirm All Roll Dates",
+	NULL)
+
+select * from #meta
+
+select
+	@product_type_id = product_type_id
+from
+	product_types
+where
+	name="Currency"
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="No currency product type"
+	return
+end
+
+if @trade_date = NULL
+begin
+
+	declare @today datetime
+
+	select @trade_date = getdate()
+
+	if datepart(hour, @trade_date) >= 17
+	begin
+		select
+			@today = convert(date, @trade_date)
+			exec
+				r_nextbusinessday
+					@today,
+					@trade_date output
+	end
+end
+
+exec r_daterangefordate @trade_date, @trade_date out, @end_date out
+
+select @trade_date = @end_date
+
+if @show_edits = NULL
+	select
+		@show_edits = "No"
+
+if not exists (select product_rolldate_id from product_rolldates where trade_date = @trade_date)
+begin
+	
+	exec r_nextbusinessday @trade_date,   @closing_date out
+	exec r_nextbusinessday @closing_date, @roll_date    out
+
+	insert into 
+		product_rolldates
+		(product_id,
+		 trade_date,
+		 closing_date,
+		 roll_date)
+	select
+		product_id,
+		@trade_date,
+		@closing_date, 
+		@roll_date
+	from
+		products	
+	where
+		product_type_id=@product_type_id
+	and
+		symbol not in ("TRY", "CAD")
+
+
+	insert into
+		product_rolldates
+		(product_id,
+		 trade_date,
+		 closing_date,
+		 roll_date)
+	select
+		product_id,
+		@trade_date,
+		@trade_date,
+		@closing_date	
+	from
+		products
+	where
+		product_type_id=@product_type_id
+	and
+		symbol in ("TRY", "CAD")
+
+end
+
+select 
+	@total_rolldates = count(*) 
+from
+	product_rolldates
+where
+	convert(varchar(11), trade_date, 101) = convert(varchar(11), @trade_date, 101)
+
+select
+	@total_confirmed = count(*)
+from
+	product_rolldates
+where
+	confirmed_by != NULL
+and
+	convert(varchar(11), trade_date, 101) = convert(varchar(11), @trade_date, 101)
+
+if (@total_rolldates != @total_confirmed)
+begin
+	select
+		section = "Confirm All",
+		trade_date = convert(char(11), @trade_date, 101),
+		confirm_all = "Confirm All"
+end
+else
+begin
+	select
+		section="Confirm All",
+		trade_date = convert(char(11), @trade_date, 101),
+		confirm_all=""
+end
+
+select
+	section = "Product Roll Dates",
+	a.name,
+	a.symbol,
+	trade_date=convert(varchar(11), trade_date, 101),
+	closing_date=convert(varchar(11), closing_date, 101),
+	roll_date=convert(varchar(11), roll_date, 101),
+	b.confirmed_at,
+	b.confirmed_by,
+	confirmation="Confirm",
+	edit="Edit"
+from
+	products a,
+	product_rolldates b
+where
+	a.product_id=b.product_id
+and
+	b.trade_date=@trade_date
+order by
+	a.symbol
+
+if (@show_edits = "Yes")
+begin
+	select
+		section = "Product Roll Date Edits",
+		a.name,
+		a.symbol,
+		trade_date=convert(varchar(11), trade_date, 101),
+		closing_date=convert(varchar(11), closing_date, 101),
+		roll_date=convert(varchar(11), roll_date, 101),
+		b.confirmed_at,
+		b.confirmed_by,
+		b.edited_by,
+		b.timestamp
+	from
+		products a,
+		product_rolldate_edits b
+	where
+		a.product_id = b.product_id
+	and
+		b.trade_date = @trade_date
+order by
+	b.timestamp desc
+end
+
+go
+
+	
