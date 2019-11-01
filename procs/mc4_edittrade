@@ -84,8 +84,25 @@ declare @send_edit char(1)
 declare @account_status_id int
 declare @readonly_status_id int
 
+declare @pend_affirm_status_id int
+declare @affirm_status_id int
+
 select
 	@send_edit = "N"
+
+select
+	@pend_affirm_status_id = status_id
+from
+	statuses
+where
+	name = "Pending Affirmation"
+
+select
+	@affirm_status_id = status_id
+from
+	statuses
+where
+	name = "Affirmed"
 
 select
     @user_id = account_id,
@@ -544,6 +561,8 @@ if @status_id = NULL
     select
         @status_id = @orig_status_id
 
+
+
 if @trade_type in("Option", "Exotic")
 begin
 	select
@@ -655,6 +674,16 @@ if
 begin
     select
         @send_edit = "Y"
+
+end
+
+
+/* Regulatory requirements for affirmation require we set to pending again on edit of trade details 
+ * if the trade was already affirmed */
+if @orig_status_id = @affirm_status_id and @pend_affirm_status_id != NULL and @affirm_status_id != NULL
+begin
+	select
+		@status_id = @pend_affirm_status_id
 end
 
 select
