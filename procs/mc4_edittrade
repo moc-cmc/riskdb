@@ -1,10 +1,4 @@
-
-if object_id("mc4_edittrade") != NULL
-    drop procedure
-        mc4_edittrade
-go
-
-create procedure
+create or replace procedure
     mc4_edittrade
         @login char(75),
         @trade_id int,
