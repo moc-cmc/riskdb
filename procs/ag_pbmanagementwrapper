@@ -1,0 +1,19 @@
+create or replace procedure
+	ag_pbmanagementwrapper
+		@login varchar(50),
+		@run_name varchar(50)=NULL
+
+as
+
+
+exec
+	ag_pbmanagement		
+                @login=@login,
+                @run_name=@run_name
+
+
+go
+
+
+
+

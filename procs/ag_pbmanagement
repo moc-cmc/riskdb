@@ -1,0 +1,285 @@
+create or replace procedure
+	ag_pbmanagement
+		@login varchar(50),
+		@run_name varchar(50)=NULL
+as
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @run_id int
+
+declare @tico_account_id int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"currency",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_defs",
+	"Configure Run Tally Defaults",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_defaults",
+	"Manage PBs",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_transfer",
+	"Configure PB Transfer",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_transfer",
+	"Configure PB Transfer",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_spread_pl",
+	"Number",
+	"#,##0.00")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#FFFFFF;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+select
+	style = @style,
+	add_transfer = "Add New PB Transfer Instructions"
+
+select
+	section = "Transfer Routing Instructions",
+	style = @style,
+	from_pb = e.name,
+	from_pb_ext_account = b.symbol,
+	to_pb = g.name,
+	to_pb_cpty = c.name,
+	edit_transfer = "EDIT"
+from
+	pb_transfers a,
+	external_accounts b,
+	counterparties c,
+	prime_brokers d,
+	sources e,
+	prime_brokers f,
+	sources g
+where
+	a.from_pb_ext_acct_id = b.external_account_id
+and
+	a.to_pb_cpty_id = c.counterparty_id
+and
+	a.from_pb_id = d.prime_broker_id
+and
+	d.source_id = e.source_id
+and
+	a.to_pb_id = f.prime_broker_id
+and
+	f.source_id = g.source_id
+order by
+	e.name
+	
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run_name
+
+create table
+	#runs(
+		id int identity,
+		style varchar(250) NULL,
+		run_id int NULL,
+		run_name varchar(50) NULL)
+insert into
+	#runs(
+		style,
+		run_id,
+		run_name)
+select
+	style = @style,
+	a.run_id,
+        run_name = a.name
+from
+        runs a,
+        user_runs b,
+        run_tally_defaults c
+where
+        a.run_id = b.run_id
+and
+        a.run_id = c.run_id
+and
+        b.run_id = c.run_id
+and
+        b.tico_account_id = @tico_account_id
+order by
+	a.name
+
+update
+	#runs
+set
+	style = @selected_style
+where
+	run_id = @run_id
+
+select
+	section = "Flattening Runs",
+	style,
+	run_name,
+	tally_defaults = "Tally Defaults"
+from
+	#runs
+order by
+	id
+
+create table
+	#tally_defaults(
+		id int identity,
+		style varchar(250) NULL,
+		run_name varchar(50) NULL,
+		user_name varchar(50) NULL,
+		tally_type varchar(50) NULL,
+		internal_account varchar(50) NULL,
+		trader varchar(50) NULL,
+		strategy varchar(50) NULL,
+		broker varchar(50) NULL,
+		edit_defs varchar(50) NULL)
+insert into
+	#tally_defaults(
+		style,
+		run_name,
+		user_name,
+		tally_type,
+		internal_account,
+		trader,
+		strategy,
+		broker,
+		edit_defs)
+select
+	style = @style,
+	run_name = b.name,
+	user_name = c.login,
+	tally_type = d.name,
+	internal_account = e.symbol,
+	trader = f.symbol,
+	strategy = g.name,
+	broker = h.symbol,
+	edit_defs = "EDIT"
+from
+	run_tally_defaults a,
+	runs b,
+	tico_accounts c,
+	tally_types d,
+	internal_accounts e,
+	traders f,
+	strategies g,
+	brokers h
+where
+	a.run_id = b.run_id
+and
+	a.tico_account_id = c.account_id
+and
+	a.tally_type_id = d.tally_type_id
+and
+	a.internal_account_id = e.internal_account_id
+and
+	a.trader_id = f.trader_id
+and
+	a.strategy_id = g.strategy_id
+and
+	a.broker_id = h.broker_id
+and
+	a.run_id = @run_id
+
+
+if @run_id != NULL
+begin
+	insert into
+		#tally_defaults(
+			run_name,
+			style,
+			edit_defs)
+	values(
+		@run_name,
+		@style,
+		"ADD")
+end
+
+select
+	section = @run_name + " Tally Defaults",
+	style,
+	run_name,
+	user_name,
+	tally_type,
+	internal_account,
+	trader,
+	strategy,
+	broker,
+	edit_defs
+from
+	#tally_defaults
+order by
+	id
+
+go

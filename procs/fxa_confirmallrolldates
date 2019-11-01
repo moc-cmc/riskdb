@@ -1,0 +1,54 @@
+
+create or replace procedure
+	fxa_confirmallrolldates
+			@login varchar(50),
+			@trade_date datetime
+as
+
+declare @rolldate_count int
+declare @confirm_count  int
+
+select 
+	@rolldate_count = count(*)
+from
+	product_rolldates
+where
+	convert(varchar(11), trade_date, 101) = convert(varchar(11), @trade_date, 101)
+
+begin tran
+	update
+		product_rolldates
+	set 
+		confirmed_at=getdate(),
+		confirmed_by=@login
+	where
+		convert(varchar(11), trade_date, 101)  = convert(varchar(11), @trade_date, 101)
+
+	select @confirm_count = @@rowcount
+
+	if(@confirm_count != @rolldate_count)
+	begin
+		select 
+			status="Error",
+			msg="All records not confirmed for trade date",
+			run_date=@trade_date
+
+		rollback tran
+		
+		exec fxa_productrolldates @login, @trade_date
+
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="All records confirmed for run date",
+	run_date=@trade_date
+
+exec fxa_productrolldates @login, @trade_date
+
+go
+
+	

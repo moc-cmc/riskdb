@@ -1,0 +1,15 @@
+create or replace procedure
+	cbo_clientrollreconwrapper
+	        @login varchar(50),
+                @value_date datetime=NULL
+
+as
+
+
+exec
+	cbo_clientrollrecon
+		@login = @login,
+		@value_date = @value_date
+
+go
+		

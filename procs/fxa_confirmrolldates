@@ -1,0 +1,67 @@
+
+create or replace procedure
+	fxa_confirmrolldates
+		@login varchar(50),
+		@symbol varchar(5),
+		@trade_date		datetime
+as
+
+declare @product_rolldate_id int
+
+select
+	@product_rolldate_id =  a.product_rolldate_id
+from
+	product_rolldates a,
+	products b
+where
+	a.product_id=b.product_id
+and
+	b.symbol=@symbol
+and
+	convert(varchar(11), convert(datetime, a.trade_date, 1), 1) = convert(varchar(11), convert(datetime, @trade_date, 1), 1)
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Cannot find product for tradedate ",
+		symbol=@symbol + "/" + convert(varchar(11), @trade_date, 1)
+
+	return
+end
+
+begin tran
+
+	update
+		product_rolldates
+	set
+		confirmed_at=getdate(),
+		confirmed_by=@login
+	where
+		product_rolldate_id=@product_rolldate_id
+
+	if (@@rowcount !=1 )
+	begin
+		select
+			status="Error",
+			msg="Could not confirm rolldates for product rolldate id",
+			product_rolldate_id=@product_rolldate_id
+
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Product rolldates confirmed"
+
+exec 
+	fxa_productrolldates @login, @trade_date
+
+return
+
+go
+
+

@@ -1,0 +1,23 @@
+create or replace procedure
+	ag_runpbpositionswrapper
+		@login varchar(50),
+                @prime_broker varchar(50),
+                @source varchar(50)=NULL,
+                @trade_date datetime=NULL,
+                @mark_to_market char(1)=NULL
+
+
+as
+
+
+
+exec
+	eod_pbpositionsfromtrades
+		@login=@login,
+                @prime_broker=@prime_broker,
+                @source=@source,
+                @trade_date=@trade_date,
+                @mark_to_market=@mark_to_market
+
+go
+

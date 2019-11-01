@@ -1,0 +1,204 @@
+
+create or replace procedure
+	fxa_editproductrolldates
+		@login varchar(50),
+		@symbol varchar(10),
+		@trade_date	datetime,
+		@closing_date	datetime,
+		@roll_date	datetime
+as
+
+declare @product_id int
+declare @product_rolldate_id int
+declare @weekend int
+
+if (@closing_date < @trade_date)
+begin
+	select
+		status="Error",
+		msg="Closing Date cannot be less than Trade Date",
+		trade_date=@trade_date,
+		closing_date=@closing_date,
+		roll_date=@roll_date
+
+	return
+end
+
+if (@roll_date <= @closing_date)
+begin
+	select
+		status="Error",
+		msg="Roll Date cannot be less than or equal to Closing Date",
+		trade_date=@trade_date,
+		closing_date=@closing_date,
+		roll_date=@roll_date
+	return
+end
+
+select
+	@weekend = datepart(dw, @closing_date)
+
+if (@weekend = 1 or @weekend = 7)
+begin
+	select
+		status="Error",
+		msg="Closing Date cannot be a weekend",
+		trade_date=@trade_date,
+		closing_date=@closing_date,
+		roll_date=@roll_date
+	return
+end
+
+select
+	@weekend = datepart(dw, @roll_date)
+
+if (@weekend = 1 or @weekend = 7)
+begin
+        select
+                status="Error",
+                msg="Roll Date cannot be a weekend",
+                trade_date=@trade_date,
+		closing_date=@closing_date,
+		roll_date=@roll_date
+        return
+end	
+		
+select
+	@product_id=product_id
+from
+	products
+where
+	symbol=@symbol
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Product does not exist",
+		symbol=@symbol
+	return
+end
+
+select
+	@product_rolldate_id = product_rolldate_id
+from
+	product_rolldates
+where
+	product_id=@product_id	
+and
+	convert(varchar(11), trade_date, 1) = convert(varchar(11), @trade_date, 1)
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not locate record for symbol and trade date",
+		symbol_tradedate=@symbol + "/" + convert(varchar(11), @trade_date, 1)
+
+	return
+end
+
+if exists (select 
+		product_rolldate_id 
+	   from 
+		product_rolldates 
+	   where 
+		product_rolldate_id=@product_rolldate_id 
+	   and 
+		convert(varchar(11), closing_date, 1) = convert(varchar(11), @closing_date, 1)
+	   and 
+		convert(varchar(11), roll_date, 1) = convert(varchar(11), @roll_date, 1))
+ 
+begin
+        select
+                status="Nothing Changed",
+                msg="No change to Closing Date or Rolldate was made",
+                trade_date=@trade_date,
+                closing_date=@closing_date,
+                roll_date=@roll_date
+        
+	exec
+        	fxa_productrolldates @login, @trade_date, "Yes"
+
+	return
+end
+
+begin tran
+	
+	update 
+		product_rolldates
+	set
+		closing_date=@closing_date,
+		roll_date=@roll_date,
+		confirmed_at=getdate()
+	where
+		product_rolldate_id = @product_rolldate_id
+
+	if @@rowcount != 1
+	begin
+	
+		select
+			status="Error",
+			msg="Could not update record for symbol and trade_date",
+			symbol_tradedate=@symbol + "/" + convert(varchar(11), @trade_date, 1)
+
+		rollback tran
+
+		return
+	end
+
+	insert into
+		product_rolldate_edits
+		(product_rolldate_id,
+		 product_id,
+		 trade_date,
+		 closing_date,
+		 roll_date,
+		 confirmed_at,
+		 confirmed_by,
+		 edited_by,
+		 timestamp)
+
+	select
+		product_rolldate_id,
+		product_id,
+		trade_date,
+		closing_date,
+		roll_date,
+		confirmed_at,
+		confirmed_by,
+		@login,
+		getdate()	
+	from
+		product_rolldates
+	where	
+		product_rolldate_id=@product_rolldate_id
+	
+	if @@rowcount !=1
+	begin
+		select
+			status="Error",
+			msg="Could not insert rolldate edit record for symbol and trade_date",
+			symbol_tradedate=@symbol + "/" + convert(varchar(11), @trade_date, 1)
+
+		rollback tran
+	
+		return
+
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Record edited for symbol and trade_date",
+	symbol_tradedate=@symbol + "/" + convert(varchar(11), @trade_date, 1)
+
+exec
+	fxa_productrolldates @login, @trade_date, "Yes"
+
+go
+
+
+	
+
