@@ -102,7 +102,7 @@ create table
 		request_date datetime,
 		change_type varchar(100),
 		expiration datetime,
-		pivotal_id int,
+		pivotal_id varchar(12),
 		setup_fees_billed varchar(4),
 		monthly_fees_billed varchar(4),
 		setup_billing_date datetime NULL,

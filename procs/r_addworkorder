@@ -8,7 +8,7 @@ create or replace procedure
 			@request_date	datetime,
 			@change_type	varchar(100),
 			@expiration	datetime,
-			@pivotal_id	int
+			@pivotal_id	varchar(12)	
 as
 
 declare @client_id	int
