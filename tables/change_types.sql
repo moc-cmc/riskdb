@@ -1,14 +1,3 @@
-
-drop table 
-	change_types
-go
-
-delete from
-	keys
-where
-	relation="change_types"
-go
-
 create table
 	change_types (
 		change_type_id int,

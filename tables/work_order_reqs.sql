@@ -1,14 +1,3 @@
-
-drop table
-	work_order_reqs 
-go
-
-delete from
-	keys
-where
-	relation="work_order_reqs"
-go
-
 create table
 	work_order_reqs (
 		work_order_req_id		int,
