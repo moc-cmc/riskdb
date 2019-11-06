@@ -180,6 +180,17 @@ values(
 	NULL
 )
 
+insert into
+	#meta
+values(
+	"Column Link",
+	"manage_roll_dates",
+	"Product Roll Dates",
+	NULL
+)
+
+
+
 
 insert into
 	#meta
@@ -364,6 +375,7 @@ select
 	manage_settlements = "Manage Settlements",
 	manage_affirmations = case when @dodd_frank_enabled = "Y" then "Trade Affirmations" else NULL end,
 	affirmation_admin  = case when @dodd_frank_enabled = "Y" then "Affirmation Admin" else NULL end,
+	manage_roll_dates = "Manage Roll Dates",
 	/*manage_conversions = "Manage Conversions",*/
         /*manage_payments = "Manage Payments",*/
 	/*manage_fees = "Manage Fees",*/
