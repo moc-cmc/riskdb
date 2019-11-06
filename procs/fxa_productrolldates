@@ -197,7 +197,7 @@ select
 	roll_date=convert(varchar(11), roll_date, 101),
 	b.confirmed_at,
 	b.confirmed_by,
-	confirmation="Confirm",
+	confirmation= case when b.confirmed_at = NULL then "Confirm" else NULL end,
 	edit="Edit"
 from
 	products a,
