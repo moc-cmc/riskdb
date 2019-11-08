@@ -33,11 +33,15 @@ begin
 		keys 
 	values(
 		"credit_update_types", 
-		2
+		6
 	)
 
 	insert into credit_update_types values(1, "Pull")
 	insert into credit_update_types values(2, "Restore")
+	insert into credit_update_types values(3, "Pull NOP")
+	insert into credit_update_types values(4, "Restore NOP")
+	insert into credit_update_types values(5, "Pull DSL")
+	insert into credit_update_types values(6, "Restore DSL")
 end
 go
 
