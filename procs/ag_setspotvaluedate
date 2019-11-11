@@ -1,0 +1,70 @@
+
+drop procedure
+	ag_setspotvaluedate
+go
+
+create procedure
+	ag_setspotvaluedate
+		@login varchar(50),
+		@symbol varchar(50),
+		@trade_date datetime,
+		@closing_date datetime,
+		@spot_date datetime
+as
+
+declare @contract_id int
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+select
+	@spot_date = convert(datetime, convert(date, @spot_date)),
+	@closing_date = convert(datetime, convert(date, @closing_date)),
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+update
+	spot_value_dates
+set
+	closing_date = @closing_date,
+	spot_date = @spot_date,
+	includes_holiday = "Y"
+where
+	trade_date = @trade_date
+and
+	contract_id = @contract_id
+if @@rowcount = 0
+begin
+	insert into
+		spot_value_dates(
+			contract_id,
+			trade_date,
+			closing_date,
+			spot_date,
+			includes_holiday)
+	values(
+		@contract_id,
+		@trade_date,
+		@closing_date,
+		@spot_date,
+		"Y")
+end
+
+exec
+	ag_spotvaldatesfordate
+		@login = @login,
+		@trade_date = @trade_date
+
+go
+
