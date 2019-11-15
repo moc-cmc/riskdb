@@ -42,6 +42,7 @@ create or replace procedure
                 @option_vol float=NULL,
                 @opt_cut_time varchar(50)=NULL,
                 @opt_premium_ccy varchar(50)=NULL,
+                @opt_hedge varchar(50)=NULL,
                 @call_put varchar(10)=NULL,
                 @option_expiry_date datetime=NULL,
                 @option_premium_settle datetime=NULL,
@@ -124,6 +125,15 @@ declare @cl_or_lp varchar(5)
 declare @dealt_ccy varchar(3)
 declare @counter_ccy varchar(3)
 declare @deal_type_id int
+
+
+/* Do not evaluate option hedges on naked options */
+if @opt_hedge != NULL and @qty = 0
+begin
+        select
+                msg = "Option hedge quantity is 0. Not tallying"
+        return
+end
 
 
 /* --------------------------------------------------------------------------
