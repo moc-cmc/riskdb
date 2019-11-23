@@ -1,7 +1,3 @@
-use
-	risk_jeff
-go
-
 drop procedure
 	cbo_operations
 go
