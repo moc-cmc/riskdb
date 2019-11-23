@@ -1,11 +1,3 @@
-use
-	risk_sjm_dev
-go
-
-drop table
-	allocation_requests
-go
-
 create table
 	allocation_requests(
 		allocation_request_id int,
@@ -15,7 +7,8 @@ create table
 		product_id int,
 		amount float,
 		request_date datetime,
-		respond_timestamp datetime NULL)
+		respond_timestamp datetime NULL,
+		respond_message varchar(150) NULL)
 
 go
 
