@@ -2,16 +2,16 @@
 create or replace procedure
 	mc4_tallybrokerotcmatch
 		@login varchar(50),
-                @trade_date datetime=NULL,
-                @buyer_trader varchar(50),
-                @seller_trader varchar(50),
-                @dealt_currency varchar(50),
-                @counter_currency varchar(50),
-                @dealt_amount float,
-                @price float,
-                @value_date datetime=NULL
-
+		@trade_date datetime=NULL,
+		@buyer_trader varchar(50),
+		@seller_trader varchar(50),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@dealt_amount float,
+		@price float,
+		@value_date datetime=NULL
 as
+
 
 
 declare @otc_match_id int
@@ -46,4 +46,6 @@ end
 
 
 
-go
+
+go 
+

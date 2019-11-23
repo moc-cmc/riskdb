@@ -1,10 +1,11 @@
+
 create or replace procedure
 	api_disableuserforcognitopool
 		@login varchar(50),
-		@mfa_login varchar(50),	
+		@mfa_login varchar(50),
 		@user_pool varchar(50)
-
 as
+
 
 declare @tico_account_id int
 declare @mfa_tico_account_id int
@@ -102,13 +103,6 @@ select
 	user_pool = @user_pool
 
 
-go
-	
-	
 
-	
-		
-	
-
-
+go 
 

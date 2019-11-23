@@ -1,11 +1,12 @@
+
 create or replace procedure
 	r_disableuserforcognitopool
 		@login varchar(50),
 		@legal_entity varchar(50),
-		@mfa_login varchar(50),	
+		@mfa_login varchar(50),
 		@user_pool varchar(50)
-
 as
+
 
 exec
 	api_disableuserforcognitopool
@@ -21,11 +22,6 @@ exec
 
 	
 
-go	
 
-	
-		
-	
-
-
+go 
 

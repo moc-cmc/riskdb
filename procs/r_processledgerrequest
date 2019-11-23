@@ -1,8 +1,10 @@
+
 create or replace procedure
 	r_processledgerrequest
 		@login varchar(100),
 		@ledger_request_id int
 as
+
 
 declare @tico_account_id int
 declare @transaction_type varchar(50)
@@ -627,7 +629,7 @@ begin
 	if @sweep_count = 0
 	begin
 		select
-			status = "OK",
+			status = "Error",
 			message = "No pending transactions to sweep or cancel into account transactions for ledger request_id",
 			ledger_request_id = @ledger_request_id,
 			sweep_count = @sweep_count,
@@ -755,5 +757,6 @@ begin
 end
 
 
-go
+
+go 
 

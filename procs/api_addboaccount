@@ -1,3 +1,4 @@
+
 create or replace procedure
 	api_addboaccount
 		@login varchar(50),
@@ -12,15 +13,14 @@ create or replace procedure
 		@lp_transparency char(1)=NULL,
 		@max_mtd_statement_trades int=NULL,
 		@margin_multiplier int=NULL,
-		@legal_entity varchar(150)
-
-
-
+		@legal_entity varchar(50)
 as
+
 
 declare @external_account_id int
 declare @legal_entity_id int
 declare @bo_master_account_id int
+declare @legal_entity_run_id int
 
 exec
 	api_createextaccount
@@ -64,8 +64,15 @@ begin
                 	name = @legal_entity
 
 	end
+	select
+		@legal_entity_run_id = run_id
+	from
+		runs
+	where
+		name = @legal_entity
+		
 	
-	if @external_account_id != NULL and @legal_entity_id != NULL
+	if @external_account_id != NULL and @legal_entity_id != NULL and @legal_entity_run_id != NULL
 	begin
 		exec
 			j_nextkey
@@ -74,21 +81,27 @@ begin
 
 		insert into
 			bo_master_accounts(
-				bo_master_account_id,
-				external_account_id,
+					bo_master_account_id,
+					external_account_id,
 				legal_entity_id)
-		values(
+		values	(
 			@bo_master_account_id,
 			@external_account_id,
 			@legal_entity_id)
+		
+		insert into
+			run_external_accounts(
+				run_id,
+				external_account_id)
+		values(
+			@legal_entity_run_id,
+			@external_account_id
+		)
+			
 	end
+	
 end
 
-go
-			
-		
 
+go 
 
-
-		
-		

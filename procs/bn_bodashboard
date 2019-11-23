@@ -1,12 +1,11 @@
+
 create or replace procedure
 	bn_bodashboard
 		@login varchar(50) ,
-                @begin_date datetime=NULL,
-                @end_date datetime=NULL
-
-
-
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
 as
+
 
 exec
 	ag_accountspop
@@ -14,4 +13,6 @@ exec
                	@begin_date=NULL,
                	@end_date=NULL
 
-go
+
+go 
+

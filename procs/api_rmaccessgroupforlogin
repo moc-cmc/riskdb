@@ -1,9 +1,11 @@
+
 create or replace procedure
 	api_rmaccessgroupforlogin
-			@login varchar(50),
-			@login_name varchar(50),
-			@access_group varchar(100)
+		@login varchar(50),
+		@login_name varchar(50),
+		@access_group varchar(100)
 as
+
 
 declare @access_group_id int
 declare @tico_account_id int
@@ -71,6 +73,6 @@ select
 	login=@login_name
 
 
-go
 
+go 
 

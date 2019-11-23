@@ -1,10 +1,11 @@
+
 create or replace procedure
 	ag_viewuserpermissions
-		@login varchar(50),	
+		@login varchar(50),
 		@user_name varchar(50),
 		@legal_entity varchar(50)=NULL
-
 as
+
 
 declare @login_id int
 declare @tico_account_id int
@@ -129,5 +130,6 @@ select
 from
 	#client_permissions
 
-go
-		
+
+go 
+
