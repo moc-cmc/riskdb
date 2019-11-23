@@ -1,9 +1,5 @@
 
-drop procedure
-	ag_setspotvaluedate
-go
-
-create procedure
+create or replace procedure
 	ag_setspotvaluedate
 		@login varchar(50),
 		@symbol varchar(50),
