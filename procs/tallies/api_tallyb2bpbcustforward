@@ -1,0 +1,269 @@
+drop procedure api_tallyb2bpbcustforward
+go
+
+create procedure
+	api_tallyb2bpbcustforward
+		@login varchar(50),
+		@tally_type varchar(25),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@cover_trader varchar(50),
+		@counterparty varchar(50),
+		@clearing_counterparty varchar(50),
+		@quantity numeric(30,2),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@price float,
+		@val_date datetime,
+		@fixing_date datetime = NULL,
+		@trade_note varchar(255)=NULL,
+		@strategy varchar(50)=NULL,
+		@trade_date datetime=NULL,
+		@deal_id int output
+
+as
+
+declare @symbol varchar(50)
+declare @client_trade_id int
+declare @market_trade_id int
+declare @contract_id int
+
+declare @client_quantity numeric(30,4)
+declare @market_quantity numeric(30,4)
+
+declare @client_external_account varchar(50)
+declare @market_external_account varchar(50)
+declare @market_sales_code varchar(25)
+
+declare @strategy_id int
+declare @cover_trader_id int
+declare @client_trader_id int
+declare @has_pbcust_record char(1)
+
+
+if @client_buys_sells = "Client Buys"
+begin
+	select
+		@client_quantity = abs(@quantity) * -1.0
+end
+if @client_buys_sells = "Client Sells"
+begin
+	select
+		@client_quantity = abs(@quantity)
+end
+
+select
+	@market_quantity = @client_quantity * -1.0
+
+select
+	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
+
+select
+    @contract_id = contract_id
+from
+    contracts
+where
+    symbol = @symbol
+if @@rowcount != 1
+begin
+
+    declare @evaluation_currency varchar(50)
+    declare @fund_id int
+
+    exec
+        r_defaultfundforlogin
+                @login,
+                @fund_id output
+
+    select
+        @evaluation_currency = a.symbol
+    from
+        products a,
+        funds b
+    where
+        a.product_id = b.evaluation_currency_id
+
+    exec r_addbatchfwdsubscription
+            @login,
+            @symbol,
+            @dealt_currency,
+            @counter_currency,
+            @evaluation_currency
+
+    if not exists (select contract_id from contracts where symbol=@symbol)
+    begin
+        select
+            status = "Error",
+            message = "Contract not found",
+            symbol=@symbol
+
+        return
+    end
+
+end
+
+if @trade_date = NULL
+select
+	@trade_date = getdate()
+
+
+select
+	@client_external_account = a.symbol,
+	@client_trader_id = b.trader_id
+from
+	external_accounts a,
+	traders b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @client_user
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Could not found account for client user",
+		client_user = @client_user
+	return
+end
+
+select
+	@market_external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @clearing_counterparty
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Cannot determine default external account for counterparty",
+		counterparty = @clearing_counterparty
+	return
+end
+
+select
+	@market_sales_code = "None"
+
+
+select
+        @cover_trader_id = trader_id
+from
+        external_accounts a,
+        traders b
+where
+        a.external_account_id = b.external_account_id
+and
+        b.symbol = @cover_trader
+if @@rowcount = 0
+begin
+        select
+                status = "Error",
+                message = "Could not found account for cover_trader",
+                client_user = @cover_trader
+        return
+end
+
+
+select
+	@has_pbcust_record = "Y"
+from
+	pbcust_traders
+where
+	client_trader_id = @client_trader_id
+and
+	cover_trader_id = @cover_trader_id
+if @has_pbcust_record != "Y"
+begin
+	select
+		status = "Error",
+		message = "Probelem finding pbcust record",
+		client = @client_trader_id,
+		cover = @cover_trader_id
+	return
+end
+
+
+/* Strategy should be applied to the market and client side of a b2b forward if not provided */
+/* Get this from the default tally accounts for the user who books the trade @login */
+if @strategy in("", NULL)
+begin
+	select
+        	@strategy_id = strategy_id
+	from
+        	default_tally_accounts a,
+		tally_types b,
+		tico_accounts c
+	where
+        	a.tico_account_id = c.account_id
+	and
+		a.tally_type_id = b.tally_type_id
+	and
+        	b.name = @tally_type
+	and
+		c.login = @login
+	
+	select
+		@strategy = name
+	from
+		strategies
+	where
+		strategy_id = @strategy_id
+end
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @client_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = "B2B Forward",
+		@trade_type = @tally_type,
+		@external_account = @client_external_account,
+		@counterparty = @counterparty,
+		@quantity = @client_quantity,
+		@symbol = @symbol,
+		@value_date = @val_date,
+		@price = @price,
+		@trade_date = @trade_date,
+		@trader = @client_user,
+		@fixing_date = @fixing_date,
+		@mid_mark = NULL,
+		@trade_note = @trade_note,
+		@strategy = @strategy,
+		@trade_date = @trade_date
+
+exec 
+	r_inserttradenotification @client_trade_id
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @market_trade_id output,
+		@deal_id = @deal_id,
+		@tally_type = @tally_type,
+		@deal_type = "B2B Forward",
+		@trade_type = @tally_type,
+		@external_account = @market_external_account,
+		@counterparty = @clearing_counterparty,
+		@quantity = @market_quantity,
+		@symbol = @symbol,
+		@value_date = @val_date,
+		@price = @price,
+		@trade_date = @trade_date,
+		@trader = @cover_trader,
+		@sales_code = "None",
+		@fixing_date = @fixing_date,
+		@trade_note = NULL,
+		@strategy = @strategy,
+		@trade_date = @trade_date
+	
+
+exec
+	r_inserttradenotification @market_trade_id
+
+go
