@@ -208,7 +208,7 @@ begin
 
 	select
 		@counterparty_lookup = rtrim(@sender_comp),
-		@trader_lookup = rtrim(@on_behalf_of_sub_id)
+		@trader_lookup = @account+"-"+rtrim(@on_behalf_of_sub_id)
 
 	/* Set suppression and trigger_symbol variables */
         select
@@ -221,7 +221,7 @@ begin
 		@platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".m"
 
         select
-                @counterparty_lookup = rtrim(@on_behalf_of_comp_id),
+                @counterparty_lookup = @account+"-"+rtrim(@on_behalf_of_comp_id),
                 @trader_lookup = rtrim(@sender_comp)
 
         /* Set suppression and trigger_symbol variables */
@@ -675,19 +675,19 @@ if @client_or_market = "C"
 begin
 	if @side = "BUY"
 		select
-			@quantity = @qty * -1
+			@quantity = @qty
 	if @side = "SELL"
                 select
-                        @quantity = @qty 
+                        @quantity = @qty * -1 
 end
 else /* if @client_or_market = "M" */
 begin
 	if @side = "SELL"
 		select
-			@quantity = @qty 
+			@quantity = @qty * -1 
 	if @side = "BUY"
                 select
-                        @quantity = @qty * -1
+                        @quantity = @qty
 
 end
 
