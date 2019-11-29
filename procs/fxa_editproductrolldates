@@ -125,28 +125,6 @@ end
 
 begin tran
 	
-	update 
-		product_rolldates
-	set
-		closing_date=@closing_date,
-		roll_date=@roll_date,
-		confirmed_at=getdate()
-	where
-		product_rolldate_id = @product_rolldate_id
-
-	if @@rowcount != 1
-	begin
-	
-		select
-			status="Error",
-			msg="Could not update record for symbol and trade_date",
-			symbol_tradedate=@symbol + "/" + convert(varchar(11), @trade_date, 1)
-
-		rollback tran
-
-		return
-	end
-
 	insert into
 		product_rolldate_edits
 		(product_rolldate_id,
@@ -186,6 +164,28 @@ begin tran
 		return
 
 	end
+
+	update
+                product_rolldates
+        set
+                closing_date=@closing_date,
+                roll_date=@roll_date,
+                confirmed_at=getdate()
+        where
+                product_rolldate_id = @product_rolldate_id
+
+        if @@rowcount != 1
+        begin
+
+                select
+                        status="Error",
+                        msg="Could not update record for symbol and trade_date",
+                        symbol_tradedate=@symbol + "/" + convert(varchar(11), @trade_date, 1)
+
+                rollback tran
+
+                return
+        end
 
 commit tran
 

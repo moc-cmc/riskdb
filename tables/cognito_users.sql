@@ -9,7 +9,8 @@ create table
 		phone_number_verified char(1) NULL,
 		create_date datetime NULL,
 		last_modify_date datetime NULL,
-		cognito_sub varchar(100) NULL
+		cognito_sub varchar(100) NULL,
+		mfa_type_id int NULL
 )
 go
 

@@ -1,14 +1,4 @@
 
-drop table
-	work_order_reqs 
-go
-
-delete from
-	keys
-where
-	relation="work_order_reqs"
-go
-
 create table
 	work_order_reqs (
 		work_order_req_id		int,
@@ -17,7 +7,7 @@ create table
 		req_date			datetime,
 		change_type_id			int,
 		expiration			datetime,
-		pivotal_id			int,
+		pivotal_id			varchar(12),
 		setup_fees_billed		char(4),
 		monthly_fees_billed		char(4),
 		setup_billing_date		datetime NULL,

@@ -1,7 +1,9 @@
+
 create or replace procedure
-        bn_legalentitystatement
-                @login char(100)
+	bn_legalentitystatement
+		@login char(100)
 as
+
 
 declare @error_style varchar(200)
 declare @total_style varchar(200)
@@ -58,7 +60,7 @@ values(
 	NULL
 )
 
-select * from #meta
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
 select
 	section = "Legal Entity Statements",
@@ -85,4 +87,6 @@ begin
 	return
 end
 	
-go
+
+go 
+

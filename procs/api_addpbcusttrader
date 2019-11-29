@@ -1,0 +1,95 @@
+create or replace procedure 
+	api_addpbcusttrader
+		@login varchar(50),
+		@client_trader varchar(50),
+		@cover_trader varchar(50)
+
+as
+
+declare @client_trader_id int
+declare @cover_trader_id int
+declare @tico_account_id int
+declare @trader_exists char(1)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+select
+	@client_trader_id = trader_id
+from
+	traders
+where
+	symbol = @client_trader
+if @client_trader_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem finding client trader",
+		client_trader = @client_trader
+	return
+end
+
+select
+	@cover_trader_id = trader_id
+from
+	traders
+where
+	symbol = @cover_trader
+if @cover_trader_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem finding cover trader",
+		cover_trader = @cover_trader
+	return
+end
+
+select
+	@trader_exists = "Y"
+from
+	pbcust_traders a,
+	traders b
+where
+	a.client_trader_id = b.trader_id
+and
+	b.symbol = @client_trader
+if @trader_exists = "Y"
+begin
+	select
+		status = "Error",
+		message = "Client trader already has associatd pb cover trader"
+	return
+end
+
+
+insert into
+	pbcust_traders(
+		client_trader_id,
+		cover_trader_id)
+values(
+	@client_trader_id,
+	@cover_trader_id
+)
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message = "Problem inserting pbcust trader"
+	return
+end
+
+
+go
+

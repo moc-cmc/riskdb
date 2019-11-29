@@ -1,7 +1,3 @@
-use
-	risk_sjm_dev2
-go
-
 drop procedure
 	api_execfeerecon
 go

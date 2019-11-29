@@ -1,10 +1,11 @@
+
 create or replace procedure
 	bn_ledailystatement
-                @login varchar(50),
-                @legal_entity varchar(255),
+		@login varchar(50),
+		@legal_entity varchar(255),
 		@trade_date datetime = NULL
-
 as
+
 
 
 declare @begin_date datetime
@@ -33,4 +34,6 @@ exec
 		@begin_date = @end_date,
 		@end_date = @end_date	
 
-go
+
+go 
+

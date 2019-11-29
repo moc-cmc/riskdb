@@ -1,11 +1,12 @@
+
 create or replace procedure
 	bn_lemonthlystatement
-                @login varchar(50),
-                @legal_entity varchar(255),
-                @month varchar(20),
-                @year varchar(10)
-
+		@login varchar(50),
+		@legal_entity varchar(255),
+		@month varchar(20),
+		@year varchar(10)
 as
+
 
 /* date logic taken from ag_clientmonthlystatement */
 
@@ -67,4 +68,6 @@ exec
 		@begin_date = @begin_date,
 		@end_date = @end_date	
 
-go
+
+go 
+

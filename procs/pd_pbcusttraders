@@ -1,0 +1,19 @@
+create or replace procedure
+	pd_pbcusttraders
+
+as
+
+select
+	name = a.symbol
+from
+	traders a,
+	pbcust_traders b
+where
+	a.trader_id = b.client_trader_id
+order by
+	a.symbol
+
+go
+
+
+

@@ -1,10 +1,5 @@
 
-if object_id("api_createtrader") != NULL
-    drop procedure
-        api_createtrader
-go
-
-create procedure
+create or replace procedure
 	api_createtrader
 		@login varchar(30),
 		@trader varchar(50),
@@ -17,6 +12,7 @@ create procedure
 		@last_name varchar(50)=NULL,
 		@email varchar(50)=NULL
 as
+
 
 declare @did_create_trader char(1)
 declare @trader_id int
@@ -42,6 +38,21 @@ declare @top_level_trader_login varchar(50)
 declare	@user_name_output_id int
 declare @ext_acct_run_id int
 declare @blotter_view_style_id int
+declare @fund_code varchar(10)
+declare @etg_login_suffix varchar(10)
+
+exec
+                r_defaultfundforlogin
+                        @login,
+                        @fund_id output
+
+select
+	@fund_code = fund_code
+from
+	funds
+where
+	fund_id = @fund_id
+
 
 select
 	@trader_id = trader_id
@@ -93,9 +104,9 @@ begin
 				@login_type=@login_type,
 				@user_name_output=@user_name_output output
 					
-		select 
-			@is_fund_agency_trader = "Yes"
 	end
+	select 
+		@is_fund_agency_trader = "Yes"
 
 end
 else /* trader_login = "Client" */
@@ -154,8 +165,37 @@ where
 	login = @user_name_output
 if @tico_account_id = NULL
 begin
-	select 
-		@tico_account_id = 0
+        /* For a group trader (ie, the first trader created in the deployment tool)
+           we don't create a login, but we want to assign the tico_account_id to the
+           etg login, which should be lower(fund_code)+lower(suffix) for login type
+           elysium
+        */
+	select
+		@etg_login_suffix = suffix
+	from	
+		login_types
+	where
+		name = "Elysium"
+	
+	if @is_fund_agency_trader = "Yes" and @trader = rtrim(lower(@fund_code))+"group"
+	begin
+		select
+			@tico_account_id = account_id
+		from
+			tico_accounts
+		where
+			login = rtrim(lower(@fund_code))+lower(@etg_login_suffix)
+		if @tico_account_id = NULL
+		begin
+			select
+				@tico_account_id = 0
+		end
+	end
+	else
+	begin
+		select 
+			@tico_account_id = 0
+	end
 end
 
 if @sales_code = NULL
@@ -274,10 +314,6 @@ begin
 	return
 end
 
-exec
-                r_defaultfundforlogin
-                        @login,
-                        @fund_id output
 
 if @is_fund_agency_trader = "Yes"
 begin
@@ -410,4 +446,6 @@ begin
 		trader = @trader
 end
 
-go
+
+go 
+

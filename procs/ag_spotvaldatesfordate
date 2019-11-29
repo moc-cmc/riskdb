@@ -1,0 +1,326 @@
+
+
+create or replace procedure
+	ag_spotvaldatesfordate
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @one_day datetime
+declare @two_days datetime
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"set_date",
+	"Set Spot Settle Date",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"reject",
+	"Reject Client Request",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"next_action",
+	"Approve Next Request Action",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"enable_user",
+	"Enable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"disable_user",
+	"Disable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_admin_user",
+	"Add Approval User",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+if datename(weekday, @trade_date) = "Saturday"
+	select
+		@trade_date = dateadd(day, 2, @trade_date)
+
+if datename(weekday, @trade_date) = "Sunday"
+	select
+		@trade_date = dateadd(day, 1, @trade_date)
+
+exec
+	r_nextbusinessday
+		@trade_date,
+		@one_day output
+
+exec
+	r_nextbusinessday
+		@one_day,
+		@two_days output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+create table
+	#value_dates(
+		id int identity,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		price_style varchar(50) NULL,
+		trade_date datetime NULL,
+		one_day datetime NULL,
+		two_days datetime NULL,
+		spot_date datetime NULL,
+		closing_date datetime NULL,
+		status varchar(50) NULL)
+insert into
+	#value_dates(
+		contract_id)
+select
+	a.contract_id
+from
+	forwards a,
+	products b,
+	product_types c
+where
+	a.product_id = b.product_id
+and
+	b.product_type_id = c.product_type_id
+and
+	c.name = "Currency"
+order by
+	b.symbol
+	
+update
+	#value_dates
+set
+	status = "Standard"
+
+update
+	#value_dates
+set
+	a.symbol = b.symbol
+from
+	#value_dates a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#value_dates
+set
+	a.price_style = c.name
+from
+	#value_dates a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+
+
+update
+	#value_dates
+set
+	trade_date = @trade_date,
+	one_day = @one_day,
+	two_days = @two_days
+
+update
+	#value_dates
+set
+	closing_date = @one_day,
+	spot_date = @two_days
+
+update
+	#value_dates
+set
+	closing_date = @trade_date,
+	spot_date = @one_day
+where
+	symbol in("USDCAD", "CADUSD", "USDTRY", "TRYUSD")
+
+delete
+
+from
+	#value_dates
+where
+	price_style = "Inverted"
+
+delete
+
+from
+	#value_dates
+where
+	symbol = NULL
+
+insert into
+	spot_value_dates(
+		contract_id,
+		trade_date,
+		closing_date,
+		spot_date,
+		includes_holiday)
+select
+	contract_id,
+	trade_date = @trade_date,
+	closing_date,	
+	spot_date,
+	includes_holiday = "N"
+from
+	#value_dates
+where
+	contract_id not in(
+		select
+			contract_id
+		from
+			spot_value_dates
+		where
+			trade_date = @trade_date)
+
+
+
+select
+	section = datename(weekday, a.spot_date) + " Holiday Settlements for trade date " + convert(varchar(11), a.trade_date),
+	style = @style,
+	a.trade_date,
+	b.symbol,
+	today = datename(weekday, a.trade_date),
+	closing_date = convert(varchar(11), a.closing_date),
+	closing_day = datename(weekday, a.closing_date),
+	spot_date = convert(varchar(11), a.spot_date),
+	spot_day = datename(weekday, a.spot_date),
+	days_from_now = datediff(day, a.trade_date, a.spot_date),
+	set_date = "Override Date For " + symbol
+from
+	spot_value_dates a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	lower(a.includes_holiday) = "y"
+order by
+	a.spot_date,
+	b.symbol
+
+
+select
+	section = datename(weekday, a.spot_date) + " Standard settlements for trade date " + convert(varchar(11), a.trade_date),
+	style = @style,
+	a.trade_date,
+	b.symbol,
+	today = datename(weekday, a.trade_date),
+	closing_date = convert(varchar(11), a.closing_date),
+	closing_day = datename(weekday, a.closing_date),
+	spot_date = convert(varchar(11), a.spot_date),
+	spot_day = datename(weekday, a.spot_date),
+	days_from_now = datediff(day, a.trade_date, a.spot_date),
+	set_date = "Override Date For " + symbol
+from
+	spot_value_dates a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	lower(a.includes_holiday) = "n"
+order by
+	a.spot_date,
+	b.symbol
+
+
+
+go

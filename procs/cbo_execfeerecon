@@ -1,16 +1,10 @@
-use
-	risk_sjm_dev2
-go
 
-drop procedure
-	cbo_execfeerecon
-go
-
-create procedure
+create or replace procedure
 	cbo_execfeerecon
 		@login varchar(50),
 		@trade_date datetime=NULL
 as
+
 
 declare @begin_date datetime
 declare @end_date datetime
@@ -35,4 +29,6 @@ exec
 		@send_message = "Y"
 
 
-go
+
+go 
+
