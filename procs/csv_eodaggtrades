@@ -335,7 +335,8 @@ select
 	value_date = convert(datetime, convert(varchar(8), a.value_date, 112)),
 	b.symbol,
 	quantity = case when @flip_perspective = "Y" then a.quantity * -1 else a.quantity end,
-	a.trade_price,
+	/*a.trade_price,*/
+	trade_price = convert(numeric(30, 8), a.trade_price),
 	trader = c.symbol,
 	broker = d.symbol,
 	identifier = a.identifer,
