@@ -266,4 +266,19 @@ exec
 exec
 	r_inserttradenotification @market_trade_id
 
+
+/* --------------------------------------------------------------------------
+ * STEP: Add client and market trade_ids to trade_bookings
+ *
+ */
+
+if @client_trade_id != NULL and @market_trade_id != NULL
+begin
+        exec
+                 tt_addtradebookings
+                             @c_trade_id = @client_trade_id,
+                             @m_trade_id = @market_trade_id
+end
+
+
 go
