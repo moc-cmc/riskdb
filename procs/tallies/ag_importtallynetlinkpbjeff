@@ -1,0 +1,104 @@
+
+create or replace procedure
+	ag_importtallynetlinkpbjeff	
+		@login varchar(50),
+		@tally_type varchar(25),
+		@client_user varchar(50),
+		@client_buys_sells varchar(50),
+		@client_counterparty varchar(50),
+		@clearing_counterparty varchar(50),
+		@quantity numeric(30,2),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@price float,
+		@val_date datetime,
+		@fixing_date datetime=NULL,
+                @trade_note varchar(255)=NULL,
+		@trade_date datetime=NULL,
+		@row_count int,
+		@row_index int
+
+as
+
+declare @deal_id int
+declare @strategy varchar(50)
+declare @cover_trader varchar(50)
+
+select
+	@strategy = "Agency"
+
+select
+	@cover_trader = c.symbol
+from 
+	traders a,
+	pbcust_traders b,
+	traders c
+where
+	a.trader_id = b.client_trader_id	
+and
+	b.cover_trader_id = c.trader_id
+and
+	a.symbol = @client_user
+
+if @cover_trader = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding cover trader for pb cust client",
+		client_user = @client_user
+	return
+end	
+
+
+if @clearing_counterparty like "JEFF-%"
+begin
+	select
+		status = "Error",
+		message = "Choose a clearing counterparty that does not begin with JEFF-",
+		clearing_counterparty = @clearing_counterparty
+	return
+end
+
+if @client_counterparty not like "JEFF-%"
+begin
+        select
+                status = "Error",
+                message = "Choose a clearing counterparty that begins with JEFF-",
+                client_counterparty = @client_counterparty
+        return
+end
+
+	
+
+exec 
+	api_tallyb2bpbcustforward
+			@login=@login,
+			@tally_type=@tally_type,
+			@client_user=@client_user,
+			@client_buys_sells=@client_buys_sells,
+			@cover_trader = @cover_trader,
+			@counterparty=@client_counterparty,
+			@clearing_counterparty=@clearing_counterparty,
+			@quantity=@quantity,
+			@dealt_currency=@dealt_currency,
+			@counter_currency=@counter_currency,
+			@price=@price,
+			@val_date=@val_date,
+			@fixing_date=@fixing_date,
+                	@trade_note=@trade_note,
+			@strategy=@strategy,
+			@trade_date=@trade_date,
+			@deal_id = @deal_id output
+			
+
+if @row_count = @row_index + 1
+begin
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+end
+
+go
