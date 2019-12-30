@@ -24,6 +24,23 @@ declare @deal_id int
 declare @strategy varchar(50)
 declare @cover_trader varchar(50)
 
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+select * from #meta
+
 select
 	@strategy = "Agency"
 
@@ -49,7 +66,7 @@ begin
 	return
 end	
 
-
+/*
 if @clearing_counterparty like "JEFF-%"
 begin
 	select
@@ -67,7 +84,7 @@ begin
                 client_counterparty = @client_counterparty
         return
 end
-
+*/
 	
 
 exec 
@@ -91,14 +108,36 @@ exec
 			@deal_id = @deal_id output
 			
 
+select
+	section="Trades Inserted for record " +  convert(varchar(4), @row_index),
+	deal_id=@deal_id,
+	trade_id=trade_id,
+	tally_type=@tally_type,
+	client_user=@client_user,
+	cover_trader=@cover_trader,
+	counterparty=@client_counterparty,
+	clearing_counterparty=@clearing_counterparty,
+	quantity=@quantity,
+	dealt_currency=@dealt_currency,
+	counter_currency=@counter_currency,
+	price=@price,
+	val_date=@val_date,
+	fixing_date=@fixing_date,
+	trade_note=@trade_note,
+	strategy=@strategy,
+	trade_date=@trade_date
+from
+	trades
+where
+	deal_id=@deal_id
+
 if @row_count = @row_index + 1
 begin
 
-exec
-	r_inspectdealtrades
-		@login,
-		@deal_id
-
+	select
+		section="Summary ",
+		@row_count, 
+		" records attempted"
 end
 
 go

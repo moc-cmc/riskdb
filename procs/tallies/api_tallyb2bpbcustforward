@@ -28,8 +28,8 @@ declare @client_trade_id int
 declare @market_trade_id int
 declare @contract_id int
 
-declare @client_quantity numeric(30,4)
-declare @market_quantity numeric(30,4)
+declare @client_quantity numeric(30,4) 
+declare @market_quantity numeric(30,4) 
 
 declare @client_external_account varchar(50)
 declare @market_external_account varchar(50)
@@ -40,20 +40,38 @@ declare @cover_trader_id int
 declare @client_trader_id int
 declare @has_pbcust_record char(1)
 
+if upper(@client_buys_sells) not in ("CLIENT BUYS", "CLIENT_BUYS", "CLIENT_SELLS", "CLIENT SELLS", "B", "S", "BUY", "SELL", "BUYS", "SELLS")
+begin
+	select
+		status="Error",
+		msg="Need to indicate Client Buys or Sells"
+		
+	return
+end
 
-if @client_buys_sells = "Client Buys"
+if upper(@client_buys_sells) in ("CLIENT_BUYS", "BUYS", "B", "BUY")
 begin
 	select
 		@client_quantity = abs(@quantity) * -1.0
 end
-if @client_buys_sells = "Client Sells"
+else
 begin
 	select
 		@client_quantity = abs(@quantity)
 end
 
-select
-	@market_quantity = @client_quantity * -1.0
+if (@client_quantity != NULL)
+begin
+	select
+		@market_quantity = @client_quantity * -1.0
+end
+else
+begin
+	select
+		status="Error",
+		msg="Quantity cannot be NULL",
+		quantity=@quantity
+end
 
 select
 	@symbol = rtrim(@dealt_currency) + rtrim(@counter_currency)
@@ -212,6 +230,7 @@ begin
 	where
 		strategy_id = @strategy_id
 end
+
 
 exec
 	fxa_tallytrade

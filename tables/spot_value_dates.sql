@@ -9,7 +9,10 @@ create table
                 trade_date datetime,
                 closing_date datetime,
                 spot_date datetime,
-                includes_holiday varchar(1))
+                includes_holiday varchar(1),
+		confirmed_at datetime NULL,
+		confirmed_by varchar(50) NULL)
+
 
 go
 

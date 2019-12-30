@@ -87,13 +87,36 @@ values(
 	NULL) 
 
 insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_dates",
+	"Confirm Spot Value Dates",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_all_dates",
+	"Confirm All Spot Value Dates",
+	NULL)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"set_holiday_for_currency",
+	"Set Spot Value Holiday",
+	NULL)
+
+insert into
 	 #meta
 values(
 	 "Column Format",
 	 "margin",
 	 "Number",
 	"#,##0.00%")
-
 
 insert into
 	#meta
@@ -272,8 +295,6 @@ where
 		where
 			trade_date = @trade_date)
 
-
-
 select
 	section = datename(weekday, a.spot_date) + " Holiday Settlements for trade date " + convert(varchar(11), a.trade_date),
 	style = @style,
@@ -293,10 +314,12 @@ where
 	a.contract_id = b.contract_id
 and
 	lower(a.includes_holiday) = "y"
+and
+        convert(varchar(11),a.trade_date, 1) = convert(varchar(11), @trade_date, 1)
+
 order by
 	a.spot_date,
 	b.symbol
-
 
 select
 	section = datename(weekday, a.spot_date) + " Standard settlements for trade date " + convert(varchar(11), a.trade_date),
@@ -309,18 +332,62 @@ select
 	spot_date = convert(varchar(11), a.spot_date),
 	spot_day = datename(weekday, a.spot_date),
 	days_from_now = datediff(day, a.trade_date, a.spot_date),
-	set_date = "Override Date For " + symbol
+	set_date = "Override Date For " + symbol,
+	confirmed_at,
+	confirmed_by,
+	confirm_dates="Confirm"
 from
 	spot_value_dates a,
 	contracts b
 where
 	a.contract_id = b.contract_id
 and
+	convert(varchar(11),a.trade_date, 1) = convert(varchar(11), @trade_date, 1)
+and
 	lower(a.includes_holiday) = "n"
 order by
 	a.spot_date,
 	b.symbol
 
+declare @total_confirmed int
+declare @total_confirmed_dates int
 
+select
+        @total_confirmed_dates = count(*)
+from
+        spot_value_dates
+where
+        convert(varchar(11), trade_date, 101) = convert(varchar(11), @trade_date, 101)
+
+select
+        @total_confirmed = count(*)
+from
+        spot_value_dates
+where
+        confirmed_by != NULL
+and
+        convert(varchar(11), trade_date, 101) = convert(varchar(11), @trade_date, 101)
+
+if (@total_confirmed_dates != @total_confirmed)
+begin
+        select
+                section = "Confirm All",
+                tradedate = convert(char(11), @trade_date, 101),
+                confirm_all_dates = "Confirm All"
+end
+else
+begin
+        select
+                section="Confirm All",
+                tradedate = convert(char(11), @trade_date, 101),
+                confirm_all_dates = ""
+end
+
+select
+	section="SET HOLIDAYS",
+	trade_date=convert(varchar(11), @trade_date, 1),
+	set_holiday_for_currency="SET"
+
+	
 
 go

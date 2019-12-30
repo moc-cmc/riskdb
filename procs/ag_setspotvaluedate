@@ -16,6 +16,7 @@ from
 	contracts
 where
 	symbol = @symbol
+
 if @contract_id = NULL
 begin
 	select
