@@ -256,6 +256,24 @@ begin
 
 end
 
+if @view_style = "Vertical View with Options"
+begin
+
+	if @trade_id = NULL
+        begin
+                select
+                        "error"="Error",
+                        "msg"="Client configured for Vertical View. TradeID is required for Vertical View. Trade ID not provided",
+                        trade_id=@trade_id
+                return
+        end
+        exec
+                cl_viewverticalconfirm
+                        @login=@login,
+                        @run_name=@run_name,
+                        @trade_id=@trade_id
+
+end
 
 
 go
