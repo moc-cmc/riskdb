@@ -1,0 +1,58 @@
+
+create or replace procedure
+	ag_confirmallspotvaldates	
+			@login varchar(50),
+			@tradedate datetime
+as
+
+declare @rolldate_count int
+declare @confirm_count  int
+declare @trade_date datetime
+
+select
+	@trade_date=@tradedate
+
+select 
+	@rolldate_count = count(*)
+from
+	spot_value_dates	
+where
+	convert(varchar(11), trade_date, 101) = convert(varchar(11), @trade_date, 101)
+
+begin tran
+	update
+		spot_value_dates	
+	set 
+		confirmed_at=getdate(),
+		confirmed_by=@login
+	where
+		convert(varchar(11), trade_date, 101)  = convert(varchar(11), @trade_date, 101)
+
+	select @confirm_count = @@rowcount
+
+	if(@confirm_count != @rolldate_count)
+	begin
+		select 
+			status="Error",
+			msg="All records not confirmed for trade date",
+			run_date=@trade_date
+
+		rollback tran
+		
+		exec ag_spotvaldatesfordate @login, @trade_date
+
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="All records confirmed for run date",
+	run_date=@trade_date
+
+exec ag_spotvaldatesfordate @login, @trade_date
+
+go
+
+	

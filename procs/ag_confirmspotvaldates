@@ -1,0 +1,66 @@
+
+create or replace procedure
+	ag_confirmspotvaldates	
+		@login varchar(50),
+		@symbol varchar(100),
+		@trade_date		datetime
+as
+
+declare @contract_id int
+
+select
+	@contract_id = contract_id
+from
+	contract_symbols
+where
+	symbol = @symbol
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Cannot find contract_id for symbol",
+		symbol=@symbol
+
+	return
+end
+
+begin tran
+
+	update
+		spot_value_dates	
+	set
+		confirmed_at=getdate(),
+		confirmed_by=@login
+	where
+		contract_id=@contract_id
+	and
+		trade_date=@trade_date
+	
+
+	if (@@rowcount !=1 )
+	begin
+		select
+			status="Error",
+			msg="Could not confirm spot value dates for symbol/trade_date",
+			symbol=@symbol,
+			trade_date=@trade_date	
+
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Spot Value Dates confirmed"
+
+exec 
+	ag_spotvaldatesfordate @login, @trade_date
+
+return
+
+go
+
+

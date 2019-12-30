@@ -1,0 +1,17 @@
+
+create or replace procedure
+	pd_currencies
+as
+
+select
+	a.symbol
+from
+	products a,
+	product_types b
+where
+	a.product_type_id=b.product_type_id
+and
+	b.name="Currency"
+
+go
+

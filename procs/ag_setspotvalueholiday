@@ -1,0 +1,155 @@
+
+create or replace procedure
+		ag_setspotvalueholiday
+			@login varchar(50),
+			@currency  varchar(5),
+			@trade_date   datetime,
+			@closing_date datetime,
+			@spot_date    datetime
+
+as
+
+declare @instrument_id int
+declare	@currency_id int
+declare @weekend int
+declare @recs_updated int
+
+if (@closing_date < @trade_date)
+begin
+        select
+                status="Error",
+                msg="Closing Date cannot be less than Trade Date",
+                trade_date=@trade_date,
+                closing_date=@closing_date,
+                spot_date=@spot_date
+
+        return
+end
+
+if (@spot_date <= @closing_date)
+begin
+        select
+                status="Error",
+                msg="Spot Date cannot be less than or equal to Closing Date",
+                trade_date=@trade_date,
+                closing_date=@closing_date,
+                spot_date=@spot_date
+        return
+end
+
+select
+        @weekend = datepart(dw, @closing_date)
+
+if (@weekend = 1 or @weekend = 7)
+begin
+        select
+                status="Error",
+                msg="Closing Date cannot be a weekend",
+                trade_date=@trade_date,
+                closing_date=@closing_date,
+                spot_date=@spot_date
+        return
+end
+
+select
+        @weekend = datepart(dw, @spot_date)
+
+if (@weekend = 1 or @weekend = 7)
+begin
+        select
+                status="Error",
+                msg="Spot Date cannot be a weekend",
+                trade_date=@trade_date,
+                closing_date=@closing_date,
+                spot_date=@spot_date
+        return
+end
+
+select
+	@instrument_id = instrument_id
+from
+	instruments
+where
+	name="Forward"
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Instrument does not exist",
+		instrument="Forward"
+
+	return
+end
+
+select
+        @currency_id=product_id
+from
+        products
+where
+        symbol=@currency
+
+if @@rowcount != 1
+begin
+        select
+                status="Error",
+                msg="Currency does not exist",
+                symbol=@currency
+        return
+end
+
+create table
+	#crossrate_contracts(
+		contract_id int )
+
+insert into
+	#crossrate_contracts
+select
+	contract_id
+from
+	contracts
+where
+	symbol like "%" + @currency + "%"
+and
+	instrument_id=@instrument_id
+
+begin tran
+
+	update 
+		spot_value_dates
+	set
+		closing_date=@closing_date,
+		spot_date=@spot_date,
+		includes_holiday="Y"
+	from
+		#crossrate_contracts a,
+		spot_value_dates b
+	where
+		a.contract_id=b.contract_id
+	and
+		convert(varchar(11), b.trade_date, 1) =  convert(varchar(11), @trade_date, 1)
+
+	select
+		@recs_updated = @@rowcount
+
+	if @recs_updated = 0
+	begin
+		select
+			status="Warning",
+			msg="No records updated"
+
+		rollback tran
+		return
+
+	end
+
+commit tran
+
+select
+	status="Success",
+	mgs=convert(varchar(3), @recs_updated) + " instruments updated "
+
+exec ag_spotvaldatesfordate @login, @trade_date 
+
+go
+
