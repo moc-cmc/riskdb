@@ -466,6 +466,23 @@ begin
 
 end
 
+if @prod_type = "FORWARD" and @client_or_market = "C"
+begin
+        select
+                @deal_type = "Client Forward",
+                @tally_type = "Forward",
+                @trade_type = "Forward"
+end
+
+if @prod_type = "FORWARD" and @client_or_market = "M"
+begin
+        select
+                @deal_type = "Market Forward",
+                @tally_type = "Forward",
+                @trade_type = "Forward"
+end
+
+
 /* --------------------------------------------------------------------------
  * STEP: Create the deal or get the deal_id for grouping
  * 
