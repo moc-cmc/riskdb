@@ -1,57 +1,47 @@
-drop procedure tts_jpmexecutetally 
-go
-
-create procedure
-    tts_jpmexecutetally 
-        /* Provided by FIX server config.properties & spring.xml */
-        @source varchar(50),
-        @default_login varchar(50),
-        @broker varchar(50),
-        @granularity varchar(15)=NULL,
-        /* Parsed from FIX message and provided by mapping.xml */
-        /* session variables */
-        @sender_comp varchar(50),
-        @target_comp varchar(50),
-        @sender_sub varchar(50)=NULL,
-        @target_sub varchar(50)=NULL,
-        @on_behalf_of_sub_id varchar(50)=NULL,
-        @deliver_to_comp_id varchar(50)=NULL,
-        /* identifiers */
-        @execution_id varchar(100)=NULL,
-        @order_id varchar(50),
-        @cl_order_id varchar(50)=NULL,
-        @cl_orig_order_id varchar(50)=NULL,
-        @sec_order_id varchar(50)=NULL,
-        /*financials*/
-        @symbol varchar(50)=NULL,
-        @ccy1 varchar(50)=NULL,
-        @ccy2 varchar(50)=NULL,
-        @qty float,
-        @counter_qty float=NULL,
-        @price float,
-        @side varchar(10),
-        @trade_date datetime,
-        @trade_day datetime,
-        @value_date datetime,
-        @fixing_date datetime=NULL,
-        @last_spot_rate float=NULL,
-        @order_status varchar(50)=NULL,
-        @time_in_force varchar(50)=NULL,
-        /*swaps*/
-        @far_price float=NULL,
-        @far_value_date datetime=NULL,
-        @far_fixing_date datetime=NULL,
-        @far_qty float=NULL,
-        /*parties*/
-        @account varchar(50)=NULL,
-        @client_id varchar(50)=NULL,
-        @order_orig_trader varchar(50)=NULL,
-        @executing_system varchar(50)=NULL,
-        @contra_firm varchar(50)=NULL,
-        @executing_firm varchar(50)=NULL
-
-
+create or replace procedure
+	tts_jpmexecutetally
+		/* Provided by FIX server config.properties & spring.xml */
+		@source varchar(50),
+		@default_login varchar(50),
+		@broker varchar(50),
+		@granularity varchar(15)=NULL, /* Parsed from FIX message and provided by mapping.xml */ /* session variables */
+		@sender_comp varchar(50),
+		@target_comp varchar(50),
+		@sender_sub varchar(50)=NULL,
+		@target_sub varchar(50)=NULL,
+		@on_behalf_of_sub_id varchar(50)=NULL,
+		@deliver_to_comp_id varchar(50)=NULL, /* identifiers */
+		@execution_id varchar(100)=NULL,
+		@order_id varchar(50),
+		@cl_order_id varchar(50)=NULL,
+		@cl_orig_order_id varchar(50)=NULL,
+		@sec_order_id varchar(50)=NULL, /*financials*/
+		@symbol varchar(50)=NULL,
+		@ccy1 varchar(50)=NULL,
+		@ccy2 varchar(50)=NULL,
+		@qty float,
+		@counter_qty float=NULL,
+		@price float,
+		@side varchar(10),
+		@trade_date datetime,
+		@trade_day datetime,
+		@value_date datetime,
+		@fixing_date datetime=NULL,
+		@last_spot_rate float=NULL,
+		@order_status varchar(50)=NULL,
+		@time_in_force varchar(50)=NULL, /*swaps*/
+		@far_price float=NULL,
+		@far_value_date datetime=NULL,
+		@far_fixing_date datetime=NULL,
+		@far_qty float=NULL, /*parties*/
+		@account varchar(50)=NULL,
+		@client_id varchar(50)=NULL,
+		@order_orig_trader varchar(50)=NULL,
+		@executing_system varchar(50)=NULL,
+		@contra_firm varchar(50)=NULL,
+		@executing_firm varchar(50)=NULL
 as
+
 
 declare @client_or_market char(1)
 declare @platform_identifier varchar(100)
@@ -196,7 +186,7 @@ begin
                 
     select
         @counterparty_lookup = rtrim(@sender_comp),
-        @trader_lookup = rtrim(@account)
+        @trader_lookup = rtrim(@order_orig_trader)
 
         /* Set suppression and trigger_symbol variables */
     select
@@ -723,6 +713,7 @@ begin
     return
 end
 */
+
 
 
 go
