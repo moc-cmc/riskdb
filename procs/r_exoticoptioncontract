@@ -1,26 +1,28 @@
-
 if object_id("r_exoticoptioncontract") != NULL
     drop procedure
-       	r_exoticoptioncontract 
+	r_exoticoptioncontract
 go
 
 create procedure
 	r_exoticoptioncontract	
 		@underlying_contract varchar(50),
-		@timezone	varchar(25),
+		@timezone varchar(25),
 		@expiration datetime,
-		@put_call char(1),
-		@strike numeric(30,4),
+		@put_call char(1)=NULL,
+		@strike varchar(20)=NULL,
 		@option_settledate datetime,
 		@instrument_type varchar(15),
-		@timing varchar(12),
-		@payout_ccy varchar(5),
-		@payout_amount float,
-		@barrier_type varchar(12),
-		@lower_barrier float,
-		@upper_barrier float,
-		@barrier float,
-		@contract_id int output
+		@timing varchar(12)=NULL,
+		@payout_ccy varchar(5)=NULL,
+		@payout_amount numeric(30, 4)=NULL,
+		@barrier_type varchar(12)=NULL,
+		@lower_barrier varchar(15)=NULL,
+		@upper_barrier varchar(15)=NULL,
+		@barrier varchar(15)=NULL,
+		@window_start datetime=NULL,
+		@window_end datetime=NULL,
+		@exercise_style varchar(25)=NULL,
+		@contract_id int=NULL output
 
 as
 
@@ -35,8 +37,39 @@ declare @contract_symbol varchar(50)
 declare @instrument_id int
 declare @expiration_time varchar(12)
 declare @timezone_id  int
-declare @tz_sym varchar(12)
+declare @tz_sym varchar(50)
+declare @lower_barrier_float float
+declare @upper_barrier_float float
+declare @barrier_float float
+declare @strike_float float
+declare @strike_num numeric(30,8)
 
+declare @create_contract varchar(5)
+declare @ex_contract_id int
+declare @create_exotic_contract varchar(5)
+
+if @lower_barrier = ""
+	select
+		@lower_barrier = NULL
+
+if @upper_barrier = ""
+	select
+		@upper_barrier = NULL
+
+if @barrier = ""
+	select
+		@barrier = NULL
+
+if @strike = ""
+	select
+		@strike = NULL
+
+select
+	@lower_barrier_float = convert(float, @lower_barrier),
+	@upper_barrier_float = convert(float, @upper_barrier),
+	@barrier_float = convert(float, @barrier),
+	@strike_float = convert(float, @strike),
+	@strike_num = convert(numeric(30, 8), @strike)
 
 if @timezone = NULL
 begin
@@ -65,23 +98,23 @@ where
 if(@@rowcount != 1)
 begin
     select
-        status = "Error",
-        message = "Could not locate timezone ", @timezone
+	status = "Error",
+	message = "Could not locate timezone ", @timezone
     return
 end
 
 select
-        @expiration = convert(datetime, convert(char(11), @expiration, 1))
+	@expiration = convert(datetime, convert(char(11), @expiration, 1))
 
 select
-        @expiration_time = expiration_time
+	@expiration_time = expiration_time
 from
-        timezones
+	timezones
 where
-        timezone=@timezone
+	timezone=@timezone
 
 select
-        @expiration = convert(datetime, convert(varchar(11), @expiration) + " " + rtrim(@expiration_time))
+	@expiration = convert(datetime, convert(varchar(11), @expiration) + " " + rtrim(@expiration_time))
 
 select
 	@underlying_contract_id = contract_id
@@ -122,7 +155,9 @@ begin
 				@otc_exchange_id
 
 		insert into
-			exchanges
+			exchanges(
+				exchange_id,
+				name)
 		values(
 			@otc_exchange_id,
 			"OTC")
@@ -141,20 +176,28 @@ begin
 				"exercise_styles",
 				@exercise_style_id output
 		insert into
-			exercise_styles
+			exercise_styles(
+				exercise_style_id,
+				name)
 		values(
 			@exercise_style_id,
 			"European")
 	end
 
 
-	exec
-		j_nextkey
+	exec 
+ 		j_nextkey
 			"options",
 			@option_id output
 
 	insert into
-		options
+		options(
+			option_id,
+			underlying_contract_id,
+			exchange_id,
+			def_exercise_style_id,
+			quantity,
+			tick_size)
 	values(
 		@option_id,
 		@underlying_contract_id,
@@ -172,7 +215,9 @@ where
 	option_id = @option_id
 and
 	expiration = @expiration
-if @@rowcount = 0
+and
+	timezone_id = @timezone_id
+if @option_expiration_id = NULL
 begin
 	exec
 		j_nextkey
@@ -180,7 +225,8 @@ begin
 			@option_expiration_id output
 
 	select
-		@tz_sym=symbol
+		/* @tz_sym = rtrim(symbol) + " " + left(expiration_time, 5) */
+		@tz_sym = rtrim(timezone)
 	from
 		timezones
 	where
@@ -190,7 +236,12 @@ begin
 		@option_exp_symbol = rtrim(@underlying_contract) + " " + rtrim(convert(char(11), @expiration, 1)) + " " + @tz_sym 
 
 	insert into
-		option_expirations
+		option_expirations(
+			option_expiration_id, 
+			option_id,
+			symbol,
+			expiration,
+			timezone_id)
 	values(
 		@option_expiration_id,
 		@option_id,
@@ -233,119 +284,263 @@ where
 	barrier=@barrier_type
 
 select
-	@contract_id = contract_id
+	@instrument_id = instrument_id
 from
-	exotic_contracts 
+	instruments
 where
-	option_expiration_id = @option_expiration_id
-and
-	strike = @strike
-and
-	put_call = upper(@put_call)
-and
-	timing_id=@timing_id
-and
-	payout_ccy_id=@payout_ccy_id
-and
-	barrier_type_id=@barrier_type_id
-
-if @@rowcount = 0
+	name = "Exotic"
+if @@rowcount != 1
 begin
-	select
-		@instrument_id = instrument_id
-	from
+	exec
+		j_nextkey
+			"instruments",
+			@instrument_id output
+
+	insert into
 		instruments
-	where
-		name = "Exotic"
-	if @@rowcount != 1
-	begin
-		exec
-			j_nextkey
-				"instruments",
-				@instrument_id output
+	values(
+		@instrument_id,
+		"Exotic")
+end
 
-		insert into
-			instruments
-		values(
-			@instrument_id,
-			"Option")
-	end
-
+select
+	@exercise_style_id = exercise_style_id
+from
+	exercise_styles
+where
+	name = @exercise_style
+if @exercise_style_id = NULL
+begin 
+ 
 	select
 		@exercise_style_id = def_exercise_style_id
 	from
 		options
 	where
 		option_id = @option_id
-		
-	select
-		@option_exp_symbol = symbol
-	from
-		option_expirations
-	where
-		option_expiration_id = @option_expiration_id
-
-	exec
-		j_nextkey
-			"contracts",
-			@contract_id output
-
-	if(@instrument_type = "Digital")
-	begin	
-		select
-			@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(convert(varchar(30), @strike)) + " " + upper(@put_call) + " " + rtrim(@timing) + " " + rtrim(@payout_ccy)
-	end
-	if(@instrument_type = "Double Barrier")
-	begin
-		select
-			@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(convert(varchar(30), @strike)) + " " + upper(@put_call) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @lower_barrier)) + " " + rtrim(convert(varchar(30), @upper_barrier))
-	end
-	if(@instrument_type = "Single Barrier")
-	begin
-		select
-			@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(convert(varchar(30), @strike)) + " " + upper(@put_call) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @barrier))
-	end
-
-	insert into
-		option_contracts
-	values(
-		@contract_id,
-		@option_expiration_id,
-		@exercise_style_id,
-		@strike,
-		upper(@put_call))
-
+end
 	
-	insert into
-		contracts
-	values(
-		@contract_id,
-		@contract_symbol,
-		@instrument_id)
+select
+	@option_exp_symbol = symbol
+from
+	option_expirations
+where
+	option_expiration_id = @option_expiration_id
 
-	insert into
-		option_settledates
-	values(
-		@contract_id,
-		@option_settledate)
 
-	insert into
-		exotic_contracts
-	values(
-		@contract_id,
-		@option_expiration_id,
-		@exercise_style_id,
-		@strike,
-		@put_call,
-		@timing_id,
-		@payout_ccy_id,
-		@payout_amount,
-		@barrier_type_id,
-		@lower_barrier,
-		@upper_barrier,
-		@barrier,
-		@exotic_instrument_id)
+if(@instrument_type = "Digital") 
+ 
+begin	
+	if @barrier_type not in(NULL, "")
+	begin
+		if @barrier != NULL
+		begin
+			select 
+				@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @barrier)) + " " + rtrim(@timing) + " " + rtrim(@payout_ccy)
+		end
+		if @lower_barrier != NULL and @upper_barrier != NULL
+		begin
+			select
+				@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @lower_barrier)) + " " + rtrim(convert(varchar(30), @upper_barrier)) + " " + rtrim(@timing) + " " + rtrim(@payout_ccy)
+		end
+	end
+	else
+	begin
+		select
+			@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@strike) + " " + upper(@put_call) + " " + rtrim(@timing) + " " + rtrim(@payout_ccy)
+	end
+end
+if(@instrument_type = "Double Barrier")
+begin
+	select
+		@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@strike) + " " + upper(@put_call) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @lower_barrier)) + " " + rtrim(convert(varchar(30), @upper_barrier))
+end
+if(@instrument_type = "Single Barrier")
+begin
+	select
+		@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@strike) + " " + upper(@put_call) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @barrier))
+end
 
+if @exercise_style = "American"
+begin
+	select
+		@contract_symbol = rtrim(@contract_symbol) + " Am"
+end
+	
+select @contract_symbol
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @contract_symbol
+if @contract_id = NULL
+begin
+	select
+		@create_contract = "Yes"
+end
+else
+begin
+	select
+		@create_contract = "No"
+end
+
+select
+	@ex_contract_id = contract_id
+from
+	exotic_contracts
+where
+	option_expiration_id = @option_expiration_id
+and
+	exercise_style_id = @exercise_style_id
+and
+	strike = @strike_float
+and
+	put_call = @put_call
+and
+	timing_id = @timing_id
+and
+	payout_ccy_id = @payout_ccy_id
+and
+	payout_amount = @payout_amount
+and
+	barrier_type_id = @barrier_type_id
+and
+	lower_barrier = @lower_barrier_float
+and
+	upper_barrier = @upper_barrier_float
+and
+	barrier = @barrier_float
+and
+	exotic_instrument_id = @exotic_instrument_id
+and
+	window_start = @window_start
+and
+	window_end = @window_end
+if @ex_contract_id = NULL
+begin
+	select
+		@create_exotic_contract = "Yes"
+end
+else
+begin
+	select
+		@create_exotic_contract = "No"
+end
+
+if @create_contract = "No" and @create_exotic_contract = "No"
+begin
+	if @contract_id != @ex_contract_id
+	begin
+		select
+			status = "Error",
+			message = "Contract specification mismatch with symbol",
+			symbol = @contract_symbol,
+			contract_id = @contract_id,
+			ex_contract_id = @ex_contract_id
+		return
+	end
+end
+
+if @create_contract !=  @create_exotic_contract
+begin
+	select
+		status = "Error",
+		message = "Invalid contract specification error",
+		symbol = @contract_symbol,
+		contract_id = @contract_id,
+		ex_contract_id = @ex_contract_id
+	return
+end
+
+if @create_contract = "Yes" and @create_exotic_contract = "Yes"
+begin
+	begin tran
+		exec
+			j_nextkey
+				"contracts",
+				@contract_id output
+
+		insert into
+			exotic_contracts(
+				contract_id,
+				option_expiration_id,
+				exercise_style_id,
+				strike,
+				put_call,
+				timing_id,
+				payout_ccy_id,
+				payout_amount,
+				barrier_type_id,
+				lower_barrier,
+				upper_barrier,
+				barrier,
+				exotic_instrument_id,
+				window_start,
+				window_end)
+		values(
+			@contract_id,
+			@option_expiration_id,
+			@exercise_style_id,
+			@strike_float,
+			@put_call,
+			@timing_id,
+			@payout_ccy_id,
+			@payout_amount,
+			@barrier_type_id,
+			@lower_barrier_float,
+			@upper_barrier_float,
+			@barrier_float,
+			@exotic_instrument_id,
+			@window_start,
+			@window_end)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Failed to create exotic contract",
+				symbol = @contract_symbol
+			rollback tran
+			return
+		end
+
+		insert into
+			contracts(
+				contract_id,
+				symbol,
+				instrument_id)
+		values(
+			@contract_id,
+			@contract_symbol,
+			@instrument_id)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Failed to create contract",
+				symbol = @contract_symbol
+			rollback tran
+			return
+		end
+
+		insert into
+			option_settledates(
+				contract_id,
+				settledate)
+		values(
+			@contract_id,
+			@option_settledate)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Failed to create option settle date",
+				symbol = @contract_symbol
+			rollback tran
+			return
+		end
+
+	commit tran
 end
 
 go
