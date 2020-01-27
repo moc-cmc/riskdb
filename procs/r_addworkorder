@@ -8,7 +8,8 @@ create or replace procedure
 			@request_date	datetime,
 			@change_type	varchar(100),
 			@expiration	datetime,
-			@pivotal_id	varchar(12)	
+			@pivotal_id	varchar(12),
+			@req_number 	int=NULL		
 as
 
 declare @client_id	int
@@ -66,9 +67,19 @@ begin
 	return
 end
 
+
+if (@req_number = NULL)
+begin
 	
-exec
-	j_nextkey "work_order_reqs", @work_order_req_id out
+	exec
+		j_nextkey "work_order_reqs", @work_order_req_id out
+
+end
+else
+begin
+	select
+		@work_order_req_id = @req_number
+end
 
 insert into
 	work_order_reqs (
