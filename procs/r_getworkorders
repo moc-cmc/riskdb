@@ -185,7 +185,7 @@ select
 from
         #work_orders
 where
-        setup_fees_billed="Yes"
+        (setup_fees_billed="Yes" or setup_fees_billed="N/A")
 and
         monthly_fees_billed="No"
 
@@ -209,7 +209,7 @@ from
 where
         setup_fees_billed="No"
 and
-        monthly_fees_billed="Yes"
+        (monthly_fees_billed="Yes" or monthly_fees_billed="N/A")
 
 select
         section="Setup and Monthly Billed",
@@ -229,10 +229,9 @@ select
 from
         #work_orders
 where
-        setup_fees_billed="Yes"
+        (setup_fees_billed="Yes" or setup_fees_billed="N/A")
 and
-        monthly_fees_billed="Yes"
-
+        (monthly_fees_billed="Yes" or monthly_fees_billed="N/A")
 go
 
 
