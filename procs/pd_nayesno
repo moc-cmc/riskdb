@@ -1,0 +1,27 @@
+create or replace procedure
+	pd_nayesno
+
+as
+
+create table
+	#yn
+(
+	id int,
+	name char(5)
+)
+
+insert into #yn values(1, "N/A")
+insert into #yn values(2, "Yes")
+insert into #yn values(3, "No")
+
+select
+	name
+from
+	#yn
+order by
+	id
+
+go
+
+
+
