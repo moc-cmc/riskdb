@@ -47,7 +47,7 @@ exec
 		@far_date=@far_date,            
 		@client_far_price=@client_far_price,
 		@market_far_price=@market_far_price,
-		@deal_id=@deal_id,
+		@deal_id=@deal_id output,
 		@near_fixing_date=NULL,
 		@far_fixing_date=NULL,  
 		@client_near_mid=@client_near_mid,
