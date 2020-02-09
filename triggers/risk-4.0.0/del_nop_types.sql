@@ -21,7 +21,8 @@ select
         + "'" + str_replace(a.name, "'", "\'") + "' "
         + "'" + rtrim(str_replace(a.incl_longs, "'", "\'")) + "' "
         + "'" + rtrim(str_replace(a.incl_shorts, "'", "\'")) + "' "
-        + "'" + rtrim(str_replace(a.incl_base_ccy, "'", "\'")) + "'"
+        + "'" + rtrim(str_replace(a.incl_base_ccy, "'", "\'")) + "' "
+        + "'" + rtrim(str_replace(a.incl_fixed_ndfs, "'", "\'")) + "'"
     )
 from
     deleted a

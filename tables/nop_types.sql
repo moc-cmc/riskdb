@@ -10,13 +10,15 @@ create table
         name varchar(25),
         incl_longs char(1),
         incl_shorts char(1),
-        incl_base_ccy char(1)
+        incl_base_ccy char(1),
+        incl_fixed_ndfs char(1)
     )
 go
 
-insert into nop_types values("Net", "Y", "Y", "N")
-insert into nop_types values("Shorts", "N", "Y", "Y")
-insert into nop_types values("Longs", "Y", "N", "Y")
-insert into nop_types values("Aggregate Shorts", "N", "Y", "N")
-insert into nop_types values("Aggregate Longs", "Y", "N", "N")
+insert into nop_types values("Net", "Y", "Y", "N", "Y")
+insert into nop_types values("Shorts", "N", "Y", "Y", "Y")
+insert into nop_types values("Longs", "Y", "N", "Y", "Y")
+insert into nop_types values("Aggregate Shorts", "N", "Y", "N", "Y")
+insert into nop_types values("Aggregate Longs", "Y", "N", "N", "Y")
+insert into nop_types values("Shorts Exclude Fixed", "N", "Y", "Y", "N")
 go
