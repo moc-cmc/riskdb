@@ -250,6 +250,9 @@ select
 from
 	#deal_info
 
+select
+	new_summed_qty = @new_summed_qty
+
 if @quantity != @new_summed_qty	and @new_summed_qty != 0
 begin
 	create table    
@@ -283,17 +286,30 @@ begin
                	quantity,
                	price
        	from
-		trades 
+		trades a,
+		counterparties b,
+		fund_agency_counterparties c
        	where
-               	deal_id = @deal_id
+		a.counterparty_id = b.counterparty_id
+	and
+		b.counterparty_id = c.counterparty_id
+	and
+               	a.deal_id = @deal_id
        	and
-               	external_account_id != @old_external_account_id
+               	a.external_account_id = @old_external_account_id
 
+
+	select old_external_account_id=@old_external_account_id
+	
+	select "debug new deal info", * from #new_deal_info
 
         select
-                @new_tally_qty = (sum(quantity) + @quantity) * -1
+                @new_tally_qty = (sum(quantity) - @quantity)
         from
                 #new_deal_info
+
+	select
+		new_tally_qty = @new_tally_qty
 
 
 	/*
