@@ -35,7 +35,7 @@ select
 
 exec api_tallyclienttrade
                 @login=@login,
-                @tally_type=@tally_type,
+                @tally_type=@tally_tally_type,
                 @client_user=@client_user,
                 @client_buys_sells=@client_buys_sells,
                 @dealt_currency=@dealt_currency,
