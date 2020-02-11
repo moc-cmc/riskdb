@@ -1,17 +1,11 @@
-use
-	risk_jeff
-go
 
-drop procedure
-	r_clientagstatement
-go
-	
-create procedure
+create or replace procedure
 	r_clientagstatement
 		@login varchar(50),
 		@run_name varchar(50)=NULL,
 		@trade_date datetime=NULL
 as
+
 
 
 declare @fund_id int
@@ -2396,7 +2390,7 @@ where
 update
 	#new_trades
 set
-	ccy1_qty = round(ccy2_qty, 0)
+	ccy1_qty = round(ccy1_qty, 0)
 where
 	ccy_pair like "JPY%"
 
@@ -3091,4 +3085,6 @@ exec
 	"Daily Trading Statement"
 
 
-go
+
+go 
+
