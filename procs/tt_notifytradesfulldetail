@@ -1227,7 +1227,7 @@ update
 	#trades
 set
 	trade_day = case
-		when a.trade_date > convert(char(8), a.trade_date, 112) +' 17:00' then
+		when a.trade_date >= convert(char(8), a.trade_date, 112) +' 17:00' then
 			dateadd(day, 1, convert(char(15), a.trade_date, 112))
 		else
 			convert(char(12), a.trade_date, 112)
