@@ -1,0 +1,140 @@
+
+
+create or replace procedure
+	r_editworkorder
+		@login varchar(25),
+		@workorder_ID int,
+		@title varchar(255),
+		@client varchar(50),
+		@request_date datetime,
+		@change_type  varchar(100),
+		@setup_amount float,
+		@monthly_amount float,
+		@variable_model varchar(100),
+		@workorder_status varchar(25),
+		@note varchar(255)
+
+as
+
+declare @client_id int
+declare @change_type_id int
+declare @variable_model_id int
+declare @workorder_status_id int
+
+select
+	@client_id = external_account_id
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id=b.external_account_type_id
+and
+	b.name="Client"
+and
+	a.name=@client
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not find Client",
+		client=@client
+
+	return
+end
+
+select
+	@change_type_id = change_type_id
+from
+	change_types
+where
+	name=@change_type
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not find Change Type",
+		change_type=@change_type
+
+	return
+end
+
+select
+	@variable_model_id=variable_model_id
+from
+	variable_models
+where
+	name=@variable_model
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not find Variable Model",
+		variable_model=@variable_model
+
+	return
+end
+
+select
+	@workorder_status_id = workorder_status_id
+from
+	workorder_statuses
+where
+	name=@workorder_status
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not find Work Order Status",
+		workorder_status=@workorder_status
+
+	return
+end
+	
+begin tran
+	update
+		work_order_reqs
+	set
+		title=@title,
+		client_id=@client_id,
+		req_date=@request_date,
+		change_type_id=@change_type_id,
+		setup_amount=@setup_amount,
+		monthly_amount=@monthly_amount,
+		variable_model_id=@variable_model_id,
+		workorder_status_id=@workorder_status_id,
+		note=@note
+	where
+		work_order_req_id=@workorder_ID
+
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			msg="Work Order not updated",
+			title=@title
+		
+		rollback tran
+
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Work Order Updated",
+	title=@title
+
+exec
+	r_getworkorders @login
+
+return
+
+go
+
+	
