@@ -1,0 +1,13 @@
+
+create or replace procedure
+	r_variablemodelspd
+as
+
+	select
+		name
+	from
+		variable_models
+
+go
+
+
