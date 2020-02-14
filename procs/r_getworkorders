@@ -31,6 +31,14 @@ create table
 		value char(200) NULL)
 
 insert into
+        #meta
+values (
+        "Column Hidden",
+        "workorder_ID",
+        NULL,
+        NULL)
+
+insert into
     #meta
 values(
 	"Row Style",
@@ -66,6 +74,14 @@ insert into
 	#meta
 values (
 	"Column Link",
+	"Add Variable Model",
+	"Add Variable Model",
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Link",
         "setup_fees_billed",
 	"Set Setup Fees Billed",
 	NULL)
@@ -81,47 +97,59 @@ values (
 insert into
 	#meta
 values (
-	"Column Hidden",
-	"request_id",
-	NULL,
+	"Column Link",
+	"edit_workorder",
+	"Edit Work Order",
 	NULL)
-	
+
 select meta_type, name, action, value  from #meta
 
 select 
 	Add_Work_Order="Add Work Order",
-	Add_Change_Type="Add Change Type"
+	Add_Change_Type="Add Change Type",
+	Add_Variable_Model="Add Variable Model"
 
 create table
 	#work_orders (
 		section varchar(50) NULL,
-		request_id int,
-		REQUEST varchar(10),
-		title varchar(250),
-		client varchar(150),
-		request_date datetime,
-		change_type varchar(100),
-		expiration datetime,
-		pivotal_id varchar(12),
-		setup_fees_billed varchar(4),
-		monthly_fees_billed varchar(4),
-		setup_billing_date datetime NULL,
-		monthly_billing_date datetime NULL)
+		workorder_ID 		int,
+		request 		varchar(10),
+		title 			varchar(250),
+		client 			varchar(150),
+		request_date 		datetime,
+		change_type 		varchar(100),
+		setup_amount		float,
+		monthly_amount		float,
+		variable_model		varchar(100),
+		workorder_status	varchar(25),
+		expiration 		datetime,
+		pivotal_id 		varchar(12),
+		setup_fees_billed 	varchar(4),
+		monthly_fees_billed 	varchar(4),
+		setup_billing_date 	datetime NULL,
+		monthly_billing_date 	datetime NULL,
+		note			varchar(255)
+	)
 
 insert into
 	#work_orders (
-		request_id,
-		REQUEST,
+		workorder_ID,
+		request,
 		title,
 		client,
 		request_date,
 		change_type,
+		setup_amount,
+		monthly_amount,
+		variable_model,
+		workorder_status,
 		expiration,
 		pivotal_id,
 		setup_fees_billed,
 		monthly_fees_billed,
 		setup_billing_date,
-		monthly_billing_date)
+		monthly_billing_date,
+		note)
 	select
         	a.work_order_req_id,
 		"REQ" + convert(varchar(5), a.work_order_req_id),
@@ -129,35 +157,54 @@ insert into
         	b.name,
         	a.req_date,
         	c.name,
-        	a.expiration,
+        	a.setup_amount,
+		a.monthly_amount,
+		d.name,
+		e.name,
+		a.expiration,
         	a.pivotal_id,
         	a.setup_fees_billed,
 		a.monthly_fees_billed,
 		a.setup_billing_date,
-		a.monthly_billing_date
+		a.monthly_billing_date,
+		a.note
 	from
         	work_order_reqs a,
         	external_accounts b,
-        	change_types c
+        	change_types c,
+		variable_models d,
+		workorder_statuses e
 	where
         	a.client_id=b.external_account_id
 	and
         	a.change_type_id=c.change_type_id
+	and
+		a.variable_model_id=d.variable_model_id
+	and
+		a.workorder_status_id=e.workorder_status_id
+
 
 select
-	section="Not Billed",
-	request_id,
-	REQUEST,
+	workorder_ID,
+	request,
 	title,
 	client,
 	request_date=convert(varchar(12), request_date, 100),
 	change_type,
+	setup_amount,
+	monthly_amount,
+	variable_model,
+	workorder_status,
 	expiration=convert(varchar(12), expiration, 100),
 	pivotal_id,
 	setup_fees_billed,
 	monthly_fees_billed,
 	setup_billing__date=convert(varchar(12), setup_billing_date, 100),
-	monthly_billing_date=convert(varchar(12), monthly_billing_date, 100)
+	monthly_billing_date=convert(varchar(12), monthly_billing_date, 100),
+	note,
+	edit_workorder="Edit",
+	section="Not Billed"
+
 	/* style=@style */
 from
 	#work_orders
@@ -165,22 +212,30 @@ where
 	setup_fees_billed="No"
 and
 	monthly_fees_billed="No"
+order by
+	workorder_ID
 
 
 select
-	section="Setup Billed - Missing Monthly",
-        request_id,
-        REQUEST,
+        workorder_ID,
+	request,
 	title,
         client,
         request_date = convert(varchar(12), request_date, 100),
         change_type,
-        expiration = convert(varchar(12), expiration, 100),
+        setup_amount,
+	monthly_amount,
+	variable_model,
+	workorder_status,
+	expiration = convert(varchar(12), expiration, 100),
         pivotal_id,
         setup_fees_billed,
         monthly_fees_billed,
         setup_billing_date = convert(varchar(12), setup_billing_date, 100),
-        monthly_billing_date = convert(varchar(12), monthly_billing_date, 100)
+        monthly_billing_date = convert(varchar(12), monthly_billing_date, 100),
+	note,
+	edit_workorder="Edit",
+	section="Setup Billed - Missing Monthly"
 	/* style=@style */
 from
         #work_orders
@@ -188,21 +243,29 @@ where
         (setup_fees_billed="Yes" or setup_fees_billed="N/A")
 and
         monthly_fees_billed="No"
+order by
+	workorder_ID
 
 select
-        section="Monthly Billed - Missing Setup",
-        request_id,
-        REQUEST,
+        workorder_ID,
+	request,
 	title,
         client,
         request_date=convert(varchar(12), request_date, 100),
         change_type,
-        expiration=convert(varchar(12), expiration, 100),
+        setup_amount,
+	monthly_amount,
+	variable_model,
+	workorder_status,
+	expiration=convert(varchar(12), expiration, 100),
         pivotal_id,
         setup_fees_billed,
         monthly_fees_billed,
         setup_billing_date=convert(varchar(12), setup_billing_date, 100),
-        monthly_billing_date=convert(varchar(12), monthly_billing_date, 100)
+        monthly_billing_date=convert(varchar(12), monthly_billing_date, 100),
+	note,
+	edit_workorder="Edit",
+	section="Monthly Billed - Missing Setup"
 	/* style=@style */
 from
         #work_orders
@@ -210,21 +273,30 @@ where
         setup_fees_billed="No"
 and
         (monthly_fees_billed="Yes" or monthly_fees_billed="N/A")
+order by
+	workorder_ID
+
 
 select
-        section="Setup and Monthly Billed",
-        request_id,
-        REQUEST,
+        workorder_ID,
+	request,
 	title,
         client,
         request_date=convert(varchar(12), request_date, 100),
         change_type,
-        expiration=convert(varchar(12), expiration, 100),
+        setup_amount,
+	monthly_amount,
+	variable_model,
+	workorder_status,
+	expiration=convert(varchar(12), expiration, 100),
         pivotal_id,
         setup_fees_billed,
         monthly_fees_billed,
         setup_billing_date=convert(varchar(12), setup_billing_date, 100),
-        monthly_billing_date=convert(varchar(12), monthly_billing_date, 100)
+        monthly_billing_date=convert(varchar(12), monthly_billing_date, 100),
+	note,
+	edit_workorder="Edit",
+	section="Setup and Monthly Billed"
 	/* style=@style */
 from
         #work_orders
@@ -232,6 +304,10 @@ where
         (setup_fees_billed="Yes" or setup_fees_billed="N/A")
 and
         (monthly_fees_billed="Yes" or monthly_fees_billed="N/A")
+order by
+	workorder_ID
+
+
 go
 
 
