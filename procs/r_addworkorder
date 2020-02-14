@@ -2,20 +2,27 @@
 
 create or replace procedure
 		r_addworkorder
-			@login varchar(25),
-			@title	varchar(250),
-			@client varchar(50),
-			@request_date	datetime,
-			@change_type	varchar(100),
-			@expiration	datetime,
-			@pivotal_id	varchar(12),
-			@req_number 	int=NULL		
+			@login 			varchar(25),
+			@title			varchar(250),
+			@client 		varchar(50),
+			@request_date		datetime,
+			@change_type		varchar(100),
+			@setup_amount		float=NULL,
+			@monthly_amount		float=NULL,
+			@variable_model		varchar(100)=NULL,
+			@workorder_status	varchar(25)=NULL,
+			@note			varchar(255)=NULL,
+			@expiration		datetime,
+			@pivotal_id		varchar(12),
+			@req_number 		int=NULL		
 as
 
-declare @client_id	int
-declare @change_type_id	int
-declare @external_account_type_id int
-declare @work_order_req_id	int
+declare @client_id			int
+declare @change_type_id			int
+declare @variable_model_id		int
+declare @workorder_status_id		int
+declare @external_account_type_id	int
+declare @work_order_req_id		int
 
 select
 	@external_account_type_id=external_account_type_id
@@ -67,6 +74,37 @@ begin
 	return
 end
 
+select
+	@variable_model_id=variable_model_id
+from
+	variable_models
+where
+	name=@variable_model
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Variable Model type does not exist",
+		variable_model=@variable_model
+	return
+end
+
+select
+	@workorder_status_id=workorder_status_id
+from
+	workorder_statuses
+where
+	name=@workorder_status
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Workorder Status does not exist",
+		workorder_status=@workorder_status
+	return
+end
 
 if (@req_number = NULL)
 begin
@@ -88,7 +126,12 @@ insert into
 		client_id,
 		req_date,
 		change_type_id,
+		setup_amount,
+		monthly_amount,
+		variable_model_id,
+		workorder_status_id,
 		expiration,
+		note,
 		pivotal_id,
 		setup_fees_billed,
 		monthly_fees_billed)
@@ -98,7 +141,12 @@ values (
 		@client_id,
 		@request_date,
 		@change_type_id,
+		@setup_amount,
+		@monthly_amount,
+		@variable_model_id,
+		@workorder_status_id,
 		@expiration,
+		@note,
 		@pivotal_id,
 		"No",
 	        "No" )
