@@ -1,0 +1,20 @@
+
+create or replace procedure
+	r_clientpd
+as
+
+	select 
+		a.name
+	from
+		external_accounts a,
+		external_account_types b
+	where
+		a.external_account_type_id=b.external_account_type_id
+	and
+		b.name="Client"
+
+return
+
+go
+
+
