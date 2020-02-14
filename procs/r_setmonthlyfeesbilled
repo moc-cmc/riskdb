@@ -2,7 +2,7 @@
 create or replace procedure
 		r_setmonthlyfeesbilled	
 			@login varchar(25),
-			@request_id int,
+			@workorder_ID int,
 			@monthly_fees_billed varchar(4),
 			@monthly_billing_date datetime
 as
@@ -19,14 +19,14 @@ begin tran
 		monthly_fees_billed=@monthly_fees_billed,
 		monthly_billing_date=@monthly_billing_date
 	where
-		work_order_req_id=@request_id
+		work_order_req_id=@workorder_ID
 
 	if @@rowcount !=1
 	begin
 		select
 			status="Error",
 			msg="Could not set monthly_fee_billed",
-			request_id="REQ" + convert(varchar(5), @request_id)
+			workorder_id="REQ" + convert(varchar(5), @workorder_ID)
 
 		rollback tran
 		exec r_getworkorders @login
