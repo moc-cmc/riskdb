@@ -2,7 +2,7 @@
 create or replace procedure
 	r_setsetupfeesbilled
 			@login varchar(25),
-			@request_id int,
+			@workorder_ID int,
 			@setup_fees_billed varchar(4),
 			@setup_billing_date datetime
 as
@@ -19,14 +19,14 @@ begin tran
 		setup_fees_billed=@setup_fees_billed,
 		setup_billing_date=@setup_billing_date
 	where
-		work_order_req_id=@request_id
+		work_order_req_id=@workorder_ID
 
 	if @@rowcount !=1
 	begin
 		select
 			status="Error",
 			msg="Could not set setup_fee_billed",
-			request_id="REQ" + convert(varchar(5), @request_id)
+			workorder_id="REQ" + convert(varchar(5), @workorder_ID)
 
 		rollback tran
 		exec r_getworkorders @login
