@@ -1,0 +1,53 @@
+
+create or replace procedure
+	r_addvariablemodel
+		@login varchar(25),
+		@name varchar(100),
+		@description varchar(255)
+as
+
+declare @variable_model_id int
+
+if exists (select name from variable_models where name=@name)
+begin
+	select
+		status="Error",
+		msg="Variable Model Name already exists",
+		variable_model=@name
+
+	return
+end
+
+exec j_nextkey "variable_models", @variable_model_id out
+
+insert into
+	variable_models (
+		variable_model_id,
+		name,
+		description )
+	values (
+		@variable_model_id,
+		@name,
+		@description )
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not add variable model",
+		variable_model=@name
+
+	return
+end
+
+select
+	status="Success",
+	msg="Variable Model Added",
+	variable_model=@name
+
+exec r_getworkorders @login
+
+return
+
+go
+
