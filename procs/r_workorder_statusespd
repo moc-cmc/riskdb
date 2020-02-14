@@ -1,0 +1,13 @@
+
+create or replace procedure
+	r_workorder_statusespd	
+as
+
+select 
+	name
+from
+	workorder_statuses
+
+go
+
+
