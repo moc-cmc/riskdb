@@ -1,3 +1,6 @@
+use match_hub1
+go
+
 drop procedure mx_tallyspotfwdndf
 go
 
@@ -260,13 +263,13 @@ end
  *
  */
 
-if lower(@buys_sells) = "buys"
+if lower(@buys_sells) in("buys", "buy", "b")
 begin
 	select
 		@quantity = abs(@quantity) * 1.0
 end
 
-if lower(@buys_sells) = "sells"
+if lower(@buys_sells) in("sells", "sell", "s")
 begin
 	select
 		@quantity = abs(@quantity) * -1.0
