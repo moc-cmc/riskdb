@@ -23,14 +23,15 @@ create or replace procedure
                 @contra_party_identifier varchar(100)=NULL,
                 @trade_note varchar(255)=NULL,
                 @strategy varchar(50)=NULL,
-                @trade_d varchar(20)=NULL,
-                @deal_id int=NULL output,
-                @trade_id int=NULL output
+                @trade_d varchar(20)=NULL
 
 as
 
 declare @tally_price float
 declare @tally_qty numeric(30, 4)
+declare @trade_id int
+declare @deal_id int
+
 
 select
 	@tally_price = convert(float, @price),
