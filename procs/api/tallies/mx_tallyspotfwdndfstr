@@ -1,0 +1,67 @@
+use match_hub1
+go
+
+create or replace procedure
+	mx_tallyspotfwdndfstr
+                @login varchar(50),
+                @reporter varchar(100),
+                @platform varchar(100),
+                @reporting_party varchar(100),
+                @reporting_clearing_party varchar(100),
+                @contra_party varchar(100),
+                @contra_clearing_party varchar(100),
+                @tally_type varchar(50),
+                @buys_sells varchar(50),
+                @dealt_currency varchar(50),
+                @counter_currency varchar(50),
+                @quantity varchar(50),
+                @price varchar(50),
+                @value_d varchar(20),
+                @fixing_d varchar(20)=NULL,
+                @platform_identifier varchar(100),
+                @reporter_identifier varchar(100),
+                @contra_party_identifier varchar(100)=NULL,
+                @trade_note varchar(255)=NULL,
+                @strategy varchar(50)=NULL,
+                @trade_d varchar(20)=NULL,
+                @deal_id int=NULL output,
+                @trade_id int=NULL output
+
+as
+
+declare @tally_price float
+declare @tally_qty numeric(30, 4)
+
+select
+	@tally_price = convert(float, @price),
+	@tally_qty = convert(numeric(30, 4), @quantity)
+
+exec
+        mx_tallyspotfwdndf
+                @login = @login,
+                @reporter = @reporter,
+                @platform = @platform,
+                @reporting_party = @reporting_party,
+                @reporting_clearing_party = @reporting_clearing_party,
+                @contra_party = @contra_party,
+                @contra_clearing_party = @contra_clearing_party,
+                @tally_type= @tally_type,
+                @buys_sells= @buys_sells,
+                @dealt_currency= @dealt_currency,
+                @counter_currency= @counter_currency,
+                @quantity = @tally_qty,
+                @price = @tally_price,
+                @value_d = @value_d,
+                @fixing_d = @fixing_d,
+                @platform_identifier = @platform_identifier,
+                @reporter_identifier = @reporter_identifier,
+                @contra_party_identifier = @contra_party_identifier,
+                @trade_note = @trade_note,
+                @strategy = @strategy,
+                @trade_d = @trade_d,
+                @deal_id=@deal_id output,
+                @trade_id=@trade_id output
+
+
+
+go
