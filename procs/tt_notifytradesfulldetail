@@ -1871,6 +1871,7 @@ begin
 end	
 
 /* Add field that has additional granularity for a trade_type */
+/* Moving to a case statement in select out 
 update
         #trades
 set
@@ -1887,7 +1888,8 @@ from
 where
         abs_far_qty != abs(quantity)
 and
-        abs_far_qty != NULL
+        abs_far_qty != NULLA
+*/
 
 update
     #trades
@@ -2038,7 +2040,7 @@ select
 	e_ub,     /* upper_barrier   */
 	e_inst,   /* instrument type */
 	e_ud,   /* up or down barrier */
-        trade_type_detailed,
+        trade_type_detailed = case when abs_far_qty != NULL and abs_far_qty != abs(quantity) then "Mismatch" else trade_type end,
         mpt_tally_login,
 	allocation
 from
