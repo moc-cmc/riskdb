@@ -1965,10 +1965,13 @@ begin
                         @current_rate,
                         @display_rate output
 
-	exec
-                u_striptrailingzeros
-                        @mid_mark,
-                        @mm_display_rate output
+	if @mid_mark != NULL
+	begin
+		exec
+                	u_striptrailingzeros
+                        	@mid_mark,
+                        	@mm_display_rate output
+	end
 
 	insert into #output select "trade id", convert(varchar(50), trade_id) from #trades
 	insert into #output select "trade date", convert(varchar(11), trade_date) from #trades
@@ -1978,7 +1981,10 @@ begin
         insert into #output select "currency pair", rtrim(convert(char(3), traded_ccy))+"/"+rtrim(convert(char(3), counter_ccy))  from #trades
         insert into #output select "quantity", convert(varchar(30),convert(numeric(30, 2),  quantity)) from #trades
 	insert into #output select "price", @display_rate
-	insert into #output select "mid_mark", @mm_display_rate
+        if @mid_mark != NULL
+        begin
+                insert into #output select "mid mark", @mm_display_rate
+        end
         insert into #output select "value date", convert(varchar(11), cast(value_date as datetime)) from #trades
         /* insert into #output select "counterparty PB", prime_broker from #trades */
 
