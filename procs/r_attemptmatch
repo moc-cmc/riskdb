@@ -192,5 +192,8 @@ begin tran
 	end
 commit tran
 
+exec 
+	r_insertmatchnotification
+		@match_trade_id = @match_trade_id
 
 go
