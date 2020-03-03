@@ -1,7 +1,4 @@
-drop procedure tt_notifytradesfulldetail
-go
-
-create procedure
+create or replace procedure
 	tt_notifytradesfulldetail
 		@source varchar(50),
 		@query_options char(1)=NULL,
@@ -20,6 +17,10 @@ declare @netlink_broker_id int
 declare @boa_pb_id int
 declare @manual_tally_broker_id int
 declare @usi_lookup varchar(15)
+
+declare @ruble_conversion varchar(10)
+declare @update_ruble_trades varchar(10)
+
 
 select
 	@usi_lookup = usi_prefix
@@ -1149,6 +1150,107 @@ and
 	b.instrument_id = c.instrument_id
 and
 	c.name in("Option", "Exotic")
+
+
+/* Check if Ruble Conversion is needed from enabled_product_features */
+select
+        @ruble_conversion = "Y"
+from
+        enabled_product_features
+where
+        name = "Outbound Ruble Conversion"
+and
+	@source like "%Spectrum%"
+if @ruble_conversion = "Y"
+begin
+        /*------------------------------------------------------------------------------------
+        * If a RUB does not have a fixing date it needs to be updated to RUR only for spectrum
+        *------------------------------------------------------------------------------------- */
+ 	select
+                @update_ruble_trades = "Y"
+        from
+                #trades
+        where
+                fixing_date = NULL
+	and
+		traded_ccy = "RUB"
+	or
+		counter_ccy = "RUB"
+	if @update_ruble_trades = "Y"
+	begin
+		/* update traded_ccy or counter_ccy to RUR where fixing_date is NULL */
+		update
+			#trades
+		set
+			traded_ccy = "RUR"
+		where
+			fixing_date = NULL
+		and
+			traded_ccy = "RUB"
+	        update
+                        #trades
+                set
+                        counter_ccy = "RUR"
+                where
+                        fixing_date = NULL
+                and
+                        counter_ccy = "RUB"
+		/* update contract_id and std_contract for new contract */
+		update
+        		#trades
+		set
+			contract_id = e.contract_id,
+			std_contract = e.symbol
+		from
+        		#trades a,
+			forwards b,
+        		products c,
+        		products d,
+			contracts e
+		where
+			b.contract_id = e.contract_id
+		and
+        		b.currency_id=c.product_id
+		and
+        		b.product_id=d.product_id
+		and
+			c.symbol = a.counter_ccy
+		and
+			d.symbol = a.traded_ccy
+		update
+        		#trades
+		set
+        		std_contract = rtrim(a.counter_ccy)+rtrim(a.traded_ccy)
+		from
+        		#trades a,
+        		contracts b,
+        		contract_price_styles c,
+        		price_styles d
+		where
+        		a.contract_id = b.contract_id
+		and
+        		b.contract_id = c.contract_id
+		and
+        		c.price_style_id = d.price_style_id
+		and
+        		d.name = "Inverted"
+		update
+        		#trades
+		set
+        		std_contract = b.symbol
+		from
+        		#trades a,
+        		contracts b,
+        		instruments c
+		where
+        		a.contract_id =b.contract_id
+		and
+        		b.instrument_id = c.instrument_id
+		and
+        		c.name in("Option", "Exotic")
+	end
+end
+
 
 /*
 | Query statuses
