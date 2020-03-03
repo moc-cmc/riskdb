@@ -6,7 +6,7 @@ create procedure
 	tt_matchhubaggreptallypbcv0
 		@login varchar(50)=NULL,
 		@trade_reporter varchar(50)=NULL,
-		@ticket_num varchar(50)=NULL,
+		@identifier varchar(100)=NULL,
 		@counterparty varchar(50)=NULL,
 		@prime_broker varchar(50)=NULL, 
 		@trade_date varchar(50)=NULL,
@@ -194,11 +194,11 @@ select
 /* Conversions */
 select
 	@tally_price = convert(float, @dealt_rate_near),
-	@m_tally_quantity = abs(convert(numeric(30, 8), @traded_amount_near)) * -1,
+	@m_tally_quantity = abs(convert(numeric(30, 8), @traded_amount_near)),
 	@tally_trade_date = convert(datetime, @trade_date),
 	@tally_value_date = convert(datetime, @value_date_near),
 	@tally_fixing_date = convert(datetime, @fixing_date_near),
-	@c_tally_quantity = abs(convert(numeric(30, 8), @traded_amount_near))
+	@c_tally_quantity = abs(convert(numeric(30, 8), @traded_amount_near)) * -1
 
 /* --------------------------------------------------------------------------
  * STEP: Set broker_id and source_id
@@ -241,8 +241,8 @@ end
 select
 	@quoted_price = @tally_price,
         @trade_type = "Spot",
-	@c_trade_identifier = @ticket_num+".c",
-	@m_trade_identifier = @ticket_num+".m"
+	@c_trade_identifier = @identifier+".c",
+	@m_trade_identifier = @identifier+".m"
 
 /* --------------------------------------------------------------------------
  * STEP: Dupe check on the identifiers 
@@ -518,7 +518,7 @@ select
 
 
 select
-	@deal_exec_symbol = @ticket_num
+	@deal_exec_symbol = @identifier
 
 exec
 	tt_resolvedeal
