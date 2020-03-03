@@ -1,0 +1,196 @@
+create or replace procedure
+	r_attemptmatch
+		@trade_id int
+
+as
+
+declare @external_account_id int
+declare @counterparty_id int
+declare @quantity numeric(30, 4)
+declare @contract_id int
+declare @product_id int
+declare @currency_id int
+declare @value_date datetime
+declare @fixing_date datetime
+declare @price float
+declare @trade_date datetime
+declare @trade_day datetime
+declare @trader_id int
+declare @strategy_id int
+declare @status_id int
+declare @broker_id int
+declare @sales_code_id int
+declare @identifier varchar(100)
+declare @pct_price numeric(30, 4)
+declare @spot_reference float
+declare @product varchar(50)
+declare @currency varchar(50)
+declare @deal_id int
+
+declare @match_trade_id int
+declare @match_status_id int
+declare @match_status varchar(50)
+declare @counter_quantity numeric(30, 4)
+
+select
+	@deal_id = deal_id,
+	@external_account_id = external_account_id,
+	@counterparty_id = counterparty_id,
+	@quantity = quantity,
+	@counter_quantity = quantity * price,
+	@contract_id = contract_id,
+	@value_date = value_date,
+	@fixing_date = fixing_date,
+	@price = price,
+	@trade_date = trade_date,
+	@trader_id = trader_id,
+	@strategy_id = strategy_id,
+	@status_id = status_id,
+	@broker_id = broker_id,
+	@sales_code_id = sales_code_id,
+	@identifier = identifier,
+	@pct_price = pct_price,
+	@spot_reference = spot_reference
+from
+	trades
+where
+	trade_id = @trade_id
+
+
+select
+	@product_id = a.product_id,
+	@product = a.symbol,
+	@currency_id = b.product_id,
+	@currency = b.symbol
+from
+	products a,
+	products b,
+	forwards c,
+	contracts d
+where
+	d.contract_id = c.contract_id
+and
+	c.product_id = a.product_id
+and
+	c.currency_id = b.product_id
+and
+	d.contract_id = @contract_id
+
+select 
+	@match_trade_id = trade_id
+from
+	trades
+where
+	quantity = @quantity * -1
+and
+	contract_id = @contract_id 
+and
+	value_date = @value_date
+and
+	fixing_date = @fixing_date
+and
+	price = @price
+and
+	identifier = @identifier
+and
+	trade_id != @trade_id
+
+
+if @match_trade_id = NULL
+begin
+	select
+        	@match_trade_id = trade_id
+	from
+        	trades
+	where
+        	quantity = @quantity * -1
+	and
+        	contract_id = @contract_id
+	and
+        	value_date = @value_date
+	and
+        	fixing_date = @fixing_date
+	and
+        	price = @price
+	/*and
+        	identifier = @identifier */
+	and
+        	trade_id != @trade_id
+	if @match_trade_id != NULL
+	begin
+		select
+			@match_status = "Matched"
+	end
+	else
+	begin
+		select
+			@match_status = "Unmatched"
+	end
+end
+else
+begin
+	select
+		@match_status = "Matched"
+end
+
+
+select
+	@match_status_id = match_status_id
+from
+	match_statuses
+where
+	name = @match_status
+
+begin tran
+	update
+		trade_matches
+	set
+		match_status_id = @match_status_id
+	where
+		trade_id = @trade_id
+	if @@rowcount < 1
+	begin
+		select
+			status = "Error",
+			message = "Problem updating match status for trade",
+			trade_id = @trade_id
+		rollback
+		return
+	end
+	update
+		trade_matches
+	set
+		match_status_id = @match_status_id
+	where
+		trade_id = @match_trade_id
+	if @@rowcount < 1
+	begin
+		select
+			status = "Error",
+			message = "Problem updating match status for trade",
+			trade_id = @match_trade_id
+		rollback
+		return
+	end
+	if @match_status in("Matched", "Mismatch")
+	begin
+		update
+			trades
+		set
+			deal_id = @deal_id
+		where
+			trade_id = @match_trade_id
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status = "Error",
+                        	message = "Problem updating deal for matched_trade",
+                        	trade_id = @match_trade_id
+                	rollback
+                	return
+        	end
+	end
+commit tran
+
+
+go
