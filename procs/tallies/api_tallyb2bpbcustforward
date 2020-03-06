@@ -49,7 +49,7 @@ begin
 	return
 end
 
-if upper(@client_buys_sells) in ("CLIENT_BUYS", "BUYS", "B", "BUY")
+if upper(@client_buys_sells) in ("CLIENT BUYS", "CLIENT_BUYS", "BUYS", "B", "BUY")
 begin
 	select
 		@client_quantity = abs(@quantity) * -1.0
