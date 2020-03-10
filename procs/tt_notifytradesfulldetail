@@ -17,6 +17,7 @@ declare @netlink_broker_id int
 declare @boa_pb_id int
 declare @manual_tally_broker_id int
 declare @usi_lookup varchar(15)
+declare @min_trade_id int
 
 declare @ruble_conversion varchar(10)
 declare @update_ruble_trades varchar(10)
@@ -266,6 +267,11 @@ and
 and
         a.source_id = @source_id
 
+select
+	@min_trade_id = min(trade_id)
+from
+	#trade_notifications
+
 
 
 /*
@@ -339,6 +345,8 @@ from
 	#trade_notifications b
 where
 	a.trade_id=b.trade_id
+and
+	a.trade_id >= @min_trade_id
 
 
 create table 
@@ -363,6 +371,8 @@ where
 	a.trade_id = b.trade_id
 and
 	a.notification_status_id = @cancelled_status_id
+and
+	b.trade_id >= @min_trade_id
 if @@rowcount > 0
 begin
 	/* chriso: on cancel, this allows us to get the qty prior to edit. there may have been multiple edits
@@ -431,6 +441,9 @@ begin
 		a.trade_id = b.trade_id
 	and
 		b.swap_symbol_id = c.swap_symbol_id
+	and
+		b.trade_id >= @min_trade_id
+        
 
         /* chriso: citibank can not process NDF swaps, so if a swap has a fixing date, dont handle as a formatted swap */
 	if @format_ndf_swaps = "N"
@@ -602,6 +615,8 @@ begin
                 a.trade_id = b.trade_id
         and
                 b.swap_symbol_id = c.swap_symbol_id
+	and
+                b.trade_id >= @min_trade_id
 end
 	
 /*
@@ -936,6 +951,8 @@ from
 	trade_attributes b
 where
 	a.trade_id = b.trade_id
+and
+	b.trade_id >= @min_trade_id
 
 update
 	#trades
@@ -1684,6 +1701,8 @@ where
 	a.trade_id = c.trade_id
 and
 	c.account_transaction_id = b.account_transaction_id
+and
+	c.trade_id >= @min_trade_id
 
 update
 	#trades
