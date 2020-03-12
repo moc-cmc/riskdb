@@ -1,20 +1,15 @@
 create or replace procedure
 	ttc_integraltruefxtally
-		/* Provided by FIX server config.properties & spring.xml */
                 @source varchar(50),
                 @default_login varchar(50),
                 @broker varchar(50),
                 @granularity varchar(15)=NULL,
-                /* Parsed from FIX message and provided by mapping.xml */
-                /* session variables */
                 @sender_comp varchar(50),
                 @target_comp varchar(50),
-                /* identifiers */
                 @execution_id varchar(100)=NULL,
                 @trade_report_id varchar(50),
 		@cover_exec_id varchar(100)=NULL,
 		@covered_exec_id varchar(100)=NULL,
-                /*financials*/
                 @symbol varchar(50)=NULL,
                 @ccy1 varchar(50)=NULL,
                 @ccy2 varchar(50)=NULL,
@@ -30,11 +25,9 @@ create or replace procedure
 		@trade_report_type varchar(50)=NULL,
 		@trade_input_source varchar(50)=NULL,
 		@security_type varchar(50)=NULL,
-                /*swaps*/
                 @far_price float=NULL,
 		@far_value_date datetime=NULL,
 		@far_fixing_date datetime=NULL,
-                /*parties*/
 		@client_id varchar(50)=NULL,
 		@deliver_to_comp_id varchar(50)=NULL,
 		@on_behalf_of_comp_id varchar(50)=NULL,
@@ -324,6 +317,7 @@ declare @c2_far_tally_status varchar(10)
 declare @c2_far_tally_message varchar(25)
 
 declare @deal_exec_symbol_2 varchar(100)
+declare @modify_c_market_trdr varchar(100)
 
 select
 	@ack_required = "N"
@@ -488,7 +482,26 @@ begin
         select
                 @m2_suppression_lookup = @m2_counterparty_lookup,
                 @c2_suppression_lookup = @c2_trader_lookup
+
+	/* chriso: 2020-03-12 for jefferies we need to have the market trader tie to a client PB_xx trader value
+         * for non-TrueFX lp flow that clears through citibank. Therfore, if we end up suppressing
+         * the c2 ticket on disclosed flow, that means the LP will be citibank cleared. Therefore, we want to 
+         * change the market trader on the c1 (ie, c ticket) to be mapped differently 	
+         */
+        select
+                @modify_c_market_trdr = "Y"
+        from
+                suppression_symbols
+        where
+                source_id = @source_id
+        and
+                symbol = @c2_suppression_lookup
 	
+	if @modify_c_market_trdr = "Y"
+	begin
+		select
+			@m_trader_lookup =  rtrim(@target_comp)+"-"+rtrim(@deliver_to_comp_id)+"-"+rtrim(@on_behalf_of_comp_id)
+	end
 end
 
 
