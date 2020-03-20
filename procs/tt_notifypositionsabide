@@ -1,8 +1,4 @@
-drop procedure
-	tt_notifypositionsabide
-go
-
-create procedure
+create or replace procedure
 	tt_notifypositionsabide
 		@source varchar(50),
 		@trade_date datetime=NULL,
@@ -146,6 +142,8 @@ create table
 		std_contract varchar(50) NULL,
 		traded_ccy varchar(10) NULL,
                 counter_ccy varchar(10) NULL,
+                traded_ccy_non_cfd varchar(10) NULL,
+                counter_ccy_original varchar(10) NULL,
 		hyphen_contract varchar(50) NULL,
 		quantity float NULL,
 		abs_qty float NULL,
@@ -1834,30 +1832,66 @@ where
 update
         #positions
 set
-        cfi_first_att = "EI"
-where
-        underlying_type = "Index"
+        cfi_first_att = "J"
 
-update
+/*update
         #positions
 set
-        cfi_first_att = "TI"
+        cfi_first_att = "S"
+where
+        underlying_type = "Index" */
+
+update
+	#positions
+set
+	cfi_second_att = "EI"
+where
+	underlying_type = "Index"
+
+update
+	#positions
+set
+        cfi_second_att = "TJ"
 where
         underlying_type = "Energy"
 
 update
         #positions
 set
-        cfi_first_att = "TK"
+        cfi_second_att = "TK"
 where
         underlying_type = "Metals"
 
 update
         #positions
 set
-        cfi_first_att = "FT"
+        cfi_second_att = "FT"
 where
         underlying_type = NULL
+
+update
+        #positions
+set
+        cfi_third_att = "XCC"
+
+/*update
+        #positions
+set
+        cfi_third_att = "CXC"
+where
+        underlying_type = "Index" */
+
+update
+        #positions
+set
+	traded_ccy_non_cfd = traded_ccy
+where
+	trade_type != "CFD"
+
+update
+        #positions
+set
+	counter_ccy_original = counter_ccy
 
 update
 	#positions
@@ -2017,6 +2051,8 @@ select
 	abs_cntr_qty=abs_counter_qty,
         vo=vo,
         vo_rate=vo_rate,
+        traded_ccy_non_cfd=traded_ccy_non_cfd,
+        counter_ccy_original=counter_ccy_original,
 	/* exotic                    */
 	e_timing, /* timing          */
 	e_po_ccy, /* payout currency */
@@ -2051,7 +2087,7 @@ select
 	underlying_asset_class,
 	underlying_type,
 	attributes,
-	cfi_code = "J"+cfi_first_att+"XCC",
+	cfi_code = cfi_first_att + cfi_second_att + cfi_third_att,
 	isin,
         underlying_isin,
         instrument_full_name,
@@ -2061,4 +2097,5 @@ from
         #positions
         
 
-go
+
+go 
