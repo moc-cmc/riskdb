@@ -1,14 +1,4 @@
 
-drop table
-	workorder_statuses
-go
-
-delete from 
-	keys
-where
-	relation="workorder_statuses"
-go
-
 create table 
 	workorder_statuses (
 		workorder_status_id	int,

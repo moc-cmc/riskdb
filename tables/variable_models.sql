@@ -1,10 +1,3 @@
-
-drop table variable_models
-go
-
-delete from keys where relation="variable_models"
-go
-
 create table variable_models (
 	variable_model_id	int,
 	name			varchar(100),
@@ -22,4 +15,5 @@ go
 
 insert into keys values ("variable_models", 1)
 go
+
 
