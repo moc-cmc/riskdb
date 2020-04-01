@@ -118,8 +118,8 @@ create table
 		client 			varchar(150),
 		request_date 		datetime,
 		change_type 		varchar(100),
-		setup_amount		float,
-		monthly_amount		float,
+		setup_amount		float NULL,
+		monthly_amount		float NULL,
 		variable_model		varchar(100),
 		workorder_status	varchar(25),
 		expiration 		datetime,
@@ -128,7 +128,7 @@ create table
 		monthly_fees_billed 	varchar(4),
 		setup_billing_date 	datetime NULL,
 		monthly_billing_date 	datetime NULL,
-		note			varchar(255)
+		note			varchar(255) NULL
 	)
 
 insert into
