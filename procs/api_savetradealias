@@ -1,0 +1,97 @@
+create or replace procedure
+	api_savetradealias
+		@trade_id int,
+		@source varchar(50),
+		@alias varchar(100)
+
+as
+
+declare @source_id int
+declare @trade_aliased char(1)
+declare @alias_exists char(1)
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source",
+		provided = @source
+	return
+end
+
+
+/* No check on whether the trade_id exists or not in trades or aggregated_trades
+ * developer should call this from something that already validated
+ * the trade exists
+ */
+
+
+select
+	@trade_aliased = "Y"
+from
+	trade_aliases
+where
+	trade_id = @trade_id
+and
+	source_id = @source_id
+if @trade_aliased = "Y"
+begin
+	select
+		status = "Warn",
+		message = "Alias already exists for trade and source"
+	return
+end
+
+select
+	@alias_exists = "Y"
+from
+	trade_aliases
+where
+	source_id = @source_id
+and
+	alias = @alias
+if @alias_exists = "Y"
+begin
+	select
+		status = "Warn",
+		message = "Alias already exists for source and alias"
+	return
+end
+
+
+
+insert into
+	trade_aliases(
+		trade_id,
+		source_id,
+		alias)
+values(
+	@trade_id,
+	@source_id,
+	@alias
+)
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Problem adding alias",
+		trade_id = @trade_id,
+		source_id = @source_id,
+		alias = @alias
+	return
+end
+
+select
+	status = "Success",
+	message = "Successfully added trade alias",
+	trade_id = @trade_id,
+	source = @source,
+	alais = @alias
+
+go
