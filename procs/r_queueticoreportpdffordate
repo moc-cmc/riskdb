@@ -164,7 +164,7 @@ begin
         /* @waitfor_delay = "HH:MM:SS.00"*/
     	declare @waitfor_delay char(11)
     	select
-        	@waitfor_delay = "00:00:10.00"
+        	@waitfor_delay = "00:00:30.00"
         	/* sleep for 10 seconds */
 
     	select 
