@@ -1,0 +1,89 @@
+create or replace procedure
+	tt_savespectrumtradealias
+		@ext_tnum varchar(50),
+		@tnum varchar(50),
+		@snum varchar(10),
+		@source varchar(50)=NULL
+
+as
+
+declare @trade_id int
+declare @source_id int
+declare @tnum_snum varchar(100)
+declare @trade_exists char(1)
+declare @prefix varchar(10)
+
+
+if @source = NULL
+begin
+	select
+		@source = "Spectrum"
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source",
+		source = @source
+	return
+end
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Manage the identifier formatting
+ *
+ * We save down the format of snum tnum as one identifier with a hyphen to
+ * concatenate the two
+ *
+ * Spectrum provides us our identifer back in @ext_tnum but it is prefixed with
+ * "ETG_" so we need to format that into our trade_id
+ */
+
+select
+	@prefix = substring(@ext_tnum, 1, 4)
+
+if @prefix != "ETG_"
+begin
+	select
+		status = "Error",
+		message = "Identifer must begin with ETG_  ...not processing",
+                ext_tnum = @ext_tnum
+	return
+end
+
+select
+	@tnum_snum = rtrim(@tnum)+"-"+rtrim(@snum),
+	@trade_id = convert(int, ltrim(rtrim(str_replace(@ext_tnum, "ETG_", ""))))
+
+
+select
+	@trade_exists = "Y"
+from
+	trades
+where
+	trade_id = @trade_id
+if @trade_exists != "Y"
+begin
+	select
+		status = "Error",
+		message = "Can not find trade from formatted ext_tnum",
+		ext_tnum = @ext_tnum,
+		trade_id = @trade_id
+	return
+end
+
+exec
+	api_savetradealias
+		@trade_id = @trade_id,
+		@source = @source,
+		@alias = @tnum_snum
+
+go
