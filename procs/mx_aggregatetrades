@@ -1,0 +1,788 @@
+create or replace procedure
+	mx_aggregatetrades
+		@login varchar(50),
+		@run_name varchar(50),
+		@aggregation_model varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+declare @fund_id int
+declare @run_id int
+declare @tico_account_id int
+declare @aggregation_event_id int
+declare @aggregation_event varchar(50)
+declare @begin_date datetime
+declare @end_date datetime
+declare @aggregated_status_id int
+declare @none_sales_code_id int
+declare @pre_num_trades int
+declare @post_num_trades int
+declare @id int
+declare @ids int
+declare @aggregation_model_id int
+declare @trade_type_id int
+declare @price_style varchar(25)
+
+declare @external_account_id int
+declare @contract_id int
+declare @value_date datetime
+declare @quantity_sign int
+declare @quantity numeric(30,4)
+declare @price numeric(30,8)
+
+declare @external_account varchar(50)
+declare @symbol varchar(50)
+declare @identifier varchar(100)
+
+declare @trade_id int
+declare @deal_id int
+declare @source varchar(50)
+declare @source_id int
+declare @trade_type varchar(50)
+declare @internal_account varchar(50)
+declare @tally_type varchar(50)
+declare @trader varchar(50)
+declare @strategy varchar(50)
+declare @broker varchar(50)
+declare @counterparty varchar(50)
+
+declare @inserted_aggs int
+declare @deleted_aggs int
+
+declare @matching_engine varchar(50)
+declare @matching_engine_id int
+declare @matched_match_status_id int
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+select
+	@source = "MPT",
+	@matching_engine = "Hub Match"
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+select
+        @matching_engine_id = matching_engine_id
+from
+        matching_engines
+where
+        name = @matching_engine
+if @matching_engine_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Matching engine not found",
+                matching_engine = @matching_engine
+        return
+end
+
+select
+	@matched_match_status_id = match_status_id
+from
+	match_statuses
+where
+	name = "Matched"
+if @matched_match_status_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Matched match status not found",
+                matched_match_status_id = @matched_match_status_id
+        return
+end
+
+select
+	@aggregation_model_id = aggregation_model_id,
+	@trade_type_id = trade_type_id
+from
+	aggregation_models
+where
+	name = @aggregation_model
+if @aggregation_model_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Aggregation model not found",
+		aggregation_model = @aggregation_model
+	return
+end
+
+select
+	@trade_type = b.name
+from
+	aggregation_models a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+and
+	a.aggregation_model_id = @aggregation_model_id
+
+
+select
+	@internal_account = b.symbol
+from
+	aggregation_models a,
+	internal_accounts b
+where
+	a.internal_account_id = b.internal_account_id
+and
+	a.aggregation_model_id = @aggregation_model_id
+
+
+select
+	@trader = b.symbol
+from
+	aggregation_models a,
+	traders b
+where
+	a.trader_id = b.trader_id
+and
+	a.aggregation_model_id = @aggregation_model_id
+
+
+select
+	@strategy = b.name
+from
+	aggregation_models a,
+	strategies b
+where
+	a.strategy_id = b.strategy_id
+and
+	a.aggregation_model_id = @aggregation_model_id
+
+select
+	@broker = b.symbol
+from
+	aggregation_models a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+and
+	a.aggregation_model_id = @aggregation_model_id
+
+select
+	@none_sales_code_id = sales_code_id
+from
+	sales_codes
+where
+	name = "None"
+if @none_sales_code_id = NULL
+begin
+	select
+		status = "Error",
+		message = "None sales code not found"
+	return
+end
+
+select
+	@aggregated_status_id = status_id
+from
+	statuses
+where
+	name = "Aggregated"
+if @aggregated_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Aggregated status not found"
+	return
+end
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+exec
+	r_defaultfundforlogin
+		@login = @login,
+		@fund_id = @fund_id output
+
+
+if @fund_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve fund for login"
+	return
+end
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @run_name
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+select
+	@aggregation_event = convert(varchar(20), getdate(), 121)
+select
+	@aggregation_event_id = sales_code_id
+from
+	sales_codes
+where
+	name = @aggregation_event
+if @aggregation_event_id = NULL
+begin
+	exec
+		j_nextkey
+			"sales_codes",
+			@aggregation_event_id output
+	insert into
+		sales_codes(
+			sales_code_id,
+			name)
+	values(
+		@aggregation_event_id,
+		@aggregation_event)
+
+	insert into
+		aggregation_events(
+			aggregation_event_id,
+			name,
+			run_id,
+			aggregation_model_id,
+			agg_begin)
+	values(
+		@aggregation_event_id,
+		@aggregation_event,
+		@run_id,
+		@aggregation_model_id,
+		getdate())
+end
+
+
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders	
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies	
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts	
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts	
+
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers	
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties	
+
+begin tran
+	update
+		trades
+	set
+		a.sales_code_id = @aggregation_event_id
+	from
+		trades a,
+		#traders b,
+		#strategies c,
+		#external_accounts d,
+		#internal_accounts e,
+		#brokers f,
+		#counterparties g,
+		trade_matches h
+	where
+		a.trader_id = b.trader_id
+	and
+		a.strategy_id = c.strategy_id
+	and
+		a.external_account_id = d.external_account_id
+	and
+		a.internal_account_id = e.internal_account_id
+	and
+		a.broker_id = f.broker_id
+	and
+		a.counterparty_id = g.counterparty_id
+	and
+		a.trade_id = h.trade_id
+	and
+		h.matching_engine_id = @matching_engine_id
+	and
+		h.match_status_id = @matched_match_status_id
+	and
+		a.trade_type_id = @trade_type_id
+	/*and
+		a.status_id != @aggregated_status_id*/
+	and
+		a.sales_code_id = @none_sales_code_id
+	/* and
+		a.trade_date >= @begin_date */
+	and
+		a.trade_date < @end_date
+	select
+		@pre_num_trades = @@rowcount
+commit tran
+
+create table
+	#nets(
+		id int identity,
+		external_account_id int,
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4))
+insert into
+	#nets(
+		external_account_id,
+		contract_id,
+		value_date,
+		quantity)
+select
+	external_account_id,
+	contract_id,
+	value_date,
+	sum(quantity)
+from
+	trades
+where
+	sales_code_id = @aggregation_event_id
+and
+	quantity > 0.0
+group by
+	external_account_id,
+	contract_id,
+	value_date
+
+insert into
+	#nets(
+		external_account_id,
+		contract_id,
+		value_date,
+		quantity)
+select
+	external_account_id,
+	contract_id,
+	value_date,
+	sum(quantity)
+from
+	trades
+where
+	sales_code_id = @aggregation_event_id
+and
+	quantity < 0.0
+group by
+	external_account_id,
+	contract_id,
+	value_date
+
+select
+	@post_num_trades = count(*)
+from
+	#nets
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#nets
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#nets
+	where
+		id > @id
+
+	select
+		@external_account_id = NULL,
+		@contract_id = NULL,
+		@value_date = NULL,
+		@quantity = NULL,
+		@price = NULL,
+		@external_account = NULL,
+		@symbol = NULL,
+		@identifier = NULL,
+		@trade_id = NULL,
+		@deal_id = NULL,
+		@price_style = NULL,
+		@inserted_aggs = NULL,
+		@deleted_aggs = NULL
+
+	select
+		@external_account_id = external_account_id,
+		@contract_id = contract_id,
+		@value_date = value_date,
+		@quantity = quantity
+	from
+		#nets
+	where
+		id = @id
+
+	select
+		@price_style = a.name
+	from
+		price_styles a,
+		contract_price_styles b
+	where
+		a.price_style_id = b.price_style_id
+	and
+		b.contract_id = @contract_id
+
+	select
+		@price = abs(sum(quantity * price) / sum(quantity))
+	from
+		trades
+	where 
+		external_account_id = @external_account_id
+	and
+		contract_id = @contract_id
+	and
+		value_date = @value_date
+	and
+		sales_code_id = @aggregation_event_id
+	/* and
+		trade_date >= @begin_date */
+	and
+		trade_date < @end_date
+	and
+		sign(quantity) = sign(@quantity)
+
+	if @price_style = "Inverted"
+		select
+			@price = 1.0 / @price
+
+	select
+		@external_account = symbol
+	from
+		external_accounts
+	where
+		external_account_id = @external_account_id
+	if @external_account = NULL
+	begin
+		select
+			status = "Error",
+			message = "Account not found",
+			account = @external_account
+		return
+	end
+
+	select
+		@symbol = symbol
+	from
+		contracts
+	where
+		contract_id = @contract_id
+	if @symbol = NULL
+	begin
+		select
+			status = "Error",
+			message = "Contract not found",
+			symbol = @symbol
+		return
+	end
+
+	select
+		@identifier = rtrim(@aggregation_event) + rtrim(@external_account) + rtrim(@symbol) + rtrim(convert(varchar(11), @value_date)) + convert(varchar(2), sign(@quantity))
+
+	exec
+		j_nextkey
+			"trades",
+			@trade_id output
+
+	insert into
+		aggregated_trades(
+			aggregate_trade_id,
+			trade_id,
+			deal_id,
+			user_id,
+			trade_type_id,
+			internal_account_id,
+			external_account_id,
+			counterparty_id,
+			quantity,
+			contract_id,
+			value_date,
+			fixing_date,
+			price,
+			trade_date,
+			trader_id,
+			strategy_id,
+			status_id,
+			broker_id,
+			sales_code_id,
+			identifier,
+			pct_price,
+			spot_reference)
+	select
+		aggregate_trade_id = @trade_id,
+		trade_id,
+		deal_id,
+		user_id,
+		trade_type_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		contract_id,
+		value_date,
+		fixing_date,
+		price,
+		trade_date,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		sales_code_id,
+		identifier,
+		pct_price,
+		spot_reference
+	from
+		trades
+	where
+		external_account_id = @external_account_id
+	and
+		contract_id = @contract_id
+	and
+		value_date = @value_date
+	and
+		sales_code_id = @aggregation_event_id
+	and
+		sign(quantity) = sign(@quantity)
+	and
+		trade_date < @end_date
+	select
+		@inserted_aggs = @@rowcount
+
+
+	exec
+		fxa_tallytrade
+			@login = @login,
+			@source = @source,
+			@trade_id = @trade_id output,
+			@deal_id = @deal_id output,
+			@tally_type = "Spot",
+			@deal_type = "Client Forward",
+			@trade_type = @trade_type,
+			@internal_account = @internal_account,
+			@external_account = @external_account,
+			@counterparty = @counterparty,
+			@quantity = @quantity,
+			@symbol = @symbol,
+			@value_date = @value_date,
+			@price = @price,
+			@trade_date = @trade_date,
+			@trader = @trader,
+			@strategy = @strategy,
+			@status = "Aggregated",
+			@broker = @broker,
+			@identifier = @identifier,
+			@sales_code = @aggregation_event
+
+	delete
+
+	from
+		trades
+	where
+		external_account_id = @external_account_id
+	and
+		contract_id = @contract_id
+	and
+		value_date = @value_date
+	and
+		sales_code_id = @aggregation_event_id
+	and
+		sign(quantity) = sign(@quantity)
+	and
+		trade_date < @end_date
+	and
+		status_id != @aggregated_status_id
+	select
+		@deleted_aggs = @@rowcount
+
+	if @inserted_aggs != @deleted_aggs
+	begin
+		select
+			status = "Error",
+			message = "Failed archive to aggregated trades",
+			symbol = @symbol,
+			account = @external_account,
+			inserted_aggs = @inserted_aggs,
+			deleted_aggs = @deleted_aggs,
+			aggregation_event = @aggregation_event
+	end
+
+	exec
+		r_inserttradenotification 
+			@trade_id = @trade_id
+
+
+	select
+		@ids = count(*)
+	from
+		#nets
+	where
+		id > @id
+end
+	
+update
+	aggregation_events
+set
+	pre_num_trades = @pre_num_trades,
+	post_num_trades = @post_num_trades,
+	agg_end = getdate()
+where
+	aggregation_event_id = @aggregation_event_id
+
+
+select * from aggregation_events where aggregation_event_id = @aggregation_event_id
+
+go
+

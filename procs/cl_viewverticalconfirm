@@ -33,6 +33,9 @@ declare @mark_to_market varchar(1)
 declare @display_rate varchar(30)
 declare @current_rate varchar(30)
 
+declare @mid_mark varchar(30)
+declare @mm_display_rate varchar(30)
+
 
 select
 	@format_swaps = "N",
@@ -224,6 +227,7 @@ create table
 		fixing_date varchar(15) NULL,
 		db_price float,
 		std_price float NULL,
+		mid_mark float NULL,
 		spot_reference float NULL,
 		sales_code_id int,
 		sales_code varchar(25) NULL,
@@ -636,6 +640,17 @@ and
     b.contract_id = c.contract_id
 and
     c.price_style_id = d.price_style_id
+
+/* add midmark price */
+update
+        #trades
+set
+        mid_mark = b.mid_mark
+from
+        #trades a,
+        trade_attributes b
+where
+        a.trade_id = b.trade_id
 
 if @format_swaps = "Y"
 begin
@@ -1943,11 +1958,20 @@ if @trade_id != NULL and @trade_type in("Spot", "Forward")
 begin
 
 	select @current_rate = convert(varchar(30), convert(numeric(30, 8), std_price)) from #trades where trade_id = @trade_id
+	select @mid_mark = convert(varchar(30), convert(numeric(30, 8), mid_mark)) from #trades where trade_id = @trade_id
 
         exec
                 u_striptrailingzeros
                         @current_rate,
                         @display_rate output
+
+	if @mid_mark != NULL
+	begin
+		exec
+                	u_striptrailingzeros
+                        	@mid_mark,
+                        	@mm_display_rate output
+	end
 
 	insert into #output select "trade id", convert(varchar(50), trade_id) from #trades
 	insert into #output select "trade date", convert(varchar(11), trade_date) from #trades
@@ -1957,6 +1981,10 @@ begin
         insert into #output select "currency pair", rtrim(convert(char(3), traded_ccy))+"/"+rtrim(convert(char(3), counter_ccy))  from #trades
         insert into #output select "quantity", convert(varchar(30),convert(numeric(30, 2),  quantity)) from #trades
 	insert into #output select "price", @display_rate
+        if @mid_mark != NULL
+        begin
+                insert into #output select "mid mark", @mm_display_rate
+        end
         insert into #output select "value date", convert(varchar(11), cast(value_date as datetime)) from #trades
         /* insert into #output select "counterparty PB", prime_broker from #trades */
 

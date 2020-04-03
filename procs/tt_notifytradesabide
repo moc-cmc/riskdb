@@ -1,8 +1,4 @@
-drop procedure
-	tt_notifytradesabide
-go
-
-create procedure
+create or replace procedure
 	tt_notifytradesabide
 		@source varchar(50),
 		@trade_date varchar(50)=NULL,
@@ -136,6 +132,8 @@ create table
 		hyphen_contract varchar(50) NULL,
 		traded_ccy varchar(10) NULL,
                 counter_ccy varchar(10) NULL,
+                traded_ccy_non_cfd varchar(10) NULL,
+                counter_ccy_original varchar(10) NULL,
 		quantity float NULL,
 		abs_qty float NULL,
 		abs_counter_qty float NULL,
@@ -257,6 +255,7 @@ create table
 		account_financial_juristiction varchar(50) NULL,
 		account_lei_number varchar(50) NULL,
 		account_lei_type varchar(50) NULL,
+		mic varchar(20) NULL,
 		/* Fund  Regulatory Info */
 		fund_regulatory_info_id int NULL,
 		fund_legal_name varchar(50) NULL,
@@ -277,10 +276,16 @@ create table
 		instrument_full_name varchar(50) NULL,
 		underlying_instrument varchar(50) NULL,
 		instrument_term varchar(50) NULL,
+		instrument_id_code varchar(50) NULL,
+		price_multiplier float NULL,
 		cfi_first_att varchar(50) NULL,
 		cfi_second_att varchar(50) NULL,
 		cfi_third_att varchar(50) NULL,
-		cfi_fourth_att varchar(50) NULL
+		cfi_fourth_att varchar(50) NULL,
+		cfi_code varchar(50) NULL,
+		account_branch_location_mic_dependent varchar(50) NULL,
+		traded_ccy_mic_dependent varchar(10) NULL,
+		delivery_type varchar(20) NULL,
 		)
 
 
@@ -438,17 +443,10 @@ begin
 	where
 		source_id = @source_id
 
-	/* 
-	delete from
-		#trades
-	from
-		#trades a,
-		#reportable b
-	where
-		a.contract_id != b.contract_id
-	*/
-
-	delete from #trades where contract_id not in(select contract_id from #reportable)
+	delete from 
+                #trades 
+        where 
+                contract_id not in(select contract_id from #reportable)
 end
 
 
@@ -1984,7 +1982,8 @@ set
 	account_party_region = b.party_region,
 	account_financial_juristiction = b.financial_juristiction,
 	account_lei_number = b.lei_number,
-	account_lei_type = b.lei_type
+	account_lei_type = b.lei_type,
+	mic = b.mic
 from
 	#trades a,
 	account_regulatory_info b
@@ -2025,7 +2024,9 @@ set
 	underlying_isin = b.underlying_isin,
 	instrument_full_name = b.instrument_full_name,
 	underlying_instrument = b.underlying_instrument,
-	instrument_term = b.instrument_term
+	instrument_term = b.instrument_term,
+	instrument_id_code = b.instrument_id_code,
+	price_multiplier = b.price_multiplier
 from
         #trades a,
         cfd_attributes b
@@ -2044,34 +2045,73 @@ where
 /* Remaining updates are hardcoded based on the spec */
 
 update
+        #trades
+set
+        cfi_first_att = "J"
+
+/* update
+        #trades
+set
+        cfi_first_att = "S"
+where
+        underlying_type = "Index" */
+
+update
 	#trades
 set
-	cfi_first_att = "EI"
+	cfi_second_att = "EI"
 where
 	underlying_type = "Index"
 
 update
 	#trades
 set
-        cfi_first_att = "TI"
+        cfi_second_att = "TJ"
 where
         underlying_type = "Energy"
 
 update
         #trades
 set
-        cfi_first_att = "TK"
+        cfi_second_att = "TK"
 where
         underlying_type = "Metals"
 
 update
         #trades
 set
-        cfi_first_att = "FT"
+        cfi_second_att = "FT"
 where
         underlying_type = NULL
 
+update
+        #trades
+set
+        cfi_third_att = "XCC"
 
+/*update
+        #trades
+set
+        cfi_third_att = "CXC"
+where
+        underlying_type = "Index" */
+
+update
+        #trades
+set
+        cfi_code = cfi_first_att + cfi_second_att + cfi_third_att
+
+update
+	#trades
+set
+	counter_ccy_original = counter_ccy
+
+update
+	#trades
+set
+	traded_ccy_non_cfd = traded_ccy
+where
+	trade_type != "CFD"
 
 update
 	#trades
@@ -2094,6 +2134,59 @@ set
 	hyphen_contract = traded_ccy + '/' + counter_ccy
 where
         trade_type != "CFD"
+
+if @mifidII = "Y"
+begin
+
+        update
+                #trades
+        set
+                delivery_type = "CASH"
+
+        update
+                #trades
+        set
+                account_branch_location_mic_dependent = account_branch_location
+
+        update
+                #trades
+        set
+                traded_ccy_mic_dependent = traded_ccy
+
+        update
+                #trades
+        set
+                price_multiplier = 1
+        where
+                price_multiplier = NULL
+
+        update
+                #trades
+        set
+                cfi_code = "JEIXCC"
+
+        update
+                 #trades
+        set
+                instrument_id_code = NULL,
+                account_branch_location_mic_dependent = NULL
+        where
+                mic = "XXXX"
+
+        update
+                 #trades
+        set
+                instrument_full_name = NULL,
+                cfi_code = NULL,
+                traded_ccy_mic_dependent = NULL,
+                price_multiplier = NULL,
+                underlying_isin = NULL,
+                underlying_instrument = NULL,
+                instrument_term = NULL,
+                delivery_type = NULL
+        where
+                mic = "LMAO"
+end
 
 
 select
@@ -2223,6 +2316,8 @@ select
 	abs_cntr_qty=abs_counter_qty,
         vo=vo,
         vo_rate=vo_rate,
+        counter_ccy_original=counter_ccy_original,
+        traded_ccy_non_cfd=traded_ccy_non_cfd,
 	/* exotic                    */
 	e_timing, /* timing          */
 	e_po_ccy, /* payout currency */
@@ -2243,6 +2338,7 @@ select
         account_financial_juristiction,
         account_lei_number,
         account_lei_type,
+        mic,
 	/* fund regulatory */
 	fund_regulatory_info_id,
         fund_legal_name,
@@ -2257,15 +2353,21 @@ select
 	underlying_asset_class,
         underlying_type,
         attributes,
-	cfi_code = "J"+cfi_first_att+"XCC",
+	cfi_code,
 	isin,
 	underlying_isin,
 	instrument_full_name,
 	underlying_instrument,
-	instrument_term
+	instrument_term,
+	instrument_id_code,
+	price_multiplier,
+	delivery_type,
+	account_branch_location_mic_dependent,
+	traded_ccy_mic_dependent
 from
         #trades
 order by
         trade_id
 
-go
+
+go 
