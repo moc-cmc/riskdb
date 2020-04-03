@@ -1,8 +1,5 @@
 
-drop procedure dd_outboundsourcecheck
-go
-
-create procedure
+create or replace procedure
 	dd_outboundsourcecheck
 
 as
