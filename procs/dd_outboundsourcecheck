@@ -112,21 +112,21 @@ from
 where
 	a.org_id = b.org_id
 
-/* debug   
+/* debug  
 select * from #outbound_sources
 */
 
-
-
 create table
         #outbound_counts(
-		id int identity,
+		id int identity, 
 		obs_id int,
                 queued int
 )
 
 insert into
 	#outbound_counts
+	(obs_id,
+	 queued)
 select
 	d.id,
 	count(*)
@@ -145,8 +145,82 @@ and
 	b.trade_date >= @begin_date
 and
 	a.capture_date <= d.stale_threshold
+and 
+	c.name="Active"
 group by
-	d.id
+	d.id	
+
+/* debug 
+select * from #outbound_counts
+*/
+ 
+create table
+	#trade_edits(
+		trade_id int,
+		edit_date datetime
+)
+
+insert into
+	#trade_edits
+select
+	trade_id,
+	max(timestamp)
+from
+	trade_edits
+where
+	timestamp >= @begin_date
+group by
+	trade_id
+
+create table
+        #outbound_counts_edits(
+                id int identity,
+                obs_id int,
+                queued int
+)
+
+insert into 
+	#outbound_counts_edits
+	(obs_id,
+	 queued)
+select
+	d.id,
+	count(*)
+from
+	trade_notifications a,
+	#trade_edits b,
+	#statuses c,
+	#outbound_sources d
+where
+	a.trade_id = b.trade_id
+and
+	a.status_id=c.status_id
+and
+	a.source_id=d.source_id
+and
+	b.edit_date <= d.stale_threshold
+and
+	c.name in ("Edit", "Cancelled")
+group by
+	d.id	
+
+/* debug
+select * from #outbound_counts_edits
+*/
+
+update 
+	#outbound_counts
+set
+	a.queued = a.queued + b.queued
+from
+	#outbound_counts a,
+	#outbound_counts_edits b
+where
+	a.obs_id=b.obs_id
+
+/* debug
+select * from #outbound_counts	
+*/
 
 /* can track match_notifications in same temp table
  * since the outbound sourcce for match notifications
