@@ -40,6 +40,10 @@ declare @activity_equiv float
 declare @end_equiv float
 declare @fwd_open_equiv float
 declare @opt_open_equiv float
+declare @start_time datetime
+declare @end_time datetime
+
+select @start_time = getdate()
 
 if @run_name = NULL
 	return
@@ -181,6 +185,19 @@ from
 where
 	external_account_id = @external_account_id
 
+select
+        @end_time = getdate()
+exec 
+	sp_dogstatsdtimer 
+		@metric_name="ase.proc.r_clientagstatement.s1",
+		@start_time=@start_time,
+		@end_time=@end_time,
+		@tags="",
+ 		@sample_rate="1.0"
+
+select
+	@start_time = getdate()
+
 create table
 	#header(
 		id int identity,
@@ -238,6 +255,18 @@ from
 order by
 	id
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s2",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
+
+select
+	@start_time = getdate()
 
 create table
 	#external_accounts(
@@ -822,6 +851,19 @@ and
 
 /* End Trade Fetch */
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s3",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
+
+select 
+	@start_time = getdate()
+
 /* Fetch all account transactions */
 
 create table
@@ -1200,6 +1242,18 @@ from
 where
 	a.currency_id = b.product_id
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s4",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
+
+select
+        @start_time = getdate()
 
 /* Find the open trade equity */
 create table
@@ -1369,6 +1423,18 @@ from
 group by
 	external_account_id,
 	product_id
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s5",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
+
+select
+        @start_time = getdate()
 
 /* Get the opening and closing balances by currency */
 create table
@@ -1535,6 +1601,18 @@ from
 where
 	a.product_id = b.product_id
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s6",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
+
+select 
+        @start_time = getdate()
 	
 
 /* Option Trades */
@@ -2233,6 +2311,18 @@ set
 where
 	contract like "%JPY" /*MARKR TEST */
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s7",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
+
+select 
+        @start_time = getdate()
 
 /* Calculate Maturing Trades */
 create table
@@ -2541,6 +2631,18 @@ order by
 	value_date,
 	row_kind
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s8",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
+
+select
+        @start_time = getdate()
 
 /* Select out Today's CFD Trades - w/o rolls */
 select
@@ -2683,7 +2785,18 @@ order by
 	d.symbol,
 	a.trade_id
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s8",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
 
+select
+        @start_time = getdate()
 
 /* Select out Today's Round Turns - multiply by -1 to since its client side */
 create table
@@ -2810,6 +2923,18 @@ order by
 	a.round_turn_id
 /* Select out Maturing Trades */
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s9",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
+
+select
+        @start_time = getdate()
 
 /* Open Option Positions */
 update
@@ -3084,6 +3209,15 @@ exec
 	r_showdisclaimer
 	"Daily Trading Statement"
 
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s10",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags="",
+                @sample_rate="1.0"
 
 
 go 
