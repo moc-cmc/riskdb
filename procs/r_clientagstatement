@@ -42,11 +42,14 @@ declare @fwd_open_equiv float
 declare @opt_open_equiv float
 declare @start_time datetime
 declare @end_time datetime
+declare @tag_run_name varchar(50)
 
 select @start_time = getdate()
 
 if @run_name = NULL
 	return
+
+select @tag_run_name = "run:" + lower(STR_REPLACE(@run_name, " ", "_"))
 
 select
 	@style = "background:#FFFFFF;border: 1px solid white",
@@ -192,7 +195,7 @@ exec
 		@metric_name="ase.proc.r_clientagstatement.s1",
 		@start_time=@start_time,
 		@end_time=@end_time,
-		@tags="",
+		@tags=@tag_run_name,
  		@sample_rate="1.0"
 
 select
@@ -262,7 +265,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s2",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select
@@ -858,7 +861,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s3",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select 
@@ -1249,7 +1252,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s4",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select
@@ -1430,7 +1433,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s5",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select
@@ -1608,7 +1611,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s6",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select 
@@ -2318,7 +2321,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s7",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select 
@@ -2638,7 +2641,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s8",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select
@@ -2792,7 +2795,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s8",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select
@@ -2930,7 +2933,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s9",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 select
@@ -3216,7 +3219,7 @@ exec
                 @metric_name="ase.proc.r_clientagstatement.s10",
                 @start_time=@start_time,
                 @end_time=@end_time,
-                @tags="",
+                @tags=@tag_run_name,
                 @sample_rate="1.0"
 
 
