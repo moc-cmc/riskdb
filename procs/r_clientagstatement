@@ -43,7 +43,10 @@ declare @opt_open_equiv float
 declare @start_time datetime
 declare @end_time datetime
 declare @tag_run_name varchar(50)
+declare @proc_start_time datetime
+declare @proc_end_time datetime
 
+select @proc_start_time = getdate()
 select @start_time = getdate()
 
 if @run_name = NULL
@@ -3222,6 +3225,17 @@ exec
                 @tags=@tag_run_name,
                 @sample_rate="1.0"
 
+
+select
+	@proc_end_time = getdate()
+
+exec
+	sp_dogstatsdtimer
+		@metric_name="ase.proc.r_clientagstatement.proc_runtime",
+		@start_time=@proc_start_time,
+		@end_time=@proc_end_time,
+		@tags=@tag_run_name,
+		@sample_rate="1.0"
 
 go 
 
