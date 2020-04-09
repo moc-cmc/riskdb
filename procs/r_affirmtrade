@@ -1,0 +1,22 @@
+
+create or replace procedure
+	r_affirmtrade
+		@login varchar(25),
+		@trade_id int,
+		@start_date datetime
+as
+
+
+exec
+	api_affirmtrade 
+		@login, 
+		@trade_id
+
+exec
+	r_tradeaffirmations
+		@login,
+		@start_date
+
+
+go 
+

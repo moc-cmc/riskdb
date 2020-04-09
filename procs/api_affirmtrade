@@ -1,0 +1,113 @@
+
+create or replace procedure
+	api_affirmtrade
+		@login varchar(25),
+		@trade_id int
+as
+
+
+declare	@trade_status_id int
+declare @tico_account_id int
+declare @affirmation_log_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login=@login
+
+if @@rowcount != 1
+begin
+	select
+		error="Error",
+		msg="Login not found",
+		login=@login
+
+	return
+end
+
+exec
+	j_nextkey "affirmation_log", @affirmation_log_id out
+
+if(@affirmation_log_id = NULL)
+begin
+	select
+		status="Error",
+		msg="Could not get id for affirmation_log"
+	return
+end
+
+select
+	@trade_status_id = status_id
+from
+	statuses
+where
+	name="Affirmed"
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Trade Status does not exist",
+		trade_status="Affirmed"
+
+	return
+end
+
+begin tran
+
+	update 
+		trades  
+	set
+		status_id=@trade_status_id
+	where
+		trade_id=@trade_id
+
+	if @@rowcount !=1
+	begin
+		select
+			status="Error",
+			msg="Could not update trade status for id",
+			trade_id=@trade_id
+
+		rollback tran
+		return
+	end
+
+	insert into
+		affirmation_log(
+			affirmation_log_id,
+			trade_id,
+			tico_account_id,
+			affirm_date)
+	values(
+		@affirmation_log_id,
+		@trade_id,
+		@tico_account_id,
+		getdate())
+
+	if @@rowcount !=1
+	begin
+		select
+			status="Error",
+			msg="Could not create affirmation log record",
+			affirmation_log_id=@affirmation_log_id
+
+		rollback tran
+		return
+	end
+
+				
+commit tran
+
+
+exec
+         r_inserttradenotification
+                     @trade_id = @trade_id
+
+
+
+
+go 
+
