@@ -12,6 +12,11 @@ declare @source_id int
 declare @tnum_snum varchar(100)
 declare @trade_exists char(1)
 declare @prefix varchar(10)
+declare @idlink_status_id int
+declare @pending_affirm_status_id int
+declare @status varchar(50)
+declare @swap_symbol_id int
+declare	@far_trade_id int
 
 
 if @source = NULL
@@ -32,6 +37,34 @@ begin
 		status = "Error",
 		message = "Problem finding source",
 		source = @source
+	return
+end
+
+select
+	@pending_affirm_status_id = status_id
+from
+	statuses
+where
+	name = "Pending Affirmation"
+if @pending_affirm_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding status 'Pending Affirmation'"
+	return
+end
+
+select
+	@idlink_status_id = status_id
+from
+	statuses
+where
+	name = "Pending ID Link"
+if @idlink_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding status 'Pending ID Link'"
 	return
 end
 
@@ -80,10 +113,74 @@ begin
 	return
 end
 
+if @snum in("F1", "FW")
+begin
+	select
+		@swap_symbol_id = swap_symbol_id
+	from
+		swap_symbol_trades
+	where
+		trade_id = @trade_id	
+	if @swap_symbol_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding swap symbol id for trade",
+			trade_id = @trade_id
+		return
+	end
+	select
+		@far_trade_id = trade_id
+	from	
+		swap_symbol_trades
+	where
+		swap_symbol_id = @swap_symbol_id
+	and
+		trade_id != @trade_id
+	if @far_trade_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding far leg trade_id from swap symbol",
+			swap_symbol_id = @swap_symbol_id
+		return
+	end
+end
+
+if @far_trade_id != NULL
+begin
+	select
+		@trade_id = @far_trade_id
+end
+
 exec
 	api_savetradealias
 		@trade_id = @trade_id,
 		@source = @source,
-		@alias = @tnum_snum
+		@alias = @tnum_snum,	
+		@status = @status output
+
+if @status = "Success" 
+begin
+	begin tran
+		update
+			trades
+		set
+			status_id = @pending_affirm_status_id
+		where
+			trade_id = @trade_id
+		and
+			status_id = @idlink_status_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem updating status from Pending ID Link to Pending Affirmation"
+			rollback tran
+			return
+		end
+	commit tran
+end
+
 
 go
