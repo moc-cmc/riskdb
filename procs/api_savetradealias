@@ -2,7 +2,8 @@ create or replace procedure
 	api_savetradealias
 		@trade_id int,
 		@source varchar(50),
-		@alias varchar(100)
+		@alias varchar(100),
+		@status varchar(10)=NULL output
 
 as
 
@@ -22,6 +23,8 @@ begin
 		status = "Error",
 		message = "Problem finding source",
 		provided = @source
+	select
+		@status = "Error"
 	return
 end
 
@@ -45,6 +48,8 @@ begin
 	select
 		status = "Warn",
 		message = "Alias already exists for trade and source"
+	select
+		@status = "Warn"
 	return
 end
 
@@ -61,6 +66,8 @@ begin
 	select
 		status = "Warn",
 		message = "Alias already exists for source and alias"
+	select
+		@status = "Warn"
 	return
 end
 
@@ -84,8 +91,13 @@ begin
 		trade_id = @trade_id,
 		source_id = @source_id,
 		alias = @alias
+	select
+		@status = "Error"
 	return
 end
+
+select
+	@status = "Success"
 
 select
 	status = "Success",
