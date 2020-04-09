@@ -1994,7 +1994,20 @@ select
 	equiv_value
 from
 	#open_option_totals
-		
+
+select
+        @end_time = getdate()
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.r_clientagstatement.s7",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags=@tag_run_name,
+                @sample_rate="1.0"
+
+select
+        @start_time = getdate()	
+
 /* MARKR MARKR */
 	
 /* End option trade gathering */
@@ -2321,7 +2334,7 @@ select
         @end_time = getdate()
 exec
         sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s7",
+                @metric_name="ase.proc.r_clientagstatement.s7B",
                 @start_time=@start_time,
                 @end_time=@end_time,
                 @tags=@tag_run_name,
