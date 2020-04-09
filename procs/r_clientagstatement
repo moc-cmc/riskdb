@@ -3231,7 +3231,7 @@ select
 
 exec
 	sp_dogstatsdtimer
-		@metric_name="ase.proc.r_clientagstatement.proc_runtime",
+		@metric_name="ase.proc.r_clientagstatement",
 		@start_time=@proc_start_time,
 		@end_time=@proc_end_time,
 		@tags=@tag_run_name,
