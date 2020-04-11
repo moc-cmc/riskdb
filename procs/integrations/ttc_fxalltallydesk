@@ -52,7 +52,8 @@ create or replace procedure
 		@order_origination_trader varchar(50)=NULL,
 		@executing_venue varchar(50)=NULL,
 		@alloc_qty float=NULL,
-		@alloc_account varchar(50)=NULL
+		@alloc_account varchar(50)=NULL,
+		@trading_venue varchar(100)=NULL
 as
 
 
