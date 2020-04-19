@@ -158,26 +158,6 @@ if @is_fund_agency = "Y"
 	select
 		@client_or_market = "C"
 
-/* If this connection is determining client or market based of specific tags, then use this block - COMING BACK TO THIS
-if @some_tag = "xxx" and @some_other_tag = NULL
-begin
-	select
-		@client_or_market = "M"
-end
-else if @some_tag = NULL and @some_other_tag = "xxx"
-begin
-	select
-		@client_or_market = "C"
-end
-if @client_or_market = NULL
-begin
-	select
-		status = "Error",
-		message = "Could not determine if message was client or market trade"
-	return
-end
-*/
-
 /* --------------------------------------------------------------------------
  * STEP: Map proc parameters to common tally variable name
  * This mapping allows us to use common variable names in all tallies. It also
@@ -194,7 +174,7 @@ begin
 
 	select
 		@counterparty_lookup = rtrim(@sender_comp),
-		@trader_lookup = rtrim(@executing_trader)
+		@trader_lookup = rtrim(@executing_firm)
 
 	/* Set suppression and trigger_symbol variables */
         select
