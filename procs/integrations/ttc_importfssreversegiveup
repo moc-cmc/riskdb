@@ -1,6 +1,3 @@
-use risk_jeff_stg
-go
-
 create or replace procedure
 	ttc_importfssreversegiveup
 		@login varchar(50),
