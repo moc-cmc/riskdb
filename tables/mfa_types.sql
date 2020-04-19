@@ -30,6 +30,11 @@ begin
 		"E"
 	)
 	
+end
+go
+
+if not exists(select name from mfa_types where name in("SMS", "TOTP"))
+begin
 	insert into 
 		keys 
 	values(
