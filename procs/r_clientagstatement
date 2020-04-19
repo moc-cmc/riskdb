@@ -6,8 +6,6 @@ create or replace procedure
 		@trade_date datetime=NULL
 as
 
-
-
 declare @fund_id int
 declare @evaluation_currency_id int
 declare @evaluation_currency varchar(50)
@@ -45,9 +43,15 @@ declare @end_time datetime
 declare @tag_run_name varchar(50)
 declare @proc_start_time datetime
 declare @proc_end_time datetime
+declare @activate_timer int
 
-select @proc_start_time = getdate()
-select @start_time = getdate()
+select @activate_timer = 1
+
+if (@activate_timer = 1)
+begin
+	select @proc_start_time = getdate()
+	select @start_time = getdate()
+end
 
 if @run_name = NULL
 	return
@@ -191,18 +195,20 @@ from
 where
 	external_account_id = @external_account_id
 
-select
-        @end_time = getdate()
-exec 
-	sp_dogstatsdtimer 
-		@metric_name="ase.proc.r_clientagstatement.s1",
-		@start_time=@start_time,
-		@end_time=@end_time,
-		@tags=@tag_run_name,
- 		@sample_rate="1.0"
-
-select
-	@start_time = getdate()
+if (@activate_timer = 1)
+begin
+	select
+        	@end_time = getdate()
+	exec 
+		sp_dogstatsdtimer 
+			@metric_name="ase.proc.r_clientagstatement.s1",
+			@start_time=@start_time,
+			@end_time=@end_time,
+			@tags=@tag_run_name,
+ 			@sample_rate="1.0"
+	select
+		@start_time = getdate()
+end
 
 create table
 	#header(
@@ -261,18 +267,22 @@ from
 order by
 	id
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s2",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
+	select
+        	@end_time = getdate()
 
-select
-	@start_time = getdate()
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s2",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select
+		@start_time = getdate()
+end
 
 create table
 	#external_accounts(
@@ -857,18 +867,23 @@ and
 
 /* End Trade Fetch */
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s3",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
 
-select 
-	@start_time = getdate()
+	select
+        	@end_time = getdate()
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s3",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select 
+		@start_time = getdate()
+
+end
 
 /* Fetch all account transactions */
 
@@ -1248,18 +1263,23 @@ from
 where
 	a.currency_id = b.product_id
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s4",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
 
-select
-        @start_time = getdate()
+	select
+        	@end_time = getdate()
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s4",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select
+        	@start_time = getdate()
+
+end
 
 /* Find the open trade equity */
 create table
@@ -1429,18 +1449,24 @@ from
 group by
 	external_account_id,
 	product_id
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s5",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
 
-select
-        @start_time = getdate()
+if (@activate_timer = 1)
+begin
+
+	select
+        	@end_time = getdate()
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s5",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select
+        	@start_time = getdate()
+
+end
 
 /* Get the opening and closing balances by currency */
 create table
@@ -1607,19 +1633,23 @@ from
 where
 	a.product_id = b.product_id
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s6",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
 
-select 
-        @start_time = getdate()
-	
+	select
+        	@end_time = getdate()
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s6",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select 
+        	@start_time = getdate()
+
+end	
 
 /* Option Trades */
 
@@ -1672,6 +1702,7 @@ insert into
 		price,
 		pct_price,
 		display_price,
+		buy_sell,
 		put_call,
 		strike,
 		underlying_contract_id,
@@ -1690,6 +1721,7 @@ select
 	a.price,
 	a.pct_price,
 	a.pct_price,
+	buy_sell = case when a.quantity >= 0 then "Buy" else "Sell" end,
 	c.put_call,
 	c.strike,
 	e.underlying_contract_id,
@@ -1714,6 +1746,8 @@ and
 and
 	d.expiration >= @begin_date
 
+create index otuc on #option_trades(underlying_contract_id)
+
 update
 	#option_trades
 set
@@ -1728,12 +1762,26 @@ and
 	b.price_style_id = c.price_style_id
 and
 	c.name = "Inverted"
-/* MARKR MARKR */
+
+create index ci on #option_trades(contract_id)
+
+update
+        #option_trades
+set
+        a.settle_price = b.price
+from
+        #option_trades a,
+        bo_prices b
+where
+        a.contract_id = b.contract_id
+and
+        convert(date, b.price_date) = convert(date, @end_date)
 
 update
 	#option_trades
 set
-	ex_identifier = stuff(identifier, charindex("-0", identifier), 2, "-1")
+	ex_identifier = stuff(identifier, charindex("-0", identifier), 2, "-1"),
+	current_value = quantity * settle_price
 
 update
 	#option_trades
@@ -1764,6 +1812,8 @@ from
 where
 	a.underlying_contract_id = b.contract_id
 
+/*
+
 update
 	#option_trades
 set
@@ -1776,10 +1826,12 @@ where
 and
 	convert(date, b.price_date) = convert(date, @end_date)
 
+
 update
 	#option_trades
 set
 	current_value = quantity * settle_price
+*/
 
 update
 	#option_trades
@@ -1791,6 +1843,7 @@ from
 where
 	a.currency_id = b.product_id
 
+create index ti on #option_trades (trade_id)
 
 update
 	#option_trades
@@ -1846,7 +1899,8 @@ from
 	trade_types b
 where
 	a.trade_type_id = b.trade_type_id
- 
+
+/* 
 update
 	#option_trades
 set
@@ -1859,6 +1913,7 @@ set
 	buy_sell = "SELL"
 where
 	quantity < 0.0
+*/
 
 create table
 	#open_options(
@@ -1995,18 +2050,24 @@ select
 from
 	#open_option_totals
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s7",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
 
-select
-        @start_time = getdate()	
+	select
+        	@end_time = getdate()
+
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s7",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select
+        	@start_time = getdate()	
+
+end
 
 /* MARKR MARKR */
 	
@@ -2072,9 +2133,9 @@ select
 	buy_sell = case when a.product_qty >= 0 then "Buy" else "Sell" end,
 	symbol = c.symbol,
 	counterparty = a.counterparty,
-	dealt_amount = a.product_qty,
+	dealt_amount = round(a.product_qty, 2),
 	rate = a.price,
-	counter_amount = a.currency_qty,
+	counter_amount = round(a.currency_qty, 2),
 	a.trade_date,
 	style = "background:#FFFFFF;border: 1px solid white",
 	a.price,
@@ -2094,11 +2155,16 @@ order by
 	a.value_date
 	/* a.trade_id */
 
+/*
 update
 	#open_trades
 set
 	dealt_amount = round(dealt_amount, 2),
 	counter_amount = round(counter_amount, 2)
+*/
+
+create index ci on #open_trades (contract_id)
+create index vd on #open_trades (value_date)
 
 update
 	#open_trades
@@ -2330,18 +2396,24 @@ set
 where
 	contract like "%JPY" /*MARKR TEST */
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s7B",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
 
-select 
-        @start_time = getdate()
+	select
+        	@end_time = getdate()
+
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s7B",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select 
+        	@start_time = getdate()
+
+end
 
 /* Calculate Maturing Trades */
 create table
@@ -2650,18 +2722,24 @@ order by
 	value_date,
 	row_kind
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s8",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
 
-select
-        @start_time = getdate()
+	select
+        	@end_time = getdate()
+
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s8",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select
+        	@start_time = getdate()
+
+end
 
 /* Select out Today's CFD Trades - w/o rolls */
 select
@@ -2942,18 +3020,24 @@ order by
 	a.round_turn_id
 /* Select out Maturing Trades */
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s9",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
 
-select
-        @start_time = getdate()
+	select
+        	@end_time = getdate()
+
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s9",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
+
+	select
+        	@start_time = getdate()
+
+end
 
 /* Open Option Positions */
 update
@@ -3228,27 +3312,32 @@ exec
 	r_showdisclaimer
 	"Daily Trading Statement"
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s10",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
+if (@activate_timer = 1)
+begin
 
+	select
+        	@end_time = getdate()
 
-select
-	@proc_end_time = getdate()
+	exec
+        	sp_dogstatsdtimer
+                	@metric_name="ase.proc.r_clientagstatement.s10",
+                	@start_time=@start_time,
+                	@end_time=@end_time,
+                	@tags=@tag_run_name,
+                	@sample_rate="1.0"
 
-exec
-	sp_dogstatsdtimer
-		@metric_name="ase.proc.r_clientagstatement",
-		@start_time=@proc_start_time,
-		@end_time=@proc_end_time,
-		@tags=@tag_run_name,
-		@sample_rate="1.0"
+	select
+		@proc_end_time = getdate()
+
+	exec
+		sp_dogstatsdtimer
+			@metric_name="ase.proc.r_clientagstatement",
+			@start_time=@proc_start_time,
+			@end_time=@proc_end_time,
+			@tags=@tag_run_name,
+			@sample_rate="1.0"
+
+end
 
 go 
 
