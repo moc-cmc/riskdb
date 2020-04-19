@@ -619,6 +619,15 @@ begin
 
 end
 
+/* Verify we have not received an unsupported workflow for trade_type */
+if @trade_type = NULL
+begin	
+	select
+		status = "Error",
+		msg = "Could not determine trade type"
+	return
+end	
+
 
 /* --------------------------------------------------------------------------
  * STEP: Tally the trade
