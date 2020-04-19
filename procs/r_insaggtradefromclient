@@ -1,15 +1,11 @@
-drop procedure
-	r_insaggtradefromclient
-go
-
-create procedure
+create or replace procedure
 	r_insaggtradefromclient
 		@client_trade_id int,
 		@client_aggregate_trade_id int,
 		@remove_trade char(1)=NULL,
 		@market_aggregate_trade_id int=NULL
-
 as
+
 
 
 declare @market_trade_id int
@@ -125,6 +121,11 @@ begin
                          trade_id = @client_trade_id,
                          client_aggregate_trade_id = @client_aggregate_trade_id
 	end
+
+        exec
+                r_insertaggtradenotification
+			@trade_id = @client_trade_id
+
 end
 else
 begin
@@ -226,6 +227,10 @@ begin
                 return
 	end
 
+
+        exec
+                r_insertaggtradenotification
+			@trade_id = @market_trade_id
 		
 end
 else
@@ -236,6 +241,7 @@ begin
 		trade_id = @market_trade_id,
 		market_aggregate_trade_id = @market_aggregate_trade_id
 end
+
 
 
 
