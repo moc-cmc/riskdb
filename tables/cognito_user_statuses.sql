@@ -28,15 +28,6 @@ begin
                 "cognito_user_statuses",
                 "E"
         )
-	/* ENUM DATA */
-	insert into cognito_user_statuses values(1, "Unconfirmed")
-	insert into cognito_user_statuses values(2, "Confirmed")
-	insert into cognito_user_statuses values(3, "Archived")
-	insert into cognito_user_statuses values(4, "Compromised")
-	insert into cognito_user_statuses values(5, "Unknown")
-	insert into cognito_user_statuses values(6, "Reset_Required")
-	insert into cognito_user_statuses values(7, "Force_Change_Password")
-	insert into cognito_user_statuses values(8, "Pending")
 end
 go
 
@@ -51,4 +42,16 @@ begin
 end
 go
 
-
+if (select count(*) from cognito_user_statuses) < 8
+begin
+	/* ENUM DATA */
+	insert into cognito_user_statuses values(1, "Unconfirmed")
+	insert into cognito_user_statuses values(2, "Confirmed")
+	insert into cognito_user_statuses values(3, "Archived")
+	insert into cognito_user_statuses values(4, "Compromised")
+	insert into cognito_user_statuses values(5, "Unknown")
+	insert into cognito_user_statuses values(6, "Reset_Required")
+	insert into cognito_user_statuses values(7, "Force_Change_Password")
+	insert into cognito_user_statuses values(8, "Pending")
+end
+go
