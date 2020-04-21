@@ -47,9 +47,10 @@ declare @activate_timer int
 
 select @activate_timer = 1
 
+select @proc_start_time = getdate()
+
 if (@activate_timer = 1)
 begin
-	select @proc_start_time = getdate()
 	select @start_time = getdate()
 end
 
@@ -1692,6 +1693,7 @@ insert into
 	#option_trades(
 		trade_id,
 		identifier,
+		ex_identifier,
 		trade_type_id,
 		trade_date,
 		value_date,
@@ -1711,6 +1713,7 @@ insert into
 select
 	a.trade_id,
 	a.identifier,
+	ex_identifier = stuff(a.identifier, charindex("-0", a.identifier), 2, "-1"),
 	a.trade_type_id,
 	a.trade_date,
 	a.value_date,
@@ -1721,7 +1724,7 @@ select
 	a.price,
 	a.pct_price,
 	a.pct_price,
-	buy_sell = case when a.quantity >= 0 then "Buy" else "Sell" end,
+	buy_sell = case when a.quantity >= 0.0 then "BUY" else "SELL" end,
 	c.put_call,
 	c.strike,
 	e.underlying_contract_id,
@@ -1768,7 +1771,8 @@ create index ci on #option_trades(contract_id)
 update
         #option_trades
 set
-        a.settle_price = b.price
+        a.settle_price = b.price,
+	a.current_value = a.quantity * b.price
 from
         #option_trades a,
         bo_prices b
@@ -1777,11 +1781,12 @@ where
 and
         convert(date, b.price_date) = convert(date, @end_date)
 
-update
+/* update
 	#option_trades
 set
 	ex_identifier = stuff(identifier, charindex("-0", identifier), 2, "-1"),
 	current_value = quantity * settle_price
+*/
 
 update
 	#option_trades
@@ -3326,18 +3331,18 @@ begin
                 	@tags=@tag_run_name,
                 	@sample_rate="1.0"
 
-	select
-		@proc_end_time = getdate()
-
-	exec
-		sp_dogstatsdtimer
-			@metric_name="ase.proc.r_clientagstatement",
-			@start_time=@proc_start_time,
-			@end_time=@proc_end_time,
-			@tags=@tag_run_name,
-			@sample_rate="1.0"
-
 end
+
+select
+	@proc_end_time = getdate()
+
+exec
+	sp_dogstatsdtimer
+		@metric_name="ase.proc.r_clientagstatement",
+		@start_time=@proc_start_time,
+		@end_time=@proc_end_time,
+		@tags=@tag_run_name,
+		@sample_rate="1.0"
 
 go 
 
