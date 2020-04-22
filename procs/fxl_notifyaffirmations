@@ -55,7 +55,7 @@ select
 from
 	statuses
 where
-	name in("Active", "Edit", "Cancelled")
+	name in("Active")
 
 
 create table
@@ -124,7 +124,7 @@ and
 update 
 	#trades
 set
-        affirm_date = b.affirm_date
+        affirm_date = max(b.affirm_date)
 from
 	#trades a,
 	affirmation_log b
