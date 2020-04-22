@@ -9,6 +9,8 @@ as
 declare	@trade_status_id int
 declare @tico_account_id int
 declare @affirmation_log_id int
+declare @active_status_id int
+declare @trade_notification_id int
 
 select
 	@tico_account_id = account_id
@@ -26,6 +28,13 @@ begin
 
 	return
 end
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
 
 exec
 	j_nextkey "affirmation_log", @affirmation_log_id out
@@ -102,9 +111,47 @@ begin tran
 commit tran
 
 
-exec
-         r_inserttradenotification
-                     @trade_id = @trade_id
+/* chriso: this wont work if there are multiple affirmation notifications/sources
+ *         but generally affirmation only need to be notified to a single
+ *         regulatory source so leaving for now. Not great hardcoding.
+ */
+select
+	@trade_notification_id = trade_notification_id
+from
+	trade_notifications a,
+	sources b
+where
+	a.trade_id = @trade_id
+and
+	a.source_id = b.source_id
+and
+	b.name like "%Affirmation"
+
+if @trade_notification_id = NULL
+begin
+	exec
+        	r_inserttradenotification
+			@trade_id = @trade_id
+end
+else
+begin
+	begin tran
+		update
+			trade_notifications
+		set
+			status_id = @active_status_id
+		where
+			trade_notification_id = @trade_notification_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem setting previously affirmed trade notifiation status to active"
+			rollback
+			return
+		end
+	commit tran
+end
 
 
 
