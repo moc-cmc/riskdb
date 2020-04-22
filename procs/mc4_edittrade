@@ -673,8 +673,8 @@ end
 
 
 /* Regulatory requirements for affirmation require we set to pending again on edit of trade details 
- * if the trade was already affirmed */
-if @orig_status_id = @affirm_status_id and @pend_affirm_status_id != NULL and @affirm_status_id != NULL
+ * if the trade was already affirmed. If quantity is 0 we no longer need to a reaffirm */
+if @orig_status_id = @affirm_status_id and @pend_affirm_status_id != NULL and @affirm_status_id != NULL and @quantity != 0
 begin
 	select
 		@status_id = @pend_affirm_status_id
