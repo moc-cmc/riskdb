@@ -1,0 +1,72 @@
+create or replace procedure
+	r_jeffswapfwdtallyacct
+		@login_to_update varchar(50)
+
+as
+
+declare @tico_account_id int
+declare @pending_id_link int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts 
+where
+	login = @login_to_update
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Login not found",
+		login_to_update = @login_to_update
+	return
+end
+
+
+select
+	@pending_id_link = status_id
+from
+	statuses
+where
+	name = "Pending ID Link"
+if @pending_id_link = NULL
+begin
+	select
+		status = "Error",
+		msg = "Status not found 'Pending ID Link'"
+	return
+end
+
+
+begin tran
+	update
+		default_tally_accounts
+	set
+		status_id = @pending_id_link
+	from
+		default_tally_accounts a,
+		tally_types b
+	where
+		a.tally_type_id = b.tally_type_id
+	and
+		b.name in("Forward", "Swap")
+	and 
+		a.tico_account_id = @tico_account_id
+	if @@rowcount != 2
+	begin
+		select
+			status = "Error",
+			message = "Expected two default tally account rows updated. Rolling back"
+		rollback
+		return
+	end
+commit tran
+
+select
+	status = "Success",
+	message = "Updated or set default tally accounts to Pending ID Link",
+	login_to_update = @login_to_update
+
+go
+
