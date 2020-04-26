@@ -1,7 +1,3 @@
-use
-	risk_stad
-go
-
 drop table
 	payment_requests
 go
