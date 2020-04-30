@@ -311,6 +311,15 @@ select
         @m_counterparty_lookup = rtrim(@target_comp)+"-"+rtrim(@contra_firm),
         @m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@executing_firm)
 
+/* Handle different mapping logic for switch trades identified by the string value Switch
+ * elysium/riskdb#63 
+ */
+if @executing_firm like "% Switch"
+begin
+        select
+                @m_trader_lookup = rtrim(@executing_firm)+"-"+rtrim(@contra_firm)
+end
+
 /* Set suppression and trigger_symbol variables */
 select
         @m_suppression_lookup = @m_counterparty_lookup,
