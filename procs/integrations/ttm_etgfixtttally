@@ -1,47 +1,42 @@
+
 create or replace procedure
 	ttm_etgfixtttally
-                /* Provided by FIX server config.properties & spring.xml */
-                @source varchar(50),
-                @default_login varchar(50),
-                @broker varchar(50),
-                @granularity varchar(15)=NULL,
-                /* Parsed from FIX message and provided by mapping.xml */
-                /* session variables */
-                @sender_comp varchar(50),
-                @target_comp varchar(50),
-                /* identifiers */
-                @exec_type varchar(50)=NULL,
-                @execution_id varchar(100)=NULL,
-                @trade_report_id varchar(50),
-                @order_id varchar(50),
-                @trade_link_id varchar(50)=NULL,
-                @sender_trade_id varchar(50)=NULL,
-                /*financials*/
-                @symbol varchar(50)=NULL,
-                @ccy1 varchar(50)=NULL,
-                @ccy2 varchar(50)=NULL,
-                @qty float,
-                @counter_qty float=NULL,
-                @price float,
-                @last_spot_rate float=NULL,
-                @side varchar(10),
-                @trade_date datetime,
-                @trade_day datetime,
-                @value_date datetime,
-                @fixing_date datetime=NULL,
-                /*swaps*/
-                @far_price float=NULL,
-                @far_value_date datetime=NULL,
-                @far_fixing_date datetime=NULL,
-                /*parties*/
-                @executing_trader varchar(50)=NULL,
-                @executing_firm varchar(50)=NULL,
-                @executing_system varchar(50)=NULL,
-                @contra_firm varchar(50)=NULL,
-                @clearing_firm varchar(50)=NULL,
-                @giveup_clearing_firm varchar(50)=NULL
-
+		@source varchar(50),
+		@default_login varchar(50),
+		@broker varchar(50),
+		@granularity varchar(15)=NULL,
+		@sender_comp varchar(50),
+		@target_comp varchar(50),
+		@exec_type varchar(50)=NULL,
+		@execution_id varchar(100)=NULL,
+		@trade_report_id varchar(50),
+		@order_id varchar(50),
+		@trade_link_id varchar(50)=NULL,
+		@sender_trade_id varchar(50)=NULL,
+		@symbol varchar(50)=NULL,
+		@ccy1 varchar(50)=NULL,
+		@ccy2 varchar(50)=NULL,
+		@qty float,
+		@counter_qty float=NULL,
+		@price float,
+		@last_spot_rate float=NULL,
+		@side varchar(10),
+		@trade_date datetime,
+		@trade_day datetime,
+		@value_date datetime,
+		@fixing_date datetime=NULL,
+		@far_price float=NULL,
+		@far_value_date datetime=NULL,
+		@far_fixing_date datetime=NULL,
+		@executing_trader varchar(50)=NULL,
+		@executing_firm varchar(50)=NULL,
+		@executing_system varchar(50)=NULL,
+		@contra_firm varchar(50)=NULL,
+		@clearing_firm varchar(50)=NULL,
+		@giveup_clearing_firm varchar(50)=NULL
 as
+
+
 
 declare @client_or_market char(1)
 declare @platform_identifier varchar(100)
@@ -208,8 +203,14 @@ declare @c_tally_status varchar(10)
 declare @c_tally_message varchar(25)
 declare @c_far_tally_status varchar(10)
 declare @c_far_tally_message varchar(25)
+
 declare @c_trigger_symbol varchar(50)
-declare @current_quantity float
+
+/* required for custom VSJEFF-1 workflow */
+declare @deal_alias varchar(100)
+declare @existing_alias varchar(100)
+declare @netlink_pb_source_id int
+
 
 select
 	@ack_required = "Y"
@@ -274,12 +275,12 @@ where
 
 /* Set non-perspective parameters */
 select
-	@deal_exec_symbol = @execution_id
+	@deal_exec_symbol = @order_id
 
 /* Begin client parameters */
 
 select
-	@c_platform_identifier = rtrim(@execution_id)+".c"
+	@c_platform_identifier = rtrim(@trade_report_id)+convert(char(8), @trade_date, 112)+".c"
 
 if @granularity = "Account Level"
 begin
@@ -305,7 +306,7 @@ select
 /* Begin market parameters */
 
 select
-        @m_platform_identifier = rtrim(@execution_id)+".m"
+        @m_platform_identifier = rtrim(@trade_report_id)+convert(char(8), @trade_date, 112)+".m"
 select
         @m_counterparty_lookup = rtrim(@target_comp)+"-"+rtrim(@contra_firm),
         @m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@executing_firm)
@@ -316,6 +317,8 @@ select
         @trigger_symbol = @m_counterparty_lookup
 
 /* End market parameters */
+
+
 
 /* --------------------------------------------------------------------------
  * --------------------------------------------------------------------------
@@ -334,115 +337,6 @@ select
  *
  */
 
-/* --------------------------------------------------------------------------
- * STEP: CANCELED Message
- */
-
-if @exec_type = "CANCELED"
-begin
-        select
-                @c_trade_id = trade_id
-        from
-                trades
-        where
-                broker_id = @broker_id
-        and
-                identifier = @c_platform_identifier
-
-        if @c_trade_id != NULL
-        begin
-                /* Previous identifier found in trades, cancel the client and market trades */
-
-               select 
-                       @current_quantity = quantity
-               from
-                       trades
-               where
-                       trade_id = @c_trade_id
-               if @current_quantity = 0
-               begin
-                       select
-                                status="Cancel rejected",
-                                reason="Trade already canceled",
-                                trade_id=@c_trade_id
-
-                       if @ack_required = "Y"
-                       begin
-                                select
-                                         trade_report_id=@trade_report_id,
-                                         trade_report_status="REJECTED",
-                                         exec_type=@exec_type,
-                                         reject_reason="OTHER"
-                                 return
-                       end
-
-                       return
-               end
-
-               select
-                       @quantity = 0
-
-               select
-                       @m_trade_id = trade_id
-               from
-                       trades
-               where
-                       broker_id = @broker_id
-               and
-                       identifier = @m_platform_identifier
-
-               exec
-                       mc4_edittrade
-                                           @login = @default_login,
-                                           @trade_id = @c_trade_id,
-                                           @quantity = @quantity
-               exec
-                       mc4_edittrade
-                                           @login = @default_login,
-                                           @trade_id = @m_trade_id,
-                                           @quantity = @quantity
-               select
-                        c_trade_id=@c_trade_id,
-                        c_quantity=@quantity,
-                        m_trade_id=@m_trade_id,
-                        m_quantity=@quantity
-
-               if @ack_required = "Y"
-               begin
-                        select
-                                 trade_report_id=@trade_report_id,
-                                 trade_report_status="ACCEPTED",
-                                 exec_type=@exec_type
-                        return
-               end
-
-               return
-
-        end
-        else
-        begin
-               /* trade identifier not in trades. This means either the trade was aggregated
-               * or trade to be canceled is not in our system.
-               */
-               select
-                        status="Cancel rejected",
-                        reason="Identifier not found",
-                        c_identifier=@c_platform_identifier,
-                        m_identifier=@m_platform_identifier
-
-               if @ack_required = "Y"
-               begin
-                        select
-                                 trade_report_id=@trade_report_id,
-                                 trade_report_status="REJECTED",
-                                 exec_type=@exec_type,
-                                 reject_reason="OTHER"
-                        return
-               end
-
-               return
-        end
-end
 
 
 /* --------------------------------------------------------------------------
@@ -451,32 +345,30 @@ end
  *
  */
 
-if @exec_type = "NEW"
+exec
+	tt_isdupe
+		@broker_id=@broker_id,
+		@identifier=@c_platform_identifier,
+		@trade_id=@trade_id output
+
+
+
+if @trade_id != NULL
 begin
-        exec
-	        tt_isdupe
-		        @broker_id=@broker_id,
-		        @identifier=@c_platform_identifier,
-		        @trade_id=@trade_id output
+	if @ack_required = "Y"
+	begin
+        	select
+			trade_report_id=@trade_report_id,
+                	trade_report_status="ACCEPTED",
+			exec_type="TRADE"
 
-
-
-        if @trade_id != NULL
-        begin
-	        if @ack_required = "Y"
-	        begin
-        	        select
-			        trade_report_id=@trade_report_id,
-                	        trade_report_status="ACCEPTED",
-			        exec_type="TRADE"
-
-        	        return
-	        end
+        	return
+	end
 	
-	        /* tt_isdupe would throw error message, just return */
-	        return
-        end
+	/* tt_isdupe would throw error message, just return */
+	return
 end
+
 
 
 /* --------------------------------------------------------------------------
@@ -768,6 +660,58 @@ end
 
 
 /* --------------------------------------------------------------------------
+ * STEP: Add deal alias for netlink pb flow. This tally is CUSTOM
+ *   https://elysiumtechgroup.atlassian.net/browse/VSJEFF-1A
+ * We need to provide a deal alias for downstream netlink pb matching
+ *
+ *
+ * substring of identifier that looks like 022eepllfq_FXCM208057937FXCM_JEFFLTD_20191007
+ * per instruction from FXCM the identifier should be everyting prior to '_FXCM'
+ */
+
+select
+	@netlink_pb_source_id = source_id
+from
+	sources
+where
+	name = "Netlink PB SFTP"
+
+select
+	@deal_alias = @order_id
+
+select
+	@existing_alias = alias
+from
+	deal_aliases
+where
+	deal_id = @deal_id
+and
+	source_id = @netlink_pb_source_id
+if @existing_alias = NULL and @deal_alias != NULL and @deal_id != NULL
+begin
+	insert into
+		deal_aliases(
+			deal_id,
+			source_id,
+			alias)
+	values(
+		@deal_id,
+		@netlink_pb_source_id,
+		@deal_alias
+	)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting deal alias required for netlink reporting"
+		return
+	end
+
+end 
+
+ 
+
+/* --------------------------------------------------------------------------
  * STEP: Determine the contract
  *
  */
@@ -804,124 +748,6 @@ begin
 	select
                 @c_quantity = @qty,
                 @m_quantity = @qty  * -1
-end
-
-/* --------------------------------------------------------------------------
- * STEP: REPLACE Message
- */
-if @exec_type = "REPLACE"
-begin
-	select
-                @c_trade_id = trade_id,
-                @current_quantity = quantity
-        from
-                trades
-        where
-                broker_id = @broker_id
-        and
-                identifier = @c_platform_identifier
-
-        if @c_trade_id != NULL
-        begin
-               if @current_quantity = 0
-	       begin
-                        select
-                                 status="Replace rejected",
-                                 reason="Cannot amend canceled trade",
-                                 c_trade_id=@c_trade_id
-
-                        if @ack_required = "Y"
-                        begin
-                                 select
-                                          trade_report_id=@trade_report_id,
-                                          trade_report_status="REJECTED",
-                                          exec_type=@exec_type,
-                                          reject_reason="OTHER"
-                                 return
-                        end
-	       end
-
-               select
-                       @m_trade_id = trade_id
-               from
-                       trades
-               where
-                       broker_id = @broker_id
-               and
-                       identifier = @m_platform_identifier
-
-               if @inverted = "Y"
-               begin
-                       select
-                                @price = 1/@price
-               end
-
-               exec
-                       mc4_edittrade
-			        @login = @c_trader_login,
-                                @trade_id = @c_trade_id,
-                                /* @external_account = @c_external_account, */
-                                @trader = @c_trader,
-                                @quantity = @c_quantity,
-                                @contract = @contract,
-                                @value_date = @value_date,
-                                @fixing_date = @fixing_date,
-                                @price = @price,
-                                @trade_date = @trade_date
-
-               exec
-                      mc4_edittrade
-			        @login = @m_trader_login,
-                                @trade_id = @m_trade_id,
-                                /* @external_account = @m_external_account, */
-                                @trader = @m_trader,
-                                @quantity = @m_quantity,
-                                @contract = @contract,
-                                @value_date = @value_date,
-                                @fixing_date = @fixing_date,
-                                @price = @price,
-                                @trade_date = @trade_date
-
-               select
-                       msg="Replace processed",
-                       c_trade_id=@c_trade_id,
-                       m_trade_id=@m_trade_id
-
-               if @ack_required = "Y"
-               begin
-                       select
-                                trade_report_id=@trade_report_id,
-                                trade_report_status="ACCEPTED",
-                                exec_type=@exec_type
-                       return
-               end
-
-               return
-
-        end
-        else
-        begin
-               /* trade identifier not in trades. This means either the trade was aggregated
-               * or trade to be amended is not in our system.
-               */
-               select
-                        status="Replace rejected",
-                        reason="Identifier not found",
-                        c_identifier=@c_platform_identifier,
-                        m_identifier=@m_platform_identifier
-
-               if @ack_required = "Y"
-               begin
-                        select
-                                 trade_report_id=@trade_report_id,
-                                 trade_report_status="REJECTED",
-                                 exec_type=@exec_type,
-                                 reject_reason="OTHER"
-                        return
-               end
-
-               return
-        end
 end
 
 
@@ -1216,4 +1042,8 @@ begin
 end
 
 
+
+
+
 go 
+
