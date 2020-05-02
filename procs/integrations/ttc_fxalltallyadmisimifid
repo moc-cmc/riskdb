@@ -53,7 +53,9 @@ create or replace procedure
 		@executing_venue varchar(50)=NULL,
 		@alloc_qty float=NULL,
 		@alloc_account varchar(50)=NULL,
-		@trading_venue varchar(100)=NULL
+		@trading_venue varchar(100)=NULL,
+		@near_trading_venue varchar(100)=NULL,
+		@far_trading_venue varchar(100)=NULL
 as
 
 
@@ -1015,24 +1017,39 @@ end
 */
 
 
-/* Store trading venue. only doing non swaps right now*/
-if @m_far_trade_id = NULL and @trading_venue != NULL
+/* Store trading venue*/
+
+if @m_trade_id != NULL
 begin
-	insert into
-		trade_aliases(
-			trade_id,
-			source_id,
-			alias)
-	select
-		@m_trade_id,
-		@gmi_source_id,
-		@trading_venue
+	if @far_price = NULL and @trading_venue != NULL /* Spot or Forward trade */
+	begin
+		insert into
+			trade_aliases(
+				trade_id,
+				source_id,
+				alias)
+		select
+			@m_trade_id,
+			@gmi_source_id,
+			@trading_venue
+	end
+
+	if @far_price != NULL and @near_trading_venue != NULL
+	begin
+		insert into
+                        trade_aliases(
+                                trade_id,
+                                source_id,
+                                alias)
+                select
+                        @m_trade_id,
+                        @gmi_source_id,
+                        @near_trading_venue
+	end
 end
 
 
-/* Currently not supporting swaps */
-/*
-if @m_far_trade_id != NULL
+if @m_far_trade_id != NULL and @far_trading_venue != NULL
 begin
 	insert into
         	trade_aliases(
@@ -1042,9 +1059,8 @@ begin
 	select
         	@m_far_trade_id,
         	@gmi_source_id,
-        	@trading_venue
+        	@far_trading_venue
 end
-*/
 
 		
 
