@@ -346,6 +346,8 @@ from
 where
 	a.trade_id=b.trade_id
 and
+	a.price != 0
+and
 	a.trade_id >= @min_trade_id
 
 
@@ -400,9 +402,9 @@ update
     #trades
 set
     std_price = case 
-        when d.name = "Inverted" and c.factor != NULL then
+        when d.name = "Inverted" and c.factor != NULL and a.db_price != 0 then
             (1 / a.db_price) * c.factor * d.factor
-        when d.name = "Inverted" then
+        when d.name = "Inverted" and a.db_price != 0 then
             (1 / a.db_price) * d.factor
         when c.factor != NULL then
             a.db_price * c.factor * d.factor
