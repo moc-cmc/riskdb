@@ -786,6 +786,16 @@ begin
 	end
 end
 
+/* MARK: CHECK @price */
+if (@price = 0.0)
+begin
+	select 
+		status="Error",
+		msg="Trade price cannot be zero"
+
+	return
+end
+
 begin tran
 
     exec
