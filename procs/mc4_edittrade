@@ -1,3 +1,4 @@
+
 create or replace procedure
     mc4_edittrade
         @login char(75),
