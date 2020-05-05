@@ -1,3 +1,4 @@
+
 create or replace procedure
 	tt_notifytradesfulldetail
 		@source varchar(50),
