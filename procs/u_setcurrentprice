@@ -1,37 +1,89 @@
-drop procedure
-	u_setcurrentprice
-go 
 
-create procedure
-	u_setcurrentprice
-		@symbol char(50),
-		@price float
+create or replace
+	procedure
+		u_setcurrentprice
+			@symbol char(50),
+			@price float
 as
+
+declare @contract_id int
+declare @price_style_id int
+
+select
+	@contract_id=contract_id
+from
+	contracts
+where
+	symbol=@symbol
+
+if @@rowcount = 0
+begin
+	select
+		status="Error",
+		msg="No contract id for symbol",
+		symbol=@symbol
+
+	return
+end
+
+if @price = 0
+begin
+	select
+		status="Error",
+		msg="Price cannot be zero",
+		price=@price
+
+	return
+end
+
+select
+	@price_style_id=price_style_id
+from
+	price_styles
+where 
+	name="Inverted"
+
+if exists (select contract_id from contract_price_styles where contract_id=@contract_id and price_style_id=@price_style_id)
+begin
+	select
+		status="Error",
+		msg="Cannot set price for Inverted Price Style",
+		symbol=@symbol
+	
+	return
+end
 
 update
 	current_prices
 set
-	a.price = @price,
-	a.timestamp = getdate()
-from
-	current_prices a,
-	contracts b
+	price = @price,
+	timestamp = getdate()
 where
-	a.contract_id = b.contract_id
-and
-	b.symbol = @symbol
+	contract_id = @contract_id 
+
 if @@rowcount = 0
 begin
 	insert into
-		current_prices
-	select
-		contract_id,
-		price = @price,
-		timestamp = getdate()
-	from
-		contracts
-	where
-		symbol = @symbol
+		current_prices (
+			contract_id,
+			price,
+			timestamp)
+	values (
+		@contract_id,
+		@price,
+		getdate())
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			msg="Could not insert price into current prices for contract",
+			symbol=@symbol
+
+		return
+
+	end
+
 end
 
 go
