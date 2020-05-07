@@ -595,7 +595,7 @@ if @prem_settle_date = NULL
     select
         @prem_settle_date = @orig_prem_settle_date
 
-/* MARK: CHECK modified */
+mc4_edittrade/* MARK: CHECK modified */
 if  @orig_deal_id = @deal_id and
     @orig_trade_date = @trade_date and
     @orig_trade_type_id = @trade_type_id and
