@@ -595,7 +595,7 @@ if @prem_settle_date = NULL
     select
         @prem_settle_date = @orig_prem_settle_date
 
-mc4_edittrade/* MARK: CHECK modified */
+/* MARK: CHECK modified */
 if  @orig_deal_id = @deal_id and
     @orig_trade_date = @trade_date and
     @orig_trade_type_id = @trade_type_id and
@@ -792,7 +792,7 @@ if (@price = 0.0)
 begin
 	select 
 		status="Error",
-		msg="Trade price cannot be zero"
+		message="Trade price cannot be zero"
 
 	return
 end
