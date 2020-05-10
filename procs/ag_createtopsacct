@@ -1,0 +1,50 @@
+create or replace procedure
+	ag_createtopsacct
+		@login varchar(50),
+		@prefix varchar(25)=NULL,
+		@account_code varchar(50)=NULL,
+		@prime_broker varchar(50)=NULL,
+		@base_ccy varchar(50)=NULL,
+		@outbound_mapping_code varchar(50)=NULL,
+		@inbound_mapping_code varchar(50)=NULL
+as
+
+
+
+
+if @prefix != NULL and @prefix != ""
+begin
+	select
+		@account_code = rtrim(@prefix) + " " + rtrim(@account_code)
+end
+
+select
+	@account_code = rtrim(@account_code)
+
+exec
+	api_createexternalaccount
+		@login = @login,
+		@symbol = @account_code,
+		@prime_broker = @prime_broker,
+		@account_type = "Client",
+		@evaluation_ccy = @base_ccy
+
+
+exec
+	api_addextaccountsymbol
+		@login = @login,
+		@name = @account_code,
+		@symbol = @outbound_mapping_code,
+		@source = "ADM BackOffice TradeFile"
+
+exec
+	api_addtradersymbol
+		@login = @login,
+		@name = @account_code,
+		@symbol = @inbound_mapping_code,
+		@source = "TOPS"
+
+		
+	
+
+go
