@@ -259,6 +259,8 @@ where
 
 /* CUSTOM ADMISI MIFID FIELD REQUIRED */
 declare @gmi_source_id int
+declare @bo_mifid_source_id int
+
 select
         @gmi_source_id = source_id
 from
@@ -271,6 +273,21 @@ begin
                 status = "Error",
                 error = "Error",
                 message = "could not find source ADM BackOffice TradeFile" 
+        return
+end
+
+select
+        @bo_mifid_source_id = source_id
+from
+        sources
+where
+        name = "ADM BackOffice MIFID"
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "could not find source ADM BackOffice MIFID"
         return
 end
 
@@ -1032,6 +1049,16 @@ begin
 			@m_trade_id,
 			@gmi_source_id,
 			@trading_venue
+
+                insert into
+                        trade_aliases(
+                                trade_id,
+                                source_id,
+                                alias)
+                select
+                        @m_trade_id,
+                        @bo_mifid_source_id,
+                        @trading_venue
 	end
 
 	if @far_price != NULL and @near_trading_venue != NULL
@@ -1044,6 +1071,16 @@ begin
                 select
                         @m_trade_id,
                         @gmi_source_id,
+                        @near_trading_venue
+
+                insert into
+                        trade_aliases(
+                                trade_id,
+                                source_id,
+                                alias)
+                select
+                        @m_trade_id,
+                        @bo_mifid_source_id,
                         @near_trading_venue
 	end
 end
@@ -1060,6 +1097,16 @@ begin
         	@m_far_trade_id,
         	@gmi_source_id,
         	@far_trading_venue
+
+        insert into
+                trade_aliases(
+                        trade_id,
+                        source_id,
+                        alias)
+        select
+                @m_far_trade_id,
+                @bo_mifid_source_id,
+                @far_trading_venue
 end
 
 		
