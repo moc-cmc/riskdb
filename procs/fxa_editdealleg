@@ -27,6 +27,16 @@ declare @identifier varchar(50)
 declare @strategy varchar(50)
 declare @status_id int
 
+if (@price = 0)
+begin
+	select
+		status="Error",
+		message="trade price cannot be zero",
+		price=@price
+
+	return
+end
+
 select
 	@trade_type = a.name,
 	@deal_type = c.name,
