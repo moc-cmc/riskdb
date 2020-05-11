@@ -38,6 +38,13 @@ exec
 		@source = "ADM BackOffice TradeFile"
 
 exec
+        api_addextaccountsymbol
+                @login = @login,
+                @name = @account_code,
+                @symbol = @outbound_mapping_code,
+                @source = "ADM BackOffice MIFID"
+
+exec
 	api_addtradersymbol
 		@login = @login,
 		@name = @account_code,
