@@ -859,6 +859,30 @@ select
 
  */
 
+
+/* --------------------------------------------------------------------------
+ * STEP: Manage swap symbols
+ *
+ */
+
+if @tally_type = "Swap"
+begin
+	select
+		@swap_symbol = rtrim(convert(varchar(50), @deal_id)) +"."+@client_or_market
+	
+	select
+		@swap_symbol_id = a.swap_symbol_id
+	from
+		swap_symbols a,
+		swap_symbol_trades b
+	where
+		a.swap_symbol_id = b.swap_symbol_id
+	and
+		a.symbol = @swap_symbol
+end
+
+
+
 /* --------------------------------------------------------------------------
  * STEP: Tally the trade client trade
  *
@@ -999,6 +1023,79 @@ begin
                 return
        end
 
+
+        if  @swap_symbol_id = NULL
+        begin
+                exec    
+                        j_nextkey
+                                "swap_symbols",
+                                @swap_symbol_id output
+
+                begin tran
+                        insert into
+                                swap_symbols
+                        (
+                                swap_symbol_id,
+                                symbol,
+                                timestamp
+                        )
+                        values
+                        (
+                                @swap_symbol_id,
+                                @swap_symbol,
+                                getdate()
+                        )
+                        if @@rowcount !=1
+                        begin
+                                select
+                                        stauts = "Error",
+                                        msg = "Problem handling swap symbol insert"
+                                rollback tran
+                                return
+                        end
+
+                        insert into
+                                swap_symbol_trades
+                        (
+                                swap_symbol_id,
+                                trade_id
+                        )
+                        values
+                        (
+                                @swap_symbol_id,
+                                @c_trade_id
+                        )
+                        if @@rowcount != 1
+                        begin
+                                select
+                                        status = "Error",
+                                        msg = "Problem handling swap symbol trades insert"
+                                rollback tran
+                                return
+
+                        end
+                commit tran
+        end
+        else
+	begin
+                insert into
+                        swap_symbol_trades
+                (
+                        swap_symbol_id,
+                        trade_id
+                )
+                values
+                (
+                        @swap_symbol_id,
+                        @c_trade_id
+                )
+                if @@rowcount != 1
+                begin
+                        select
+                                status = "Error",
+                                msg = "Problem handling swap symbol trades insert"
+                end
+	end
 end
 
 /* --------------------------------------------------------------------------
