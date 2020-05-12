@@ -1023,37 +1023,62 @@ begin
                 return
        end
 
-
-        if  @swap_symbol_id = NULL
-        begin
-                exec    
-                        j_nextkey
-                                "swap_symbols",
-                                @swap_symbol_id output
-
-                begin tran
-                        insert into
-                                swap_symbols
-                        (
-                                swap_symbol_id,
-                                symbol,
-                                timestamp
-                        )
-                        values
-                        (
-                                @swap_symbol_id,
-                                @swap_symbol,
-                                getdate()
-                        )
-                        if @@rowcount !=1
-                        begin
-                                select
-                                        stauts = "Error",
-                                        msg = "Problem handling swap symbol insert"
-                                rollback tran
-                                return
-                        end
-
+        if @tally_type = "Swap"
+        begin 
+                if  @swap_symbol_id = NULL
+                begin
+                        exec    
+                                j_nextkey
+                                        "swap_symbols",
+                                        @swap_symbol_id output
+        
+                        begin tran
+                                insert into
+                                        swap_symbols
+                                (
+                                        swap_symbol_id,
+                                        symbol,
+                                        timestamp
+                                )
+                                values
+                                (
+                                        @swap_symbol_id,
+                                        @swap_symbol,
+                                        getdate()
+                                )
+                                if @@rowcount !=1
+                                begin
+                                        select
+                                                stauts = "Error",
+                                                msg = "Problem handling swap symbol insert"
+                                        rollback tran
+                                        return
+                                end
+        
+                                insert into
+                                        swap_symbol_trades
+                                (
+                                        swap_symbol_id,
+                                        trade_id
+                                )
+                                values
+                                (
+                                        @swap_symbol_id,
+                                        @c_trade_id
+                                )
+                                if @@rowcount != 1
+                                begin
+                                        select
+                                                status = "Error",
+                                                msg = "Problem handling swap symbol trades insert"
+                                        rollback tran
+                                        return
+        
+                                end
+                        commit tran
+                end
+                else
+	        begin
                         insert into
                                 swap_symbol_trades
                         (
@@ -1070,32 +1095,9 @@ begin
                                 select
                                         status = "Error",
                                         msg = "Problem handling swap symbol trades insert"
-                                rollback tran
-                                return
-
                         end
-                commit tran
+	        end
         end
-        else
-	begin
-                insert into
-                        swap_symbol_trades
-                (
-                        swap_symbol_id,
-                        trade_id
-                )
-                values
-                (
-                        @swap_symbol_id,
-                        @c_trade_id
-                )
-                if @@rowcount != 1
-                begin
-                        select
-                                status = "Error",
-                                msg = "Problem handling swap symbol trades insert"
-                end
-	end
 end
 
 /* --------------------------------------------------------------------------
