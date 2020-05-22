@@ -1,0 +1,115 @@
+
+create or replace procedure
+	api_queueriskclassrun
+			@login varchar(50),
+			@risk_class varchar(100),
+			@trade_date datetime=NULL
+as
+
+declare @login_id int
+declare @risk_class_request_id int
+declare @risk_class_id int
+declare @status_id int
+
+select
+	@login_id=account_id
+from
+	tico_accounts
+where
+	login=@login
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Login account does not exist",
+		login=@login
+	
+	return
+end
+
+select
+	@risk_class_id = risk_class_id
+from
+	risk_classes
+where
+	name=@risk_class
+
+if @@rowcount != 1
+begin
+	select 
+		status="Error",
+		message="Risk Class does not exist",
+		risk_class=@risk_class
+
+	return
+end
+
+select 
+	@status_id = status_id
+from
+	statuses
+where
+	name="Requested"
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Status does not exist",
+		name="Requested"
+
+	return
+end
+
+if @trade_date=NULL
+begin
+	select
+		@trade_date=getdate()
+end
+
+exec
+	j_nextkey "risk_class_requests", @risk_class_request_id out
+
+insert into
+	risk_class_requests (
+		risk_class_request_id,
+                requested_by,
+                requested_at,
+                risk_class_id,
+                trade_date,
+                status_id)
+	values (
+		@risk_class_request_id,
+		@login_id,
+		getdate(),
+		@risk_class_id,
+		@trade_date,
+		@status_id)
+
+
+if @@rowcount != 1
+begin
+	select 
+		status="Error",
+		message="Could not insert risk class request",
+		risk_class=@risk_class
+
+	return
+end
+
+select
+	status="Success",
+	message="Risk Class Request inserted",
+	risk_class=@risk_class
+
+return
+
+go
+
+
+
+return
+
+go
+
