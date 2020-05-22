@@ -1,0 +1,271 @@
+drop procedure
+	r_displayriskclasses
+go
+
+create procedure
+	r_displayriskclasses
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+
+declare @volume float
+declare @net float
+declare @saved_volume float
+declare @saved_net float
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+/* insert into
+	#meta
+values(
+	"Column Hidden",
+	"run_name",
+	NULL,
+	NULL) */
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"run_risk",
+	"Run Risk Class",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"clear_mtms",
+	"Clear Risk Class MTMs",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"account_perspectives",
+	"Account Perspectives",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "yield",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "saved_volume",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "volume",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "equiv",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "saved_net",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "net",
+	 "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "short_equiv",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "short",
+	 "Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "long",
+	 "Number",
+	"#,##0")
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "long_equiv",
+	 "Number",
+	"#,##0")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+select * from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@subtotal_style = "background:#FFFFFF;border: 1px solid white;font-style:italic;font-color:grey",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+
+if @trade_date = NULL
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		risk_class_id int NULL,
+		risk_class varchar(50) NULL,
+		perspective varchar(50) NULL,
+		volume float NULL,
+		net float NULL,
+		saved_volume float NULL,
+		saved_net float NULL,
+		timestamp datetime NULL)
+insert into
+	#output(
+		style,
+		risk_class_id,
+		risk_class)
+select
+	style = @style,
+	risk_class_id,
+	name
+from
+	risk_classes
+order by
+	name
+
+update
+	#output
+set
+	a.perspective = b.perspective,
+	a.volume = b.volume,
+	a.net = b.net,
+	a.saved_volume = b.saved_volume,
+	a.saved_net = b.saved_net,
+	a.timestamp = b.timestamp
+from
+	#output a,
+	risk_class_output b
+where
+	a.risk_class_id = b.risk_class_id
+and
+	b.trade_date = @trade_date
+
+select
+	@volume = sum(volume),
+	@net = sum(net),
+	@saved_volume = sum(saved_volume),
+	@saved_net = sum(saved_net)
+from
+	#output
+
+insert into
+	#output(
+		style,
+		volume,
+		net,
+		saved_volume,
+		saved_net)
+values(
+	@total_style,
+	@volume,
+	@net,
+	@saved_volume,
+	@saved_net)
+
+	
+select
+	section = "Risk Classes",
+	trade_date = @trade_date,
+	style,
+	risk_class,
+	perspective,
+	volume,
+	net,
+	saved_volume,
+	saved_net,
+	timestamp,
+	run_risk = "Re-run"
+from
+	#output
+order by
+	id
+
+
+
+go
+
