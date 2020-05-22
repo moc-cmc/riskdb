@@ -7,6 +7,8 @@ create or replace procedure
 
 as
 
+declare @status_id int
+
 if not exists (select risk_class_request_id from risk_class_requests where risk_class_request_id=@risk_class_request_id)
 begin
 	select
@@ -28,44 +30,65 @@ begin
 	return
 end
 
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = @status
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Could not find status from provided value",
+		provided = @status
+	return
+end
+
 if @status="In Progress"
 begin
-	update 
-		risk_class_requests
-	set
-		started_at=getdate()
-	where
-		risk_class_request_id=@risk_class_request_id
-
-	if @@rowcount != 1
-	begin
-		select
-			status="Error",
-			message="Could not update risk class request",
+	begin tran
+		update 
+			risk_class_requests
+		set
+			status_id = @status_id,
+			started_at=getdate()
+		where
 			risk_class_request_id=@risk_class_request_id
-
-		return
-	end
+	
+		if @@rowcount != 1
+		begin
+			select
+				status="Error",
+				message="Could not update risk class request",
+				risk_class_request_id=@risk_class_request_id
+			rollback
+			return
+		end
+	commit tran
 end
 
 if @status in ("Completed","Error")
 begin
-	update
-		risk_class_requests
-	set
-		completed_at=getdate()
-	where
-		risk_class_request_id=@risk_class_request_id
-
-	if @@rowcount != 1
-	begin
-		select
-			status="Error",
-			message="Could not update risk class request",
+	begin tran
+		update
+			risk_class_requests
+		set
+			status_id = @status_id,
+			completed_at=getdate()
+		where
 			risk_class_request_id=@risk_class_request_id
-
-		return
-	end
+	
+		if @@rowcount != 1
+		begin
+			select
+				status="Error",
+				message="Could not update risk class request",
+				risk_class_request_id=@risk_class_request_id
+			rollback 
+			return
+		end
+	commit tran
 end
 
 select
