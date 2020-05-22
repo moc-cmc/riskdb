@@ -1,0 +1,80 @@
+
+create or replace procedure
+		api_updateriskclassrequest
+				@login varchar(50),
+				@risk_class_request_id int,
+				@status varchar(100) 
+
+as
+
+if not exists (select risk_class_request_id from risk_class_requests where risk_class_request_id=@risk_class_request_id)
+begin
+	select
+		status="Error",
+		message="Invalid risk class request id",
+		risk_class_request_id=@risk_class_request_id
+
+	return
+
+end
+
+if @status not in ("In Progress", "Completed", "Error")
+begin
+	select
+		status="Error",
+		message="Invalid status",
+		name=@status
+
+	return
+end
+
+if @status="In Progress"
+begin
+	update 
+		risk_class_requests
+	set
+		started_at=getdate()
+	where
+		risk_class_request_id=@risk_class_request_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Could not update risk class request",
+			risk_class_request_id=@risk_class_request_id
+
+		return
+	end
+end
+
+if @status in ("Completed","Error")
+begin
+	update
+		risk_class_requests
+	set
+		completed_at=getdate()
+	where
+		risk_class_request_id=@risk_class_request_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Could not update risk class request",
+			risk_class_request_id=@risk_class_request_id
+
+		return
+	end
+end
+
+select
+	status="Success",
+	message="Risk class request updated",
+	risk_class_request_id=@risk_class_request_id
+
+return
+	 
+go
+
+
