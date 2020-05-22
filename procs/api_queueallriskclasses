@@ -1,0 +1,45 @@
+
+create or replace procedure
+		api_queueallriskclasses
+			@login varchar(50),
+			@trade_date datetime
+
+as
+
+declare @risk_class_id int
+declare @risk_class varchar(100)
+
+declare riskclasses cursor for
+	select
+		risk_class_id,
+		name
+	from
+		risk_classes
+	order by 
+		name
+
+open riskclasses 
+fetch riskclasses into @risk_class_id, @risk_class
+
+while @@sqlstatus = 0
+begin
+
+	if not exists (select risk_class_id from risk_class_requests where risk_class_id=@risk_class_id and trade_date=@trade_date)
+	begin
+		exec api_queueriskclassrun
+				@login,
+				@risk_class,
+				@trade_date
+
+	end
+
+	fetch riskclasses into @risk_class_id, @risk_class
+end
+close riskclasses
+deallocate riskclasses
+
+return
+
+go
+
+
