@@ -22,6 +22,13 @@ on
 	risk_class_requests(risk_class_id, trade_date, status_id)
 go
 
+create nonclustered index
+        n_st
+on
+        risk_class_requests(status_id)
+go
+
+
 exec r_settablestable "risk_class_requests", "J"
 go
 
