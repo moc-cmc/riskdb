@@ -4,7 +4,7 @@ create table
 		requested_by int,
 		requested_at int,
 		risk_class_id int,
-		run_date datetime,
+		trade_date datetime,
 		status_id int,
 		started_at datetime NULL,
 		completed_at datetime NULL
@@ -19,7 +19,7 @@ go
 create unique nonclustered index
         u_nk
 on
-	risk_class_requests(risk_class_id, run_date, status_id)
+	risk_class_requests(risk_class_id, trade_date, status_id)
 go
 
 exec r_settablestable "risk_class_requests", "J"
