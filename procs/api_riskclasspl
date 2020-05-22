@@ -1,0 +1,845 @@
+drop procedure
+	api_riskclasspl
+go
+
+create procedure
+	api_riskclasspl
+		@login varchar(50),
+		@trade_date datetime=NULL,
+		@risk_class varchar(50),
+		@display_output varchar(10)=NULL
+as
+
+
+declare @fund_id int
+declare @evaluation_currency_id int
+
+declare @runs int
+declare @run_id int
+declare @begin_date datetime
+declare @end_date datetime
+
+declare @risk_class_id int
+declare @rcm_id int
+declare @external_account_id int
+declare @product_id int
+
+
+declare @volume float
+declare @net float
+declare @equiv float
+declare @saved_net float
+declare @saved_volume float
+
+declare @risk_classes int
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found"
+	return
+end
+
+select
+	@risk_class_id = risk_class_id
+from
+	risk_classes
+where
+	name = @risk_class
+if @risk_class_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Risk class not found",
+		risk_class = @risk_class
+	return
+end
+
+
+
+if @trade_date = NULL
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		run_id int,
+		risk_class_id int,
+		reverse_perspective varchar(5) NULL,
+		agency_style varchar(5) NULL,
+		trade_date datetime,
+		amount numeric(30,4),
+		price float,
+		counter_amount numeric(30,4),
+		contract_id int,
+		product_id int,
+		currency_id int,
+		value_date datetime,
+		external_account_id int,
+		amount_equiv float NULL,
+		counter_amount_equiv float NULL,
+		net float NULL)
+
+create table
+	#traders(
+		trader_id int,
+		run_id int)
+create table
+	#strategies(
+		strategy_id int,
+		run_id int)
+create table
+	#external_accounts(
+		external_account_id int,
+		run_id int)
+create table
+	#internal_accounts(
+		internal_account_id int,
+		run_id int)
+create table
+	#brokers(
+		broker_id int,
+		run_id int)
+create table
+	#counterparties(
+		counterparty_id int,
+		run_id int)
+
+select
+	@rcm_id = NULL
+
+select
+	@rcm_id = rcm_id
+from
+	risk_class_mtms
+where
+	risk_class_id = @risk_class_id
+and
+	convert(date, trade_date) = convert(date, @end_date)
+if @rcm_id = NULL
+begin
+	exec
+		j_nextkey
+			"risk_class_mtms",
+			@rcm_id output
+
+	insert into
+		risk_class_mtms(
+			rcm_id,
+			risk_class_id,
+			trade_date)
+	values(
+		@rcm_id,
+		@risk_class_id,
+		@end_date)
+end
+
+select
+	@run_id = 0
+select
+	@runs = count(*)
+from
+	risk_class_runs
+where
+	risk_class_id = @risk_class_id
+and
+	run_id > @run_id
+
+while @runs > 0
+begin
+	select
+		@run_id = min(run_id)
+	from
+		risk_class_runs
+	where
+		risk_class_id = @risk_class_id
+	and
+		run_id > @run_id
+	
+	
+	insert into
+		#traders
+	select
+		trader_id,
+		run_id = @run_id
+	from
+		run_traders
+	where
+		run_id = @run_id
+	if @@rowcount = 0
+	begin
+		insert into
+			#traders
+		select
+			trader_id,
+			run_id = @run_id
+		from
+			traders
+	end
+
+	insert into
+		#strategies
+	select
+		strategy_id,
+		run_id = @run_id
+	from
+		run_strategies
+	where
+		run_id = @run_id
+	if @@rowcount = 0
+	begin
+		insert into
+			#strategies
+		select
+			strategy_id,
+			run_id = @run_id
+		from
+			strategies
+	end
+	
+	insert into
+		#external_accounts
+	select
+		external_account_id,
+		run_id = @run_id
+	from
+		run_external_accounts
+	where
+		run_id = @run_id
+	if @@rowcount = 0
+	begin
+		insert into
+			#external_accounts
+		select
+			external_account_id,
+			run_id = @run_id
+		from
+			external_accounts
+	end
+
+	insert into
+		#internal_accounts
+	select
+		internal_account_id,
+		run_id = @run_id
+	from
+		run_internal_accounts
+	where
+		run_id = @run_id
+	if @@rowcount = 0
+		insert into
+			#internal_accounts
+		select
+			internal_account_id,
+			run_id = @run_id
+		from
+			internal_accounts
+
+	insert into
+		#brokers
+	select
+		broker_id,
+		run_id = @run_id
+	from
+		run_brokers
+	where
+		run_id = @run_id
+	if @@rowcount = 0
+		insert into
+			#brokers
+		select
+			broker_id,
+			run_id = @run_id
+		from
+			brokers
+	
+	insert into
+		#counterparties
+	select
+		counterparty_id,
+		run_id = @run_id
+	from
+		run_counterparties
+	where
+		run_id = @run_id
+	if @@rowcount = 0
+		insert into
+			#counterparties
+		select
+			counterparty_id,
+			run_id = @run_id
+		from
+			counterparties
+	
+
+	insert into
+		#trades(
+			trade_id,
+			deal_id,
+			risk_class_id,
+			run_id,
+			trade_date,
+			amount,
+			price,
+			counter_amount,
+			contract_id,
+			product_id,
+			currency_id,
+			value_date,
+			external_account_id)
+	select
+		a.trade_id,
+		a.deal_id,
+		risk_class_id = @risk_class_id,
+		run_id = @run_id,
+		a.trade_date,
+		a.quantity,
+		a.price,
+		a.quantity * a.price * -1.0,
+		a.contract_id,
+		h.product_id,
+		h.currency_id,	
+		a.value_date,
+		a.external_account_id
+	from
+		trades a,
+		#external_accounts b,
+		#internal_accounts c,
+		#traders d,
+		#strategies e,
+		#brokers f,
+		#counterparties g,
+		forwards h
+	where
+		a.contract_id = h.contract_id
+	and
+		a.external_account_id = b.external_account_id
+	and
+		a.internal_account_id = c.internal_account_id
+	and
+		a.trader_id = d.trader_id
+	and
+		a.strategy_id = e.strategy_id
+	and
+		a.broker_id= f.broker_id
+	and
+		a.counterparty_id = g.counterparty_id
+	and
+		a.value_date >= @begin_date
+	and
+		a.trade_date >= @begin_date
+	and
+		a.trade_date < @end_date
+	and
+		b.run_id = @run_id
+	and
+		c.run_id = @run_id
+	and
+		d.run_id = @run_id
+	and
+		e.run_id = @run_id
+	and
+		f.run_id = @run_id
+	and
+		g.run_id = @run_id
+	
+	select
+		@runs = count(*)
+	from
+		risk_class_runs
+	where
+		risk_class_id = @risk_class_id
+	and
+		run_id > @run_id
+end
+
+
+update
+	#trades
+set
+	a.reverse_perspective = b.reverse_perspective,
+	a.agency_style = b.agency_style
+from
+	#trades a,
+	risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+
+
+delete
+	#trades
+from
+	#trades a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+and
+	c.name = "Counterparty"
+and
+	a.agency_style = "Yes"
+
+
+create table
+	#agency_deals(
+		deal_id int,
+		risk_class_id int NULL)
+insert into
+	#agency_deals(
+		deal_id)
+select
+	distinct(deal_id)
+from
+	#trades
+where
+	agency_style = "Yes"
+update
+	#agency_deals
+set
+	a.risk_class_id = b.risk_class_id
+from
+	#agency_deals a,
+	#trades b
+where
+	a.deal_id = b.deal_id
+and
+	b.agency_style = "Yes"
+
+create table
+	#deal_trades(
+		trade_id int,
+		deal_id int,
+		risk_class_id int,
+		trade_date datetime,
+		amount numeric(30,4),
+		price float,
+		counter_amount numeric(30,4),
+		contract_id int,
+		product_id int,
+		currency_id int,
+		value_date datetime,
+		external_account_id int,
+		amount_equiv float NULL,
+		counter_amount_equiv float NULL,
+		net float NULL)
+
+insert into
+	#deal_trades(
+		trade_id,
+		deal_id,
+		risk_class_id,
+		trade_date,
+		amount,
+		price,
+		counter_amount,
+		contract_id,
+		product_id,
+		currency_id,
+		value_date,
+		external_account_id)
+select
+	a.trade_id,
+	a.deal_id,
+	c.risk_class_id,
+	a.trade_date,
+	a.quantity,
+	a.price,
+	a.quantity * a.price * -1.0,
+	a.contract_id,
+	b.product_id,
+	b.currency_id,	
+	a.value_date,
+	a.external_account_id
+from
+	trades a,
+	forwards b,
+	#agency_deals c
+where
+	a.contract_id = b.contract_id
+and
+	a.deal_id = c.deal_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+
+update
+	#trades
+set
+	amount = amount * -1.0,
+	counter_amount = counter_amount * -1.0
+from
+	#trades
+where
+	reverse_perspective = "Yes"
+
+
+update
+	#deal_trades
+set
+	a.amount = a.amount * -1.0,
+	a.counter_amount = a.counter_amount * -1.0
+from
+	#deal_trades a,
+	risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+and
+	b.reverse_perspective = "Yes"
+
+
+
+create table
+	#conversion_rates(
+		product_id int,
+		rate float NULL)
+insert into
+	#conversion_rates(
+		product_id)
+select
+	distinct(product_id)
+from
+	#trades
+insert into
+	#conversion_rates(
+		product_id)
+select
+	distinct(currency_id)
+from
+	#trades
+where
+	currency_id not in(select product_id from #conversion_rates)
+
+update
+	#conversion_rates
+set
+	rate = 1.0
+where
+	product_id = @evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = a.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	current_prices c
+where
+	b.product_id = a.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	current_prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+
+update
+	#trades
+set
+	a.amount_equiv = a.amount * b.rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+update
+	#trades
+set
+	a.counter_amount_equiv = a.counter_amount * b.rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+update
+	#deal_trades
+set
+	a.amount_equiv = a.amount * b.rate
+from
+	#deal_trades a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+update
+	#deal_trades
+set
+	a.counter_amount_equiv = a.counter_amount * b.rate
+from
+	#deal_trades a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+update
+	#trades
+set
+	net = counter_amount_equiv + amount_equiv
+
+update
+	#deal_trades
+set
+	net = counter_amount_equiv + amount_equiv
+
+create table
+	#deal_pls(
+		deal_id int,
+		equiv_pl float NULL)
+insert into
+	#deal_pls(
+		deal_id,
+		equiv_pl)
+select
+	deal_id,
+	sum(net)
+from
+	#deal_trades
+group by
+	deal_id
+
+update
+	#trades
+set
+	a.net = b.equiv_pl
+from
+	#trades a,
+	#deal_pls b
+where
+	a.deal_id = b.deal_id
+and
+	a.agency_style = "Yes" /* MARKR */
+
+
+create table
+	#risk_classes(
+		risk_class_id int NULL,
+		style varchar(250) NULL,
+		name varchar(50) NULL,	
+		perspective varchar(20) NULL,
+		volume float NULL,
+		net float NULL,
+		saved_volume float NULL,
+		saved_net float NULL)
+insert into
+	#risk_classes(
+		risk_class_id,
+		volume,
+		net)
+/* For some reason they don't want this divide by 2 now and no one remembers why we set it up that way so going to remove it and leave this comment */
+select
+	risk_class_id,
+	/* sum(abs(amount_equiv) / 2.0), */
+	sum(abs(amount_equiv)),
+	sum(net)
+from
+	#trades
+group by
+	risk_class_id
+
+
+update
+	#risk_classes
+set
+	a.name = b.name
+from
+	#risk_classes a,
+	risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+
+update
+	risk_class_mtms
+set
+	a.volume = b.volume
+from
+	risk_class_mtms a,
+	#risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+and
+	convert(date, a.trade_date) = convert(date, @end_date)
+and
+	a.volume = NULL
+
+update
+	risk_class_mtms
+set
+	a.net = b.net
+from
+	risk_class_mtms a,
+	#risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+and
+	convert(date, a.trade_date) = convert(date, @end_date)
+and
+	a.net = NULL
+
+update
+	#risk_classes
+set
+	a.saved_volume = b.volume,
+	a.saved_net = b.net
+from
+	#risk_classes a,
+	risk_class_mtms b
+where
+	a.risk_class_id = b.risk_class_id
+and
+	convert(date, b.trade_date) = convert(date, @trade_date)
+
+update
+	#risk_classes
+set
+	perspective = "Native"
+
+update
+	#risk_classes
+set
+	a.perspective = "Reversed"
+from
+	#risk_classes a,
+	risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+and
+	b.reverse_perspective = "Yes"
+
+
+update
+	risk_class_output
+set
+	a.perspective = b.perspective,
+	a.volume = b.volume,
+	a.net = b.net,
+	a.saved_volume = b.saved_volume,
+	a.saved_net = b.saved_net,
+	a.timestamp = getdate()
+from
+	risk_class_output a,
+	#risk_classes b
+where
+	a.risk_class_id = b.risk_class_id
+and
+	a.trade_date = @trade_date
+if @@rowcount = 0
+begin
+	insert into
+		risk_class_output(
+			trade_date,
+			risk_class_id,
+			perspective,
+			volume,
+			net,
+			saved_volume,
+			saved_net,
+			timestamp)
+	select
+		trade_date = @trade_date,
+		risk_class_id,
+		perspective,
+		volume,
+		net,
+		saved_volume,
+		saved_net,
+		timestamp = getdate()
+	from
+		#risk_classes
+	order by
+		name 
+end
+
+
+if @display_output = "Yes"
+	exec
+		r_displayriskclasses
+			@login = @login,
+			@trade_date = @trade_date
+
+go
+
