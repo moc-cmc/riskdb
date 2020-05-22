@@ -3,7 +3,7 @@ create or replace procedure
 	api_queueriskclassrun
 			@login varchar(50),
 			@risk_class varchar(100),
-			@trade_date datetime=NULL
+			@trade_date datetime
 as
 
 declare @login_id int
@@ -62,10 +62,28 @@ begin
 	return
 end
 
-if @trade_date=NULL
+select
+	@trade_date = convert(date, @trade_date)
+
+select
+	@risk_class_request_id = risk_class_request_id
+from
+	risk_class_requests
+where
+	risk_class_id = @risk_class_id
+and
+	trade_date = @trade_date
+and
+	status_id in(select status_id from statuses where name in("Requested", "In Progress"))
+
+if @risk_class_request_id != NULL
 begin
 	select
-		@trade_date=getdate()
+		status = "Error",
+		message = "Request requested or in progress",
+		risk_class = @risk_class,
+		trade_date = @trade_date
+	return
 end
 
 exec
