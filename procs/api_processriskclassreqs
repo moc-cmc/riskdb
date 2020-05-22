@@ -1,0 +1,110 @@
+create or replace procedure
+	api_processriskclassreqs
+		@login varchar(50),
+		@trade_date datetime=NULL
+
+as
+
+declare @tico_account_id int
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+select
+	@trade_date = convert(date, @trade_date)
+
+create table
+    #request_statuses(
+	status_id int,
+	name varchar(50)
+)
+
+insert into
+	#request_statuses
+select
+	status_id,
+	name
+from
+	statuses
+where
+	name in("Requested")
+
+create table
+	#requests(
+		risk_class_request_id int,
+		requested_by_id int,
+		requested_by varchar(50),
+		requested_at datetime,
+		risk_class_id int,
+		risk_class varchar(100),
+		trade_date datetime,
+		status_id int,
+		status varchar(50)
+)
+
+insert into
+	#requests(
+		risk_class_request_id,
+		requested_by_id,
+		requested_by,
+		requested_at,
+		risk_class_id,
+		risk_class,
+		trade_date,
+		status_id,
+		status)
+select
+	a.risk_class_request_id,
+	a.requested_by,
+	b.login,
+	a.requested_at,
+	a.risk_class_id,
+	c.name,
+	a.trade_date,
+	a.status_id,
+	d.name
+from
+	risk_class_requests a,
+	tico_accounts b,
+	risk_classes c,
+	#request_statuses d
+where
+	a.status_id = d.status_id
+and
+	a.requested_by = b.account_id
+and
+	a.risk_class_id = c.risk_class_id
+
+
+select
+	risk_class_request_id,
+	requested_by,
+	risk_class,
+	trade_date,
+	status
+from
+	#requests
+order by
+	requested_at
+	
+
+go
+		
+
