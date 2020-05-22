@@ -2,7 +2,7 @@ create table
 	risk_class_requests(
 		risk_class_request_id int,
 		requested_by int,
-		requested_at int,
+		requested_at datetime,
 		risk_class_id int,
 		trade_date datetime,
 		status_id int,
