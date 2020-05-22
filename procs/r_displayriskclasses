@@ -74,6 +74,14 @@ values(
 	NULL) 
 
 insert into
+	#meta
+values(
+	"Column Link",
+	"queue_all_risk_classes",
+	"Queue All Risk Classes",
+	NULL)
+
+insert into
 	 #meta
 values(
 	 "Column Format",
@@ -259,7 +267,8 @@ select
 	saved_volume,
 	saved_net,
 	timestamp,
-	run_risk = "Re-run"
+	run_risk = "Re-run",
+	queue_all_risk_classes="Run All"
 from
 	#output
 order by
