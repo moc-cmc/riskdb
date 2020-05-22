@@ -1,0 +1,28 @@
+
+create or replace procedure
+		ag_queueallriskclasses
+			@login varchar(50),
+			@trade_date datetime=NULL
+as
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+select
+	@trade_date = convert(date, @trade_date)
+
+exec api_queueallriskclasses
+			@login,
+			@trade_date
+
+
+exec r_displayriskclasses
+			@login,
+			@trade_date
+
+go
+
+
