@@ -1,6 +1,3 @@
-use
-	risk_edgewater
-go
 
 drop table
 	risk_classes
