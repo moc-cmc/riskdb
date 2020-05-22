@@ -12,7 +12,8 @@ create table
                 volume float NULL,
                 net float NULL,
                 saved_volume float NULL,
-                saved_net float NULL)
+                saved_net float NULL,
+		timestamp datetime)
 go
 create unique index
 	u_rco
