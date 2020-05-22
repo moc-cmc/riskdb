@@ -207,13 +207,6 @@ create table
                 vo_rate float NULL
 		)
 
-
-create unique nonclustered index 
-	tmp_tid
-on
-	#trades(trade_id)
-
-
 create table
 	#trade_notifications(
 		trade_notification_id int,
@@ -351,6 +344,10 @@ and
 and
 	a.trade_id >= @min_trade_id
 
+create unique nonclustered index
+        tmp_tid
+on
+        #trades(trade_id)
 
 create table 
 	#trade_edits
