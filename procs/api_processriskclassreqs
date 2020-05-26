@@ -102,7 +102,7 @@ select
 from
 	#requests
 order by
-	requested_at desc
+	requested_at
 	
 
 go

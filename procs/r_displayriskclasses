@@ -58,6 +58,14 @@ values(
 	NULL) 
 
 insert into
+        #meta
+values(
+        "Column Link",
+        "refresh",
+        "Risk Class P&L",
+        NULL)
+
+insert into
 	#meta
 values(
 	"Column Link",
@@ -188,7 +196,25 @@ if @trade_date = NULL
 	select
 		@trade_date = convert(datetime, convert(date, getdate()))
 
+create table
+	#last_requests(
+		risk_class_id int,
+		requested_at datetime NULL
+)
+insert into
+	#last_requests
+select
+	risk_class_id,
+	max(requested_at)
+from
+	risk_class_requests 
+where
+	trade_date = convert(date, @trade_date)
+group by
+	risk_class_id
 
+	
+		
 
 create table
 	#output(
@@ -201,7 +227,11 @@ create table
 		net float NULL,
 		saved_volume float NULL,
 		saved_net float NULL,
-		timestamp datetime NULL)
+		timestamp datetime NULL,
+		status_id int NULL,
+		status varchar(50) NULL,
+                requested_at datetime NULL,
+		request_id int NULL )
 insert into
 	#output(
 		style,
@@ -233,6 +263,32 @@ where
 and
 	b.trade_date = @trade_date
 
+
+
+update 
+	#output
+set
+	status_id = c.status_id,
+	status = b.name,
+	request_id = c.risk_class_request_id,
+	requested_at = c.requested_at
+from
+	#output a,
+	statuses b,
+	risk_class_requests c,
+	#last_requests d
+where
+	a.risk_class_id = c.risk_class_id
+and
+	c.status_id = b.status_id
+and
+	c.trade_date = convert(date, @trade_date)
+and
+	c.requested_at = d.requested_at
+and
+	c.risk_class_id = d.risk_class_id
+	
+	
 select
 	@volume = sum(volume),
 	@net = sum(net),
@@ -255,9 +311,15 @@ values(
 	@saved_volume,
 	@saved_net)
 
+select
+	section = "Risk Class Actions",
+	trade_date = convert(date, @trade_date),
+	queue_all_risk_classes="Queue All Risk Classes",
+	refresh = "REFRESH",
+	style = @style
 	
 select
-	section = "Risk Classes",
+	section = "Risk Classes for Date",
 	trade_date = @trade_date,
 	style,
 	risk_class,
@@ -267,8 +329,13 @@ select
 	saved_volume,
 	saved_net,
 	timestamp,
-	run_risk = "Re-run",
-	queue_all_risk_classes="Run All"
+	run_risk = case when status = NULL then "Run" when status in("Requested", "In Progress") then NULL else "Re-run" end,
+	status = case when status = "Completed" then "<b><font color='009900'>Completed</font></b>"
+                      when status = "In Progress" then  "<b><font color='00CCFF'>In Progress</font></b>"
+                      when status = "Requested" then  "<b><font color='CCCC00'>Requested</font></b>"
+                      else status
+		end,
+	requested_at
 from
 	#output
 order by
