@@ -250,6 +250,18 @@ select
 	@side = @buysell,
 	@default_login = @login
 
+if @ccy_1 = "TRL"
+begin
+        select
+	        @ccy_1 = "TRY"
+end
+
+if @ccy_2 = "TRL"
+begin
+        select
+	        @ccy_2 = "TRY"
+end
+
 select
 	@trade_date = dateadd(hour, @difference, @trade_date)
 
