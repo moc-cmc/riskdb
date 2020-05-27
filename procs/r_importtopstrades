@@ -253,7 +253,10 @@ select
 select
 	@trade_date = dateadd(hour, @difference, @trade_date)
 
-if @side = "BUY"
+
+select @side = upper(@side)
+
+if @side in ("BUY", "B")
 begin
 	select
 		@side2 = "SELL"
