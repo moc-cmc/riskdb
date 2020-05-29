@@ -265,10 +265,31 @@ end
 select
 	@trade_date = dateadd(hour, @difference, @trade_date)
 
-
 select @side = upper(@side)
 
-if @side in ("BUY", "B")
+if @side not in ("BUY", "SELL", "B","S") 
+begin
+	select
+		status="Error",
+		msg="BUY/SELL not indicated",
+		side=@side
+
+	return
+end
+
+if @side = "B" 
+begin
+	select 
+		@side = "BUY"
+end
+
+if @side = "S"
+begin
+	select
+		@side = "SELL"
+end
+
+if @side = "BUY"
 begin
 	select
 		@side2 = "SELL"
