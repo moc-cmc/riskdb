@@ -250,16 +250,16 @@ select
 	@side = @buysell,
 	@default_login = @login
 
-if @ccy_1 = "TRL"
+if @ccy1 = "TRL"
 begin
         select
-	        @ccy_1 = "TRY"
+	        @ccy1 = "TRY"
 end
 
-if @ccy_2 = "TRL"
+if @ccy2 = "TRL"
 begin
         select
-	        @ccy_2 = "TRY"
+	        @ccy2 = "TRY"
 end
 
 select
