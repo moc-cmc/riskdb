@@ -65,6 +65,7 @@ select
 	strategy = g.name,
 	broker = h.symbol,
 	counterparty = i.name,
+	status = j.name,
 	edit_values = "EDIT",
 	del_default = "DELETE"
 from
@@ -76,7 +77,8 @@ from
 	traders f,
 	strategies g,
 	brokers h,
-	counterparties i
+	counterparties i,
+	statuses j
 where
 	a.account_id = b.tico_account_id
 and
@@ -93,6 +95,8 @@ and
 	b.broker_id = h.broker_id
 and
 	b.counterparty_id = i.counterparty_id
+and
+	b.status_id = j.status_id
 and
 	a.login = @user_name
 
