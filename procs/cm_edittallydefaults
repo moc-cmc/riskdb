@@ -13,6 +13,7 @@ create procedure
 		@external_account varchar(50),
 		@trader varchar(25),
 		@strategy varchar(50),
+		@status varchar(100),
 		@broker varchar(50),
 		@counterparty varchar(50)
 as
@@ -24,6 +25,7 @@ declare @internal_account_id int
 declare @external_account_id int
 declare @trader_id int
 declare @strategy_id int
+declare @status_id int
 declare @broker_id int
 declare @counterparty_id int
 
@@ -120,6 +122,21 @@ begin
 end
 
 select
+	@status_id = status_id
+from
+	statuses
+where
+	name = @status
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                message = "Status not found",
+                stat = @status
+        return
+end
+
+select
 	@broker_id = broker_id
 from
 	brokers
@@ -156,6 +173,7 @@ set
 	external_account_id = @external_account_id,
 	trader_id = @trader_id,
 	strategy_id = @strategy_id,
+	status_id = @status_id,
 	broker_id = @broker_id,
 	counterparty_id = @counterparty_id
 where
@@ -165,7 +183,16 @@ and
 if @@rowcount = 0
 begin
 	insert into
-		default_tally_accounts
+		default_tally_accounts(
+		tico_account_id,
+		tally_type_id,
+		internal_account_id,
+		external_account_id,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		counterparty_id)
 	values(
 		@tico_account_id,
 		@tally_type_id,
@@ -173,7 +200,7 @@ begin
 		@external_account_id,
 		@trader_id,
 		@strategy_id,
-		1,
+		@status_id,
 		@broker_id,
 		@counterparty_id)
 end
