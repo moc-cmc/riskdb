@@ -12,7 +12,8 @@ create procedure
 		@trader varchar(25),
 		@strategy varchar(50),
 		@broker varchar(50),
-		@counterparty varchar(50)
+		@counterparty varchar(50),
+		@status varchar(100)=NULL
 as
 
 
@@ -24,7 +25,7 @@ declare @trader_id int
 declare @strategy_id int
 declare @broker_id int
 declare @counterparty_id int
-
+declare @status_id int
 
 select
 	@tico_account_id = account_id
@@ -147,6 +148,46 @@ begin
 	return
 end
 
+if @status != NULL
+begin
+
+	select 
+		@status_id = status_id
+	from
+		statuses
+	where
+		name=@status
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Status not found",
+			stat=@status
+
+		return
+	end
+end
+else
+begin
+	select
+		@status_id = status_id
+	from
+		statuses 
+	where
+		name="User Review"
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Status id for User Review not found",
+			stat="User Review"
+
+		return
+	end
+end
+
 update
 	default_tally_accounts
 set
@@ -155,15 +196,26 @@ set
 	trader_id = @trader_id,
 	strategy_id = @strategy_id,
 	broker_id = @broker_id,
-	counterparty_id = @counterparty_id
+	counterparty_id = @counterparty_id,
+	status_id = @status_id
 where
 	tico_account_id = @tico_account_id
 and
 	tally_type_id = @tally_type_id
+
 if @@rowcount = 0
 begin
 	insert into
-		default_tally_accounts
+		default_tally_accounts (
+		tico_account_id,
+		tally_type_id,
+		internal_account_id,
+		external_account_id,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		counterparty_id)
 	values(
 		@tico_account_id,
 		@tally_type_id,
@@ -171,7 +223,7 @@ begin
 		@external_account_id,
 		@trader_id,
 		@strategy_id,
-		1,
+		@status_id,
 		@broker_id,
 		@counterparty_id)
 end
