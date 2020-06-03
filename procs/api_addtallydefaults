@@ -12,7 +12,8 @@ create procedure
 		@trader varchar(25),
 		@strategy varchar(50),
 		@broker varchar(50),
-		@counterparty varchar(50)
+		@counterparty varchar(50),
+		@status varchar(100)=NULL
 as
 
 
@@ -26,7 +27,8 @@ exec
 		@trader,
 		@strategy,
 		@broker,
-		@counterparty
+		@counterparty,
+		@status
 
 go
 
