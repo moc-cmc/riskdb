@@ -15,7 +15,7 @@ as
 declare @result int
 
 select
-    @result = syb_sendmsg("localhost", 9999,
+    @result = syb_sendmsg("localhost", 9989,
         "Notify /topic/Store.Notify." + @@servername + "." + db_name() + ".bo_prices: update "
         + convert(varchar(10), a.bo_price_id) + " "
         + convert(varchar(10), a.status_id) + " "
