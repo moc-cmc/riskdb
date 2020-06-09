@@ -9,10 +9,31 @@ create or replace procedure
 as
 
 declare @prime_broker_id int
+declare @source_type_id int
 declare @source_id int
 declare @bo_external_account_id int
 declare @run_id int
 declare @mkt_external_account_id int
+declare @prime_broker_source_id int
+declare @status_id int
+declare @margin_model_id int
+
+select
+	@prime_broker_source_id = source_type_id
+from
+	source_types
+where
+	name="Prime Broker"
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Could not find Prime Broker Source Type",
+		source_type="Prime Broker"
+
+	return
+end
 
 select
 	@source_id=source_id
@@ -20,15 +41,65 @@ from
 	sources
 where
 	name=@name
+and
+	source_type_id=@prime_broker_source_id
 
 if @@rowcount != 1
 begin
-	select
-		status="Error",
-		message="Could not locate Prime Broker in Sources",
-		prime_broker=@name
 
-	return
+	select
+		@status_id=status_id
+	from
+		statuses
+	where
+		name="New"
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Could not locate status type New",
+			status_type="New"
+
+		return
+	end
+
+	exec j_nextkey "sources", @source_id out
+
+	insert into
+		sources (
+			source_id,
+			name,
+			status_id,
+			source_type_id)
+		values (
+			@source_id,
+			@name,
+			@status_id,
+			@source_type_id)
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Could not create new Prime Brokder Source",
+			prime_broker=@name
+
+		return
+	end
+
+end
+else
+begin
+	if exists (select source_id from prime_brokers where source_id=@source_id)
+	begin
+		select
+			status="Error",
+			message="Prime Broker already exists",
+			prime_broker=@name
+
+		return
+	end
 end
 
 select
@@ -82,6 +153,20 @@ begin
         return
 end
 
+select
+	@margin_model_id=margin_model_id
+from
+	margin_models
+where
+	name="Default"
+
+if @@rowcount != 1
+begin
+	select
+		status="Warning",
+		message="Could not locate Margin Model Default"
+end
+
 exec j_nextkey "prime_brokers", @prime_broker_id out
 
 insert into
@@ -90,13 +175,15 @@ insert into
 	source_id,
 	bo_external_account_id,
 	run_id,
-	mkt_ext_account_id)
+	mkt_ext_account_id,
+	margin_model_id)
 values (
 	@prime_broker_id,
 	@source_id,
 	@bo_external_account_id,
 	@run_id,
-	@mkt_external_account_id)
+	@mkt_external_account_id,
+	@margin_model_id)
 		
 if @@rowcount != 1
 begin
