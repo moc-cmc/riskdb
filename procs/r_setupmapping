@@ -1,6 +1,3 @@
-use
-	risk_admisi
-go
 
 drop procedure
 	r_setupmapping
@@ -324,6 +321,14 @@ values(
         "Manage MC Dropdowns",
         NULL)
 
+insert into 
+	#meta
+values(
+	"Column Link",
+	"prime_broker_list",
+	"Prime Brokers",
+	NULL)
+
 
 /* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
@@ -421,6 +426,7 @@ begin
 		broker_list="Broker List", 
 		strategy_list = "Strategy List",
 		sources_list = "Sources List",
+		prime_broker_list = "Prime Brokers List",
 		tkt_creation_values = "Ticket Creation Values",
 	        notifications = "Source Notifications",
 		suppression_symbols = "Suppression Symbols",

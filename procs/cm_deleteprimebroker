@@ -1,0 +1,61 @@
+
+create or replace procedure
+	cm_deleteprimebroker
+			@login varchar(50),
+			@name varchar(100)
+as
+
+declare @source_id int
+
+select
+	@source_id 
+from
+	sources
+where
+	name=@name
+
+if @@rowcount !=1
+begin
+	select
+		status="Error",
+		message="Could not find Prime Broker in Sources",
+		prime_broker=@name
+
+	return
+end
+
+begin tran
+
+	delete from
+		prime_brokers
+	where
+		source_id=@source_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Could not delete Prime Broker",
+			prime_broker=@name
+
+		rollback tran
+
+		exec cm_primebrokers @login
+
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	message="Prime Broker deleted",
+	prime_broker=@name
+
+exec
+	cm_primebrokers @login
+
+return
+
+go
+ 

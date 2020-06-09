@@ -1,0 +1,164 @@
+
+create or replace procedure
+	cm_primebrokers
+			@login varchar(50)
+as
+
+declare @style varchar(250)
+select
+        @style = "background:#FFFFFF;border: 1px solid white"
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_pb",
+        "Edit PB",
+        NULL)
+
+insert into     
+        #meta
+values(
+        "Column Link",
+        "delete_pb",
+        "Delete PB",
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"new_pb",
+	"Add PB",
+	NULL)
+
+select * from #meta
+
+create table
+	#add_pb (
+	new_pb varchar(20)
+)
+
+insert into
+	#add_pb (
+	new_pb)
+values(
+	"Add Prime Broker"
+)
+
+create table
+	#primes (
+		name varchar(100),
+		bo_external_account varchar(50) NULL,
+		run varchar(200) NULL,
+		mkt_external_account varchar(50) NULL,
+		edit_pb varchar(10),
+		delete_pb varchar(10)
+)
+
+insert into
+	#primes
+	(
+	name,
+	edit_pb,
+	delete_pb
+)
+select
+	a.name,
+	"Edit",
+	"Delete"
+from
+	sources a,
+	prime_brokers b 
+where
+	b.source_id=a.source_id
+
+update
+	#primes
+set
+	a.bo_external_account=d.symbol
+from
+	#primes a,
+	sources b,
+	prime_brokers c,
+	external_accounts d 
+where
+	a.name=b.name
+and
+	b.source_id=c.source_id
+and
+	c.bo_external_account_id=d.external_account_id
+
+update
+	#primes
+set
+	a.run=d.name
+from 
+	#primes a,
+	sources b,
+	prime_brokers c,
+	runs d	
+where
+	a.name=b.name
+and
+	b.source_id=c.source_id
+and
+	c.run_id=d.run_id
+
+update
+	#primes
+set
+	a.mkt_external_account=d.symbol
+from
+	#primes a,
+	sources b,
+	prime_brokers c,
+	external_accounts d
+where
+	a.name=b.name
+and
+	b.source_id=c.source_id
+and
+	c.mkt_ext_account_id=d.external_account_id
+
+select
+	new_pb
+from
+	#add_pb
+
+select
+	name,
+	bo_external_account,
+	run,
+	mkt_external_account,
+	edit_pb,	
+	delete_pb	
+	
+from
+	#primes
+
+go
+	

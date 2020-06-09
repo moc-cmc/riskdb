@@ -1,0 +1,123 @@
+
+create or replace procedure
+	cm_addprimebroker
+		@login varchar(50),
+		@name varchar(100),
+		@bo_external_account varchar(50),
+		@run varchar(200),
+		@mkt_external_account varchar(50)
+as
+
+declare @prime_broker_id int
+declare @source_id int
+declare @bo_external_account_id int
+declare @run_id int
+declare @mkt_external_account_id int
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name=@name
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Could not locate Prime Broker in Sources",
+		prime_broker=@name
+
+	return
+end
+
+select
+	@bo_external_account_id=external_account_id
+from
+	external_accounts
+where
+	symbol=@bo_external_account
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Could not locate bo_external_account in external accounts",
+		bo_external_account=@bo_external_account
+
+	return
+end
+
+select
+	@run_id=run_id
+from
+	runs
+where
+	name=@run
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Could not locate run",
+		run=@name
+
+	return
+end
+
+select
+        @mkt_external_account_id=external_account_id
+from
+        external_accounts
+where
+        symbol=@mkt_external_account
+
+if @@rowcount != 1
+begin
+        select
+                status="Error",
+		message="Could not locate mkt_external_account in external accounts",
+                mkt_external_account=@mkt_external_account
+
+        return
+end
+
+exec j_nextkey "prime_brokers", @prime_broker_id out
+
+insert into
+	prime_brokers (
+	prime_broker_id,
+	source_id,
+	bo_external_account_id,
+	run_id,
+	mkt_ext_account_id)
+values (
+	@prime_broker_id,
+	@source_id,
+	@bo_external_account_id,
+	@run_id,
+	@mkt_external_account_id)
+		
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Could not insert Prime Broker",
+		prime_broker=@name
+
+		return
+
+end
+
+select
+	status="Success",
+	message="Prime Broker inserted",
+	prime_broker=@name
+
+exec
+	cm_primebrokers @login
+
+return
+
+go
+
