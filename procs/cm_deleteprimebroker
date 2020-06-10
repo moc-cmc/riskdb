@@ -6,6 +6,8 @@ create or replace procedure
 as
 
 declare @source_id int
+declare @prime_broker_id int
+declare @external_account_id int
 
 select
 	@source_id = source_id
@@ -19,6 +21,56 @@ begin
 	select
 		status="Error",
 		message="Could not find Prime Broker in Sources",
+		prime_broker=@name
+
+	return
+end
+
+select
+	@prime_broker_id = prime_broker_id,
+	@external_account_id = bo_external_account_id
+from
+	prime_brokers
+where
+	source_id=@source_id
+
+if @@rowcount != 1
+begin
+	select
+		status="Warning",
+		message="Prime Broker does not exist",
+		prime_broker=@name
+
+	return
+end
+
+
+if exists (select prime_broker_id from external_account_prime_brokers where prime_broker_id=@prime_broker_id)
+begin
+
+	select
+		status="Warning",
+		message="Cannot delete, external account prime brokers exists for prime broker",
+		prime_broker=@name	
+
+	return
+end
+
+if exists (select trade_id from trades where external_account_id=@external_account_id)
+begin
+	select
+		status="Warning",
+		message="Cannot delete, trades exist for external account",
+		prime_broker=@name
+
+	return
+end
+
+if exists (select account_transaction_id from account_transactions where external_account_id=@external_account_id)
+begin
+	select
+		status="Warning",
+		message="Cannot delete account transactions exist for external account",
 		prime_broker=@name
 
 	return
