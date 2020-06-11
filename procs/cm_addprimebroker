@@ -2,10 +2,7 @@
 create or replace procedure
 	cm_addprimebroker
 		@login varchar(50),
-		@name varchar(100),
-		@bo_external_account varchar(50),
-		@run varchar(200),
-		@mkt_external_account varchar(50)
+		@name varchar(100)
 as
 
 declare @prime_broker_id int
@@ -17,6 +14,7 @@ declare @mkt_external_account_id int
 declare @prime_broker_source_id int
 declare @status_id int
 declare @margin_model_id int
+declare @run_name varchar(200)
 
 select
 	@prime_broker_source_id = source_type_id
@@ -82,7 +80,7 @@ begin
 	begin
 		select
 			status="Error",
-			message="Could not create new Prime Brokder Source",
+			message="Could not create new Prime Broker Source",
 			prime_broker=@name
 
 		return
@@ -102,19 +100,92 @@ begin
 	end
 end
 
+exec j_nextkey "prime_brokers", @prime_broker_id out
+
+insert into
+	prime_brokers (
+		prime_broker_id,
+		source_id
+	)
+values (
+	@prime_broker_id,
+	@source_id
+	)
+
+/* check to see if it's the first pb created */
+
+declare @first_pb int
+
 select
-	@bo_external_account_id=external_account_id
+        @first_pb = count(*)
+from
+        prime_brokers
+
+if (@first_pb = 1)
+begin
+        update
+                funds
+        set
+                prime_broker_id=@prime_broker_id
+
+        if @@rowcount != 1
+        begin
+                select
+                        status="Error",
+                        msg="Could not update prime_broker_id in funds table",
+                        prime_broker=@name
+
+                return
+        end
+end
+
+/* set default margin schedule */
+
+insert into
+        product_margins
+select
+        a.product_id,
+        0.02,
+        @prime_broker_id
+from
+        products a,
+        product_types b
+where
+        a.product_type_id = b.product_type_id
+and
+        b.name = "Currency"
+
+if @@rowcount = 0
+begin
+        select
+                status="Warning",
+                msg="Could not set up product margins for prime_broker",
+                prime_broker=@name
+end
+
+select
+	@run_name = @name + " Recon"
+
+exec
+        api_createexternalaccount
+                        @login=@login,
+                        @symbol=@run_name,
+                        @prime_broker=@name,
+                        @account_type="Internal"
+
+select
+	@bo_external_account_id = external_account_id
 from
 	external_accounts
 where
-	symbol=@bo_external_account
+	symbol = @run_name
 
 if @@rowcount != 1
 begin
 	select
 		status="Error",
 		message="Could not locate bo_external_account in external accounts",
-		bo_external_account=@bo_external_account
+		bo_external_account=@run_name
 
 	return
 end
@@ -124,7 +195,7 @@ select
 from
 	runs
 where
-	name=@run
+	name=@run_name
 
 if @@rowcount != 1
 begin
@@ -134,23 +205,6 @@ begin
 		run=@name
 
 	return
-end
-
-select
-        @mkt_external_account_id=external_account_id
-from
-        external_accounts
-where
-        symbol=@mkt_external_account
-
-if @@rowcount != 1
-begin
-        select
-                status="Error",
-		message="Could not locate mkt_external_account in external accounts",
-                mkt_external_account=@mkt_external_account
-
-        return
 end
 
 select
@@ -167,39 +221,35 @@ begin
 		message="Could not locate Margin Model Default"
 end
 
-exec j_nextkey "prime_brokers", @prime_broker_id out
+begin tran
 
-insert into
-	prime_brokers (
-	prime_broker_id,
-	source_id,
-	bo_external_account_id,
-	run_id,
-	mkt_ext_account_id,
-	margin_model_id)
-values (
-	@prime_broker_id,
-	@source_id,
-	@bo_external_account_id,
-	@run_id,
-	@mkt_external_account_id,
-	@margin_model_id)
-		
-if @@rowcount != 1
-begin
-	select
-		status="Error",
-		message="Could not insert Prime Broker",
-		prime_broker=@name
+	update
+		prime_brokers
+	set
+		bo_external_account_id=@bo_external_account_id,
+		run_id=@run_id,
+		margin_model_id=@margin_model_id
+	where
+		prime_broker_id=@prime_broker_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Warning",
+			message="Could not update Prime Broker with ext account and run",
+			prime_broker=@name
+
+		rollback tran
 
 		return
+	end
 
-end
+commit tran
 
 select
-	status="Success",
-	message="Prime Broker inserted",
-	prime_broker=@name
+        status="Success",
+        msg="Prime Broker created",
+        name=@name
 
 exec
 	cm_primebrokers @login
