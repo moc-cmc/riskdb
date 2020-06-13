@@ -45,7 +45,7 @@ begin
 end
 
 
-if exists (select prime_broker_id from external_account_prime_brokers where prime_broker_id=@prime_broker_id)
+if exists (select prime_broker_id from external_account_prime_brokers where prime_broker_id=@prime_broker_id and external_account_id != @external_account_id)
 begin
 
 	select
@@ -91,8 +91,6 @@ begin tran
 			prime_broker=@name
 
 		rollback tran
-
-		exec cm_primebrokers @login
 
 		return
 	end
