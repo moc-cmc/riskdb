@@ -2,7 +2,8 @@
 create or replace procedure
 	cm_addprimebroker
 		@login varchar(50),
-		@name varchar(100)
+		@name varchar(100),
+		@external_account varchar(50) 
 as
 
 declare @prime_broker_id int
@@ -100,6 +101,16 @@ begin
 	end
 end
 
+if exists (select external_account_id from external_accounts where symbol=@external_account)
+begin
+	select
+		status="Error",
+		message="External Account already exists",
+		external_account=@external_account
+
+	return
+end
+
 exec j_nextkey "prime_brokers", @prime_broker_id out
 
 insert into
@@ -169,9 +180,9 @@ select
 exec
         api_createexternalaccount
                         @login=@login,
-                        @symbol=@run_name,
+                        @symbol=@external_account,
                         @prime_broker=@name,
-                        @account_type="Internal"
+                        @account_type="Counterparty"
 
 select
 	@bo_external_account_id = external_account_id
@@ -195,7 +206,7 @@ select
 from
 	runs
 where
-	name=@run_name
+	name=@external_account
 
 if @@rowcount != 1
 begin
