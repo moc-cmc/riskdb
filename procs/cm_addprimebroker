@@ -134,20 +134,28 @@ from
 
 if (@first_pb = 1)
 begin
-        update
-                funds
-        set
-                prime_broker_id=@prime_broker_id
 
-        if @@rowcount != 1
-        begin
-                select
-                        status="Error",
-                        msg="Could not update prime_broker_id in funds table",
-                        prime_broker=@name
+	begin tran
 
-                return
-        end
+        	update
+                	funds
+        	set
+                	prime_broker_id=@prime_broker_id
+
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status="Error",
+                        	msg="Could not update prime_broker_id in funds table",
+                        	prime_broker=@name
+
+			rollback tran
+
+                	return
+        	end
+
+	commit tran
+
 end
 
 /* set default margin schedule */
