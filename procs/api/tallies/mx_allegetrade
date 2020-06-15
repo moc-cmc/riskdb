@@ -1,0 +1,723 @@
+drop procedure mx_allegetrade
+go
+
+create procedure
+	mx_allegetrade
+		@login varchar(50),
+		@reporter varchar(100),
+		@platform varchar(100),
+		@reporting_party varchar(100),
+		@reporting_clearing_party varchar(100),
+		@contra_party varchar(100),
+		@contra_clearing_party varchar(100),
+		@tally_type varchar(50),
+		@buys_sells varchar(50),
+		@dealt_currency varchar(50),
+		@counter_currency varchar(50),
+		@quantity numeric(30,4),
+		@price float,
+		@value_d varchar(20),
+		@fixing_d varchar(20)=NULL,
+		@far_quantity numeric(30,4)=NULL,
+		@far_price float,
+		@far_value_d varchar(20),
+		@far_fixing_d varchar(20)=NULL,
+		@platform_identifier varchar(100),
+		@reporter_identifier varchar(100),
+		@contra_party_identifier varchar(100)=NULL,
+		@trade_note varchar(255)=NULL,
+		@strategy varchar(50)=NULL,
+		@trade_d varchar(20)=NULL,
+		@deal_id int=NULL output,
+		@trade_id int=NULL output
+
+as
+
+declare @fixing_date datetime
+declare @value_date datetime
+declare @trade_date datetime
+
+declare @external_account varchar(50)
+declare @symbol varchar(50)
+declare @trade_type varchar(25)
+declare @contract_id int
+declare @broker_id int
+declare @counterparty_id int
+declare @deal_exec_symbol varchar(100)
+declare @deal_type varchar(50)
+declare @source varchar(50)
+declare @source_id int
+declare @tally_status varchar(50)
+declare @trade_report_id int
+declare @trader_id int
+declare @trader_login varchar(50)
+
+declare @broker varchar(50)
+declare @counterparty varchar(50)
+declare @cpty_mapping_error_id int
+declare @deal_status varchar(50)
+declare @far_trade_type varchar(50)
+declare @tally_message varchar(100)
+declare @trader_mapping_error_id int
+
+
+declare @ack_required char(1)
+declare @ccy1 varchar(50)
+declare @ccy2 varchar(50)
+declare @contract varchar(50)
+declare @counterparty_lookup varchar(50)
+declare @far_platform_identifier varchar(100)
+declare @trader_lookup varchar(50)
+declare @trader varchar(50)
+declare @cpty_external_account_id int
+declare @trader_external_account_id int
+declare @inverted char(1)
+declare @last_spot_rate float
+declare @far_trade_id int
+
+declare @far_value_date datetime
+declare @far_fixing_date datetime
+declare @a_reporter_identifier varchar(100)
+declare @a_far_platform_identifier varchar(100)
+declare @a_trade_id int
+declare @a_far_trade_id int
+declare @a_quantity numeric(30, 4)
+declare @a_far_quantity numeric(30, 4)
+declare @a_counterparty varchar(50)
+declare @a_counterparty_id int 
+declare @a_external_account_id int
+declare @a_external_account varchar(50)
+declare @a_trader_id int
+declare @a_trader varchar(50)
+declare @a_trader_login varchar(50)
+declare @a_cpty_external_account_id int
+declare @a_trader_lookup varchar(50)
+declare @a_trader_mapping_error_id int
+declare @a_cpty_mapping_error_id int
+declare @a_counterprty_lookup varchar(50)
+declare @a_trader_external_account_id int
+declare @a_counterparty_lookup varchar(100)
+
+
+
+select
+	@trade_date = convert(datetime, @trade_d),
+	@value_date = convert(datetime, @value_d),
+	@fixing_date = convert(datetime, @fixing_d),
+	@far_value_date = convert(datetime, @far_value_d),
+	@far_fixing_date = convert(datetime, @far_fixing_d)
+
+select
+	@ccy1=@dealt_currency,
+	@ccy2=@counter_currency
+
+select
+	@a_reporter_identifier = rtrim(@reporter_identifier)+".allege"
+/* --------------------------------------------------------------------------
+ * STEP: Set broker_id and source_id
+ * Broker and source should be passed in via the the fix engine
+ * There should always be a broker and source specified. These are
+ * static, so don't even error check since the trade will fail.
+ */
+
+select
+	@source = @reporter,
+	@broker = @reporter
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = @broker
+if @broker_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining broker of trade from reporter"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem determining source of trade from reporter"
+        return
+end
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Dupe check on the identifier 
+ *       Only need to check one ID
+ *
+ */
+
+exec
+	tt_isdupe
+		@broker_id=@broker_id,
+		@identifier=@reporter_identifier,
+		@trade_id=@trade_id output
+
+exec
+        tt_isdupe
+                @broker_id=@broker_id,
+                @identifier=@a_reporter_identifier,
+                @trade_id=@a_trade_id output
+
+
+if @trade_id != NULL and @a_trade_id != NULL
+begin
+	/* tt_isdupe would throw error message, just return */
+	return
+end
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Map proc parameters to common tally variable name
+ * This mapping allows us to use common variable names in all tallies. It also
+ * helps with debugging, as you can look here to see what is mapped
+ * For multi-prime setups that don't have a pb tag, set the prime_broker_lookup to ""
+ *
+ */
+
+select
+	@trader_lookup = rtrim(@reporting_party)+"-"+rtrim(@reporting_clearing_party),
+	@counterparty_lookup = rtrim(@contra_party)+"-"+rtrim(@contra_clearing_party)
+
+select
+	@a_trader_lookup = @counterparty_lookup,
+	@a_counterparty_lookup = @trader_lookup
+
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Lookup trader and counterparty symbols on market
+ *
+ * ag_pendingmappingerrors determines if there is currently a mapping error for a
+ * trade. If there is, then @mapping_error_id wont be NULL. The tt_resolve* procs
+ * will onlu send a message about the failed mapping if there is not an existing
+ * mapping error. 
+ */
+
+
+/* Checking on reporter side */
+exec
+	ag_pendingmappingerrors
+		@login = @login,
+        	@broker_id = @broker_id,
+        	@identifier = @reporter_identifier,
+        	@trader_mapping_error_id = @trader_mapping_error_id output,
+		@cpty_mapping_error_id = @cpty_mapping_error_id output
+
+exec
+	tt_resolvetradermapping
+		@login=@login,
+		@source_id=@source_id,
+		@source=@source,
+		@broker_id=@broker_id,
+		@identifier=@reporter_identifier,
+		@mapping_error_id=@trader_mapping_error_id,
+		@mapping=@trader_lookup,
+		@trader_id=@trader_id output,
+		@trader=@trader output,
+		@trader_login=@trader_login output,
+		@external_account_id=@trader_external_account_id output
+
+exec
+	tt_resolvecptymapping
+                @login=@login,
+                @source_id=@source_id,
+                @source=@source,
+                @broker_id=@broker_id,
+                @identifier=@reporter_identifier,
+                @mapping_error_id=@cpty_mapping_error_id,
+		@mapping = @counterparty_lookup,
+		@counterparty_id=@counterparty_id output,
+		@counterparty=@counterparty output,
+		@cpty_external_account_id=@cpty_external_account_id output
+
+if @trader_id = NULL
+begin
+	select 
+		status = "Error",
+   		error = "Error",
+   		message = "trader mapping error trade not processed side"
+        return
+end
+
+if @counterparty_id = NULL
+begin
+	select 
+		status = "Error",
+		error = "Error",
+		message = "counterparty mapping error trade not processed side"
+        return
+end
+
+
+/* Checking on allege side */
+exec
+	ag_pendingmappingerrors
+		@login = @login,
+        	@broker_id = @broker_id,
+        	@identifier = @a_reporter_identifier,
+        	@trader_mapping_error_id = @a_trader_mapping_error_id output,
+		@cpty_mapping_error_id = @a_cpty_mapping_error_id output
+
+exec
+	tt_resolvetradermapping
+		@login=@login,
+		@source_id=@source_id,
+		@source=@source,
+		@broker_id=@broker_id,
+		@identifier=@a_reporter_identifier,
+		@mapping_error_id=@a_trader_mapping_error_id,
+		@mapping=@a_trader_lookup,
+		@trader_id=@a_trader_id output,
+		@trader=@a_trader output,
+		@trader_login=@a_trader_login output,
+		@external_account_id=@a_trader_external_account_id output
+
+exec
+	tt_resolvecptymapping
+                @login=@login,
+                @source_id=@source_id,
+                @source=@source,
+                @broker_id=@broker_id,
+                @identifier=@a_reporter_identifier,
+                @mapping_error_id=@a_cpty_mapping_error_id,
+		@mapping = @a_counterparty_lookup,
+		@counterparty_id=@a_counterparty_id output,
+		@counterparty=@a_counterparty output,
+		@cpty_external_account_id=@a_cpty_external_account_id output
+
+if @a_trader_id = NULL
+begin
+	select 
+		status = "Error",
+   		error = "Error",
+   		message = "trader mapping error trade not processed on allege side"
+        return
+end
+
+if @a_counterparty_id = NULL
+begin
+	select 
+		status = "Error",
+		error = "Error",
+		message = "counterparty mapping error trade not processed no allege side"
+        return
+end
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Manage trade types and deal_types
+ *
+ */
+
+select
+	@deal_type = "Allege",
+	@trade_type = "Spot",
+	@tally_type = "Spot"
+
+if @fixing_date != NULL
+	select
+		@trade_type = "Forward",
+		@tally_type = "Forward"
+
+if @far_price != NULL
+begin
+        select
+                @deal_type = "Allege Swap",
+                @trade_type = "Swap Near",
+                @far_trade_type = "Swap Far",
+                @tally_type = "Swap",
+		@far_platform_identifier=@reporter_identifier + ".f",
+		@a_far_platform_identifier=@a_reporter_identifier + ".f"
+end
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Adjust the perspective of the trade and set the quantity
+ *
+ */
+
+if @far_quantity = NULL
+begin
+	select
+		@far_quantity = @quantity 
+end
+
+if lower(@buys_sells) in("buys", "buy", "b", "buysell")
+begin
+	select
+		@quantity = abs(@quantity) * 1.0,
+		@far_quantity = abs(@far_quantity) * -1.0
+end
+
+if lower(@buys_sells) in("sells", "sell", "s", "sellbuy")
+begin
+	select
+		@quantity = abs(@quantity) * -1.0,
+		@far_quantity = abs(@far_quantity) * 1.0
+end
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Allege workflow creates oppostite tickets so cleate allege trade
+ *
+ */
+
+select
+	@a_quantity = @quantity * -1,
+	@a_far_quantity = @far_quantity * -1
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Create the deal or get the deal_id for grouping
+ * 
+ * Default all trades right now to assume a 'B2B *' deal type
+ */
+
+exec
+	tt_resolvedeal
+		@deal_exec_symbol = @deal_exec_symbol,
+		@deal_id = @deal_id output,
+		@deal_type = @deal_type output,
+		@deal_status = @deal_status output
+if @deal_id = NULL
+begin
+	exec
+		tt_newdeal
+			@deal_type = @deal_type,
+			@deal_status = @deal_status,
+			@deal_exec_symbol = @deal_exec_symbol,
+			@deal_id = @deal_id output
+end
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Determine the contract
+ *
+ */
+
+exec
+	r_validateccypair
+		@login=@login,
+		@symbol=@symbol,
+		@ccy1=@ccy1,
+		@ccy2=@ccy2,
+		@contract_id = @contract_id output,
+		@contract = @contract output,
+		@inverted = @inverted output
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Tally the reporter trade
+ *
+ */
+exec
+        mx_tallytrade
+                @login = @trader_login,
+                @source = @source,
+                @trade_id = @trade_id out,
+                @deal_id = @deal_id out,
+                @tally_type = @tally_type,
+                @deal_type = @deal_type,
+                @trade_type = @trade_type,
+                @external_account = @external_account,
+                @counterparty = @counterparty,
+                @quantity = @quantity,
+                @symbol = @contract,
+                @value_date = @value_date,
+                @fixing_date = @fixing_date,
+                @price = @price,
+                @trade_date = @trade_date,
+                @trader = @trader,
+                @broker = @broker,
+                @identifier = @reporter_identifier,
+                @spot_reference = @last_spot_rate,
+		@status = "Counterparty Review"
+
+if @trade_id = NULL
+begin
+        select
+                @tally_status = "Error",
+                @tally_message = "Problem tallying trade"
+end
+else
+begin
+        select
+                @tally_status = "Success",
+                @tally_message = "Tallied reporter trade"
+
+	select
+        	status = @tally_status,
+        	message = @tally_message,
+        	trade_id = @trade_id,
+        	deal_id = @deal_id,
+        	login = @trader_login,
+        	source = @source,
+        	tally_type = @tally_type,
+        	deal_type = @deal_type,
+        	trade_type = @trade_type,
+        	external_account = @external_account,
+        	counterparty = @counterparty,
+        	quantity = @quantity,
+        	symbol = @contract,
+        	value_date = @value_date,
+        	fixing_date = @fixing_date,
+        	price = @price,
+        	trade_date = @trade_date,
+        	trader = @trader,
+        	broker = @broker,
+        	identifier = @reporter_identifier,
+        	spot_reference = @last_spot_rate
+end
+
+if @far_price != NULL
+begin
+
+	exec
+        	mx_tallytrade
+                	@login = @trader_login,
+                	@source = @source,
+                	@trade_id = @far_trade_id out,
+                	@deal_id = @deal_id out,
+                	@tally_type = @tally_type,
+                	@deal_type = @deal_type,
+                	@trade_type = @far_trade_type,
+                	@external_account = @external_account,
+                	@counterparty = @counterparty,
+                	@quantity = @far_quantity,
+                	@symbol = @contract,
+                	@value_date = @far_value_date,
+                	@fixing_date = @far_fixing_date,
+                	@price = @far_price,
+                	@trade_date = @trade_date,
+                	@trader = @trader,
+                	@broker = @broker,
+                	@identifier = @far_platform_identifier,
+                	@spot_reference = @last_spot_rate,
+			@status = "Counterparty Review"
+	
+	if @trade_id = NULL
+	begin
+        	select
+                	@tally_status = "Error",
+                	@tally_message = "Problem tallying trade"
+	end
+	else
+	begin
+        	select
+                	@tally_status = "Success",
+                	@tally_message = "Tallied reporter far trade"
+	
+		select
+        		status = @tally_status,
+        		message = @tally_message,
+        		trade_id = @far_trade_id,
+        		deal_id = @deal_id,
+        		login = @trader_login,
+        		source = @source,
+        		tally_type = @tally_type,
+        		deal_type = @deal_type,
+        		trade_type = @far_trade_type,
+        		external_account = @external_account,
+        		counterparty = @counterparty,
+        		quantity = @far_quantity,
+        		symbol = @contract,
+        		value_date = @far_value_date,
+        		fixing_date = @far_fixing_date,
+        		price = @far_price,
+        		trade_date = @trade_date,
+        		trader = @trader,
+        		broker = @broker,
+        		identifier = @far_platform_identifier,
+        		spot_reference = @last_spot_rate,
+			trade_status = "Counterparty Review"
+	end
+
+	exec
+		tt_resolveswapsymbol
+			@deal_id=@deal_id,
+			@near_trade_id=@trade_id,
+			@far_trade_id=@far_trade_id,
+			@client_or_market="R"
+end
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Tally the counterparty alleged trade
+ *
+ */
+exec
+        mx_tallytrade
+                @login = @a_trader_login,
+                @source = @source,
+                @trade_id = @a_trade_id out,
+                @deal_id = @deal_id out,
+                @tally_type = @tally_type,
+                @deal_type = @deal_type,
+                @trade_type = @trade_type,
+                @external_account = @a_external_account,
+                @counterparty = @a_counterparty,
+                @quantity = @a_quantity,
+                @symbol = @contract,
+                @value_date = @value_date,
+                @fixing_date = @fixing_date,
+                @price = @price,
+                @trade_date = @trade_date,
+                @trader = @a_trader,
+                @broker = @broker,
+                @identifier = @a_reporter_identifier,
+                @spot_reference = @last_spot_rate,
+		@status = "Alleged"
+
+if @a_trade_id = NULL
+begin
+        select
+                @tally_status = "Error",
+                @tally_message = "Problem tallying trade"
+end
+else
+begin
+        select
+                @tally_status = "Success",
+                @tally_message = "Tallied reporter trade"
+
+	select
+        	status = @tally_status,
+        	message = @tally_message,
+        	trade_id = @a_trade_id,
+        	deal_id = @deal_id,
+        	login = @trader_login,
+        	source = @source,
+        	tally_type = @tally_type,
+        	deal_type = @deal_type,
+        	trade_type = @trade_type,
+        	external_account = @a_external_account,
+        	counterparty = @a_counterparty,
+        	quantity = @a_quantity,
+        	symbol = @contract,
+        	value_date = @value_date,
+        	fixing_date = @fixing_date,
+        	price = @price,
+        	trade_date = @trade_date,
+        	trader = @a_trader,
+        	broker = @broker,
+        	identifier = @a_reporter_identifier,
+        	spot_reference = @last_spot_rate,
+		trade_status = "Alleged"
+end
+
+if @far_price != NULL
+begin
+
+	exec
+        	mx_tallytrade
+                	@login = @a_trader_login,
+                	@source = @source,
+                	@trade_id = @a_far_trade_id out,
+                	@deal_id = @deal_id out,
+                	@tally_type = @tally_type,
+                	@deal_type = @deal_type,
+                	@trade_type = @far_trade_type,
+                	@external_account = @a_external_account,
+                	@counterparty = @a_counterparty,
+                	@quantity = @a_far_quantity,
+                	@symbol = @contract,
+                	@value_date = @far_value_date,
+                	@fixing_date = @far_fixing_date,
+                	@price = @far_price,
+                	@trade_date = @trade_date,
+                	@trader = @a_trader,
+                	@broker = @broker,
+                	@identifier = @a_far_platform_identifier,
+                	@spot_reference = @last_spot_rate,
+			@status = "Alleged"
+	
+	if @trade_id = NULL
+	begin
+        	select
+                	@tally_status = "Error",
+                	@tally_message = "Problem tallying trade"
+	end
+	else
+	begin
+        	select
+                	@tally_status = "Success",
+                	@tally_message = "Tallied alleged far trade"
+	
+		select
+        		status = @tally_status,
+        		message = @tally_message,
+        		trade_id = @a_far_trade_id,
+        		deal_id = @deal_id,
+        		login = @trader_login,
+        		source = @source,
+        		tally_type = @tally_type,
+        		deal_type = @deal_type,
+        		trade_type = @far_trade_type,
+        		external_account = @a_external_account,
+        		counterparty = @a_counterparty,
+        		quantity = @a_far_quantity,
+        		symbol = @contract,
+        		value_date = @far_value_date,
+        		fixing_date = @far_fixing_date,
+        		price = @far_price,
+        		trade_date = @trade_date,
+        		trader = @a_trader,
+        		broker = @broker,
+        		identifier = @a_far_platform_identifier,
+        		spot_reference = @last_spot_rate,
+			trade_status = "Alleged"
+	end
+
+	exec
+		tt_resolveswapsymbol
+			@deal_id=@deal_id,
+			@near_trade_id=@a_trade_id,
+			@far_trade_id=@a_far_trade_id,
+			@client_or_market="A"
+end
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Send trade notifications
+ *
+ */
+exec
+        r_inserttradenotification
+                @trade_id = @trade_id
+
+if @far_trade_id != NULL
+        exec
+                r_inserttradenotification
+                        @trade_id = @far_trade_id
+
+exec
+        r_inserttradenotification
+                @trade_id = @a_trade_id
+
+if @a_far_trade_id != NULL
+        exec
+                r_inserttradenotification
+                        @trade_id = @a_far_trade_id
+
+
+go
+
