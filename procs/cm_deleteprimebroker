@@ -8,6 +8,8 @@ as
 declare @source_id int
 declare @prime_broker_id int
 declare @external_account_id int
+declare @run_id int
+declare @ext_acct_symbol varchar(50)
 
 select
 	@source_id = source_id
@@ -44,6 +46,21 @@ begin
 	return
 end
 
+select
+	@ext_acct_symbol = symbol
+from
+	external_accounts
+where
+	external_account_id = @external_account_id
+
+if @@rowcount !=1
+begin
+	select
+		status="Warning",
+		message="Cannot locate external account..continuing delete",
+		external_account_id=@external_account_id
+
+end
 
 if exists (select prime_broker_id from external_account_prime_brokers where prime_broker_id=@prime_broker_id and external_account_id != @external_account_id)
 begin
@@ -75,6 +92,11 @@ begin
 
 	return
 end
+
+exec
+                api_delexternalaccount
+                                @login,
+                                @ext_acct_symbol
 
 begin tran
 
