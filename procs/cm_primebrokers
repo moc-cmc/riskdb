@@ -4,7 +4,14 @@ create or replace procedure
 			@login varchar(50)
 as
 
+declare @pb_id int
+declare @bo_ext_acct_id int
+declare @trades int
+declare @account_transactions int
+declare @external_accounts int
+declare @del varchar(10)
 declare @style varchar(250)
+
 select
         @style = "background:#FFFFFF;border: 1px solid white"
 
@@ -75,21 +82,33 @@ create table
 		bo_external_account varchar(50) NULL,
 		run varchar(200) NULL,
 		mkt_external_account varchar(50) NULL,
-		edit_pb varchar(10),
-		delete_pb varchar(10)
+		trades int,
+		account_transactions int,
+		external_accounts int,
+		delete_pb varchar(10) NULL,
+		pb_id int NULL,
+		bo_ext_acct_id int NULL
 )
 
 insert into
 	#primes
 	(
 	name,
-	edit_pb,
-	delete_pb
+	trades,
+	account_transactions,
+	external_accounts,
+	delete_pb,
+	pb_id,
+	bo_ext_acct_id
 )
 select
 	a.name,
-	"Edit",
-	"Delete"
+	0,
+	0,
+	0,
+	"delete",
+	b.prime_broker_id,
+	b.bo_external_account_id
 from
 	sources a,
 	prime_brokers b 
@@ -144,6 +163,73 @@ and
 and
 	c.mkt_ext_account_id=d.external_account_id
 
+/*
+
+declare pbs cursor for
+	select
+		pb_id,
+		bo_ext_acct_id	
+	from
+		#primes
+	order by
+		pb_id	
+
+open pbs
+fetch pbs into @pb_id, @bo_ext_acct_id
+
+while @@sqlstatus = 0
+begin
+	select
+		@trades = count(*)
+	from
+		trades
+	where
+		external_account_id = @bo_ext_acct_id
+
+	select
+		@account_transactions = count(*)
+	from
+		account_transactions
+	where
+		external_account_id=@bo_ext_acct_id
+
+	select
+		@external_accounts = count(*)
+	from
+		external_account_prime_brokers
+	where
+		prime_broker_id=@pb_id
+	and
+		external_account_id != @bo_ext_acct_id
+
+	if @trades = 0 and @account_transactions = 0 and @external_accounts = 0
+	begin
+		select
+			@del = "delete"
+	end
+	else
+	begin
+		select
+			@del = NULL
+	end
+
+	update
+		#primes
+	set
+		trades=@trades,
+		account_transactions=@account_transactions,
+		external_accounts=@external_accounts,
+		delete_pb=@del
+	where
+		pb_id=@pb_id
+
+	fetch pbs into @pb_id, @bo_ext_acct_id
+
+end
+close pbs
+deallocate pbs
+*/
+
 select
 	new_pb
 from
@@ -154,9 +240,10 @@ select
 	bo_external_account,
 	run,
 	mkt_external_account,
-	edit_pb,	
+	/* trades,
+	account_transactions,
+	external_accounts, */
 	delete_pb	
-	
 from
 	#primes
 
