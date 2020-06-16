@@ -1,0 +1,233 @@
+drop procedure api_delexternalaccount
+go
+
+create procedure
+	api_delexternalaccount
+		@login varchar(50),
+		@external_account varchar(50)
+as
+
+
+declare @tradecount int
+declare @external_account_id int
+declare @run_id int
+declare @trader_count int
+declare @delcount int
+declare @ledger_count int
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @external_account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Can not find external account",
+		external_account = @external_account,
+		external_account_id = @external_account_id
+	return
+end
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @external_account
+
+select
+	@tradecount = count(*)
+from
+	trades
+where
+	external_account_id = @external_account_id
+
+if @tradecount > 0
+begin
+	select
+		status = "Error",
+		message = "Can not delete external account with trades",
+		external_account = @external_account,
+		tradecount = @tradecount
+	return
+end
+
+select
+	@ledger_count = count(*)
+from
+	account_transactions
+where
+	external_account_id = @external_account_id
+if @ledger_count > 0
+begin
+	select
+		status = "Error",
+		message = "Can not delete external account with account transactions",
+		external_account = @external_account,
+		ledgercount = @ledger_count
+	return
+end
+
+	
+create table
+	#traders
+(	
+	trader_id int
+)
+insert into 
+	#traders
+select
+	trader_id
+from
+	traders
+where
+	external_account_id = @external_account_id
+
+select
+	@trader_count = count(*)
+from
+	#traders
+
+begin tran
+	delete
+		traders
+	from
+		traders a,
+		#traders b
+	where
+		a.trader_id = b.trader_id
+	select 
+		@delcount = @@rowcount
+	if @delcount != @trader_count
+	begin
+		select
+			status = "Error",
+			message = "Trader deletes did not match. rolling back"
+		rollback
+		return
+	end
+	else
+	begin
+	        select
+       		        deleted = "traders",
+                	delcount = @delcount
+	end
+	select @delcount = NULL
+
+	
+	delete from
+		fund_external_accounts
+	where
+		external_account_id = @external_account_id
+	select
+		deleted = "fund_external_accounts",
+		delcount = @@rowcount
+	
+	
+	delete from
+		external_account_prime_brokers
+	where
+		external_account_id = @external_account_id
+        select
+                deleted = "external_account_prime_brokers",
+                delcount = @@rowcount
+
+	
+	delete from
+		external_accounts
+	where
+		external_account_id = @external_account_id
+	select
+		@delcount = @@rowcount
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problmen deleting only 1 external account"
+		rollback
+		return	
+	end
+	else
+	begin
+        	select
+                	deleted = "external_accounts",
+        	        delcount = @delcount
+	end
+	select
+		@delcount = NULL
+	
+	delete from
+		run_external_accounts
+	where
+		external_account_id = @external_account_id
+        select
+                deleted = "run_external_accounts",
+                delcount = @@rowcount
+
+
+	delete from
+		user_runs
+	where
+		run_id = @run_id
+        select
+                deleted = "user_runs",
+                delcount = @@rowcount
+
+
+	delete from
+		runs
+	where
+		run_id = @run_id
+        select
+                deleted = "runs",
+                delcount = @@rowcount
+
+	delete from
+		risk_server_runs
+	where
+		run_id = @run_id
+        select
+                deleted = "risk_server_runs",
+                delcount = @@rowcount
+commit tran
+
+
+select
+	status = "success",
+	message = "deleted external account",
+	external_account = @external_account
+
+
+go
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
