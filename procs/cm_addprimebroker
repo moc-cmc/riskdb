@@ -7,7 +7,6 @@ create or replace procedure
 as
 
 declare @prime_broker_id int
-declare @source_type_id int
 declare @source_id int
 declare @bo_external_account_id int
 declare @run_id int
@@ -15,7 +14,6 @@ declare @mkt_external_account_id int
 declare @prime_broker_source_id int
 declare @status_id int
 declare @margin_model_id int
-declare @run_name varchar(200)
 
 select
 	@prime_broker_source_id = source_type_id
@@ -75,7 +73,7 @@ begin
 			@source_id,
 			@name,
 			@status_id,
-			@source_type_id)
+			@prime_broker_source_id)
 
 	if @@rowcount != 1
 	begin
@@ -182,9 +180,6 @@ begin
                 prime_broker=@name
 end
 
-select
-	@run_name = @name + " Recon"
-
 exec
         api_createexternalaccount
                         @login=@login,
@@ -197,14 +192,14 @@ select
 from
 	external_accounts
 where
-	symbol = @run_name
+	symbol = @external_account 
 
 if @@rowcount != 1
 begin
 	select
 		status="Error",
 		message="Could not locate bo_external_account in external accounts",
-		bo_external_account=@run_name
+		bo_external_account=@external_account
 
 	return
 end
