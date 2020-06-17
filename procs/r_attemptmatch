@@ -1,6 +1,7 @@
 create or replace procedure
 	r_attemptmatch
-		@trade_id int
+		@trade_id int,
+		@matching_engine varchar(50)=NULL
 
 as
 
@@ -32,6 +33,20 @@ declare @match_status_id int
 declare @match_status varchar(50)
 declare @counter_quantity numeric(30, 4)
 
+declare @matched_status_id int
+declare @already_matched char(1)
+
+declare @trade_match_id_1 int
+declare @trade_match_id_2 int
+
+declare @matching_engine_id int
+
+if @matching_engine = NULL
+begin
+	select
+		@matching_engine = "Hub Match"
+end
+
 select
 	@deal_id = deal_id,
 	@external_account_id = external_account_id,
@@ -55,7 +70,62 @@ from
 	trades
 where
 	trade_id = @trade_id
+if @deal_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Trade not found",
+		trade_id = @trade_id
+	return
+end
 
+select
+	@matched_status_id = match_status_id
+from
+	match_statuses
+where 
+	name = "Matched"
+if @matched_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding Matched status"
+	return
+end
+
+select
+	@matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = @matching_engine
+if @matching_engine_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding matching engine",
+		matching_engine = @matching_engine
+	return
+end
+
+select
+	@already_matched = "Y"
+from
+	trade_matches
+where
+	match_status_id = @matched_status_id
+and
+	trade_id = @trade_id
+and
+	matching_engine_id = @matching_engine_id
+if @already_matched = "Y"
+begin
+	select
+		status = "OK",
+		message= "Trade is already matched",
+		trade_id = @trade_id
+	return
+end
 
 select
 	@product_id = a.product_id,
@@ -81,7 +151,7 @@ select
 from
 	trades
 where
-	quantity = @quantity * -1
+	quantity = @quantity * -1.0
 and
 	contract_id = @contract_id 
 and
@@ -94,6 +164,9 @@ and
 	identifier = @identifier
 and
 	trade_id != @trade_id
+and
+	external_account_id != @external_account_id
+/* Need counterparty but missing schema to determine the proper lookup */
 
 
 if @match_trade_id = NULL
@@ -103,7 +176,7 @@ begin
 	from
         	trades
 	where
-        	quantity = @quantity * -1
+        	quantity = @quantity * -1.0
 	and
         	contract_id = @contract_id
 	and
@@ -116,6 +189,9 @@ begin
         	identifier = @identifier */
 	and
         	trade_id != @trade_id
+	and
+		external_account_id != @external_account_id
+        /* Need counterparty but missing schema to determine the proper lookup */
 	if @match_trade_id != NULL
 	begin
 		select
@@ -148,13 +224,17 @@ begin tran
 		match_status_id = @match_status_id
 	where
 		trade_id = @trade_id
-	if @@rowcount < 1
+	and
+		matching_engine_id = @matching_engine_id
+	and
+		match_status_id != @matched_status_id
+	if @@rowcount != 1
 	begin
 		select
 			status = "Error",
 			message = "Problem updating match status for trade",
 			trade_id = @trade_id
-		rollback
+		rollback tran
 		return
 	end
 	update
@@ -163,13 +243,17 @@ begin tran
 		match_status_id = @match_status_id
 	where
 		trade_id = @match_trade_id
-	if @@rowcount < 1
+	and
+		matching_engine_id = @matching_engine_id
+	and
+		match_status_id != @matched_status_id
+	if @@rowcount != 1
 	begin
 		select
 			status = "Error",
 			message = "Problem updating match status for trade",
-			trade_id = @match_trade_id
-		rollback
+			match_trade_id = @match_trade_id
+		rollback tran
 		return
 	end
 	if @match_status in("Matched", "Mismatch")
@@ -186,14 +270,31 @@ begin tran
                         	status = "Error",
                         	message = "Problem updating deal for matched_trade",
                         	trade_id = @match_trade_id
-                	rollback
+                	rollback tran
                 	return
         	end
 	end
 commit tran
 
+select
+	@trade_match_id_1 = trade_match_id
+from
+	trade_matches
+where
+	trade_id = @match_trade_id
+
+select
+	@trade_match_id_2 = trade_match_id
+from
+	trade_matches
+where
+	trade_id = @trade_id
+
+
 exec 
 	r_insertmatchnotification
-		@match_trade_id = @match_trade_id
-
+		@trade_match_id = @trade_match_id_1
+exec 
+	r_insertmatchnotification
+		@trade_match_id = @trade_match_id_2
 go
