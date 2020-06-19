@@ -1,0 +1,225 @@
+create or replace procedure
+	mx_rematch
+		@login varchar(50),
+		@matching_engine varchar(50)
+
+as
+
+declare @matching_engine_id int
+declare @tico_account_id int
+declare @id int
+declare @ids int
+declare @pre_count int
+declare @post_count int
+declare @status_id int
+declare @rematch_log_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+select
+	@matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = @matching_engine
+if @matching_engine_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding matching_engine",
+		matching_engine = @matching_engine
+	return
+end
+create table
+	#unmatched_statuses(
+		match_status_id int,
+		name varchar(50)
+)
+create table
+	#unmatched(
+		trade_match_id int,
+		trade_id int,
+		matching_engine_id int,
+		match_status_id int
+)
+
+create table
+        #post_unmatched(
+                trade_match_id int,
+                trade_id int,
+                matching_engine_id int,
+                match_status_id int
+)
+
+insert into
+	#unmatched_statuses(
+		match_status_id,
+		name)
+select
+	match_status_id,
+	name
+from
+	match_statuses
+where
+	name in("Pending", "Submitted", "Processing", "Unmatched", "Mismatch", "Stale")
+
+insert into
+	#unmatched(
+		trade_match_id,
+		trade_id,
+		matching_engine_id,
+		match_status_id	)
+select
+	a.trade_match_id,
+	a.trade_id,
+	a.matching_engine_id,
+	a.match_status_id
+from
+	trade_matches a,
+	#unmatched_statuses b
+where
+	a.match_status_id = b.match_status_id
+and
+	a.matching_engine_id = @matching_engine_id
+select
+	@pre_count = @@rowcount
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#unmatched	
+where
+	trade_id >= @id
+
+while @ids > 0
+begin
+	select
+		@id = min(trade_id)
+	from
+		#unmatched
+	where
+		trade_id > @id
+	
+	exec 
+		r_attemptmatch
+			@trade_id = @id,
+			@matching_engine = @matching_engine
+
+	select
+		@ids = count(*)
+	from
+		#unmatched
+	where
+		trade_id > @id
+end
+
+
+insert into
+	#post_unmatched(
+		trade_match_id,
+		trade_id,
+		matching_engine_id,
+		match_status_id)
+select
+	a.trade_match_id,
+	a.trade_id,
+	a.matching_engine_id,
+	a.match_status_id
+from
+	trade_matches a,
+	#unmatched_statuses b
+where
+	a.match_status_id = b.match_status_id
+and
+	a.matching_engine_id = @matching_engine_id
+select
+	@post_count = @@rowcount
+
+
+select
+	status = "OK",
+	pre_count = @pre_count,
+	post_count = @post_count
+
+if @pre_count > 0
+begin
+
+	if @post_count > 0
+	begin
+		select
+			@status_id = status_id
+		from
+			statuses
+		where
+			name = "Open"
+		if @status_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "Problem finding 'Open' status"
+			return
+		end
+	end
+	else
+	begin
+	        select
+                        @status_id = status_id
+                from
+                        statuses
+                where
+                        name = "Closed"
+                if @status_id = NULL
+                begin
+                        select
+                                status = "Error",
+                                message = "Problem finding 'Open' status"
+                        return
+                end
+	end
+
+	exec
+		j_nextkey
+			"rematch_log",
+			@rematch_log_id output
+
+	insert into
+		rematch_log(
+			rematch_log_id,
+			timestamp,
+			pre_count,
+			post_count,
+			status_id)
+	values(
+		@rematch_log_id,
+		getdate(),
+		@pre_count,
+		@post_count,
+		@status_id
+	)
+	insert into
+		rematch_log_matches(
+			rematch_log_id,
+			trade_match_id)
+	select
+		@rematch_log_id,
+		trade_match_id
+	from
+		#post_unmatched
+end
+	
+go 
