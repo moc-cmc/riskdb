@@ -450,7 +450,8 @@ exec
                 @broker = @broker,
                 @identifier = @reporter_identifier,
                 @spot_reference = @last_spot_rate,
-		@status = "Counterparty Review"
+		@status = "Counterparty Review",
+		@sales_code = "No Agg"
 
 if @trade_id = NULL
 begin
@@ -512,7 +513,8 @@ begin
                 	@broker = @broker,
                 	@identifier = @far_platform_identifier,
                 	@spot_reference = @last_spot_rate,
-			@status = "Counterparty Review"
+			@status = "Counterparty Review",
+			@sales_code = "No Agg"
 	
 	if @trade_id = NULL
 	begin
@@ -585,7 +587,8 @@ exec
                 @broker = @broker,
                 @identifier = @a_reporter_identifier,
                 @spot_reference = @last_spot_rate,
-		@status = "Alleged"
+		@status = "Alleged",
+		@sales_code = "No Agg"
 
 if @a_trade_id = NULL
 begin
@@ -648,7 +651,8 @@ begin
                 	@broker = @broker,
                 	@identifier = @a_far_platform_identifier,
                 	@spot_reference = @last_spot_rate,
-			@status = "Alleged"
+			@status = "Alleged",
+			@sales_code = "No Agg"
 	
 	if @trade_id = NULL
 	begin
