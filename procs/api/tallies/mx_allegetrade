@@ -14,11 +14,11 @@ create procedure
 		@buys_sells varchar(50),
 		@dealt_currency varchar(50),
 		@counter_currency varchar(50),
-		@quantity numeric(30,4),
+		@quantity float,
 		@price float,
 		@value_d varchar(20),
 		@fixing_d varchar(20)=NULL,
-		@far_quantity numeric(30,4)=NULL,
+		@far_quantity float=NULL,
 		@far_price float,
 		@far_value_d varchar(20),
 		@far_fixing_d varchar(20)=NULL,
@@ -98,14 +98,17 @@ declare @a_counterprty_lookup varchar(50)
 declare @a_trader_external_account_id int
 declare @a_counterparty_lookup varchar(100)
 
-
+declare @tally_quantity numeric(30, 4)
+declare @tally_far_quantity numeric(30, 4)
 
 select
 	@trade_date = convert(datetime, @trade_d),
 	@value_date = convert(datetime, @value_d),
 	@fixing_date = convert(datetime, @fixing_d),
 	@far_value_date = convert(datetime, @far_value_d),
-	@far_fixing_date = convert(datetime, @far_fixing_d)
+	@far_fixing_date = convert(datetime, @far_fixing_d),
+	@tally_quantity = convert(numeric(30, 4), @quantity),
+	@tally_far_quantity = convert(numeric(30, 4), @far_quantity)
 
 select
 	@ccy1=@dealt_currency,
@@ -356,21 +359,21 @@ end
 if @far_quantity = NULL
 begin
 	select
-		@far_quantity = @quantity 
+		@tally_far_quantity = @tally_quantity 
 end
 
 if lower(@buys_sells) in("buys", "buy", "b", "buysell")
 begin
 	select
-		@quantity = abs(@quantity) * 1.0,
-		@far_quantity = abs(@far_quantity) * -1.0
+		@tally_quantity = abs(@tally_quantity) * 1.0,
+		@tally_far_quantity = abs(@tally_far_quantity) * -1.0
 end
 
 if lower(@buys_sells) in("sells", "sell", "s", "sellbuy")
 begin
 	select
-		@quantity = abs(@quantity) * -1.0,
-		@far_quantity = abs(@far_quantity) * 1.0
+		@tally_quantity = abs(@tally_quantity) * -1.0,
+		@tally_far_quantity = abs(@tally_far_quantity) * 1.0
 end
 
 
@@ -380,8 +383,8 @@ end
  */
 
 select
-	@a_quantity = @quantity * -1,
-	@a_far_quantity = @far_quantity * -1
+	@a_quantity = @tally_quantity * -1,
+	@a_far_quantity = @tally_far_quantity * -1
 
 
 
@@ -440,7 +443,7 @@ exec
                 @trade_type = @trade_type,
                 @external_account = @external_account,
                 @counterparty = @counterparty,
-                @quantity = @quantity,
+                @quantity = @tally_quantity,
                 @symbol = @contract,
                 @value_date = @value_date,
                 @fixing_date = @fixing_date,
@@ -477,7 +480,7 @@ begin
         	trade_type = @trade_type,
         	external_account = @external_account,
         	counterparty = @counterparty,
-        	quantity = @quantity,
+        	quantity = @tally_quantity,
         	symbol = @contract,
         	value_date = @value_date,
         	fixing_date = @fixing_date,
@@ -503,7 +506,7 @@ begin
                 	@trade_type = @far_trade_type,
                 	@external_account = @external_account,
                 	@counterparty = @counterparty,
-                	@quantity = @far_quantity,
+                	@quantity = @tally_far_quantity,
                 	@symbol = @contract,
                 	@value_date = @far_value_date,
                 	@fixing_date = @far_fixing_date,
@@ -540,7 +543,7 @@ begin
         		trade_type = @far_trade_type,
         		external_account = @external_account,
         		counterparty = @counterparty,
-        		quantity = @far_quantity,
+        		quantity = @tally_far_quantity,
         		symbol = @contract,
         		value_date = @far_value_date,
         		fixing_date = @far_fixing_date,
