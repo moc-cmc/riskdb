@@ -185,7 +185,9 @@ declare @c_tally_status varchar(10)
 declare @c_tally_message varchar(25)
 declare @c_far_tally_status varchar(10)
 declare @c_far_tally_message varchar(25)
-
+declare @trigger_symbol varchar(50)
+declare @created_trade_id int
+declare @created_cl_identifier varchar(100)
 
 select
 	@default_login = @login
@@ -273,7 +275,9 @@ select
 	@m_counterparty_lookup = rtrim(@prime_broker)+"-"+@counterparty,
 	@c_trader_lookup = @trade_reporter,
 	@c_counterparty_lookup = @counterparty
-	
+
+select
+	@trigger_symbol = @c_trader_lookup	
 
 /* --------------------------------------------------------------------------
  * STEP: Lookup trader and counterparty symbols on market
@@ -684,6 +688,35 @@ begin
        end
 
 end
+
+
+if @c_trade_id != NULL
+begin
+        exec
+                r_ticketcreationvaluestfx
+                        @trigger_symbol = @trigger_symbol,
+                        @login = @login,
+                        @source = @source,
+                        @deal_id = @deal_id,
+                        @deal_exec_symbol = @deal_exec_symbol,
+                        @tally_type = @tally_type,
+                        @deal_type = @deal_type,
+                        @trade_type = @trade_type,
+                        @quantity = @c_tally_quantity,
+                        @symbol = @contract,
+                        @value_date = @tally_value_date,
+                        @fixing_date = @tally_fixing_date,
+                        @price = @tally_price,
+                        @trade_date = @trade_date,
+                        @broker = @broker,
+                        @trade_identifier = @c_trade_identifier,
+                        @spot_reference = @quoted_price,
+			@c_trade_id = @c_trade_id,
+			@trade_id = @created_trade_id output
+       /* The above proc is now responsible for inserting into eb_pb_tfx_trades */
+end
+
+
 
 
 /* --------------------------------------------------------------------------

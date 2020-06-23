@@ -10,6 +10,8 @@ as
 
 declare @market_trade_id int
 declare @booking_id int
+declare @eb_trade_id int
+declare @eb_aggregate_trade_id int
 
 select
 	@booking_id = booking_id
@@ -240,6 +242,150 @@ begin
 		msg = "Did not insert aggregate, did not delete trade from trades",
 		trade_id = @market_trade_id,
 		market_aggregate_trade_id = @market_aggregate_trade_id
+end
+
+select
+	@eb_trade_id = eb_trade_id
+from
+	eb_to_pb_tfx_trades
+where
+	client_pb_trade_id = @client_trade_id
+
+select
+	@eb_aggregate_trade_id = eb_trade_id
+from
+	eb_to_pb_tfx_trades
+where
+	client_pb_trade_id = @client_aggregate_trade_id
+
+
+if @eb_trade_id != NULL
+begin
+	if @eb_aggregate_trade_id = NULL
+	begin
+		/* Try again */
+		select
+        		@eb_aggregate_trade_id = eb_trade_id
+		from
+        		eb_to_pb_tfx_trades
+		where
+        		client_pb_trade_id = @client_aggregate_trade_id
+		if @eb_aggregate_trade_id = NULL
+		begin
+			select
+				status = "Error",
+				msg = "Problem finding eb_aggregate_trde when we did find the eb_trade_id",
+				eb_trade_id = @eb_trade_id,
+				client_trade_id= @client_trade_id,
+				client_agg_trade_id = @client_aggregate_trade_id
+			return
+		end
+	end
+
+	insert into
+		aggregated_trades (
+			aggregate_trade_id,
+			trade_id,
+			deal_id,
+			user_id,
+			trade_type_id,
+			internal_account_id,
+			external_account_id,
+			counterparty_id,
+			quantity,
+			contract_id,
+			value_date,
+			fixing_date,
+			price,
+			trade_date,
+			trader_id,
+			strategy_id,
+			status_id,
+			broker_id,
+			sales_code_id,
+			identifier,
+			pct_price,
+			spot_reference
+			)
+	select
+		@eb_aggregate_trade_id,
+		@eb_trade_id,
+		deal_id,
+		user_id,
+		trade_type_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		contract_id,
+		value_date,
+		fixing_date,
+		price,
+		trade_date,
+		trader_id,
+		strategy_id,
+		status_id,
+		broker_id,
+		sales_code_id,
+		identifier,
+		pct_price,
+		spot_reference
+	from
+		trades 
+	where
+		trade_id = @eb_trade_id
+	if @@rowcount = 1
+	begin
+		if @remove_trade = "Y"
+		begin
+			/* DELETE THE TRADE */
+			delete from
+				trades 
+			where
+				trade_id = @eb_trade_id
+			if @@rowcount = 1
+			begin
+				select
+					status = "Success",
+					msg = "Micro trade aggregated for eb",
+					trade_id = @eb_trade_id,
+					eb_aggregate_trade_id = @eb_aggregate_trade_id
+				return
+			end
+			else
+			begin
+				select
+					status = "Error",
+					msg = "Inserted aggregate trade but did not delete from trades for eb",
+					trade_id = @eb_trade_id,
+					eb_aggregate_trade_id = @eb_aggregate_trade_id
+				return
+			end
+		end
+		else
+		begin
+                	select
+                         	status = "Success",
+                         	msg = "Micro trade aggregated, trade not removed from trades for eb",
+                         	trade_id = @eb_trade_id,
+                         	eb_aggregate_trade_id = @eb_aggregate_trade_id
+                	return
+		end
+	
+	
+        exec
+                r_insertaggtradenotification
+			@trade_id = @eb_trade_id
+		
+	end
+	else
+	begin
+		select
+			status = "Error",
+			msg = "Did not insert aggregate, did not delete trade from trades for eb trade",
+			trade_id = @eb_trade_id,
+			eb_aggregate_trade_id = @eb_aggregate_trade_id
+	end
 end
 
 
