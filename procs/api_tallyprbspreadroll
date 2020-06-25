@@ -1,0 +1,344 @@
+drop procedure
+	api_tallyprbspreadroll
+go
+
+create procedure
+	api_tallyprbspreadroll
+		@login varchar(50),
+		@prb_id int,
+		@deal_id int output
+
+as
+
+declare @swap_symbol_id int
+declare @swap_symbol varchar(50)
+declare @source varchar(50)
+declare @near_trade_id int
+declare @far_trade_id int
+declare @tally_type varchar(25)
+declare @deal_type varchar(25)
+declare @near_trade_type varchar(25)
+declare @far_trade_type varchar(25)
+declare @near_quantity numeric(30,4)
+declare @far_quantity numeric(30,4)
+declare @symbol varchar(50)
+declare @contract_id int
+declare @inverted_contract_id int
+declare @near_date datetime
+declare @far_date datetime
+declare @days float
+declare @near_price float
+declare @far_price float
+declare @strategy varchar(50)
+declare @account varchar(50)
+declare @trade_date datetime
+declare @near_identifier varchar(50)
+declare @far_identifier varchar(50)
+declare @external_account_id int
+declare @spread float
+declare @roll_spread_group_id int
+declare @match_hub_account_id int
+declare @price_style varchar(50)
+declare @sym varchar(50)
+declare @inv_sym varchar(50)
+declare @fp float
+
+
+if @trade_date= NULL
+select
+	@trade_date = getdate()
+
+select
+	@source = "MPT Manual Tally",
+	@tally_type = "Swap",
+	@deal_type = "Client Swap",
+	@near_trade_type = "Swap Near",
+	@far_trade_type = "Swap Far"
+
+select
+	@near_identifier = "MTCH " + rtrim(convert(varchar(30), @prb_id)) + ".n",
+	@far_identifier = "MTCH " + rtrim(convert(varchar(30), @prb_id)) + ".f"
+
+select
+	@external_account_id = a.external_account_id,
+	@account = a.symbol,
+	@symbol = d.symbol,
+	@near_quantity = c.position,
+	@near_price = c.closing_price,
+	@near_date = c.closing_date,
+	@far_quantity = c.position * -1.0,
+	@far_price = c.roll_price,
+	@far_date = c.roll_date,
+	@trade_date = b.trade_date,
+	@contract_id = d.contract_id
+from
+	external_accounts a,
+	batch_transactions b,
+	proposed_roll_batches c,
+	contracts d
+where
+	a.external_account_id = b.external_account_id
+and
+	b.batch_transaction_id = c.batch_transaction_id
+and
+	c.contract_id = d.contract_id
+and
+	c.prb_id = @prb_id
+
+select
+	@fp = @far_price
+
+
+select
+	@days = datediff(day, @near_date, @far_date)
+
+
+exec
+	r_invertedcontract
+		@contract_id,
+		@inverted_contract_id output
+
+
+select
+	@roll_spread_group_id = roll_spread_group_id
+from
+	account_roll_spread_groups 
+where
+	external_account_id = @external_account_id
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	b.contract_id = @contract_id
+
+select
+	@spread = spread
+from
+	contract_roll_spreads
+where
+	contract_id = @contract_id
+and
+	roll_spread_group_id = @roll_spread_group_id
+if @spread = NULL
+	select
+		@spread = spread
+	from
+		contract_roll_spreads
+	where
+		contract_id = @inverted_contract_id
+	and
+		roll_spread_group_id = @roll_spread_group_id
+
+
+select
+	@spread = @spread * @days
+
+if @spread != NULL
+begin
+	if @price_style = "Inverted"
+	begin
+		select
+			@far_price = 1.0 / @far_price
+
+		if @far_quantity > 0.0
+			select
+				@far_price = @far_price + @spread
+
+		if @far_quantity < 0.0
+			select
+				@far_price = @far_price - @spread
+
+		select
+			@far_price = 1.0 / @far_price
+	end
+	if @price_style != "Inverted"
+	begin
+		if @far_quantity < 0.0
+			select
+				@far_price = @far_price + @spread
+
+		if @far_quantity > 0.0
+			select
+				@far_price = @far_price - @spread
+	end
+end
+
+
+select
+	@sym = symbol
+from
+	contracts
+where
+	contract_id = @contract_id
+select
+	@inv_sym = symbol
+from
+	contracts
+where
+	contract_id = @inverted_contract_id
+
+
+
+/*
+select
+	contract_id = @contract_id,
+	sym = @sym,
+	inverted_contract_id = @inverted_contract_id,
+	inv_sym = @inv_sym,
+	spread = @spread,
+	far_price = @far_price,
+	far_quantity = @far_quantity,
+	fp = @fp,
+	price_style = @price_style
+ MARKR */
+
+
+if @price_style = "Inverted"
+begin
+	select
+		@near_price = convert(float, 1.0 / @near_price),
+		@far_price = convert(float, 1.0 / @far_price)
+end
+
+/*
+select
+	contract_id = @contract_id,
+	sym = @sym,
+	inverted_contract_id = @inverted_contract_id,
+	inv_sym = @inv_sym,
+	spread = @spread,
+	far_price = @far_price,
+	far_quantity = @far_quantity,
+	fp = @fp,
+	price_style = @price_style
+return
+  MARKR */
+
+
+
+
+select
+	@match_hub_account_id = external_account_id 
+from
+	external_accounts
+where
+	symbol = "Match Hub Queue"
+if @match_hub_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Match Hub Queue external account not found"
+	return
+end
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = @source,
+		@trade_id = @near_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = @deal_type,
+		@trade_type = @near_trade_type,
+		@external_account = "Match Hub Queue",
+		@quantity = @near_quantity,
+		@symbol = @symbol,
+		@value_date = @near_date,
+		@price = @near_price,
+		@identifier = @near_identifier,
+		@trade_date = @trade_date
+
+insert into
+	match_hub_target_accounts(
+		trade_id,
+		target_external_account_id,
+		timestamp)
+values(
+	@near_trade_id,
+	@external_account_id,
+	getdate())
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = @source,
+		@trade_id = @far_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = @deal_type,
+		@trade_type = @far_trade_type,
+		@external_account = "Match Hub Queue",
+		@quantity = @far_quantity,
+		@symbol = @symbol,
+		@value_date = @far_date,
+		@price = @far_price,
+		@identifier = @far_identifier,
+		@trade_date = @trade_date
+
+insert into
+	match_hub_target_accounts(
+		trade_id,
+		target_external_account_id,
+		timestamp)
+values(
+	@far_trade_id,
+	@external_account_id,
+	getdate())
+
+
+/* Create and assign client swap symbol */
+exec
+        j_nextkey
+                "swap_symbols",
+                @swap_symbol_id output
+select
+        @swap_symbol = rtrim(convert(varchar(50), @deal_id)) + ".C"
+
+insert into
+        swap_symbols(
+        	swap_symbol_id,
+        	symbol,
+        	timestamp)
+values(
+        @swap_symbol_id,
+        @swap_symbol,
+        getdate())
+
+/* Tie both legs to the swap symbol */
+insert into
+        swap_symbol_trades(
+        	swap_symbol_id,
+        	trade_id)
+values(
+        @swap_symbol_id,
+        @near_trade_id)
+
+insert into
+        swap_symbol_trades(
+        	swap_symbol_id,
+        	trade_id)
+values(
+        @swap_symbol_id,
+        @far_trade_id)
+
+
+exec
+	r_inserttradenotification
+			@near_trade_id
+exec
+	r_inserttradenotification
+			@far_trade_id
+
+update
+	proposed_roll_batches
+set
+	risk_book_deal_id = @deal_id
+where
+	prb_id = @prb_id
+
+go
