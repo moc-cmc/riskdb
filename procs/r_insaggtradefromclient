@@ -207,7 +207,6 @@ begin
 				msg = "Micro trade aggregated",
 				trade_id = @market_trade_id,
 				market_aggregate_trade_id = @market_aggregate_trade_id
-			return
 		end
 		else
 		begin
@@ -216,7 +215,6 @@ begin
 				msg = "Inserted aggregate trade but did not delete from trades",
 				trade_id = @market_trade_id,
 				market_aggregate_trade_id = @market_aggregate_trade_id
-			return
 		end
 	end
 	else
@@ -226,14 +224,12 @@ begin
                          msg = "Micro trade aggregated, trade not removed from trades",
                          trade_id = @market_trade_id,
                          market_aggregate_trade_id = @market_aggregate_trade_id
-                return
 	end
 
 
         exec
                 r_insertaggtradenotification
 			@trade_id = @market_trade_id
-		
 end
 else
 begin
@@ -263,23 +259,13 @@ if @eb_trade_id != NULL
 begin
 	if @eb_aggregate_trade_id = NULL
 	begin
-		/* Try again */
 		select
-        		@eb_aggregate_trade_id = eb_trade_id
-		from
-        		eb_to_pb_tfx_trades
-		where
-        		client_pb_trade_id = @client_aggregate_trade_id
-		if @eb_aggregate_trade_id = NULL
-		begin
-			select
-				status = "Error",
-				msg = "Problem finding eb_aggregate_trde when we did find the eb_trade_id",
-				eb_trade_id = @eb_trade_id,
-				client_trade_id= @client_trade_id,
-				client_agg_trade_id = @client_aggregate_trade_id
-			return
-		end
+			status = "Error",
+			msg = "Problem finding eb_aggregate_trde when we did find the eb_trade_id",
+			eb_trade_id = @eb_trade_id,
+			client_trade_id= @client_trade_id,
+			client_agg_trade_id = @client_aggregate_trade_id
+		return
 	end
 
 	insert into
@@ -350,7 +336,6 @@ begin
 					msg = "Micro trade aggregated for eb",
 					trade_id = @eb_trade_id,
 					eb_aggregate_trade_id = @eb_aggregate_trade_id
-				return
 			end
 			else
 			begin
@@ -359,7 +344,6 @@ begin
 					msg = "Inserted aggregate trade but did not delete from trades for eb",
 					trade_id = @eb_trade_id,
 					eb_aggregate_trade_id = @eb_aggregate_trade_id
-				return
 			end
 		end
 		else
@@ -369,13 +353,12 @@ begin
                          	msg = "Micro trade aggregated, trade not removed from trades for eb",
                          	trade_id = @eb_trade_id,
                          	eb_aggregate_trade_id = @eb_aggregate_trade_id
-                	return
 		end
 	
 	
-        exec
-                r_insertaggtradenotification
-			@trade_id = @eb_trade_id
+        	exec
+                	r_insertaggtradenotification
+				@trade_id = @eb_trade_id
 		
 	end
 	else
