@@ -4,16 +4,27 @@ create or replace procedure
 			@login varchar(50)
 as
 
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
 declare @pb_id int
 declare @bo_ext_acct_id int
 declare @trades int
 declare @account_transactions int
 declare @external_accounts int
 declare @del varchar(10)
-declare @style varchar(250)
 
 select
-        @style = "background:#FFFFFF;border: 1px solid white"
+   @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+   @subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+   @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+   @style = "background:#FFFFFF;border: 1px solid white",
+   @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+   @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
 
 create table
         #meta(
@@ -87,7 +98,8 @@ create table
 		external_accounts int,
 		delete_pb varchar(10) NULL,
 		pb_id int NULL,
-		bo_ext_acct_id int NULL
+		bo_ext_acct_id int NULL,
+		style varchar(200) NULL
 )
 
 insert into
@@ -99,7 +111,8 @@ insert into
 	external_accounts,
 	delete_pb,
 	pb_id,
-	bo_ext_acct_id
+	bo_ext_acct_id,
+	style
 )
 select
 	a.name,
@@ -108,7 +121,8 @@ select
 	0,
 	"delete",
 	b.prime_broker_id,
-	b.bo_external_account_id
+	b.bo_external_account_id,
+	@style
 from
 	sources a,
 	prime_brokers b 
@@ -230,10 +244,16 @@ close pbs
 deallocate pbs
 */
 
+select 
+	section="Add New Prime Broker"
+
 select
 	new_pb
 from
 	#add_pb
+
+select
+	section="Prime Brokers"
 
 select
 	name,
@@ -243,7 +263,8 @@ select
 	/* trades,
 	account_transactions,
 	external_accounts, */
-	delete_pb	
+	delete_pb,
+	style	
 from
 	#primes
 
