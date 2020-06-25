@@ -25,11 +25,34 @@ where
 if @@rowcount != 1
 begin
 	select
-		status="Error",
-		message="Could not find Prime Broker Source Type",
+		status="Warning",
+		message="Could not find Prime Broker Source Type, creating Prime Broker Type",
 		source_type="Prime Broker"
 
-	return
+	declare @source_type_id int
+	
+	exec j_nextkey "source_types", @source_type_id out
+
+	insert into
+		source_types (
+		source_type_id,
+		name)
+	values (
+		@source_type_id,
+		"Prime Broker")
+
+	if @@rowcount !=1
+	begin
+		select
+			status="Error",
+			message="Could not create source type",
+			source_type="Prime Broker"
+
+		return
+	end
+
+	select @prime_broker_source_id=@source_type_id
+	
 end
 
 select
