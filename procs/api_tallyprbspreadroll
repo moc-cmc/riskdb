@@ -42,6 +42,8 @@ declare @price_style varchar(50)
 declare @sym varchar(50)
 declare @inv_sym varchar(50)
 declare @fp float
+declare @default_ea_login_id int
+declare @tally_login varchar(50)
 
 
 if @trade_date= NULL
@@ -84,6 +86,31 @@ and
 	c.contract_id = d.contract_id
 and
 	c.prb_id = @prb_id
+
+select
+	@default_ea_login_id = tico_account_id
+from
+	traders
+where
+	symbol = @account
+and
+	external_account_id = @external_account_id
+if @default_ea_login_id != NULL
+begin
+	select
+		@tally_login = login
+	from
+		tico_accounts
+	where
+		account_id = @default_ea_login_id
+end
+
+if @tally_login = NULL
+begin
+	select
+		@tally_login = @login
+end
+
 
 select
 	@fp = @far_price
@@ -238,7 +265,7 @@ end
 
 exec
 	fxa_tallytrade
-		@login = @login,
+		@login = @tally_login,
 		@source = @source,
 		@trade_id = @near_trade_id output,
 		@deal_id = @deal_id output,
@@ -265,7 +292,7 @@ values(
 
 exec
 	fxa_tallytrade
-		@login = @login,
+		@login = @tally_login,
 		@source = @source,
 		@trade_id = @far_trade_id output,
 		@deal_id = @deal_id output,
