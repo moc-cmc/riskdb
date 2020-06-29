@@ -14,6 +14,7 @@ from
 	sources
 where
 	name not in("MPT", "MPT Contracts")
-
+order by
+	name ASC
 
 go
