@@ -16,6 +16,7 @@ from
 	prime_brokers b
 where
 	a.source_id = b.source_id
-
+order by
+	a.name ASC
 
 go
