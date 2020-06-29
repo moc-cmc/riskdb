@@ -16,6 +16,7 @@ where
 	a.source_type_id=b.source_type_id
 and
 	b.name="Outbound"	
-
+order by
+	a.name ASC
 
 go
