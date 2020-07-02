@@ -205,7 +205,7 @@ begin
 		@user_name = @first_inital + lower(@last_name) + convert(varchar(2), @login_count) + @suffix
 	*/
 	select
-                @user_name = @user_name + convert(varchar(2), @login_count) + @suffix
+                @user_name = @user_name + convert(varchar(5), @login_count) + @suffix
 end
 else
 begin
