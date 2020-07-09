@@ -15,6 +15,10 @@ declare @status_id int
 declare @rematch_log_id int
 
 select
+	message = "Running rematch",
+	timestamp = getdate()
+
+select
 	@tico_account_id = account_id
 from
 	tico_accounts
@@ -42,6 +46,12 @@ begin
 		matching_engine = @matching_engine
 	return
 end
+
+create table
+	#trade_statuses(
+		status_id int,
+		name varchar(50)
+)
 create table
 	#unmatched_statuses(
 		match_status_id int,
@@ -62,6 +72,19 @@ create table
                 matching_engine_id int,
                 match_status_id int
 )
+
+insert into 
+	#trade_statuses(
+		status_id,
+		name)
+select
+	status_id,
+	name
+from
+	statuses
+where
+	name not in("Alleged", "Counterparty Review")
+	
 
 insert into
 	#unmatched_statuses(
@@ -88,9 +111,15 @@ select
 	a.match_status_id
 from
 	trade_matches a,
-	#unmatched_statuses b
+	#unmatched_statuses b,
+	trades c,
+	#trade_statuses d
 where
 	a.match_status_id = b.match_status_id
+and
+	a.trade_id = c.trade_id
+and
+	c.status_id = d.status_id
 and
 	a.matching_engine_id = @matching_engine_id
 select
@@ -142,9 +171,15 @@ select
 	a.match_status_id
 from
 	trade_matches a,
-	#unmatched_statuses b
+	#unmatched_statuses b,
+        trades c,
+        #trade_statuses d
 where
 	a.match_status_id = b.match_status_id
+and
+	a.trade_id = c.trade_id
+and
+	c.status_id = d.status_id
 and
 	a.matching_engine_id = @matching_engine_id
 select
