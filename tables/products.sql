@@ -9,6 +9,7 @@ create table
         product_id int,
         product_type_id int,
         symbol char(20),
-        name char(100)
+        name char(100),
+        decimal_precision int NULL
     )
 go
