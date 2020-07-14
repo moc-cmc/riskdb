@@ -1,0 +1,33 @@
+
+create or replace procedure
+	tt_cleantrades
+as
+
+declare @trade_id int
+
+declare trade_cursor cursor for
+
+select
+	trade_id
+from
+	trades
+order by
+	trade_id
+
+open trade_cursor
+
+fetch trade_cursor into @trade_id
+
+while @@sqlstatus = 0
+begin
+	exec tt_deletetrade @trade_id
+
+	fetch trade_cursor into @trade_id
+end
+
+close trade_cursor
+deallocate trade_cursor
+
+go
+
+
