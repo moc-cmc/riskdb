@@ -1,0 +1,70 @@
+create or replace procedure
+	api_flagmetalccy
+		@login varchar(50),
+		@product varchar(50)
+
+as
+
+declare @tico_account_id int
+declare @product_id int
+declare @already_flagged char(1)
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining product",
+		product = @product
+	return
+end
+
+select
+	@already_flagged = "Y"
+from
+	metal_ccys
+where
+	product_id = @product_id
+
+if @already_flagged != "Y"
+begin
+	insert into
+		metal_ccys(
+			product_id)
+	values(
+		@product_id)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem flagging metal ccy"
+		return
+	end
+end
+
+
+select
+	status = "Success",
+	message = "Metal ccy added or was already flagged",
+	product = @product
+
+go

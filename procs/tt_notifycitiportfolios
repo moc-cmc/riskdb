@@ -11,7 +11,6 @@ create or replace procedure
 as
 
 
-
 declare @source_id int
 declare @cancelled_count int
 declare @traiana_id_prefix varchar(15)
@@ -58,6 +57,55 @@ begin
 		source = @source
 	return
 end
+
+create table
+	#contracts(
+		contract_id int
+)
+insert into
+	#contracts
+select
+	a.contract_id
+from
+	contracts a,
+	forwards b,
+	instruments c
+where
+	a.contract_id = b.contract_id
+and
+	a.instrument_id = c.instrument_id
+and
+	c.name = "Forward"
+
+
+delete
+	#contracts 
+from
+        #contracts a,
+        forwards b,
+        products c,
+        metal_ccys d
+where
+        a.contract_id = b.contract_id
+and
+        b.product_id = c.product_id
+and
+        c.product_id = d.product_id
+
+delete
+	#contracts
+from
+        #contracts a,
+        forwards b,
+        products c,
+        metal_ccys d
+where
+        a.contract_id = b.contract_id
+and
+        b.currency_id = c.product_id
+and
+        c.product_id = d.product_id
+
 
 create table
 	#trades(
@@ -363,9 +411,12 @@ select
         user_id = a.user_id
 from
 	trades a,
-	#trade_notifications b
+	#trade_notifications b,
+	#contracts c
 where
 	a.trade_id=b.trade_id
+and
+	a.contract_id = c.contract_id
 and
 	a.trade_id >= @min_trade_id
 
