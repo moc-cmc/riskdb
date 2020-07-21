@@ -1,7 +1,3 @@
-use 
-	risk_moc
-go
-
 drop table
 	nondeliverable_ccys
 go
