@@ -183,6 +183,7 @@ declare @c_ea_aggregation_style varchar(50)
 declare @c_external_account varchar(50)
 declare @c_suppress_trade varchar(50)
 declare @c_suppression_lookup varchar(50)
+declare @c_suppression_lookup_cpty varchar(50)
 declare @c_ack_required varchar(50)
 declare @c_deal_type varchar(50)
 declare @c_trade_type varchar(50)
@@ -299,6 +300,7 @@ select
 /* Set suppression and trigger_symbol variables */
 select
 	@c_suppression_lookup = @c_trader_lookup,
+	@c_suppression_lookup_cpty = @c_counterparty_lookup,
 	@trigger_symbol = @c_trader_lookup	
 
 /* End client parameters */
@@ -584,6 +586,19 @@ where
 	source_id = @source_id
 and
 	symbol = @c_suppression_lookup
+
+
+if @c_suppress_trade != "Y"
+begin
+	select
+        	@c_suppress_trade = "Y"
+	from
+        	suppression_symbols
+	where
+        	source_id = @source_id
+	and
+        	symbol = @c_suppression_lookup_cpty
+end
 
 select
         @m_suppress_trade = "Y"
