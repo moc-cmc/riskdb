@@ -1,0 +1,459 @@
+drop procedure
+	uat_createforwardtradeionb2b
+go
+
+create procedure
+	uat_createforwardtradeionb2b
+		@login varchar(50),
+		@symbol varchar(50),
+		@price numeric(30,8)
+as
+
+declare @trade_id int
+declare @deal_id int
+declare @quantity numeric(30,4)
+declare @quan int
+declare @value_date datetime
+declare @now datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @status_id int
+declare @connection_id int
+declare @tico_account_id int
+declare @source_id int
+declare @identifier varchar(100)
+declare @c_identifier varchar(100)
+declare @m_identifier varchar(100)
+declare @traders int
+declare @counterparties int
+declare @trader varchar(50)
+declare @counterparty varchar(50)
+declare @trader_id int
+declare @counterparty_id int
+declare @broker_id int
+declare @brokers int
+declare @broker varchar(50)
+declare @strategy varchar(50)
+declare @external_account_id int
+declare @external_account varchar(50)
+
+declare @non_deliverable int
+declare @product_id int
+declare @currency_id int
+declare @fixing_date datetime
+
+
+declare @lp_trader varchar(50)
+declare @lp_counterparty varchar(50)
+declare @lp_trader_id int
+declare @lp_counterparty_id int
+declare @lp_external_account_id int
+declare @lp_external_account varchar(50)
+declare @lp_trade_id int
+declare @lp_quantity numeric(30, 4)
+declare @lp_price float
+
+declare @cl_trader varchar(50)
+declare @cl_counterparty varchar(50)
+declare @cl_trader_id int
+declare @cl_counterparty_id int
+declare @cl_external_account_id int
+declare @cl_external_account varchar(50)
+
+select
+	@now = getdate()
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@identifier = newid(),
+	@c_identifier = newid() + ".c",
+	@m_identifier = newid() + ".m"
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Active status not found"
+	return
+end
+
+select
+	@connection_id = connection_id
+from
+	connection_tico_accounts
+where
+	tico_account_id = @tico_account_id
+if @connection_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No connection found for login"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	connections
+where
+	connection_id = @connection_id
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No source found for connection"
+	return
+end
+
+select
+        @product_id = a.product_id,
+        @currency_id = a.currency_id
+from
+        forwards a,
+        contracts b
+where
+        a.contract_id = b.contract_id
+and
+        b.symbol = @symbol
+
+select
+        @non_deliverable = count(*)
+from
+        nondeliverable_ccys
+where
+        product_id in(@product_id, @currency_id)
+
+
+exec
+	r_daterangefordate
+		@now,
+		@begin_date output,
+		@end_date output
+
+select
+	@value_date = convert(datetime, convert(date, @end_date))
+
+select
+	@value_date = dateadd(week, 4, convert(datetime, convert(date, @end_date)))
+
+	
+if @non_deliverable > 0
+	exec
+		r_prevbusinessday
+			@value_date,
+			@fixing_date output
+
+select
+	@quan = convert(int, rand() * 20.0)
+
+
+if @quan <= 8
+	select
+		@quantity = 100000.00
+if @quan > 8 and @quan <= 14
+	select
+		@quantity = 500000.00
+if @quantity = NULL
+	select
+		@quantity = 1000000.00
+
+select
+	@quan = convert(int, rand() * 10.0)
+
+if @quan >= 5
+	select
+		@quantity = @quantity * -1.0
+
+select
+	@lp_trader = "jeffgroup"
+
+create table
+        #traders(
+                trader_id int identity,
+                symbol varchar(50))
+insert into
+        #traders(
+                symbol)
+select
+        a.symbol
+from
+        traders a
+where
+	a.symbol in("FXN96116", "FXN96092", "CITLFASE", "CITLFXCJ")
+
+select
+        @traders = count(*)
+from
+        #traders
+
+select
+        @trader_id = convert(int, rand() * @traders)
+
+select
+        @trader = symbol
+from
+        #traders
+where
+        trader_id = @trader_id
+
+if @trader = NULL
+        select
+                @trader = symbol
+	from
+		#traders
+	where
+		trader_id in(select max(trader_id) from #traders)
+
+select
+	@cl_trader = @trader
+
+create table
+        #counterparties(
+                counterparty_id int identity,
+                name varchar(50))
+insert into
+        #counterparties(
+                name)
+select
+        a.name
+from
+        counterparties a
+where
+        a.name in("JEFFERIES", "JEFF-MS", "JEFF-UBS", "JEFF-JEFFEB")
+
+select
+        @counterparties = count(*)
+from
+        #counterparties
+
+select
+        @counterparty_id = convert(int, rand() * @counterparties)
+
+select
+        @counterparty = name
+from
+        #counterparties
+where
+        counterparty_id = @counterparty_id
+
+if @counterparty = NULL
+        select
+                @counterparty = name
+        from
+                #counterparties
+        where
+                counterparty_id in(select max(counterparty_id) from #counterparties)
+
+
+select
+	@cl_counterparty = @counterparty
+
+if @cl_counterparty = "JEFF-MS"
+	select
+		@lp_counterparty = "CITI-MS"
+if @cl_counterparty = "JEFF-UBS"
+	select
+		@lp_counterparty = "CITI-UBS"
+if @cl_counterparty = "JEFF-JEFFEB"
+	select
+		@lp_counterparty = "CITI-JEFFEB"
+if @cl_counterparty = "JEFFERIES"
+	select
+		@lp_counterparty = "DIRECT-RBS"
+
+select
+	@lp_external_account_id = external_account_id
+from
+	counterparties
+where
+	name = @lp_counterparty
+
+select
+	@lp_external_account = symbol
+from
+	external_accounts
+where
+	external_account_id = @lp_external_account_id
+
+select
+        @cl_external_account_id = external_account_id
+from
+        traders
+where
+        symbol = @cl_trader
+
+select
+        @cl_external_account = symbol
+from
+        external_accounts
+where
+        external_account_id = @cl_external_account_id
+
+
+create table
+        #brokers(
+                broker_id int identity,
+                symbol varchar(50))
+insert into
+        #brokers(
+                symbol)
+select
+        a.symbol
+from
+        brokers a
+where
+        a.symbol in("MPT Tally", "OneZero", "Netlink", "MAHIFX")
+
+select
+        @brokers = count(*)
+from
+        #brokers
+
+select
+        @broker_id = convert(int, rand() * @brokers)
+
+select
+        @broker = symbol
+from
+        #brokers
+where
+        broker_id = @broker_id
+
+if @broker = NULL
+        select
+                @broker = symbol
+        from
+                #brokers
+        where
+                broker_id in(select max(broker_id) from #brokers)
+
+select
+	@strategy = "Agency"
+	
+if @counterparty in("CITI-FXALLOB1", "CITI-CX13915", "DIRECT-SGPAR")
+begin
+	select
+		@strategy = "FWD_EFX"
+end
+
+
+select
+	@lp_quantity = @quantity * -1
+
+if sign(@lp_quantity) = -1
+begin
+	select
+		@lp_price = @price + 0.01
+end
+else
+begin
+	select
+		@lp_price = @price - 0.01
+end
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = "Forward",
+		@deal_type = "B2B Forward",
+		@trade_type = "Forward",
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@fixing_date = @fixing_date,
+		@price = @price,
+		@trade_date = @now,
+		@identifier = @c_identifier,
+		@trader=@cl_trader,
+		@counterparty=@cl_counterparty,
+		@external_account = @cl_external_account,
+		@broker = @broker,
+		@strategy = @strategy,
+		@mid_mark = @lp_price
+
+exec
+        fxa_tallytrade
+                @login = @login,
+                @source = "MPT Manual Tally",
+                @trade_id = @lp_trade_id output,
+                @deal_id = @deal_id output,
+                @tally_type = "Forward",
+                @deal_type = "B2B Forward",
+                @trade_type = "Forward",
+                @quantity = @lp_quantity,
+                @symbol = @symbol,
+                @value_date = @value_date,
+		@fixing_date = @fixing_date,
+                @price = @lp_price,
+                @trade_date = @now,
+                @identifier = @m_identifier,
+                @trader=@lp_trader,
+                @counterparty=@lp_counterparty,
+                @external_account = @lp_external_account,
+                @broker = @broker,
+                @strategy = @strategy
+
+exec
+	tt_addtradebookings
+		@trade_id,
+		@lp_trade_id
+
+
+/* exec
+	j_nextkey
+		"trade_notifications",
+		@trade_notification_id output */
+
+insert into
+	trade_notifications(
+		source_id,
+		trade_id,
+		status_id,
+		capture_date)
+values(
+	@source_id,
+	@trade_id,
+	@status_id,
+	@now)
+
+insert into
+        trade_notifications(
+                source_id,
+                trade_id,
+                status_id,
+                capture_date)
+values(
+        @source_id,
+        @lp_trade_id,
+        @status_id,
+        @now)
+
+
+exec
+	uat_blotterion
+		@login = @login
+
+go
+

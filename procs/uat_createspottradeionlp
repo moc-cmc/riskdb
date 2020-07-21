@@ -1,0 +1,327 @@
+drop procedure
+	uat_createspottradeionlp
+go
+
+create procedure
+	uat_createspottradeionlp
+		@login varchar(50),
+		@symbol varchar(50),
+		@price numeric(30,8)
+as
+
+declare @trade_id int
+declare @deal_id int
+declare @quantity numeric(30,4)
+declare @quan int
+declare @value_date datetime
+declare @now datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @status_id int
+declare @connection_id int
+declare @tico_account_id int
+declare @source_id int
+declare @identifier varchar(100)
+declare @traders int
+declare @counterparties int
+declare @trader varchar(50)
+declare @counterparty varchar(50)
+declare @trader_id int
+declare @counterparty_id int
+declare @broker_id int
+declare @brokers int
+declare @broker varchar(50)
+declare @strategy varchar(50)
+declare @external_account_id int
+declare @external_account varchar(50)
+
+select
+	@now = getdate()
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@identifier = newid() + ".c"
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Active status not found"
+	return
+end
+
+select
+	@connection_id = connection_id
+from
+	connection_tico_accounts
+where
+	tico_account_id = @tico_account_id
+if @connection_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No connection found for login"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	connections
+where
+	connection_id = @connection_id
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No source found for connection"
+	return
+end
+
+
+exec
+	r_daterangefordate
+		@now,
+		@begin_date output,
+		@end_date output
+
+select
+	@value_date = convert(datetime, convert(date, @end_date))
+
+exec
+	r_nextbusinessday
+		@value_date,
+		@value_date output
+
+if @symbol not in("USDCAD", "CADUSD")
+	exec
+		r_nextbusinessday
+			@value_date,
+			@value_date output
+	
+
+select
+	@quan = convert(int, rand() * 20.0)
+
+
+if @quan <= 8
+	select
+		@quantity = 100000.00
+if @quan > 8 and @quan <= 14
+	select
+		@quantity = 500000.00
+if @quantity = NULL
+	select
+		@quantity = 1000000.00
+
+select
+	@quan = convert(int, rand() * 10.0)
+
+if @quan >= 5
+	select
+		@quantity = @quantity * -1.0
+
+
+
+create table
+        #traders(
+                trader_id int identity,
+                symbol varchar(50))
+insert into
+        #traders(
+                symbol)
+select
+        a.symbol
+from
+        traders a
+where
+	a.symbol in("jeffgroup")
+
+select
+        @traders = count(*)
+from
+        #traders
+
+select
+        @trader_id = convert(int, rand() * @traders)
+
+select
+        @trader = symbol
+from
+        #traders
+where
+        trader_id = @trader_id
+
+if @trader = NULL
+        select
+                @trader = symbol
+	from
+		#traders
+	where
+		trader_id in(select max(trader_id) from #traders)
+
+
+create table
+        #counterparties(
+                counterparty_id int identity,
+                name varchar(50))
+insert into
+        #counterparties(
+                name)
+select
+        a.name
+from
+        counterparties a
+where
+        a.name in("CITI-FXALLOB1", "CITI-TRADEMAX", "CITI-DB", "CITI-CX13915", "DIRECT-SGPAR")
+
+select
+        @counterparties = count(*)
+from
+        #counterparties
+
+select
+        @counterparty_id = convert(int, rand() * @counterparties)
+
+select
+        @counterparty = name
+from
+        #counterparties
+where
+        counterparty_id = @counterparty_id
+
+if @counterparty = NULL
+        select
+                @counterparty = name
+        from
+                #counterparties
+        where
+                counterparty_id in(select max(counterparty_id) from #counterparties)
+
+select
+	@external_account_id = external_account_id
+from
+	counterparties
+where
+	name = @counterparty
+
+select
+	@external_account = symbol
+from
+	external_accounts
+where
+	external_account_id = @external_account_id
+
+create table
+        #brokers(
+                broker_id int identity,
+                symbol varchar(50))
+insert into
+        #brokers(
+                symbol)
+select
+        a.symbol
+from
+        brokers a
+where
+        a.symbol in("MPT Tally", "OneZero", "Netlink", "MAHIFX")
+
+select
+        @brokers = count(*)
+from
+        #brokers
+
+select
+        @broker_id = convert(int, rand() * @brokers)
+
+select
+        @broker = symbol
+from
+        #brokers
+where
+        broker_id = @broker_id
+
+if @broker = NULL
+        select
+                @broker = symbol
+        from
+                #brokers
+        where
+                broker_id in(select max(broker_id) from #brokers)
+
+select
+	@strategy = "Agency"
+	
+if @counterparty in("CITI-FXALLOB1", "CITI-CX13915", "DIRECT-SGPAR")
+begin
+	select
+		@strategy = "SPOT_EFX"
+end
+
+
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = "Spot",
+		@deal_type = "Client Forward",
+		@trade_type = "Spot",
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@price = @price,
+		@trade_date = @now,
+		@identifier = @identifier,
+		@trader=@trader,
+		@counterparty=@counterparty,
+		@external_account = @external_account,
+		@broker = @broker,
+		@strategy = @strategy
+
+
+/* exec
+	j_nextkey
+		"trade_notifications",
+		@trade_notification_id output */
+
+insert into
+	trade_notifications(
+		source_id,
+		trade_id,
+		status_id,
+		capture_date)
+values(
+	@source_id,
+	@trade_id,
+	@status_id,
+	@now)
+
+
+exec
+	uat_blotterion
+		@login = @login
+
+go
+

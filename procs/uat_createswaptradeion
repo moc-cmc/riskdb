@@ -1,0 +1,452 @@
+drop procedure
+	uat_createswaptradeion
+go
+
+create procedure
+	uat_createswaptradeion
+		@login varchar(50),
+		@symbol varchar(50),
+		@price numeric(30,8)
+as
+
+declare @trade_id int
+declare @deal_id int
+declare @quantity numeric(30,4)
+declare @quan int
+declare @value_date datetime
+declare @now datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @status_id int
+declare @connection_id int
+declare @tico_account_id int
+declare @source_id int
+declare @identifier varchar(100)
+declare @far_identifier varchar(100)
+declare @traders int
+declare @counterparties int
+declare @trader varchar(50)
+declare @counterparty varchar(50)
+declare @trader_id int
+declare @counterparty_id int
+declare @broker_id int
+declare @brokers int
+declare @broker varchar(50)
+declare @strategy varchar(50)
+
+declare @non_deliverable int
+declare @product_id int
+declare @currency_id int
+declare @near_fixing_date datetime
+
+declare @far_quantity numeric(30, 4)
+declare @far_price numeric(30, 8)
+declare @far_value_date datetime
+declare @far_fixing_date datetime
+declare @swap_symbol varchar(50)
+declare @swap_symbol_id int
+declare @near_trade_id int
+declare @far_trade_id int
+declare @client_or_market char(1)
+declare @near_value_date datetime
+declare @external_account_id int
+declare @external_account varchar(50)
+
+select
+	@now = getdate()
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@identifier = newid() + ".c"
+select
+	@far_identifier = rtrim(@identifier)+".f"
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Active status not found"
+	return
+end
+
+select
+	@connection_id = connection_id
+from
+	connection_tico_accounts
+where
+	tico_account_id = @tico_account_id
+if @connection_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No connection found for login"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	connections
+where
+	connection_id = @connection_id
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No source found for connection"
+	return
+end
+
+select
+        @product_id = a.product_id,
+        @currency_id = a.currency_id
+from
+        forwards a,
+        contracts b
+where
+        a.contract_id = b.contract_id
+and
+        b.symbol = @symbol
+
+select
+        @non_deliverable = count(*)
+from
+        nondeliverable_ccys
+where
+        product_id in(@product_id, @currency_id)
+
+
+exec
+	r_daterangefordate
+		@now,
+		@begin_date output,
+		@end_date output
+
+
+if @non_deliverable = 0
+begin
+	select
+		@value_date = convert(datetime, convert(date, @end_date))
+	
+	exec
+		r_nextbusinessday
+			@value_date,
+			@value_date output
+	
+	
+	if @symbol not in("USDCAD", "CADUSD")
+		exec
+			r_nextbusinessday
+				@value_date,
+				@value_date output
+	
+	select
+		@far_value_date = @value_date
+	exec
+		r_prevbusinessday
+			@far_value_date,
+			@near_value_date output
+end
+else
+begin
+	select
+		@near_value_date = dateadd(week, 2, convert(datetime, convert(date, @end_date))),
+		@far_value_date = dateadd(week, 4, convert(datetime, convert(date, @end_date)))
+	
+
+	exec
+		r_prevbusinessday
+			@near_value_date,
+			@near_fixing_date output
+	exec
+		r_prevbusinessday
+			@near_fixing_date,
+			@near_fixing_date output
+	exec
+		r_prevbusinessday
+			@far_value_date,
+			@far_fixing_date output
+	exec
+		r_prevbusinessday
+			@far_fixing_date,
+			@far_fixing_date output
+end
+	
+
+select
+	@quan = convert(int, rand() * 20.0)
+
+
+if @quan <= 8
+	select
+		@quantity = 100000.00
+if @quan > 8 and @quan <= 14
+	select
+		@quantity = 500000.00
+if @quantity = NULL
+	select
+		@quantity = 1000000.00
+
+select
+	@quan = convert(int, rand() * 10.0)
+
+if @quan >= 5
+	select
+		@quantity = @quantity * -1.0
+
+
+select
+	@far_quantity = @quantity * -1
+
+create table
+        #traders(
+                trader_id int identity,
+                symbol varchar(50))
+insert into
+        #traders(
+                symbol)
+select
+        a.symbol
+from
+        traders a
+where
+	a.symbol in("FXN96116", "FXN96092", "CITLFASE", "CITLFXCJ")
+
+select
+        @traders = count(*)
+from
+        #traders
+
+select
+        @trader_id = convert(int, rand() * @traders)
+
+select
+        @trader = symbol
+from
+        #traders
+where
+        trader_id = @trader_id
+
+if @trader = NULL
+        select
+                @trader = symbol
+	from
+		#traders
+	where
+		trader_id in(select max(trader_id) from #traders)
+
+
+create table
+        #counterparties(
+                counterparty_id int identity,
+                name varchar(50))
+insert into
+        #counterparties(
+                name)
+select
+        a.name
+from
+        counterparties a
+where
+        a.name in("JEFFERIES", "JEFF-DB", "JEFF-UBS", "JEFF-JEFFEB")
+
+select
+        @counterparties = count(*)
+from
+        #counterparties
+
+select
+        @counterparty_id = convert(int, rand() * @counterparties)
+
+select
+        @counterparty = name
+from
+        #counterparties
+where
+        counterparty_id = @counterparty_id
+
+if @counterparty = NULL
+        select
+                @counterparty = name
+        from
+                #counterparties
+        where
+                counterparty_id in(select max(counterparty_id) from #counterparties)
+
+
+select
+        @external_account_id = external_account_id
+from
+        traders
+where
+        symbol = @trader
+
+select
+        @external_account = symbol
+from
+        external_accounts
+where
+        external_account_id = @external_account_id
+
+
+
+create table
+        #brokers(
+                broker_id int identity,
+                symbol varchar(50))
+insert into
+        #brokers(
+                symbol)
+select
+        a.symbol
+from
+        brokers a
+where
+        a.symbol in("MPT Tally", "OneZero", "Netlink", "MAHIFX")
+
+select
+        @brokers = count(*)
+from
+        #brokers
+
+select
+        @broker_id = convert(int, rand() * @brokers)
+
+select
+        @broker = symbol
+from
+        #brokers
+where
+        broker_id = @broker_id
+
+if @broker = NULL
+        select
+                @broker = symbol
+        from
+                #brokers
+        where
+                broker_id in(select max(broker_id) from #brokers)
+
+select
+	@strategy = "Agency"
+	
+if @trader like "CITL%"
+begin
+	select
+		@strategy = "FWD_EFX"
+end
+
+if sign(@far_quantity) = -1
+begin
+	select
+		@far_price = @price + 0.00025
+end
+else
+begin
+	select
+		@far_price = @price - 0.00025
+end
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @near_trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = "Swap",
+		@deal_type = "Client Swap",
+		@trade_type = "Swap Near",
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @near_value_date,
+		@fixing_date = @near_fixing_date,
+		@price = @price,
+		@trade_date = @now,
+		@identifier = @identifier,
+		@trader=@trader,
+		@external_account=@external_account,
+		@counterparty=@counterparty,
+		@broker = @broker,
+		@strategy = @strategy
+
+
+exec
+        fxa_tallytrade
+                @login = @login,
+                @source = "MPT Manual Tally",
+                @trade_id = @far_trade_id output,
+                @deal_id = @deal_id output,
+                @tally_type = "Swap",
+                @deal_type = "Client Swap",
+                @trade_type = "Swap Far",
+                @quantity = @far_quantity,
+                @symbol = @symbol,
+                @value_date = @far_value_date,
+                @fixing_date = @far_fixing_date,
+                @price = @far_price,
+                @trade_date = @now,
+                @identifier = @far_identifier,
+                @trader=@trader,
+		@external_account=@external_account,
+                @counterparty=@counterparty,
+                @broker = @broker,
+                @strategy = @strategy
+
+exec
+	tt_resolveswapsymbol
+		@deal_id=@deal_id,
+		@near_trade_id=@near_trade_id,
+		@far_trade_id=@far_trade_id,
+		@client_or_market="C"
+
+
+insert into
+	trade_notifications(
+		source_id,
+		trade_id,
+		status_id,
+		capture_date)
+values(
+	@source_id,
+	@near_trade_id,
+	@status_id,
+	@now)
+
+insert into
+        trade_notifications(
+                source_id,
+                trade_id,
+                status_id,
+                capture_date)
+values(
+        @source_id,
+        @far_trade_id,
+        @status_id,
+        @now)
+
+
+exec
+	uat_blotterion
+		@login = @login
+
+go
+
