@@ -1,0 +1,16 @@
+
+create or replace procedure
+	cbo_opswrapper
+		   @login varchar(50),
+                   @trade_date datetime=NULL
+as
+
+
+exec cbo_operations
+		@login,
+		@trade_date
+
+return
+
+go
+
