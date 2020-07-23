@@ -240,7 +240,7 @@ select
 from
         traders a
 where
-	a.symbol in("BNP EDGEW", "BNP EQUITI")
+	a.symbol in("BNP EDGEW", "BNP EQUITI", "BNP EQUITISUB")
 
 select
         @traders = count(*)
