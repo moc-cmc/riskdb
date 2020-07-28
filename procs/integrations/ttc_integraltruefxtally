@@ -376,7 +376,22 @@ begin
 		@disclosed_or_undisclosed = "D"
 end
 
+if @cover_exec_id = NULL and @covered_exec_id = NULL and @on_behalf_of_comp_id in("TRFXL", "TRFXN", "TRFXT")
+begin
+	select
+		@disclosed_or_undisclosed = "X"
+end
 
+if @cover_exec_id = NULL and @covered_exec_id = NULL and @deliver_to_comp_id in("TRFXL", "TRFXN", "TRFXT")
+begin
+        select
+		@disclosed_or_undisclosed = "X"
+end
+
+
+/* THIS UNDISCLOSED WORKFLOW IS NO LONGER SUPPORTED. THIS WILL BE REMOVED FROM A FUTURE VERSION OF THE PROC
+ * FOR NOW WE ARE PROCESSING THE NEW UNDISCLOSED FLOW UNDER  @disclosed_or_undisclosed = "X"
+ */
 if @cover_exec_id != NULL and @covered_exec_id = NULL /*Taker Trade*/
 begin
 	select
@@ -400,7 +415,6 @@ end
  * For multi-prime setups that don't have a pb tag, set the prime_broker_lookup to ""
  *
  */
-
 
 if @client_or_market = "C"
 begin
@@ -502,6 +516,38 @@ begin
 		select
 			@m_trader_lookup =  rtrim(@target_comp)+"-"+rtrim(@deliver_to_comp_id)+"-"+rtrim(@on_behalf_of_comp_id)
 	end
+end
+
+if @disclosed_or_undisclosed = "X"
+begin
+        select
+                @deal_exec_symbol = rtrim(@execution_id)+"_tfx",
+                @c_platform_identifier = rtrim(@execution_id)+".c",
+                @m_platform_identifier = rtrim(@execution_id)+".m"
+
+        select
+                @c_trader_lookup = rtrim(@deliver_to_comp_id),
+                @c_counterparty_lookup = rtrim(@on_behalf_of_comp_id),
+                @m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@deliver_to_comp_id),
+                @m_counterparty_lookup = rtrim(@target_comp)+"-"+rtrim(@on_behalf_of_comp_id)
+
+        select
+                @m_suppression_lookup = @m_counterparty_lookup,
+                @c_suppression_lookup = @c_trader_lookup
+
+        select
+                @deal_exec_symbol_2 = rtrim(@execution_id) + "_tfxauto",
+                @c2_platform_identifier = rtrim(@execution_id)+"_auto.c",
+                @m2_platform_identifier = rtrim(@execution_id)+"_auto.m"
+        select
+                @c2_trader_lookup = rtrim(@on_behalf_of_comp_id),
+                @c2_counterparty_lookup = rtrim(@deliver_to_comp_id),
+                @m2_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@on_behalf_of_comp_id),
+                @m2_counterparty_lookup = rtrim(@target_comp)+"-"+rtrim(@deliver_to_comp_id)
+
+        select
+                @m2_suppression_lookup = @m2_counterparty_lookup,
+                @c2_suppression_lookup = @c2_trader_lookup
 end
 
 
@@ -757,7 +803,7 @@ and
 and
         a.external_account_id = @m_external_account_id
 
-if @disclosed_or_undisclosed = "D"
+if @disclosed_or_undisclosed = "D" 
 begin
 	/* if disclosed flow look for c2 and m2 mappings */
 	/* Checking on client2 side */
@@ -910,6 +956,161 @@ begin
 	and
         	a.external_account_id = @m2_external_account_id
 end
+
+
+if @disclosed_or_undisclosed = "X"
+begin
+        /* if disclosed flow look for c2 and m2 mappings */
+        /* Checking on client2 side */
+
+        exec
+                ag_pendingmappingerrors
+                        @login = @default_login,
+                        @broker_id = @broker_id,
+                        @identifier = @c2_platform_identifier,
+                        @trader_mapping_error_id = @c2_trader_mapping_error_id output,
+                        @cpty_mapping_error_id = @c2_cpty_mapping_error_id output
+
+        exec
+                tt_resolvetradermapping
+                        @login=@default_login,
+                        @source_id=@source_id,
+                        @source=@source,
+                        @broker_id=@broker_id,
+                        @identifier=@c2_platform_identifier,
+                        @mapping_error_id=@c2_trader_mapping_error_id,
+                        @mapping=@c2_trader_lookup,
+                        @trader_id=@c2_trader_id output,
+                        @trader=@c2_trader output,
+                        @trader_login=@c2_trader_login output,
+                        @external_account_id=@c2_trader_external_account_id output
+
+        exec
+                tt_resolvecptymapping
+                        @login=@default_login,
+                        @source_id=@source_id,
+                        @source=@source,
+                        @broker_id=@broker_id,
+                        @identifier=@c2_platform_identifier,
+                        @mapping_error_id=@c2_cpty_mapping_error_id,
+                        @mapping = @c2_counterparty_lookup,
+                        @counterparty_id=@c2_counterparty_id output,
+                        @counterparty=@c2_counterparty output,
+                        @cpty_external_account_id=@c2_cpty_external_account_id output
+
+        if @c2_trader_id = NULL
+        begin
+                select
+                        status = "Error",
+                        error = "Error",
+                        message = "trader mapping error trade not processed for client side"
+                return
+        end
+
+        if @c2_counterparty_id = NULL
+        begin
+                select
+                        status = "Error",
+                        error = "Error",
+                        message = "counterparty mapping error trade not processed for client side"
+                return
+        end
+
+        /* Checking on market2 side */
+        exec
+                ag_pendingmappingerrors
+                        @login = @default_login,
+                        @broker_id = @broker_id,
+                        @identifier = @m2_platform_identifier,
+                        @trader_mapping_error_id = @m2_trader_mapping_error_id output,
+                        @cpty_mapping_error_id = @m2_cpty_mapping_error_id output
+
+        exec
+                tt_resolvetradermapping
+                        @login=@default_login,
+                        @source_id=@source_id,
+                        @source=@source,
+                        @broker_id=@broker_id,
+                        @identifier=@m2_platform_identifier,
+                        @mapping_error_id=@m2_trader_mapping_error_id,
+                        @mapping=@m2_trader_lookup,
+                        @trader_id=@m2_trader_id output,
+                        @trader=@m2_trader output,
+                        @trader_login=@m2_trader_login output,
+                        @external_account_id=@m2_trader_external_account_id output
+
+        exec
+                tt_resolvecptymapping
+                        @login=@default_login,
+                        @source_id=@source_id,
+                        @source=@source,
+                        @broker_id=@broker_id,
+                        @identifier=@m2_platform_identifier,
+                        @mapping_error_id=@m2_cpty_mapping_error_id,
+                        @mapping = @m2_counterparty_lookup,
+                        @counterparty_id=@m2_counterparty_id output,
+                        @counterparty=@m2_counterparty output,
+                        @cpty_external_account_id=@m2_cpty_external_account_id output
+
+        if @m2_trader_id = NULL
+        begin
+                select
+                        status = "Error",
+                        error = "Error",
+                        message = "trader mapping error trade not processed for market side"
+                return
+        end
+
+        if @m2_counterparty_id = NULL
+        begin
+                select
+                        status = "Error",
+                        error = "Error",
+                        message = "counterparty mapping error trade not processed for market side"
+                return
+        end
+
+        /* --------------------------------------------------------------------------
+        * STEP: Lookup external account from the trader or counterparty,
+        *
+        * On a client trade, the external account is determined by the trader
+        * On a market trade, the external account is determined by the counterparty
+        */
+
+        select
+                @c2_external_account_id = @c2_trader_external_account_id,
+                @m2_external_account_id = @m2_cpty_external_account_id
+
+        select
+                @c2_external_account = a.symbol,
+                @c2_external_account_type = b.name,
+                @c2_aggregation_style = c.name
+        from
+                external_accounts a,
+                external_account_types b,
+                aggregation_styles c
+        where
+                a.external_account_type_id = b.external_account_type_id
+        and
+                a.aggregation_style_id = c.aggregation_style_id
+        and
+                a.external_account_id = @c2_external_account_id
+
+        select
+                @m2_external_account = a.symbol,
+                @m2_external_account_type = b.name,
+                @m2_aggregation_style = c.name
+        from
+                external_accounts a,
+                external_account_types b,
+                aggregation_styles c
+        where
+                a.external_account_type_id = b.external_account_type_id
+        and
+                a.aggregation_style_id = c.aggregation_style_id
+        and
+                a.external_account_id = @m2_external_account_id
+end
 	
 	
 /* --------------------------------------------------------------------------
@@ -970,6 +1171,35 @@ begin
 	and
         	symbol = @m_suppression_lookup
 	*/
+end
+
+if @disclosed_or_undisclosed = "X"
+begin
+        select
+                @c2_suppress_trade = "Y"
+        from
+                suppression_symbols
+        where
+                source_id = @source_id
+        and
+                symbol = @c2_suppression_lookup
+
+        if @c2_suppress_trade = "Y"
+        begin
+                select
+                        @m2_suppress_trade = "Y"
+        end
+
+        /*
+        select
+                @m_suppress_trade = "Y"
+        from
+                suppression_symbols
+        where
+                source_id = @source_id
+        and
+                symbol = @m_suppression_lookup
+        */
 end
 
 /*
@@ -1120,6 +1350,30 @@ begin
                 @m_deal_id = @deal_id
 end
 
+if @disclosed_or_undisclosed  = "X"
+begin
+        if @deal_id = NULL
+        begin
+                exec
+                        tt_newdeal
+                                @deal_type = @deal_type,
+                                @deal_status = @deal_status,
+                                @deal_exec_symbol = @deal_exec_symbol,
+                                @deal_id = @deal_id output
+        end
+
+        exec
+                tt_newdeal
+                        @deal_type = @deal_type,
+                        @deal_status = @deal_status,
+                        @deal_exec_symbol = @deal_exec_symbol_2,
+                        @deal_id = @deal_id_2 output
+
+        /* disclosed flow will not require breaking up deals. set client and market deal_ids to be the same */
+        select
+                @c_deal_id = @deal_id,
+                @m_deal_id = @deal_id
+end
 
 
 
@@ -1197,6 +1451,22 @@ begin
 end
 
 		
+if @disclosed_or_undisclosed = "X"
+begin
+        if @side = "BUY"
+                select
+                        @c_quantity = @qty * -1 ,
+                        @m_quantity = @qty,
+                        @c2_quantity = @qty,
+                        @m2_quantity = @qty * -1
+
+        if @side = "SELL"
+                select
+                        @c_quantity = @qty,
+                        @m_quantity = @qty * -1,
+                        @c2_quantity = @qty * -1,
+                        @m2_quantity = @qty
+end
 
 
 
@@ -1488,6 +1758,154 @@ begin
 	
 	end
 end
+
+if @disclosed_or_undisclosed = "X"
+begin
+        /* --------------------------------------------------------------------------
+        * STEP: Tally the trade client2 trade
+        *
+        */
+
+        if @c2_suppress_trade != "Y" and @c2_trade_id = NULL
+        begin
+                exec
+                        fxa_tallytrade
+                                @login = @c2_trader_login,
+                                @source = @source,
+                                @trade_id = @c2_trade_id out,
+                                @deal_id = @deal_id_2 out,
+                                @tally_type = @trade_type,
+                                @deal_type = @deal_type,
+                                @trade_type = @trade_type,
+                                @external_account = @c2_external_account,
+                                @counterparty = @c2_counterparty,
+                                @quantity = @c2_quantity,
+                                @symbol = @contract,
+                                @value_date = @value_date,
+                                @fixing_date = @fixing_date,
+                                @price = @price,
+                                @trade_date = @trade_date,
+                                @trader = @c2_trader,
+                                @broker = @broker,
+                                @identifier = @c2_platform_identifier,
+                                @spot_reference = @last_spot_rate
+
+                if @c2_trade_id = NULL
+                begin
+                        select
+                                @tally_status = "Error",
+                                @tally_message = "Problem tallying client trade"
+                end
+                else
+                begin
+                        select
+                                @tally_status = "Success",
+                                @tally_message = "Tallied client trade"
+                end
+
+                select
+                        status = @tally_status,
+                        message = @tally_message,
+                        trade_id = @c2_trade_id,
+                        deal_id = @deal_id_2,
+                        login = @c2_trader_login,
+                        source = @source,
+                        tally_type = @trade_type,
+                        deal_type = @deal_type,
+                        trade_type = @trade_type,
+                        external_account = @c2_external_account,
+                        counterparty = @c2_counterparty,
+                        quantity = @c2_quantity,
+                        symbol = @contract,
+                        value_date = @value_date,
+                        fixing_date = @fixing_date,
+                        price = @price,
+                        trade_date = @trade_date,
+                        trader = @c2_trader,
+                        broker = @broker,
+                        identifier = @c2_platform_identifier,
+                        spot_reference = @last_spot_rate
+
+                if @tally_status = "Error"
+                begin
+                        return
+                end
+
+        end
+
+        /* --------------------------------------------------------------------------
+        * STEP: Tally the trade market2 trade
+        *
+        */
+
+        if @m2_suppress_trade != "Y" and @m2_trade_id = NULL
+        begin
+                exec
+                        fxa_tallytrade
+                                @login = @m2_trader_login,
+                                @source = @source,
+                                @trade_id = @m2_trade_id out,
+                                @deal_id = @deal_id_2 out,
+                                @tally_type = @trade_type,
+                                @deal_type = @deal_type,
+                                @trade_type = @trade_type,
+                                @external_account = @m2_external_account,
+                                @counterparty = @m2_counterparty,
+                                @quantity = @m2_quantity,
+                                @symbol = @contract,
+                                @value_date = @value_date,
+                                @fixing_date = @fixing_date,
+                                @price = @price,
+                                @trade_date = @trade_date,
+                                @trader = @m2_trader,
+                                @broker = @broker,
+                                @identifier = @m2_platform_identifier,
+                                @spot_reference = @last_spot_rate
+
+                if @m2_trade_id = NULL
+                begin
+                        select
+                                @tally_status = "Error",
+                                @tally_message = "Problem tallying market trade"
+                end
+                else
+                begin
+                        select
+                                @tally_status = "Success",
+                                @tally_message = "Tallied market trade"
+                end
+
+                select
+                        status = @tally_status,
+                        message = @tally_message,
+                        trade_id = @m2_trade_id,
+                        deal_id = @deal_id_2,
+                        login = @m2_trader_login,
+                        source = @source,
+                        tally_type = @trade_type,
+                        deal_type = @deal_type,
+                        trade_type = @trade_type,
+                        external_account = @m2_external_account,
+                        counterparty = @m2_counterparty,
+                        quantity = @m2_quantity,
+                        symbol = @contract,
+                        value_date = @value_date,
+                        fixing_date = @fixing_date,
+                        price = @price,
+                        trade_date = @trade_date,
+                        trader = @m2_trader,
+                        broker = @broker,
+                        identifier = @m2_platform_identifier,
+                        spot_reference = @last_spot_rate
+
+                if @tally_status = "Error"
+                begin
+                                return
+                end
+
+        end
+end
+
 	
 /* --------------------------------------------------------------------------
  * STEP: Book internal tickets if needed using @trigger_symbol. Not supported
