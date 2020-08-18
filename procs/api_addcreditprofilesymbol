@@ -16,6 +16,9 @@ declare @source_id int
 declare @source_type_id int
 declare @source_type varchar(50)
 
+select 
+	@symbol = ltrim(rtrim(@symbol))
+
 select
 	@credit_profile_id = credit_profile_id
 from
