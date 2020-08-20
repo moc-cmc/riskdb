@@ -223,7 +223,7 @@ end
 select
 	@login_length = len(@user_name)
 
-if @login_length > 25
+if @login_length > 50 
 begin
 	select
 		status = "Error",
