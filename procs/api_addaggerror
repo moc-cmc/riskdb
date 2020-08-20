@@ -1,0 +1,48 @@
+create or replace procedure
+	api_addaggerror
+		@agg_error_type varchar(100),
+		@aggregate_trade_id int=NULL,
+		@trade_id int=NULL
+
+as
+
+declare @agg_error_type_id int
+
+select
+	@agg_error_type_id = agg_error_type_id
+from
+	agg_error_types
+where
+	name = @agg_error_type
+if @agg_error_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"agg_error_types",
+			@agg_error_type_id output
+	insert into
+		agg_error_types(
+			agg_error_type_id,
+			name)
+	values(
+		@agg_error_type_id,
+		@agg_error_type
+	)
+end
+
+
+insert into
+	agg_errors(
+                timestamp,
+                agg_error_type_id,
+                trade_id,
+                aggregated_trade_id)
+values(
+	getdate(),
+	@agg_error_type_id,
+	@trade_id,
+	@aggregate_trade_id
+)
+
+go
+
