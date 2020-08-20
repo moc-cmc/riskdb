@@ -8,7 +8,7 @@ create or replace procedure
 		@user_password varchar(25)=NULL,
 		@login_type varchar(50),
 		@user_name_output varchar(50)=NULL output,
-		@tico_access char(1)=NUKLL
+		@tico_access char(1)=NULL
 as
 
 
