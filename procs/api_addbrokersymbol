@@ -16,6 +16,9 @@ declare @source_id int
 declare @source_type_id int
 declare @source_type varchar(50)
 
+select 
+	@symbol = ltrim(rtrim(@symbol))
+
 select
 	@broker_id=broker_id
 from
