@@ -17,6 +17,9 @@ declare @source_id int
 declare @external_account_id int
 declare @mappings int
 
+select 
+        @external_account = ltrim(rtrim(@external_account))
+
 select
 	@source_id = source_id
 from
