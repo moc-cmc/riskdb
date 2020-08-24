@@ -17,6 +17,9 @@ declare @source_id int
 declare @broker_id int
 declare @mappings int
 
+select 
+        @broker = ltrim(rtrim(@broker))
+
 select
 	@source_id = source_id
 from
@@ -77,5 +80,3 @@ exec
 	cm_brokermappings
 		@login,
 		@broker
-
-go
