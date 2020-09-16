@@ -18,7 +18,7 @@ declare @contract_id int
 declare @mappings int
 
 select 
-        @contract = ltrim(rtrim(@contract))
+        @mapping = ltrim(rtrim(@mapping))
 
 select
 	@source_id = source_id
