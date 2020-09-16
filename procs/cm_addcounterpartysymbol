@@ -18,7 +18,7 @@ declare @counterparty_id int
 declare @mappings int
 
 select 
-        @counterparty = ltrim(rtrim(@counterparty))
+        @mapping = ltrim(rtrim(@mapping))
 
 select
 	@source_id = source_id
