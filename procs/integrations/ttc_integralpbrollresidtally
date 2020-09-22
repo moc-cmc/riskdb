@@ -322,6 +322,7 @@ declare @c2_far_tally_message varchar(25)
 
 declare @deal_exec_symbol_2 varchar(100)
 declare @modify_c_market_trdr varchar(100)
+declare @flag_mapping_with_metals char(1)
 
 select
 	@ack_required = "N"
@@ -398,6 +399,7 @@ end
  *
  */
 
+
 if @client_or_market = "C"
 begin
 	select
@@ -428,6 +430,44 @@ begin
                 @trigger_symbol = @counterparty_lookup
 
 end
+
+/* --------------------------------------------------------------------------
+ * STEP: This is very custom and should not exist in other template tallies
+ *
+ * Append a "-M" to the counterparty lookup when dealing in metals
+ */
+
+select
+	@flag_mapping_with_metals = "Y"
+from
+	products a,
+	metal_ccys b
+where
+	a.product_id = b.product_id
+and
+	a.symbol = @ccy1
+
+if @flag_mapping_with_metals != "Y"
+begin
+	select
+		@flag_mapping_with_metals = "Y"
+	from
+		products a,
+		metal_ccys b
+	where
+		a.product_id = b.product_id
+	and
+		a.symbol = @ccy2
+end
+
+if @flag_mapping_with_metals = "Y"
+begin
+	select
+		@counterparty_lookup = rtrim(@counterparty_lookup)+"-M",
+		@trigger_symbol = rtrim(@trigger_symbol)+"-M"
+end
+	
+
 
 
 /* --------------------------------------------------------------------------
