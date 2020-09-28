@@ -17,7 +17,9 @@ create or replace procedure
 		@oa_lp varchar(50)=NULL,
 		@oa_pb varchar(50)=NULL,
 		@oa_account varchar(50)=NULL,
-		@oa_username varchar(50)=NULL
+		@oa_username varchar(50)=NULL,
+		@far_value_date varchar(10)=NULL,
+		@far_price varchar(50)=NULL
 as
 
 
@@ -125,7 +127,9 @@ select
 	@tally_price = convert(float, @price),
 	@tally_trade_date = convert(datetime, @trade_date),
 	@tally_value_date = convert(datetime, @value_date),
-	@tally_fixing_date = convert(datetime, @fixing_date)
+	@tally_fixing_date = convert(datetime, @fixing_date),
+	@tally_far_value_date = convert(datetime, @far_value_date),
+	@tally_far_price = convert(float, @far_price)
 
 
 /* --------------------------------------------------------------------------
@@ -197,6 +201,7 @@ select
  */
 select
 	@platform_identifier = rtrim(@transaction_id),
+	@far_platform_identifier = rtrim(@transaction_id)+".f",
 	@deal_exec_symbol = rtrim(@deal_reference)
 
 if @deal_reference = NULL
@@ -429,10 +434,18 @@ select
 	@trade_type = "Spot",
 	@tally_type = "Spot"
 
+
 if @fixing_date != NULL
 	select
 		@trade_type = "Forward",
 		@tally_type = "Forward"
+
+if @tally_far_price != NULL
+	select
+		@deal_type = "Market Swap",
+		@tally_type = "Swap",
+		@trade_type = "Swap Near",
+		@far_trade_type = "Swap Far"
 
 
 /* --------------------------------------------------------------------------
@@ -490,7 +503,7 @@ exec
  * or agency so set the direction accordingly
  */
 select
-	@quantity = @tally_qty 
+	@quantity = @tally_qty
 
 exec
         fxa_tallytrade
@@ -558,6 +571,87 @@ if @tally_status = "Error"
 begin
         return
 end
+
+if @tally_far_price != NULL
+begin
+	select
+		@quantity = @tally_qty * -1
+
+	exec
+        	fxa_tallytrade
+                	@login = @trader_login,
+                	@source = @source,
+                	@trade_id = @far_trade_id out,
+                	@deal_id = @deal_id out,
+                	@tally_type = @tally_type,
+                	@deal_type = @deal_type,
+                	@trade_type = @far_trade_type,
+                	@external_account = @external_account,
+                	@counterparty = @counterparty,
+                	@quantity = @far_quantity,
+                	@symbol = @contract,
+                	@value_date = @tally_far_value_date,
+                	@fixing_date = @tally_fixing_date,
+                	@price = @tally_far_price,
+                	@trade_date = @tally_trade_date,
+                	@trader = @trader,
+                	@broker = @broker,
+			@strategy = @strategy,
+                	@identifier = @far_platform_identifier,
+                	@spot_reference = @last_spot_rate,
+			@sales_code = @sales_code,
+			@mid_mark = @tally_cover_price
+	
+	if @far_trade_id = NULL
+	begin
+        	select
+                	@tally_status = "Error",
+                	@tally_message = "Problem tallying trade"
+	end
+	else
+	begin
+        	select
+                	@tally_status = "Success",
+                	@tally_message = "Tallied trade"
+	end
+
+	select
+        	status = @tally_status,
+        	message = @tally_message,
+        	trade_id = @far_trade_id,
+        	login = @trader_login,
+        	source = @source,
+        	deal_id = @deal_id,
+        	tally_type = @far_trade_type,
+        	deal_type = @deal_type,
+        	trade_type = @trade_type,
+        	external_account = @external_account,
+        	counterparty = @counterparty,
+        	quantity = @far_quantity,
+        	symbol = @contract,
+        	value_date = @tally_far_value_date,
+        	fixing_date = @tally_fixing_date,
+        	price = @far_price,
+        	trade_date = @tally_trade_date,
+        	trader = @trader,
+        	broker = @broker,
+        	identifier = @far_platform_identifier,
+        	spot_reference = @last_spot_rate,
+		mid_mark = @tally_cover_price
+	
+	if @tally_status = "Error"
+	begin
+        	return
+	end
+
+	exec
+		tt_resolveswapsymbol
+			@deal_id=@deal_id,
+			@near_trade_id=@trade_id,
+			@far_trade_id=@far_trade_id,
+			@client_or_market="M"
+end
+
 
 
 /* --------------------------------------------------------------------------

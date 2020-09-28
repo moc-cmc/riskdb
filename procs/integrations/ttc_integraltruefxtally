@@ -326,7 +326,7 @@ select
 * this fix connection is NOT AN ELYSIUM CUSTOMER'S FIX CONNECTION, this is the FIX connection of our
 * client's client. Therefore, we book two trades for every ONE message we recieve. One trade
 * to represent our customer vs their customer and one trade to represent our customer vs their customers' lp */
- 
+
 
 /* --------------------------------------------------------------------------
  * STEP: Set broker_id and source_id
@@ -376,13 +376,13 @@ begin
 		@disclosed_or_undisclosed = "D"
 end
 
-if @cover_exec_id = NULL and @covered_exec_id = NULL and @on_behalf_of_comp_id in("TRFXL", "TRFXN", "TRFXT")
+if @cover_exec_id = NULL and @covered_exec_id = NULL and @on_behalf_of_comp_id in("TRFXL-NO")
 begin
 	select
 		@disclosed_or_undisclosed = "X"
 end
 
-if @cover_exec_id = NULL and @covered_exec_id = NULL and @deliver_to_comp_id in("TRFXL", "TRFXN", "TRFXT")
+if @cover_exec_id = NULL and @covered_exec_id = NULL and @deliver_to_comp_id in("TRFXL-NO")
 begin
         select
 		@disclosed_or_undisclosed = "X"
