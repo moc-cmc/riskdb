@@ -315,7 +315,7 @@ select
 
 exec 
     sp_dogstatsdtimer 
-        @metric_name="ase.proc.r_insaggregatedtradepbcustls",
+        @metric_name="ase.proc.api_insaggregatedtradepbcustls",
         @start_time=@start_time,
         @end_time=@end_time,
         @tags=NULL,
