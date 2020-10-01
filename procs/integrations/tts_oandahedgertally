@@ -19,11 +19,14 @@ create or replace procedure
 		@oa_account varchar(50)=NULL,
 		@oa_username varchar(50)=NULL,
 		@far_value_date varchar(10)=NULL,
-		@far_price varchar(50)=NULL
+		@far_price varchar(50)=NULL,
+		@to_oa_lp varchar(50)=NULL,
+		@to_oa_pb varchar(50)=NULL,
+		@to_oa_account varchar(50)=NULL
 as
 
 
-
+declare @book_switch char(1)
 declare @client_or_market char(1)
 declare @platform_identifier varchar(100)
 declare @far_platform_identifier varchar(100)
@@ -193,6 +196,24 @@ select
 	@client_or_market = "M"
 
 /* --------------------------------------------------------------------------
+ * STEP: Eval message type for switches
+ * If the trade is a switch, it is likely coming back from the oanda hedger
+ * and we do not want to book it. To transitio to prod, we need a toggle
+ * on booking switches
+ */
+
+select
+	@book_switch = "N"
+
+if @book_switch = "N" and @msg_type = "switch"
+begin
+	select
+		status = "Error",
+		message = "Not able to book switch yet, will change this to not be an error later"
+	return
+end
+
+/* --------------------------------------------------------------------------
  * STEP: Map proc parameters to common tally variable name
  * This mapping allows us to use common variable names in all tallies. It also
  * helps with debugging, as you can look here to see what is mapped
@@ -208,6 +229,12 @@ if @deal_reference = NULL
 begin
 	select
 		@deal_exec_symbol = rtrim(@transaction_id)+".d"
+end
+
+if @msg_type = "swap"
+begin
+	select 
+		@oa_pb = @oa_lp
 end
 
 select
@@ -406,6 +433,14 @@ where
 and
 	symbol = @suppression_lookup
 
+if @counterparty_lookup = "OAU-CIF-CIF"
+begin
+	select
+		status = "Success",
+		message = "Suppresssed OAU-CIF-CIF"
+	return
+end
+
 if @suppress_trade = "Y"
 begin
 	select
@@ -422,6 +457,7 @@ begin
                 	exec_type="TRADE"
 		return
 	end
+	return
 end
 
 /* --------------------------------------------------------------------------
@@ -505,6 +541,13 @@ exec
 select
 	@quantity = @tally_qty
 
+if @msg_type = "swap"
+begin
+	/* Flip the quantity since oanda reporting swaps backwards*/
+	select
+		@quantity = @quantity * -1
+end
+
 exec
         fxa_tallytrade
                 @login = @trader_login,
@@ -575,7 +618,7 @@ end
 if @tally_far_price != NULL
 begin
 	select
-		@quantity = @tally_qty * -1
+		@far_quantity = @quantity * -1
 
 	exec
         	fxa_tallytrade
