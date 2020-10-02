@@ -313,7 +313,7 @@ select
 
 /* HARDCODED SWITCH VALUES FOR CUSTOM CITADEL TRADES */
 
-if @contra_firm in("JPCHXX")
+if @contra_firm in("JPCHXX", "VCTYF1")
 begin
 	select
 		@m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@executing_firm)+"-"+rtrim(@contra_firm)
