@@ -192,7 +192,7 @@ insert into
 values(
 	"Column Link",
 	"previous_date",
-	"Daily Operations",
+	"Ops Checklist Lt",
 	"login=" + @login + "&tradeDate=" + convert(varchar(10), @prev_date, 101)
 )
 insert into
@@ -200,7 +200,7 @@ insert into
 values(
 	"Column Link",
 	"next_date",
-	"Daily Operations",
+	"Ops Checklist Lt",
 	"login=" + @login + "&tradeDate=" + convert(varchar(10), @next_date, 101)
 )
 
