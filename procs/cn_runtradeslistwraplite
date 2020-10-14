@@ -1,0 +1,13 @@
+drop procedure
+	cn_runtradeslistwraplite
+go
+
+create procedure
+	cn_runtradeslistwraplite
+		@login char(100)
+as
+
+exec
+	cn_runtradeslistlite
+		@login=@login
+go

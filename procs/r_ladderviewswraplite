@@ -1,0 +1,14 @@
+drop procedure
+	r_ladderviewswraplite
+go
+
+create procedure
+	r_ladderviewswraplite
+		@login char(100)
+as
+
+exec
+	r_ladderviews
+		@login=@login
+
+go
