@@ -1,0 +1,143 @@
+
+create or replace procedure
+	ur_sessionswitchuser
+		@session varchar(75),
+		@as_user varchar(75)
+as
+
+
+declare @user_session_id int
+declare @trusted char(1)
+declare @user_type char(15)
+declare @is_superuser char(1)
+
+/*
+ * FIND @user_session_id (required)
+ */
+select
+    @user_session_id = user_session_id,
+    @trusted = b.trusted
+from
+    user_sessions a,
+    session_statuses b
+where
+    a.session_status_id = b.session_status_id
+and
+    a.identifier = @session
+and
+    b.viable = "Y"
+
+if @user_session_id = NULL
+begin
+    select
+        status = "Error",
+        code = "param-notfound(session)",
+        message = "Session not found",
+        session = @session
+    return
+end
+
+if @trusted != "Y"
+begin
+    select
+        status = "Error",
+        code = "session-not-trusted",
+        message = "Session hasn't been verified",
+        session = @session
+    return
+end
+
+
+select
+    @user_type = e.name,
+    @is_superuser = case when e.name = "Elysium" then "Y" else "N" end
+from
+    user_sessions a,
+    user_auths b,
+    tico_accounts c,
+    tico_account_types d,
+    login_types e
+where
+    a.user_auth_id = b.user_auth_id
+and
+    b.user_id = c.account_id
+and
+    c.account_id = d.tico_account_id
+and
+    d.login_type_id = e.login_type_id
+and
+    a.user_session_id = @user_session_id
+
+if @is_superuser != "Y"
+begin
+    select
+        status = "Error",
+        code = "session-not-superuser",
+        message = "User not a superuser",
+        session = @session
+    return
+end
+
+
+update
+    user_sessions
+set
+    a.user_id = b.account_id
+from
+    user_sessions a,
+    tico_accounts b
+where
+    a.user_session_id = @user_session_id
+and
+    b.login = @as_user
+
+if @@rowcount != 1
+begin
+    select
+        status = "Error",
+        code = "switch-user-failed",
+        message = "Couldn't switch user",
+        session = @session
+    return
+end
+
+
+select
+    user_id = b.user_id,
+    user_name = c.login,
+    first_name = c.given_names,
+    last_name = c.surname,
+    status = cc.name,
+    session_status = d.name,
+    session_viable = d.viable,
+    session_recognized = d.recognized,
+    session_trusted = d.trusted,
+    login_type = cb.name,
+    is_superuser = case cb.name when "Elysium" then "Y" else "N" end
+from
+    user_sessions a,
+    user_auths b,
+    tico_accounts c,
+    tico_account_types ca,
+    login_types cb,
+    statuses cc,
+    session_statuses d
+where
+    a.user_auth_id = b.user_auth_id
+and
+    a.user_id = c.account_id
+and
+    c.account_id = ca.tico_account_id
+and
+    ca.login_type_id = cb.login_type_id
+and
+    c.status_id = cc.status_id
+and
+    a.session_status_id = d.session_status_id
+and
+    a.user_session_id = @user_session_id
+
+
+
+go 
+

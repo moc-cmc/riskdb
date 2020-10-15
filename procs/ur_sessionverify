@@ -1,0 +1,183 @@
+
+create or replace procedure
+	ur_sessionverify
+		@session varchar(75),
+		@user_auth_id int output
+as
+
+
+/*
+ * This proc is called as the second step in authentication. 
+ *
+ *   1. ur_sessionsignin (or similar)
+ *      checks login/password
+ *      calcs SLA
+ *      checks auth token
+ *      provides list of pose users for admin users
+ *      provides list of mobile devices for verification if necessary
+ *   2. ur_sessionverify (if needs verification)
+ *      notes that session has been verified separately
+ *   3. ur_sessionactivate @ssid, [@as_user]
+ *      assigns web session, runs, permisssions, etc.
+ *      sets the session user
+ */
+
+declare @user_session_id int
+declare @user_device_id int
+declare @device varchar(50)
+declare @session_status varchar(15)
+declare @user_name varchar(75)
+declare @current_auth_id int
+declare @user_id int
+declare @login_type varchar(15)
+declare @is_superuser char(1)
+declare @auth_token varchar(75)
+declare @expire_date datetime
+
+select
+    @user_session_id = a.user_session_id,
+    @user_device_id = a.user_device_id,
+    @session_status = a1.name,
+    @user_name = c.login,
+    @current_auth_id = a.user_auth_id,
+    @user_id = c.account_id,
+    @login_type = c2.name
+from
+    user_sessions a,
+    session_statuses a1,
+    user_auths b,
+    activity_statuses b1,
+    tico_accounts c,
+    tico_account_types c1,
+    login_types c2
+where
+    a.session_status_id = a1.session_status_id
+and
+    a1.viable = "Y" and a1.recognized = "Y" and a1.trusted = "N"
+and
+    a.user_auth_id = b.user_auth_id
+and
+    b.status_id = b1.activity_status_id
+and
+    b.user_id = c.account_id
+and
+    c.account_id = c1.tico_account_id
+and
+    c1.login_type_id = c2.login_type_id
+and
+    a.identifier = @session
+
+select
+    @is_superuser = case @login_type
+        when "Elysium" then "Y"
+        else "N"
+    end
+
+select
+    @device = identifier
+from
+    user_devices
+where
+    user_device_id = @user_device_id
+
+select
+    user_session_id = @user_session_id,
+    session_status = @session_status,
+    user_auth_id = @user_auth_id,
+    user_id = @user_id,
+    login_type = @login_type,
+    is_superuser = @is_superuser
+
+if @user_id = NULL
+begin
+    select
+        status = "Error",
+        code = "no-session",
+        message = "No session to verify",
+        session = @session
+    return
+end
+
+exec
+    r_generatekey
+        @template = "%%%%%%-????????????????????????????????",
+        @charset = "numericalpha",
+        @key = @auth_token output
+
+if @auth_token is NULL
+begin
+    select
+        status = "Error",
+        code = "cant-generate-auth-token",
+        message = "Failed to generate auth token"
+    return
+end
+
+select
+    @expire_date = dateadd(month, 12, getdate())
+
+exec
+    ur_addauth
+        @login = NULL,
+        @user = @user_name,
+        @type = "Auth Token",
+        @secret = @auth_token,
+        @expire_date = @expire_date,
+        @device = @device,
+        @user_auth_id = @user_auth_id output
+
+/* Then the auth is found for the Auth Token. This is a verified account.
+ * Proceed to annotate the session. */
+update
+    user_sessions
+set
+    user_auth_id = @user_auth_id,
+    session_status_id = b.session_status_id
+from
+    user_sessions a,
+    session_statuses b
+where
+    a.user_session_id = @user_session_id
+and
+    b.name = "Authorized"
+
+if @@rowcount != 1
+begin
+    select
+        status = "Error",
+        code = "impl",
+        message = "Failed to update session with auth",
+        user_session_id = @user_session_id,
+        session_status = "Recognized",
+        user_auth_id = @user_auth_id
+    return
+end
+
+select
+    user_auth_id,
+    a.user_device_id,
+    auth_token = a.secret
+from
+    user_auths a,
+    user_auth_types b,
+    user_devices c
+where
+    a.user_auth_type_id = b.user_auth_type_id
+and
+    a.user_device_id = c.user_device_id
+and
+    a.user_auth_id = @user_auth_id
+
+if @is_superuser = "Y"
+begin
+    select
+        pose_as_user = a.login
+    from
+        tico_accounts a
+    order by
+        a.login
+end
+
+
+go 
+

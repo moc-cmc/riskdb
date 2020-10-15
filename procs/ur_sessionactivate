@@ -1,0 +1,162 @@
+
+create or replace procedure
+	ur_sessionactivate
+		@session varchar(75),
+		@as_user varchar(75) = NULL
+as
+
+
+declare @user_session_id int
+declare @user_id int
+declare @as_user_id int
+declare @trusted char(1)
+declare @user_type char(15)
+declare @is_admin char(1)
+
+/*
+ * FIND @user_session_id (required)
+ */
+select
+    @user_session_id = user_session_id,
+    @trusted = b.trusted
+from
+    user_sessions a,
+    session_statuses b
+where
+    a.session_status_id = b.session_status_id
+and
+    a.identifier = @session
+and
+    b.viable = "Y"
+
+if @user_session_id = NULL
+begin
+    select
+        status = "Error",
+        code = "param-notfound(session)",
+        message = "Session not found",
+        session = @session
+    return
+end
+
+/* 
+if @trusted != "Y"
+begin
+    select
+        status = "Error",
+        code = "session-not-trusted",
+        message = "Session hasn't been verified",
+        session = @session
+    return
+end
+*/
+
+
+select
+    @user_id = b.user_id,
+    @user_type = e.name,
+    @is_admin = case when e.name = "Elysium" then "Y" else "N" end
+from
+    user_sessions a,
+    user_auths b,
+    tico_accounts c,
+    tico_account_types d,
+    login_types e
+where
+    a.user_auth_id = b.user_auth_id
+and
+    b.user_id = c.account_id
+and
+    c.account_id = d.tico_account_id
+and
+    d.login_type_id = e.login_type_id
+and
+    a.user_session_id = @user_session_id
+
+
+/* If this is an admin user and an as-user is provided, then switch user here
+ * but keep the original user_auth_id and user_device_id for the user_sessions
+ * row. We'll also output data for this user based on the effective user. */
+if /*@is_admin = "Y" and*/ @as_user != NULL
+begin
+
+    select
+        @as_user_id = account_id
+    from
+        tico_accounts
+    where
+        login = @as_user
+
+    if @as_user_id = NULL
+    begin
+        select
+            status = "Error",
+            code = "user-not-found",
+            message = "No as user found",
+            as_user = @as_user
+        return
+    end
+
+    select
+        @user_id = @as_user_id
+
+end
+
+
+update
+    user_sessions
+set
+    user_id = @user_id,
+    session_status_id = b.session_status_id
+from
+    user_sessions a,
+    session_statuses b
+where
+    a.user_session_id = @user_session_id
+and
+    b.name = "Authorized"
+
+if @@rowcount != 1
+begin
+    select
+        status = "Error",
+        code = "session-update-failed",
+        message = "Failed to update session",
+        session = @session,
+        user_session_id = @user_session_id
+    return
+end
+
+select
+    user_id = a.user_id,
+    user_name = c.login,
+    first_name = c.given_names,
+    last_name = c.surname,
+    status = cc.name,
+    session_status = d.name,
+    session_viable = d.viable,
+    session_recognized = d.recognized,
+    session_trusted = d.trusted,
+    login_type = cb.name /*,
+    is_admin = case cb.name when "Elysium" then "Y" else "N" end */
+from
+    user_sessions a,
+    tico_accounts c,
+    tico_account_types ca,
+    login_types cb,
+    statuses cc,
+    session_statuses d
+where
+    a.user_id = c.account_id
+and
+    c.account_id = ca.tico_account_id
+and
+    ca.login_type_id = cb.login_type_id
+and
+    c.status_id = cc.status_id
+and
+    a.session_status_id = d.session_status_id
+and
+    a.user_session_id = @user_session_id
+
+go

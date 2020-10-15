@@ -1,0 +1,99 @@
+
+create or replace procedure
+	ur_sessionpreverify
+		@session varchar(75)
+as
+
+
+declare @user_session_id int
+declare @session_status varchar(15)
+declare @user_name varchar(75)
+declare @user_auth_id int
+declare @user_id int
+declare @login_type varchar(15)
+
+select
+    @user_session_id = a.user_session_id,
+    @session_status = a1.name,
+    @user_name = c.login,
+    @user_auth_id = a.user_auth_id,
+    @user_id = c.account_id,
+    @login_type = c2.name
+from
+    user_sessions a,
+    session_statuses a1,
+    user_auths b,
+    activity_statuses b1,
+    tico_accounts c,
+    tico_account_types c1,
+    login_types c2
+where
+    a.session_status_id = a1.session_status_id
+and
+    a1.viable = "Y" and a1.recognized = "Y" and a1.trusted = "N"
+and
+    a.user_auth_id = b.user_auth_id
+and
+    b.status_id = b1.activity_status_id
+and
+    a.user_id = c.account_id
+and
+    c.account_id = c1.tico_account_id
+and
+    c1.login_type_id = c2.login_type_id
+and
+    a.identifier = @session
+
+select
+    user_session_id = @user_session_id,
+    session_status = @session_status,
+    user_auth_id = @user_auth_id,
+    user_id = @user_id,
+    login_type = @login_type,
+    is_superuser = case @login_type
+        when "Elysium" then "Y"
+        else "N"
+    end
+
+if @user_id = NULL
+begin
+    select
+        status = "Error",
+        code = "no-session",
+        message = "No session to verify",
+        session = @session
+    return
+end
+
+/* 
+ * Show the phone number 
+ */
+select
+    a.user_phone_id,
+    a.country_code,
+    a.phone,
+    a.title,
+    type = b.name,
+    provider = c.name,
+    a.allow_sms
+from
+    user_phones a,
+    activity_statuses a1,
+    user_phone_types b,
+    user_phone_providers c
+where
+    a.status_id = a1.activity_status_id
+and
+    a.user_phone_type_id = b.user_phone_type_id
+and
+    a.user_phone_provider_id = c.user_phone_provider_id
+and
+    a1.name = "Active"
+and
+    a.user_id = @user_id
+and
+    b.name in ("Mobile", "Unknown")
+
+
+go 
+
