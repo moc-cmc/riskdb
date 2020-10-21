@@ -1,7 +1,7 @@
 
 
 create or replace procedure
-	ttm_etgfixtttally
+	ttm_etgfixtttally		
 		@source varchar(50),
 		@default_login varchar(50),
 		@broker varchar(50),
@@ -250,6 +250,11 @@ from
 where
 	name = @source
 
+if (@exec_type not in ("NEW", "REPLACE", "CANCELED"))
+begin
+	select
+		@exec_type = "NEW"
+end
 
 /* --------------------------------------------------------------------------
  * STEP: Eval client or market
@@ -365,7 +370,7 @@ exec
 
 
 
-if @trade_id != NULL
+if @trade_id != NULL and @exec_type = "NEW"
 begin
 	if @ack_required = "Y"
 	begin
@@ -381,7 +386,18 @@ begin
 	return
 end
 
+if @trade_id != NULL  and @exec_type != "NEW"
+begin
+	select
+                @c_trade_id = @trade_id
 
+	exec
+		tt_isdupe
+			@broker_id=@broker_id,
+			@identifier=@m_platform_identifier,
+			@trade_id=@m_trade_id output
+
+end
 
 /* --------------------------------------------------------------------------
  * STEP: Lookup trader and counterparty symbols on market
@@ -782,62 +798,98 @@ end
  */
 if @c_suppress_trade != "Y"
 begin
-        exec
-                fxa_tallytrade
-                        @login = @c_trader_login,
-                        @source = @source,
-                        @trade_id = @c_trade_id out,
-                        @deal_id = @deal_id out,
-                        @tally_type = @trade_type,
-                        @deal_type = @deal_type,
-                        @trade_type = @trade_type,
-                        @external_account = @c_external_account,
-                        @counterparty = @c_counterparty,
-                        @quantity = @c_quantity,
-                        @symbol = @contract,
-                        @value_date = @value_date,
-                        @fixing_date = @fixing_date,
-                        @price = @price,
-                        @trade_date = @trade_date,
-                        @trader = @c_trader,
-                        @broker = @broker,
-                        @identifier = @c_platform_identifier,
-                        @spot_reference = @last_spot_rate
+	if @exec_type = "NEW"
+	begin 
+		exec
+                	fxa_tallytrade
+                        	@login = @c_trader_login,
+                        	@source = @source,
+                        	@trade_id = @c_trade_id out,
+                        	@deal_id = @deal_id out,
+                        	@tally_type = @trade_type,
+                        	@deal_type = @deal_type,
+                        	@trade_type = @trade_type,
+                        	@external_account = @c_external_account,
+                        	@counterparty = @c_counterparty,
+                        	@quantity = @c_quantity,
+                        	@symbol = @contract,
+                        	@value_date = @value_date,
+                        	@fixing_date = @fixing_date,
+                        	@price = @price,
+                        	@trade_date = @trade_date,
+                        	@trader = @c_trader,
+                        	@broker = @broker,
+                        	@identifier = @c_platform_identifier,
+                        	@spot_reference = @last_spot_rate
+                        select
+                        	@tally_status = "Success",
+                        	@tally_message = "Tallied client trade"
 
-        if @c_trade_id = NULL
-        begin
-                select
-                        @tally_status = "Error",
-                        @tally_message = "Problem tallying client trade"
-        end
-        else
-        begin
-                select
-                        @tally_status = "Success",
-                        @tally_message = "Tallied client trade"
+	end
+	if @exec_type in("REPLACE")
+ 	begin
 
-        	select
-                	status = @tally_status,
-                	message = @tally_message,
-                	trade_id = @c_trade_id,
-                	deal_id = @deal_id,
-                	login = @c_trader_login,
-                	source = @source,
-                	tally_type = @trade_type,
-                	deal_type = @deal_type,
-                	trade_type = @trade_type,
-                	external_account = @c_external_account,
-                	counterparty = @c_counterparty,
-                	quantity = @c_quantity,
-                	symbol = @contract,
-                	value_date = @value_date,
-                	fixing_date = @fixing_date,
-                	price = @price,
-                	trade_date = @trade_date,
-                	trader = @c_trader,
-                	broker = @broker,
-                	identifier = @c_platform_identifier,
-                	spot_reference = @last_spot_rate
+ 		exec
+ 			mc4_edittrade
+ 				@login=@default_login,
+                                 @trade_id = @c_trade_id,
+                                 @deal_id = @deal_id,
+                                 @trade_type = @trade_type,
+                                 @external_account = @c_external_account,
+                                 /*@counterparty = @c_counterparty,*/
+                                 @quantity = @c_quantity,
+                                 @symbol = @contract,
+                                 @value_date = @value_date,
+                                @fixing_date = @fixing_date,
+                                 @price = @price,
+                                 @trade_date = @trade_date,
+                                 @trader = @c_trader
+ 		select
+			@tally_status = "Success",
+ 			@tally_message = "Modified trade"
+ 	end
+ 	if @exec_type = "CANCELED"
+ 	begin
+                 exec
+                         mc4_edittrade
+                                 @login=@default_login,
+                                 @trade_id = @c_trade_id,
+                                 @quantity = 0
+ 		select
+ 			@tally_status = "Success",
+ 			@tally_message = "Cancelled trade"
+ 	end
+       	if @c_trade_id = NULL
+       	begin
+               	select
+                       	@tally_status = "Error",
+                       	@tally_message = "Problem tallying client trade"
+       	end
+       	else
+       	begin
+
+       		select
+               		status = @tally_status,
+               		message = @tally_message,
+               		trade_id = @c_trade_id,
+               		deal_id = @deal_id,
+               		login = @c_trader_login,
+               		source = @source,
+               		tally_type = @trade_type,
+               		deal_type = @deal_type,
+               		trade_type = @trade_type,
+               		external_account = @c_external_account,
+               		counterparty = @c_counterparty,
+               		quantity = @c_quantity,
+               		symbol = @contract,
+               		value_date = @value_date,
+               		fixing_date = @fixing_date,
+               		price = @price,
+               		trade_date = @trade_date,
+               		trader = @c_trader,
+               		broker = @broker,
+               		identifier = @c_platform_identifier,
+               		spot_reference = @last_spot_rate
 	end
 end
 
@@ -847,28 +899,66 @@ end
  */
 if @m_suppress_trade != "Y"
 begin
-        exec
-                fxa_tallytrade
-                        @login = @m_trader_login,
-                        @source = @source,
-                        @trade_id = @m_trade_id out,
-                        @deal_id = @deal_id out,
-                        @tally_type = @trade_type,
-                        @deal_type = @deal_type,
-                        @trade_type = @trade_type,
-                        @external_account = @m_external_account,
-                        @counterparty = @m_counterparty,
-                        @quantity = @m_quantity,
-                        @symbol = @contract,
-                        @value_date = @value_date,
-                        @fixing_date = @fixing_date,
-                        @price = @price,
-                        @trade_date = @trade_date,
-                        @trader = @m_trader,
-                        @broker = @broker,
-                        @identifier = @m_platform_identifier,
-                        @spot_reference = @last_spot_rate
+	if @exec_type="NEW"
+	begin 
+		exec
+               		fxa_tallytrade
+                       		@login = @m_trader_login,
+                       		@source = @source,
+                       		@trade_id = @m_trade_id out,
+                       		@deal_id = @deal_id out,
+                       		@tally_type = @trade_type,
+                       		@deal_type = @deal_type,
+                       		@trade_type = @trade_type,
+                       		@external_account = @m_external_account,
+                       		@counterparty = @m_counterparty,
+                       		@quantity = @m_quantity,
+                       		@symbol = @contract,
+                       		@value_date = @value_date,
+                       		@fixing_date = @fixing_date,
+                       		@price = @price,
+                       		@trade_date = @trade_date,
+                       		@trader = @m_trader,
+                       		@broker = @broker,
+                       		@identifier = @m_platform_identifier,
+                       		@spot_reference = @last_spot_rate
+		select
+                        @tally_status = "Success",
+                        @tally_message = "Tallied market trade"
+	end
+	if @exec_type in("REPLACE")
+        begin
 
+                exec
+                        mc4_edittrade
+                                @login=@default_login,
+                                 @trade_id = @m_trade_id,
+                                 @deal_id = @deal_id,
+                                 @trade_type = @trade_type,
+                                 @external_account = @m_external_account,
+                                 /*@counterparty = @m_counterparty,*/
+                                 @quantity = @m_quantity,
+                                 @symbol = @contract,
+                                 @value_date = @value_date,
+                                @fixing_date = @fixing_date,
+                                 @price = @price,
+                                 @trade_date = @trade_date,
+                                 @trader = @m_trader
+                select
+                        @tally_status = "Success",
+                        @tally_message = "Modified trade"
+        end
+        if @exec_type = "CANCELED"
+        begin
+                 exec
+                         mc4_edittrade
+                                 @login=@default_login,
+                                 @trade_id = @m_trade_id,
+                                 @quantity = 0
+                select
+                        @tally_status = "Success",
+                        @tally_message = "Cancelled trade"
+        end	
         if @m_trade_id = NULL
         begin
                 select
@@ -877,9 +967,6 @@ begin
         end
         else
         begin
-                select
-                        @tally_status = "Success",
-                        @tally_message = "Tallied market trade"
 
         	select
                 	status = @tally_status,
@@ -1021,7 +1108,7 @@ end
  *
  */
 
-if @c_trade_id != NULL and @m_trade_id != NULL
+if @c_trade_id != NULL and @m_trade_id != NULL and @exec_type = "NEW"
 begin
         exec
                  tt_addtradebookings
@@ -1034,14 +1121,14 @@ end
  *
  */
 
-if @c_trade_id != NULL
+if @c_trade_id != NULL and @exec_type = "NEW"
 begin
         exec
                  r_inserttradenotification
                              @trade_id = @c_trade_id
 end
 
-if @m_trade_id != NULL
+if @m_trade_id != NULL and @exec_type = "NEW"
 begin
         exec
                  r_inserttradenotification
@@ -1065,10 +1152,6 @@ begin
 		exec_type="TRADE"
 	return
 end
-
-
-
-
 
 go 
 
