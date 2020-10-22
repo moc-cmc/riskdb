@@ -1,0 +1,255 @@
+
+create or replace procedure
+	ur_startsession
+		@login varchar(75),
+		@identifier varchar(100),
+		@app varchar(50),
+		@app_version varchar(50),
+		@device varchar(100),
+		@device_type varchar(25) = NULL,
+		@device_platform varchar(50) = NULL,
+		@ip_address varchar(100) = NULL,
+		@status varchar(25) = NULL,
+		@user_session_id int output
+as
+
+
+declare @tico_account_id int
+declare @user_app_version_id int
+declare @user_device_id int
+declare @user_auth_id int
+declare @ip_address_id int
+declare @begin_date datetime
+declare @session_status_id int
+
+select
+    @tico_account_id = a.account_id
+from
+    tico_accounts a,
+    statuses b
+where
+    a.status_id = b.status_id
+and
+    a.login = @login
+
+if @tico_account_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Login not found",
+        login = @login
+    return
+end
+
+
+if @status is NULL
+    select
+        @status = "New"
+
+select
+    @session_status_id = session_status_id
+from
+    session_statuses
+where
+    name = @status
+
+if @session_status_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Session status not found",
+        status_name = @status
+    return
+end
+
+
+exec
+    ur_getappversion
+        @app = @app,
+        @app_version = @app_version,
+        @user_app_version_id = @user_app_version_id output
+
+if @user_app_version_id is NULL
+begin
+    select
+        status = "Error",
+        message = "Unable to find app version",
+        app = @app,
+        app_version = @app_version
+    return
+end
+
+/* If the @device_type and @device_platform are given, then we're intended to
+ * create the device if it doesn't exist. If we only get @device, then look it
+ * up assuming that the device has previously been created using ur_createdevice
+ * */
+if @device_type != NULL and @device_platform != NULL
+begin
+    exec
+        ur_createdevice
+            @login = @login,
+            @identifier = @device,
+            @device_type = @device_type,
+            @device_platform = @device_platform,
+            @user_device_id = @user_device_id output
+
+    if @user_device_id is NULL
+    begin
+        select
+            status = "Error",
+            message = "Unable to find/create device",
+            device = @device
+        return
+    end
+end
+else if @device != NULL
+begin
+
+    select
+        @user_device_id = user_device_id
+    from
+        user_devices
+    where
+        identifier = @device
+
+    if @user_device_id is NULL
+    begin
+        select
+            status = "Error",
+            message = "Unable to find device",
+            device = @device
+        return
+    end
+
+end
+else
+begin
+    select
+        status = "Error",
+        message = "Device required"
+    return
+end
+
+
+if @ip_address != NULL
+begin
+    select
+        @ip_address_id = ip_address_id
+    from
+        ip_addresses
+    where
+        name = @ip_address
+
+    if @ip_address_id = NULL
+    begin
+        exec
+            ur_createipaddress
+                @login = @login,
+                @ip_address = @ip_address,
+                @ip_address_id = @ip_address_id output
+
+        if @ip_address_id = NULL
+        begin
+            select
+                status = "Error",
+                message = "Device not found",
+                device = @device
+            return
+        end
+    end
+end
+
+
+/* Check to see if this session matches an existing session. If so, then return
+ * that session, regardless of the IP address. */
+select
+    @user_session_id = user_session_id
+from
+    user_sessions a,
+    session_statuses b
+where
+    a.session_status_id = b.session_status_id
+and
+    a.user_app_version_id = @user_app_version_id
+and
+    a.user_device_id = @user_device_id
+and
+    a.ip_address_id = @ip_address_id
+and
+    a.identifier = @identifier
+and
+    b.viable = "Y"
+
+if @user_session_id != NULL
+begin
+    return
+end
+
+/* If there's no match but the session has other information. Then balk. */
+select
+    @user_session_id = user_session_id
+from
+    user_sessions
+where
+    identifier = @identifier
+
+if @user_session_id != NULL
+begin
+    select
+        status = "Error",
+        message = "Session identifier",
+        identiier = @identifier
+    return
+end
+
+
+exec
+    j_nextkey
+        "user_sessions",
+        @user_session_id output
+
+if @user_session_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Unable to generate a new user_session_id"
+    return
+end
+
+select
+    @begin_date = getdate()
+
+insert into
+    user_sessions (
+        user_session_id,
+        user_app_version_id,
+        user_device_id,
+        identifier,
+        ip_address_id,
+        begin_date,
+        session_status_id
+    )
+    values (
+        @user_session_id,
+        @user_app_version_id,
+        @user_device_id,
+        @identifier,
+        @ip_address_id,
+        @begin_date,
+        @session_status_id
+    )
+
+if @@rowcount != 1
+begin
+    select
+        status = "Error",
+        message = "Unable to create a new session",
+        user_session_id = @user_session_id,
+        identifier = @identifier,
+        session_status_id = @session_status_id
+    return
+end
+
+
+go 
+
