@@ -1,6 +1,6 @@
 
 create or replace procedure
-	tts_oandahedgertally
+	xtts_oandahedgertally
 		@source varchar(50), /* Provided by FIX server config.properties & spring.xml */
 		@default_login varchar(50),
 		@broker varchar(50)=NULL,
@@ -114,6 +114,10 @@ declare @should_tally_eb_to_pb_ls char(1)
 declare @eb_to_pb_trader varchar(50)
 declare @eb_to_pb_trader_ls varchar(50)
 declare @should_tally_eb_to_pb_tfx char(1)
+declare @to_quantity numeric(30, 4)
+declare @switch_trade_id int
+declare @to_trade_id int
+
 
 
 select
@@ -133,6 +137,16 @@ select
 	@tally_fixing_date = convert(datetime, @fixing_date),
 	@tally_far_value_date = convert(datetime, @far_value_date),
 	@tally_far_price = convert(float, @far_price)
+
+
+declare @gmt_adjustment int
+select
+        @gmt_adjustment = -5
+
+if @gmt_adjustment != 0
+	select
+       		 @tally_trade_date = dateadd(hour, @gmt_adjustment, @tally_trade_date)
+
 
 
 /* --------------------------------------------------------------------------
@@ -241,6 +255,12 @@ select
 	@counterparty_lookup = rtrim(@oa_account)+"-"+rtrim(@oa_pb)+"-"+@oa_lp,
         @trader_lookup = rtrim(@oa_username)
 
+if @msg_type = "switch"
+begin
+	select
+		@to_counterparty_lookup = rtrim(@to_oa_account)+"-"+rtrim(@to_oa_pb)+"-"+@to_oa_lp
+end
+
 select
 	@suppression_lookup = @counterparty_lookup,
 	@trigger_symbol = @counterparty_lookup
@@ -334,6 +354,7 @@ exec
                 @counterparty_id=@counterparty_id output,
                 @counterparty=@counterparty output,
                 @cpty_external_account_id=@cpty_external_account_id output
+
 
 if @trader_id = NULL
 begin
@@ -547,9 +568,16 @@ begin
 	select
 		@quantity = @quantity * -1
 end
+else if @msg_type = "switch"
+begin
+	/* The first leg we book is the From counterparty, the second leg will
+         * be the To counterparty */
+	select
+		@quantity = @quantity * -1
+end
 
 exec
-        fxa_tallytrade
+fxa_tallytrade
                 @login = @trader_login,
                 @source = @source,
                 @trade_id = @trade_id out,
@@ -696,6 +724,111 @@ begin
 end
 
 
+if @msg_type = "switch"
+begin
+        select
+                @to_quantity = @to_quantity * -1
+
+        exec
+                fxa_tallytrade
+                        @login = @trader_login,
+                        @source = @source,
+                        @trade_id = @to_trade_id out,
+                        @deal_id = @deal_id out,
+                        @tally_type = @tally_type,
+                        @deal_type = @deal_type,
+                        @trade_type = @trade_type,
+                        @external_account = @to_external_account,
+                        @counterparty = @to_counterparty,
+                        @quantity = @to_quantity,
+                        @symbol = @contract,
+                        @value_date = @tally_value_date,
+                        @fixing_date = @tally_fixing_date,
+                        @price = @tally_price,
+                        @trade_date = @tally_trade_date,
+                        @trader = @trader,
+                        @broker = @broker,
+                        @strategy = @strategy,
+                        @identifier = @to_platform_identifier,
+                        @spot_reference = @last_spot_rate,
+                        @sales_code = @sales_code,
+                        @mid_mark = @tally_cover_price
+
+        if @to_trade_id = NULL
+        begin
+                select
+                        @tally_status = "Error",
+                        @tally_message = "Problem tallying 'to' switch trade"
+        end
+        else
+        begin
+                select
+                        @tally_status = "Success",
+                        @tally_message = "Tallied trade"
+        end
+
+        select
+                status = @tally_status,
+                message = @tally_message,
+                trade_id = @to_trade_id,
+                login = @trader_login,
+                source = @source,
+                deal_id = @deal_id,
+                tally_type = @trade_type,
+                deal_type = @deal_type,
+                trade_type = @trade_type,
+                external_account = @external_account,
+                counterparty = @counterparty,
+                quantity = @to_quantity,
+                symbol = @contract,
+                value_date = @tally_value_date,
+                fixing_date = @tally_fixing_date,
+                price = @tally_price,
+                trade_date = @tally_trade_date,
+                trader = @trader,
+                broker = @broker,
+                identifier = @to_platform_identifier,
+                spot_reference = @last_spot_rate,
+                mid_mark = @tally_cover_price
+
+        if @tally_status = "Error"
+        begin
+                return
+        end
+
+        exec
+		j_nextkey
+			"switch_trades",
+			@switch_trade_id output
+
+	if @to_quantity > 0
+	begin
+		insert into
+			switch_trades(
+				switch_trade_id,
+				long_trade_id,
+				short_trade_id)
+		values(
+			@switch_trade_id,
+			@to_trade_id,
+			@trade_id
+		)
+	end
+	else
+	begin
+		insert into
+			switch_trades(
+				switch_trade_id,
+				long_trade_id,
+				short_trade_id)
+		values(
+			@switch_trade_id,
+			@trade_id,
+			@to_trade_id
+		)
+	end
+end
+		
 
 /* --------------------------------------------------------------------------
  * STEP: Book internal tickets if needed using @trigger_symbol

@@ -1,0 +1,244 @@
+
+create or replace procedure
+	tts_oandahedgerdelete
+		@source varchar(50), 
+		@default_login varchar(50),
+		@broker varchar(50),
+		@msg_type varchar(50),
+		@transaction_id varchar(50)
+as
+
+
+
+declare @platform_identifier varchar(100)
+declare @far_platform_identifier varchar(100)
+declare @switch_identifier varchar(100)
+
+declare @broker_id int
+declare @source_id int
+declare @trade_id int
+declare @other_leg_trade_id int
+declare @swap_symbol_id int
+declare @other_trade_id int
+declare @trade_type_id int
+declare @quantity numeric(30, 2)
+declare @other_leg_qty numeric(30, 4)
+
+declare @message varchar(100)
+declare @trade_type varchar(50)
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Set broker_id and source_id
+ * Broker and source should be passed in via the the fix engine
+ * There should always be a broker and source specified. This tally will 
+ * autocreate brokers and tie them back to the single source via source_id in
+ * brokers table via tt_resolvesourcebroker
+ */
+
+select
+	@broker = "Oanda Hedger",
+	@source = "Oanda Hedger"
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = @broker
+if @broker_id = NULL
+begin
+	select
+		status = "Error",
+		error = "Error",
+		message = "broker not found",
+		broker = @broker
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "source not found",
+                source = @source
+        return
+end
+
+
+select
+	@platform_identifier = rtrim(@transaction_id),
+	@far_platform_identifier = rtrim(@transaction_id)+".f",
+	@switch_identifier = rtrim(@transaction_id)+".s"
+
+
+select
+	@trade_id = trade_id,
+	@trade_type_id = trade_type_id,
+	@quantity = quantity
+from
+	trades
+where
+	broker_id = @broker_id
+and
+	identifier = @platform_identifier
+
+if @trade_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Trade not found for transaction_id provided",
+		platform_identifier = @platform_identifier,
+		broker_id = @broker_id	
+	return
+end
+
+
+select
+	@trade_type = a.name
+from
+	trade_types a
+where
+	trade_type_id = @trade_type_id
+
+
+if @trade_type = "Swap Near"
+begin
+	select
+		@swap_symbol_id = swap_symbol_id
+	from
+		swap_symbol_trades
+	where
+		trade_id = @trade_id
+	if @swap_symbol_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding swap symbol for near leg cancel",
+			identifier = @platform_identifier,
+			trade_id = @trade_id
+		return
+	end
+
+	select 
+		@other_leg_trade_id = trade_id
+	from
+		swap_symbol_trades 
+	where
+		swap_symbol_id = @swap_symbol_id
+	and
+		trade_id != @trade_id
+	if @other_leg_trade_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding far leg for swap symbol",
+			identifier = @platform_identifier,
+			trade_id = @trade_id,
+			swap_symbol_id = @swap_symbol_id,
+			other_leg_trade_id = @other_leg_trade_id
+		return
+	end
+end	
+else
+begin
+        select
+                @other_leg_trade_id = trade_id
+        from
+                trades
+        where
+                broker_id = @broker_id
+        and
+                identifier = @switch_identifier
+        if @other_leg_trade_id = NULL
+        begin
+                select
+                        status = "Error",
+                        message = "Problem finding other side of switched based on id",
+                        identifier = @platform_identifier,
+                        switch_identifier = @switch_identifier,
+                        trade_id = @trade_id,
+                        other_leg_trade_id = @other_leg_trade_id
+                return
+        end
+end
+
+if @trade_id != NULL
+begin
+	if @quantity = 0
+	begin
+		select
+			@message = "Trade already cancelled"
+	end
+	else
+	begin
+		exec
+			mc4_edittrade
+				@login = @default_login,
+				@trade_id = @trade_id,
+				@quantity = 0
+		select
+			@message = "Cancelled trade"
+	end
+	select
+		status = "Success",
+		message = @message,
+		identifier = @platform_identifier,
+		trade_id = @trade_id
+end
+
+if @other_leg_trade_id != NULL
+begin
+	select
+		@other_leg_qty = quantity
+	from
+		trades
+	where
+		trade_id = @other_leg_trade_id
+	if @other_leg_qty = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding other_leg_id",
+			identifier = @platform_identifier,
+			trade_id = @trade_id,
+			swap_symbol_id = @swap_symbol_id,
+			other_leg_trade_id = @other_leg_trade_id
+		return
+	end
+	if @other_leg_qty = 0
+	begin
+		select
+			@message = "Other leg trade already cancelled"
+	end
+	else
+	begin
+                exec
+                        mc4_edittrade
+                                @login = @default_login,
+                                @trade_id = @other_leg_trade_id,
+                                @quantity = 0
+                select
+                        @message = "Cancelled other leg"
+	end
+	select
+		status = "Success",
+		message = @message,
+		identifier = @platform_identifier,
+		trade_id = @other_leg_trade_id
+end
+
+
+
+
+
+
+go
