@@ -1,7 +1,3 @@
-use
-	risk_admis
-go
-
 drop procedure
 	ag_editresidrate
 go
