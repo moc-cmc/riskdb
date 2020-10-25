@@ -1,0 +1,44 @@
+create or replace procedure	
+	api_addsettlementmethod
+		@name varchar(50),
+		@settlement_method_id int=NULL output
+
+as
+
+select
+	@settlement_method_id = settlement_method_id
+from
+	settlement_methods
+where
+	name = @name
+if @settlement_method_id != NULL
+begin
+	return
+end
+
+
+if @settlement_method_id = NULL
+begin
+exec
+	j_nextkey
+		"settlement_methods",
+		@settlement_method_id output
+end
+else
+begin
+	select
+		status = "Error",
+		message = "Can not provide settlement_method to be added"
+	return
+end
+
+insert into
+	settlement_methods(
+		settlement_method_id,
+		name)
+values(
+	@settlement_method_id,
+	@name
+)
+
+go
