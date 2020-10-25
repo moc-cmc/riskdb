@@ -258,7 +258,8 @@ create table
 		external_account_id int,
 		counterparty_id int,
 		sales_code_id int,
-		trade_type varchar(20)
+		trade_type varchar(20),
+		status_id int
 )
 
 
@@ -279,7 +280,8 @@ select
 	a.external_account_id,
 	a.counterparty_id,
 	a.sales_code_id,
-	h.name
+	h.name,
+	a.status_id
 from
 	trades a,
 	#external_accounts b,
@@ -377,6 +379,7 @@ select
 	external_account = e.symbol,
 	counterparty = g.name,
 	sales_code = f.name,
+	status = h.name,
 	edit_trade = "EDIT"
 from
 	#trades a,
@@ -385,7 +388,8 @@ from
 	brokers d,
 	external_accounts e,
 	sales_codes f,
-	counterparties g
+	counterparties g,
+	statuses h
 where
 	a.contract_id = b.contract_id
 and
@@ -398,6 +402,8 @@ and
 	a.sales_code_id = f.sales_code_id
 and
 	a.counterparty_id = g.counterparty_id
+and
+	a.status_id = h.status_id
 order by
 	a.deal_id,
 	a.trade_id
