@@ -26,10 +26,21 @@ values(
         NULL)
 
 
+insert into
+        #links
+values(
+        "Column Hidden",
+        "include_starting_positions",
+        NULL,
+        NULL,
+        NULL)
+
+
 select #links.meta_type, #links.column, #links.link, #links.arguments, #links.format from #links
 
 select
-        run_name = a.name
+        run_name = a.name,
+	include_starting_positions = "YES"
 from
         runs a,
         user_runs b,
