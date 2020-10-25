@@ -1,7 +1,7 @@
 create or replace procedure
 	ag_edittradematchstatus
 		@login varchar(50),
-		@trade_id int,
+		@trade_id varchar(50),
 		@matching_engine varchar(50),
 		@match_status varchar(100)
 
@@ -13,41 +13,52 @@ declare @matching_engine_id int
 
 declare @trade_match_id int
 declare @client_trade_match_id int
+declare @allege_matching_engine_id int
 
 declare @client_trade_id int
 declare @booking_id int
+declare @target_account_id int
+declare @trade_id_int int
+declare @leg char(3)
+declare @swap_symbol_id int
+declare @other_leg_id int
 
-select
-        @booking_id = booking_id
-from
-        trade_bookings
-where
-        trade_id = @trade_id
-if @@rowcount != 1
+
+if @trade_id like "%.f"
 begin
 	select
-		status = "Error",
-		message = "Could not find booking_id",
-		trade_id = @trade_id
-	return
-end	
+		@trade_id_int = convert(int, str_replace(@trade_id, ".f", NULL)),
+		@leg = "far"
+end
+else
+begin
+	select
+		@trade_id_int = convert(int, @trade_id)
+end
 
 select
-        @client_trade_id = trade_id
+	@swap_symbol_id = swap_symbol_id
 from
-        trade_bookings
+	swap_symbol_trades
 where
-        booking_id = @booking_id
-and
-        trade_id != @trade_id
-if @@rowcount != 1
+	trade_id = @trade_id_int
+
+if @swap_symbol_id != NULL
 begin
-        select
-                status = "Error",
-                message = "Could not find client_trade_id",
-                trade_id = @trade_id,
-		booking_id = @booking_id
-        return
+	select
+		@other_leg_id = trade_id
+	from
+		swap_symbol_trades
+	where
+		swap_symbol_id = @swap_symbol_id
+	and
+		trade_id != @trade_id_int
+
+	if @other_leg_id != NULL and @leg = "far"
+	begin
+		select
+			@trade_id_int = @other_leg_id
+	end
 end
 
 select
@@ -64,6 +75,69 @@ begin
 	return
 end
 
+/* The risk database uses match_hub_target_accounts for tracking
+ * the client account of a queued client roll. These client rolls
+ * are sent to matchhub via the MatchHub Dealing functionality. 
+ *
+ * Once an alleged trade that submitted as part of the risk pb roll tool
+ * receives a match in match hub, we need to update the account 
+ * to the target account. These trades do not have trade_booking
+ * records which is detailed below
+ */
+select
+        @target_account_id = target_external_account_id
+from
+        match_hub_target_accounts
+where
+        trade_id = @trade_id_int
+
+/* Trade bookings support marking pb client flow in the risk db
+ * when only one side of the trade is sent to the match hub
+ *
+ * The Dealing function of matchhub allows client swaps to be
+ * alleged, and may not have a trade_booking record since the client
+ * legs are stand alone. We know the dealing function is being
+ * utilized when there a match_hub_target_account for the trade
+ * is found. Therfore, our error reporting needs to look at 
+ * target_account_id as well.
+ */
+select
+        @booking_id = booking_id
+from
+        trade_bookings
+where
+        trade_id = @trade_id_int
+if @booking_id = NULL and @target_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Could not find booking_id",
+		trade_id = @trade_id_int
+	return
+end	
+
+if @booking_id != NULL
+begin
+	select
+        	@client_trade_id = trade_id
+	from
+        	trade_bookings
+	where
+        	booking_id = @booking_id
+	and
+        	trade_id != @trade_id_int
+	if @client_trade_id = NULL
+	begin
+        	select
+                	status = "Error",
+                	message = "Could not find client_trade_id",
+                	trade_id = @trade_id_int,
+			booking_id = @booking_id
+        	return
+	end
+end
+
+
 select
 	@matching_engine_id = matching_engine_id
 from
@@ -78,6 +152,14 @@ begin
 		matching_engine = @matching_engine
 	return
 end
+
+/* We will use this if we dont find a match for the matching engine */
+select
+	@allege_matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = rtrim(@matching_engine) +" Dealing"
 
 select
 	@match_status_id = match_status_id
@@ -94,28 +176,84 @@ begin
 	return
 end
 
-/* LP Leg */
 select
 	@trade_match_id = trade_match_id
 from
 	trade_matches
 where
-        trade_id = @trade_id
+        trade_id = @trade_id_int
 and
         matching_engine_id = @matching_engine_id
-
 if @trade_match_id = NULL
 begin
+	if @allege_matching_engine_id != NULL
+	begin
+		select
+			@trade_match_id = trade_match_id
+		from
+			trade_matches
+		where
+			trade_id = @trade_id_int
+		and
+			matching_engine_id = @allege_matching_engine_id
+	end
+	if @trade_match_id != NULL
+	begin
+		select
+			@matching_engine_id = @allege_matching_engine_id
+	end
+	else
+	begin
+		select
+			status = "Error",
+			msg = "Could not find trade_match_id",
+			trade_id = @trade_id_int,
+			matching_engine_id = @matching_engine_id
+		return
+	end
+end
+
+if @client_trade_id != NULL
+begin
 	select
-		status = "Error",
-		msg = "Could not find trade_match_id",
-		trade_id = @trade_id,
-		matching_engine_id = @matching_engine_id
-	return
+		@client_trade_match_id = trade_match_id
+	from
+		trade_matches
+	where
+        	trade_id = @client_trade_id
+	and
+        	matching_engine_id = @matching_engine_id
+	if @client_trade_match_id = NULL
+	begin
+		select
+			status = "Error",
+			msg = "Could not find trade_match_id",
+			trade_id = @client_trade_id,
+			matching_engine_id = @matching_engine_id
+		return
+	end
 end
 
 
 begin tran
+        if @target_account_id != NULL and @match_status = "Matched"
+        begin
+                update
+                        trades
+                set
+                        external_account_id = @target_account_id
+                where
+                        trade_id = @trade_id_int
+                if @@rowcount != 1
+                begin
+                        select
+                                status = "Error",
+                                message = "Problem updating trade account to matchhub target"
+                        rollback tran
+                        return
+                end
+        end
+
 	insert into
 		trade_matches_log(
 			trade_match_id,
@@ -134,16 +272,14 @@ begin tran
 	from
 		trade_matches
 	where
-	        trade_id = @trade_id
-	and
-        	matching_engine_id = @matching_engine_id
+		trade_match_id = @trade_match_id
 	if @@rowcount != 1
 	begin
 		select
 			status = "Error",
 			message = "Unable to archive existing trade match",
 			trade_match_id = @trade_match_id,
-			trade_id = @trade_id,
+			trade_id = @trade_id_int,
 			matching_engine = @matching_engine,
 			match_status = @match_status
 		rollback tran
@@ -155,19 +291,87 @@ begin tran
 	set
 		match_status_id = @match_status_id
 	where
-		trade_id = @trade_id
-	and
-		matching_engine_id = @matching_engine_id
+		trade_match_id = @trade_match_id
 	if @@rowcount != 1
 	begin
 		select
 			status = "Error",
 			message = "Update of trade match status failed",
-			trade_id = @trade_id,
+			trade_id = @trade_id_int,
 			matching_engine = @matching_engine,
 			match_status = @match_status
 		rollback tran
 		return
+	end
+
+	if @client_trade_match_id != NULL
+	begin
+        	if @target_account_id != NULL and @match_status = "Matched"
+        	begin
+                	update
+                        	trades
+                	set
+                        	external_account_id = @target_account_id
+                	where
+                        	trade_id = @client_trade_id
+                	if @@rowcount != 1
+                	begin
+                        	select
+                                	status = "Error",
+                                	message = "Problem updating trade account to matchhub target"
+                        	rollback tran
+                        	return
+                	end
+        	end     
+
+        	insert into
+			trade_matches_log(
+				trade_match_id,
+                        	trade_id,
+                        	matching_engine_id,
+                        	match_status_id,
+                        	edited_by,
+                        	timestamp)
+        	select
+			trade_match_id,
+                	trade_id,
+                	matching_engine_id,
+                	match_status_id,
+                	edited_by = @tico_account_id,
+                	timestamp = getdate()
+        	from
+                	trade_matches
+        	where
+			trade_match_id = @client_trade_match_id
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status = "Error",
+                        	message = "Unable to archive existing trade match",
+                        	trade_id = @client_trade_id,
+                        	matching_engine = @matching_engine,
+                        	match_status = @match_status
+                	rollback tran
+                	return
+        	end
+
+        	update
+                	trade_matches
+        	set
+                	match_status_id = @match_status_id
+        	where
+			trade_match_id = @client_trade_match_id
+        	if @@rowcount != 1
+        	begin
+                	select
+                        	status = "Error",
+                        	message = "Update of trade match status failed",
+                        	trade_id = @client_trade_id,
+                        	matching_engine = @matching_engine,
+                        	match_status = @match_status
+                	rollback tran
+                	return
+        	end
 	end
 commit tran
 
@@ -175,101 +379,37 @@ exec
         r_insertmatchnotification
                 @trade_match_id = @trade_match_id
 
-select
-	status = "Success",
-	message = "Trade match status updated successfully",
-	trade_id = @trade_id,
-	matching_engine = @matching_engine,
-	match_status = @match_status
-
-
-/* Client leg */
-select
-        @client_trade_match_id = trade_match_id
-from
-        trade_matches
-where
-        trade_id = @client_trade_id
-and
-        matching_engine_id = @matching_engine_id
-
-if @client_trade_match_id = NULL
+if @client_trade_match_id != NULL
 begin
-        select
-                status = "Error",
-                msg = "Could not find client_trade_match_id",
-                trade_id = @client_trade_id,
-                matching_engine_id = @matching_engine_id
-        return
+	exec
+        	r_insertmatchnotification
+                	@trade_match_id = @client_trade_match_id
+end
+
+if @target_account_id != NULL and @match_status = "Matched"
+begin
+	exec 
+		r_inserttradenotification 
+			@trade_id_int
+
+	if @client_trade_match_id != NULL
+	begin
+		exec 
+			r_inserttradenotification 
+				@client_trade_id
+	end
 end
 
 
-begin tran
-        insert into
-                trade_matches_log(
-			trade_match_id,
-                        trade_id,
-                        matching_engine_id,
-                        match_status_id,
-                        edited_by,
-                        timestamp)
-        select
-		trade_match_id,
-                trade_id,
-                matching_engine_id,
-                match_status_id,
-                edited_by = @tico_account_id,
-                timestamp = getdate()
-        from
-                trade_matches
-        where
-                trade_id = @client_trade_id
-        and
-                matching_engine_id = @matching_engine_id
-        if @@rowcount != 1
-        begin
-                select
-                        status = "Error",
-                        message = "Unable to archive existing trade match",
-                        trade_id = @client_trade_id,
-                        matching_engine = @matching_engine,
-                        match_status = @match_status
-                rollback tran
-                return
-        end
-
-        update
-                trade_matches
-        set
-                match_status_id = @match_status_id
-        where
-                trade_id = @client_trade_id
-        and
-                matching_engine_id = @matching_engine_id
-        if @@rowcount != 1
-        begin
-                select
-                        status = "Error",
-                        message = "Update of trade match status failed",
-                        trade_id = @client_trade_id,
-                        matching_engine = @matching_engine,
-                        match_status = @match_status
-                rollback tran
-                return
-        end
-commit tran
-
-exec
-        r_insertmatchnotification
-                @trade_match_id = @client_trade_match_id
-
 select
-        status = "Success",
-        message = "Trade match status updated successfully",
-        trade_id = @client_trade_id,
-        matching_engine = @matching_engine,
-        match_status = @match_status
-
+	status = "Success",
+	message = "Trade match status updated successfully",
+	trade_id = @trade_id_int,
+	matching_engine = @matching_engine,
+	match_status = @match_status,
+	trade_match_id = @trade_match_id,
+	client_trade_match_id = @client_trade_match_id,
+	matchhub_target_account = @target_account_id
 
 go
 
