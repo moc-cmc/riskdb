@@ -9,6 +9,7 @@ as
 
 exec
 	r_ladderviews
-		@login=@login
+		@login=@login,
+		@include_starting_positions="YES"
 
 go
