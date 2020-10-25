@@ -1,0 +1,20 @@
+
+drop procedure
+	tt_resolvestatusid
+go
+
+create procedure
+	tt_resolvestatusid
+		@status varchar(50)
+as
+
+select
+	status_id = status_id,
+	name = name
+from
+	statuses
+where
+	name=@status
+
+
+go
