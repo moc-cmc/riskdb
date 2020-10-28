@@ -836,11 +836,11 @@ begin
                                  @deal_id = @deal_id,
                                  @trade_type = @trade_type,
                                  @external_account = @c_external_account,
-                                 /*@counterparty = @c_counterparty,*/
+                                 @counterparty = @c_counterparty,
                                  @quantity = @c_quantity,
                                  @symbol = @contract,
                                  @value_date = @value_date,
-                                @fixing_date = @fixing_date,
+                                 @fixing_date = @fixing_date,
                                  @price = @price,
                                  @trade_date = @trade_date,
                                  @trader = @c_trader
@@ -936,11 +936,11 @@ begin
                                  @deal_id = @deal_id,
                                  @trade_type = @trade_type,
                                  @external_account = @m_external_account,
-                                 /*@counterparty = @m_counterparty,*/
+                                 @counterparty = @m_counterparty,
                                  @quantity = @m_quantity,
                                  @symbol = @contract,
                                  @value_date = @value_date,
-                                @fixing_date = @fixing_date,
+                                 @fixing_date = @fixing_date,
                                  @price = @price,
                                  @trade_date = @trade_date,
                                  @trader = @m_trader
