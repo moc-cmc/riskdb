@@ -1,0 +1,974 @@
+create or replace procedure
+	r_remotetraderecon
+		@login varchar(50),
+		@trade_date datetime = NULL,
+		@source varchar(50) = NULL
+
+as
+
+
+declare @tico_account_id int
+declare @source_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @bo_trade_date datetime
+declare @previous_trade_date datetime
+declare @next_trade_date datetime
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+declare @matched_style varchar(200)
+declare @mismatched_style varchar(200)
+declare @committed_style varchar(200)
+declare @external_style varchar(200)
+declare @internal_style varchar(200)
+declare @contract varchar(50)
+
+declare @alert_high_style varchar(200)
+declare @alert_med_style varchar(200)
+declare @alert_low_style varchar(200)
+declare @alert_none_style varchar(200)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+        @matched_style = "background:#fff;border: 1px solid white",
+        @mismatched_style = "background:#decafc;border: 1px solid white;font-weight:bold",
+        @committed_style = "background:#f0f0f8;color:#666;border: 1px solid white",
+        @external_style = "background:#c4ff5e;border: 1px solid white",
+        @internal_style = "background:#fcf860;border: 1px solid white"
+
+select
+	@alert_high_style = "color:#ffffff; background:#f03b20; border:1px solid white; font-weight:bold",
+	@alert_med_style = "color:#000000; background:#feb24c; border:1px solid white; font-weight:bold",
+	@alert_low_style = "color:#000000; background:#ffeda0; border:1px solid white; font-weight:bold",
+	@alert_none_style = "color:#000000; background:#e5f5e0; border:1px solid white; font-weight:bold"
+
+select
+	@external_style = @alert_none_style,
+	@internal_style = @alert_low_style
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"match_strength", 
+	"Number",
+	"#,##0.00%")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "quantity",
+        "Number",
+        "#,##0.00")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "in_quantity",
+        "Number",
+        "#,##0.00")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "ex_quantity",
+        "Number",
+        "#,##0.00")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "price",
+        "Number",
+        "#,##0.000000####")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "in_price",
+        "Number",
+        "#,##0.000000####")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "ex_price",
+        "Number",
+        "#,##0.000000####")
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+if @tico_account_id = NULL
+begin
+        select
+                status="Error",
+                message="Problem finding account for login"
+        return
+end
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+/*if @source_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem finding source",
+                source = @source
+        return
+end*/
+
+if @trade_date = NULL
+begin
+        select
+                @trade_date = getdate()
+end
+          
+exec     
+        r_daterangefordate
+                @trade_date, 
+                @begin_date output,
+                @end_date output
+             
+select
+        @bo_trade_date = convert(date, @end_date)  
+
+
+exec
+	r_prevbusinessday
+		@bo_trade_date,
+		@previous_trade_date output
+
+exec
+	r_nextbusinessday
+		@bo_trade_date,
+		@next_trade_date output
+
+
+insert into
+        #meta
+select
+        "Column Link",
+        "previous_date",
+        "Remote Recon",
+        "login=" + @login + "&tradeDate=" + convert(varchar(10), @previous_trade_date, 101) + "&source="+ @source
+
+insert into
+        #meta
+select
+        "Column Link",
+        "next_date",
+        "Remote Recon",
+        "login=" + @login + "&tradeDate=" + convert(varchar(10), @next_trade_date, 101) + "&source="+ @source
+
+
+create table
+        #statuses(
+                status_id int,
+                name varchar(50),
+                match_candidate char(1)
+)
+
+insert into
+        #statuses
+select
+        a.status_id,
+        a.name,
+        b.match_candidate
+from
+        statuses a,
+        remote_recon_statuses b
+where
+        a.status_id = b.status_id
+
+
+create table
+        #remote_trades(
+                remote_trade_symbol_id int,
+                source_id int,
+                trade_id int NULL,
+                recon_status_id int,
+                internal_account_id int,
+                external_account_id int,
+                counterparty_id int,
+                quantity numeric(30,8),
+                price float,
+                contract_id int,
+                trade_date datetime,
+                value_date datetime,
+                fixing_date datetime null,
+                identifier varchar(100)
+)
+
+insert into
+        #remote_trades(
+                remote_trade_symbol_id,
+                source_id,
+                trade_id,
+                recon_status_id,
+                internal_account_id,
+                external_account_id,
+                counterparty_id,
+                quantity,
+                price,
+                contract_id,
+                trade_date,
+                value_date,
+                fixing_date,
+                identifier)
+select
+        remote_trade_symbol_id,
+        source_id,
+        trade_id,
+        recon_status_id,
+        internal_account_id,
+        external_account_id,
+        counterparty_id,
+        quantity,
+        price,
+        contract_id,
+        trade_date,
+        value_date,
+        fixing_date,
+        identifier
+from
+        remote_trade_symbols a
+where
+        a.trade_date >= @begin_date
+and
+        a.trade_date < @end_date
+
+
+create table
+        #trades(
+                trade_id int,
+                internal_account_id int,
+                external_account_id int,
+                counterparty_id int,
+                quantity numeric(30, 8),
+                price float,
+                contract_id int,
+                trade_date datetime,
+                value_date datetime,
+                fixing_date datetime NULL,
+		broker_id int,
+		identifier varchar(100),
+		remote_trade_id int NULL
+)
+
+insert into
+        #trades(
+                trade_id,
+                internal_account_id,
+                external_account_id,
+                counterparty_id,
+                quantity,
+                price,
+                contract_id,
+		trade_date,
+                value_date,
+                fixing_date,
+		broker_id,
+		identifier)
+select
+        trade_id,
+        internal_account_id,
+        external_account_id,
+        counterparty_id,
+        quantity,
+        price,
+        contract_id,
+	trade_date,
+        value_date,
+        fixing_date,
+	broker_id,
+	identifier
+from
+        trades
+where
+        trade_date >= @begin_date
+and
+        trade_date < @end_date
+and
+        value_date >= @bo_trade_date
+
+update
+	#trades
+set
+	b.remote_trade_id = a.remote_trade_symbol_id
+from
+	#remote_trades a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+
+ 
+create table 
+    #match_list (
+	id int identity,
+        remote_trade_id int NULL,
+        trade_id int NULL,
+        contract varchar(10),
+	contract_id int NULL,
+        match_status varchar(30),
+        match_strength float NULL,
+        trade_date datetime,
+        value_date datetime,
+        in_value_date datetime NULL,
+        ex_value_date datetime NULL,
+        fixing_date datetime NULL,
+        in_fixing_date datetime NULL,
+        ex_fixing_date datetime NULL,
+        quantity numeric(30, 8),
+        in_quantity numeric(30,8) NULL,
+        ex_quantity numeric(30,8) NULL,
+        price float NULL,
+        in_price float NULL,
+        ex_price float NULL,
+        internal_account varchar(50) NULL, 
+        external_account varchar(50),
+        counterparty varchar(50),
+        broker varchar(50) NULL,
+        in_identifier varchar(100) NULL,
+        ex_identifier varchar(100) NULL,
+        tally char(50) NULL,
+        style char(100) NULL,
+	std_contract varchar(30) NULL,
+	traded_ccy varchar(10) NULL,
+	counter_ccy varchar(10) NULL
+)
+
+insert into
+	#match_list(
+		remote_trade_id,
+		trade_id,	
+		contract,
+		contract_id,
+		match_status,
+		match_strength,
+		trade_date,
+		value_date,
+		in_value_date,
+		ex_value_date,
+		fixing_date,
+		in_fixing_date,
+		ex_fixing_date,
+		quantity,
+		in_quantity,
+		ex_quantity,
+		price,
+		in_price,
+		ex_price,
+		internal_account,
+		external_account,
+		counterparty,
+		broker,
+		in_identifier,
+		ex_identifier,
+		style
+)
+select
+	a.remote_trade_symbol_id,
+	a.trade_id,
+	b.symbol,
+	a.contract_id,
+	c.name,
+	1.00,
+	a.trade_date,
+	d.value_date,
+	d.value_date,
+	a.value_date,
+	d.fixing_date,
+	d.fixing_date,
+	a.fixing_date,
+	d.quantity,
+	d.quantity,
+	a.quantity,
+	d.price,
+	d.price,
+	a.price,
+	e.symbol,
+	f.symbol,
+	g.name,
+	h.symbol,
+	d.identifier,
+	a.identifier,
+	@matched_style
+from
+	#remote_trades a,
+	contracts b,
+	statuses c,
+	#trades d,
+	internal_accounts e,
+	external_accounts f,
+	counterparties g,
+	brokers h
+where
+	a.trade_id = d.trade_id
+and
+	a.recon_status_id = c.status_id
+and
+	d.contract_id = b.contract_id
+and
+	d.internal_account_id = e.internal_account_id
+and
+	d.external_account_id = f.external_account_id
+and
+	d.counterparty_id = g.counterparty_id
+and
+	d.broker_id = h.broker_id
+and	
+	c.name in("Matched", "Committed")
+
+insert into
+        #match_list(
+                remote_trade_id,
+                trade_id,
+                contract,
+		contract_id,
+                match_status,
+                match_strength,
+                trade_date,
+                value_date,
+                in_value_date,
+                ex_value_date,
+                fixing_date,
+                in_fixing_date,
+                ex_fixing_date,
+                quantity,
+                in_quantity,
+                ex_quantity,
+                price,
+                in_price,
+                ex_price,
+                internal_account,
+                external_account,
+                counterparty,
+                broker,
+                in_identifier,
+                ex_identifier,
+                style
+)
+select
+        a.remote_trade_symbol_id,
+        a.trade_id,
+        b.symbol,
+	a.contract_id,
+        c.name,
+        0.99,
+        a.trade_date,
+        d.value_date,
+        d.value_date,
+        a.value_date,
+        d.fixing_date,
+        d.fixing_date,
+        a.fixing_date,
+        d.quantity,
+        d.quantity,
+        a.quantity,
+        d.price,
+        d.price,
+        a.price,
+        e.symbol,
+        f.symbol,
+        g.name,
+        h.symbol,
+        d.identifier,
+        a.identifier,
+        @mismatched_style
+from
+        #remote_trades a,
+        contracts b,
+        statuses c,
+        #trades d,
+        internal_accounts e,
+        external_accounts f,
+        counterparties g,
+        brokers h
+where
+        a.trade_id = d.trade_id
+and
+        a.recon_status_id = c.status_id
+and
+        d.contract_id = b.contract_id
+and
+        d.internal_account_id = e.internal_account_id
+and
+        d.external_account_id = f.external_account_id
+and
+        d.counterparty_id = g.counterparty_id
+and
+        d.broker_id = h.broker_id
+and     
+        c.name = "Mismatched"
+
+
+
+insert into
+        #match_list(
+                remote_trade_id,
+                trade_id,
+                contract,
+		contract_id,
+                match_status,
+                match_strength,
+                trade_date,
+                value_date,
+                ex_value_date,
+                fixing_date,
+                ex_fixing_date,
+                quantity,
+                ex_quantity,
+                price,
+                ex_price,
+                internal_account,
+                external_account,
+                counterparty,
+                ex_identifier,
+                style
+)
+select
+        a.remote_trade_symbol_id,
+        a.trade_id,
+        b.symbol,
+	a.contract_id,
+        c.name,
+        NULL,
+        a.trade_date,
+        a.value_date,
+        a.value_date,
+        a.fixing_date,
+        a.fixing_date,
+        a.quantity,
+        a.quantity,
+        a.price,
+        a.price,
+        e.symbol,
+        f.symbol,
+        g.name,
+        a.identifier,
+        @external_style
+from
+        #remote_trades a,
+        contracts b,
+        statuses c,
+        internal_accounts e,
+        external_accounts f,
+        counterparties g
+where
+        a.recon_status_id = c.status_id
+and
+        a.contract_id = b.contract_id
+and
+        a.internal_account_id = e.internal_account_id
+and
+        a.external_account_id = f.external_account_id
+and
+        a.counterparty_id = g.counterparty_id
+and
+	a.trade_id = NULL
+
+insert into
+        #match_list(
+                trade_id,
+                contract,
+		contract_id,
+                match_status,
+                match_strength,
+                trade_date,
+                value_date,
+                in_value_date,
+                fixing_date,
+                in_fixing_date,
+                quantity,
+                in_quantity,
+                price,
+                in_price,
+                internal_account,
+                external_account,
+                counterparty,
+		broker,
+                in_identifier,
+                style
+)
+select
+        a.trade_id,
+        b.symbol,	
+	a.contract_id,
+        "Unmatched",
+        NULL,
+        a.trade_date,
+        a.value_date,
+        a.value_date,
+        a.fixing_date,
+        a.fixing_date,
+        a.quantity,
+        a.quantity,
+        a.price,
+        a.price,
+        e.symbol,
+        f.symbol,
+        g.name,
+	h.symbol,
+        a.identifier,
+        @internal_style
+from
+        #trades a,
+        contracts b,
+        internal_accounts e,
+        external_accounts f,
+        counterparties g,
+	brokers h
+where
+        a.contract_id = b.contract_id
+and
+        a.internal_account_id = e.internal_account_id
+and
+        a.external_account_id = f.external_account_id
+and
+        a.counterparty_id = g.counterparty_id
+and
+	a.broker_id = h.broker_id
+and
+	a.remote_trade_id = NULL	
+
+update
+	#match_list
+set
+	std_contract = b.symbol,
+        traded_ccy = g.symbol,
+        counter_ccy = f.symbol
+from
+	#match_list a,
+	contracts b,
+	forwards e,
+	products f,
+	products g
+where
+	a.contract_id = b.contract_id
+and
+	b.contract_id=e.contract_id
+and
+        e.currency_id=f.product_id
+and
+        e.product_id=g.product_id
+
+update
+	#match_list
+set
+	std_contract = rtrim(a.counter_ccy)+rtrim(a.traded_ccy)
+from
+	#match_list a,
+	contracts b,
+	contract_price_styles c,
+	price_styles d
+where
+	a.contract_id = b.contract_id
+and
+	b.contract_id = c.contract_id
+and
+	c.price_style_id = d.price_style_id
+and
+	d.name = "Inverted"
+
+
+create table
+	#report (
+		ordering int NULL,
+		symbol char(10) NULL,
+		status char(50) NULL,
+		internal_trades int NULL,
+		external_trades int NULL,
+		total int NULL,
+		committed int NULL,
+		reconciled int NULL,
+		mismatched int NULL,
+		external_only int NULL,
+		internal_only int NULL,
+		style char(100) NULL
+)
+
+insert
+	#report
+select distinct
+	0,
+	std_contract,
+	NULL,
+	NULL,
+	NULL,
+	count(*),
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	@style
+from
+	#match_list
+group by
+	std_contract
+order by
+	std_contract
+
+update
+    #report
+set
+    internal_trades = (
+        select
+            count(*)
+        from
+            #match_list
+        where
+            std_contract = #report.symbol
+        and
+            trade_id != NULL
+    )
+
+update
+    #report
+set
+    external_trades = (
+        select
+            count(*)
+        from
+            #match_list
+        where
+            std_contract = #report.symbol
+        and
+            remote_trade_id != NULL
+    )
+
+
+update
+    #report
+set
+    committed = (
+        select
+            count(*)
+        from
+            #match_list
+        where
+            std_contract = #report.symbol
+        and
+            match_status = "Committed"
+    )
+
+update
+    #report
+set
+    reconciled = (
+        select
+            count(*)
+        from
+            #match_list
+        where
+            std_contract = #report.symbol
+        and
+            match_status = "Matched"
+    )
+
+update
+    #report
+set
+    mismatched = (
+        select
+            count(*)
+        from
+            #match_list
+        where
+            std_contract = #report.symbol
+        and
+            match_status = "Mismatched"
+    )
+
+update
+    #report
+set
+    internal_only = (
+        select
+            count(*)
+        from
+            #match_list
+        where
+            std_contract = #report.symbol
+        and
+            trade_id != NULL
+	and
+	    remote_trade_id = NULL
+)
+
+update
+    #report
+set
+    external_only = (
+        select
+            count(*)
+        from
+            #match_list
+        where
+            std_contract = #report.symbol
+        and
+            trade_id = NULL
+	and
+	    remote_trade_id != NULL
+    )
+ 
+
+update
+        #report
+set
+        style = @internal_style
+where
+        internal_only > 0
+
+update
+        #report
+set
+        style = @mismatched_style
+where
+        mismatched > 0
+
+update
+	#report
+set
+	style = @external_style
+where
+	external_only > 0
+
+
+
+insert into
+    #report
+select
+	1,
+        NULL,
+        "Total",
+        sum(internal_trades),
+        sum(external_trades),
+        sum(total),
+        sum(committed),
+        sum(reconciled),
+        sum(mismatched),
+        sum(external_only),
+        sum(internal_only),
+        "background:#eee;font-weight:bold;"
+from
+        #report
+
+select
+	* 
+from
+	#meta
+
+select
+        style = @style,
+	previous_date = "<< Previous Date",
+        recon_date = @bo_trade_date,
+        source = @source,
+	next_date = "Next Date  >>"
+
+select
+    section = "Summary",
+    trade_date = convert(char(10), @trade_date, 101),
+    contract = symbol,
+    status,
+    internal_trades = case when internal_trades != 0 then internal_trades else NULL end,
+    external_trades = case when external_trades != 0 then external_trades else NULL end,
+    total = case when total != 0 then total else NULL end,
+    committed = case when committed != 0 then committed else NULL end,
+    reconciled = case when reconciled != 0 then reconciled else NULL end,
+    mismatched = case when mismatched != 0 then mismatched else NULL end,
+    external_only = case when external_only != 0 then external_only else NULL end,
+    internal_only = case when internal_only != 0 then internal_only else NULL end,
+    details = "Show " + rtrim(symbol) + " Details",
+    all_trades = "Show All " + rtrim(symbol) + " Trades",
+    style
+from
+    #report
+order by
+    ordering,
+    symbol
+
+if @@rowcount = 0
+begin
+    if @contract = null
+        select
+            msg = "There are no mismatched, external-only nor internal-only trades in this report"
+    else
+        select
+            msg = "There are no mismatched, external-only nor internal-only trades for " + rtrim(@contract)
+end
+
+select
+	section = "Recon for " + external_account,
+	recon_id=id,
+        ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
+	contract,
+	match_status,
+	match_strength,
+	trade_date,
+	value_date=convert(char(12), convert(datetime, value_date, 101)),
+	/*fixing_date=convert(datetime, fixing_date, 101),*/
+	quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
+	rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
+	internal_account,
+	external_account,
+	counterparty,
+	broker,
+	identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
+	style
+from
+	#match_list
+order by 
+	external_account,
+	std_contract,
+	price,
+	match_status
+
+go
