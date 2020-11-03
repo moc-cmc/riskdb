@@ -1,0 +1,652 @@
+create or replace procedure
+	api_runremotesourcerecon
+		@login varchar(50),
+		@source varchar(50),
+		@trade_date datetime=NULL
+
+as
+
+declare @tico_account_id int
+declare @source_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @processing_status_id int
+declare @bo_trade_date datetime
+declare @trade_count int
+declare @matched_count int
+declare @unmatched_count int
+declare @mismatched_count int
+declare @new_count int
+declare @remote_count int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source",
+		source = @source
+	return
+end
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+select
+	@bo_trade_date = convert(date, @end_date)
+
+select
+	@processing_status_id = status_id
+from
+	statuses
+where
+	name = "Processing"
+if @processing_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Processing' status"
+	return
+end
+
+create table
+	#statuses(
+		status_id int,
+		name varchar(50),
+		match_candidate char(1)
+)
+
+insert into
+	#statuses
+select
+	a.status_id,
+	a.name,
+	b.match_candidate
+from
+	statuses a,
+	remote_recon_statuses b
+where
+	a.status_id = b.status_id
+
+
+create table
+	#remote_trades(
+        	remote_trade_symbol_id int,
+		source_id int,
+		trade_id int NULL,
+		recon_status_id int,	
+        	internal_account_id int,
+        	external_account_id int,
+        	counterparty_id int,
+        	quantity numeric(30,8),
+        	price float,
+        	contract_id int,
+        	trade_date datetime,
+        	value_date datetime,
+        	fixing_date datetime null,
+        	identifier varchar(100)
+)
+
+insert into
+	#remote_trades(
+		remote_trade_symbol_id,
+		source_id,
+		trade_id,
+		recon_status_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		price,
+		contract_id,
+		trade_date,
+		value_date,
+		fixing_date,
+		identifier)   
+select
+	remote_trade_symbol_id,
+	source_id,
+	NULL,
+	recon_status_id,
+	internal_account_id,
+	external_account_id,
+	counterparty_id,
+	quantity,
+	price,
+	contract_id,
+	trade_date,
+	value_date,
+	fixing_date,
+	identifier
+from
+	remote_trade_symbols a,
+	#statuses b
+where
+	a.recon_status_id = b.status_id
+and
+	b.match_candidate = "Y"
+and
+	a.source_id = @source_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+select
+	@remote_count = @@rowcount
+
+select
+	@new_count = count(*)
+from
+	#remote_trades a,
+	#statuses b
+where
+	a.recon_status_id = b.status_id
+and
+	b.name = "New"
+
+update
+	remote_trade_symbols
+set
+	recon_status_id = @processing_status_id
+from
+	remote_trade_symbols a,
+	#remote_trades b
+where
+	a.remote_trade_symbol_id = b.remote_trade_symbol_id
+and
+ 	a.source_id = @source_id
+and
+        a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+
+create table
+	#trades(
+		trade_id int,
+		internal_account_id int,
+		external_account_id int,
+		counterparty_id int,
+		quantity numeric(30, 8),
+		price float,
+		contract_id int,
+		value_date datetime,
+		remote_trade_id int NULL
+)
+
+insert into
+	#trades(
+		trade_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		price,
+		contract_id,
+		value_date)
+select
+	trade_id,
+	internal_account_id,
+	external_account_id,
+	counterparty_id,
+	quantity,
+	price,
+	contract_id,
+	value_date
+from
+	trades 
+where
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+and
+	value_date >= @bo_trade_date
+and
+	fixing_date = NULL
+select
+	@trade_count = @@rowcount
+
+update
+        #trades
+set
+        b.remote_trade_id = a.remote_trade_symbol_id
+from
+        remote_trade_symbols a,
+        #trades b
+where
+        a.trade_id = b.trade_id
+and
+        a.source_id = @source_id
+and
+        a.trade_date >= @begin_date
+and
+        a.trade_date < @end_date
+
+
+update
+	#trades
+set
+	b.remote_trade_id = a.remote_trade_symbol_id
+from
+	#remote_trades a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+
+update
+	#remote_trades
+set
+	recon_status_id = b.status_id,
+	trade_id = c.trade_id
+from
+	#remote_trades a,
+	#statuses b,
+	#trades c
+where
+	b.name = "Matched"
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	a.contract_id = c.contract_id
+and
+	a.quantity = c.quantity
+and
+	a.price = c.price
+and
+	a.value_date = c.value_date
+and
+	a.trade_id = NULL
+and
+	c.remote_trade_id = NULL
+select
+	@matched_count = @@rowcount
+
+update
+	#trades
+set
+	b.remote_trade_id = a.remote_trade_symbol_id
+from
+	#remote_trades a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.remote_trade_id = NULL
+	
+
+update
+	#remote_trades
+set
+	recon_status_id = b.status_id,
+	trade_id = c.trade_id
+from
+	#remote_trades a,
+	#statuses b,
+	#trades c
+where
+	b.name = "Mismatched"
+and
+	a.trade_id = NULL
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	a.contract_id = c.contract_id
+and
+	a.quantity = c.quantity
+and
+	a.price = c.price
+and
+	a.trade_id = NULL
+and
+	c.remote_trade_id = NULL
+select
+	@mismatched_count = @@rowcount
+
+update
+	#trades
+set
+	b.remote_trade_id = a.remote_trade_symbol_id
+from
+	#remote_trades a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.remote_trade_id = NULL
+	
+
+update
+        #remote_trades
+set
+        recon_status_id = b.status_id,
+        trade_id = c.trade_id
+from
+        #remote_trades a,
+        #statuses b,
+        #trades c
+where
+        b.name = "Mismatched"
+and
+        a.trade_id = NULL
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.counterparty_id = c.counterparty_id
+and
+        a.contract_id = c.contract_id
+and
+	sign(a.quantity) = sign(c.quantity)
+and
+        floor(abs(a.quantity)) = floor(abs(c.quantity))
+and
+        convert(numeric(30, 10), a.price) = convert(numeric(30, 10), c.price)
+and
+	a.value_date = c.value_date
+and
+	a.trade_id = NULL
+and
+	c.remote_trade_id = NULL
+select
+        @mismatched_count = @mismatched_count + @@rowcount
+
+update
+	#trades
+set
+	b.remote_trade_id = a.remote_trade_symbol_id
+from
+	#remote_trades a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.remote_trade_id = NULL
+	
+
+create table
+	#ndf_trades(
+		trade_id int,
+		internal_account_id int,
+		external_account_id int,
+		counterparty_id int,
+		quantity numeric(30, 8),
+		price float,
+		contract_id int,
+		value_date datetime,
+		fixing_date datetime NULL,
+		remote_trade_id int NULL
+)
+
+insert into
+	#ndf_trades(
+		trade_id,
+		internal_account_id,
+		external_account_id,
+		counterparty_id,
+		quantity,
+		price,
+		contract_id,
+		value_date,
+		fixing_date)
+select
+	trade_id,
+	internal_account_id,
+	external_account_id,
+	counterparty_id,
+	quantity,
+	price,
+	contract_id,
+	value_date,
+	fixing_date
+from
+	trades 
+where
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+and
+	value_date >= @bo_trade_date
+and
+	fixing_date != NULL
+select
+	@trade_count = @trade_count + @@rowcount
+	
+
+update
+	#ndf_trades
+set
+	b.remote_trade_id = a.remote_trade_symbol_id
+from
+	#remote_trades a,
+	#ndf_trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.remote_trade_id = NULL
+
+update
+	#remote_trades
+set
+	recon_status_id = b.status_id,
+	trade_id = c.trade_id
+from
+	#remote_trades a,
+	#statuses b,
+	#ndf_trades c
+where
+	b.name = "Matched"
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	a.contract_id = c.contract_id
+and
+	a.quantity = c.quantity
+and
+	a.price = c.price
+and
+	a.value_date = c.value_date
+and
+	a.fixing_date = c.fixing_date
+and
+	a.trade_id = NULL
+and
+	c.remote_trade_id = NULL
+select
+	@matched_count = @matched_count + @@rowcount
+
+update
+	#ndf_trades
+set
+	b.remote_trade_id = a.remote_trade_symbol_id
+from
+	#remote_trades a,
+	#ndf_trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.remote_trade_id = NULL
+	
+
+update
+	#remote_trades
+set
+	recon_status_id = b.status_id,
+	trade_id = c.trade_id
+from
+	#remote_trades a,
+	#statuses b,
+	#ndf_trades c
+where
+	b.name = "Mismatched"
+and
+	a.trade_id = NULL
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.counterparty_id = c.counterparty_id
+and
+	a.contract_id = c.contract_id
+and
+	a.quantity = c.quantity
+and
+	a.price = c.price
+and
+	c.remote_trade_id = NULL
+select
+	@mismatched_count = @mismatched_count + @@rowcount
+
+update
+	#ndf_trades
+set
+	b.remote_trade_id = a.remote_trade_symbol_id
+from
+	#remote_trades a,
+	#ndf_trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.remote_trade_id = NULL
+
+
+/*
+ * We might match against more than one trade, if thats the case 
+ * we need to unmatch the duplicate matches
+ */
+
+create table
+	#extra_matches(
+		trade_id int,
+		match_count int,
+		max_remote_trade_id int
+)
+insert into
+	#extra_matches(
+		trade_id,
+		match_count,
+		max_remote_trade_id
+)
+select
+	trade_id = trade_id,
+	match_count = count(*),
+	max_remote_trade_id = max(remote_trade_symbol_id)
+from
+	#remote_trades
+where
+	trade_id != NULL
+group by
+	trade_id
+having
+	count(*) > 1
+
+select
+	section = "extra matches",
+	*
+from
+	#extra_matches
+	
+update
+	#remote_trades
+set
+	recon_status_id = b.status_id,
+	trade_id = NULL
+from
+	#remote_trades a,
+	#statuses b,
+	#extra_matches c
+where
+	c.trade_id = a.trade_id
+and
+	a.remote_trade_symbol_id != c.max_remote_trade_id
+and
+	b.name = "Unmatched"
+
+
+update
+        #remote_trades
+set
+        recon_status_id = b.status_id
+from
+        #remote_trades a,
+        #statuses b
+where
+        b.name = "Unmatched"
+and
+        a.trade_id = NULL
+select
+	@unmatched_count = @@rowcount
+
+/*
+select debug="#remote_trades", * from #remote_trades
+select debug="remote_trade_symbols", * from remote_trade_symbols
+*/
+
+
+update
+	remote_trade_symbols
+set
+	trade_id = b.trade_id,
+	recon_status_id = b.recon_status_id
+from
+	remote_trade_symbols a,
+	#remote_trades b
+where
+	a.remote_trade_symbol_id = b.remote_trade_symbol_id
+
+select
+	begin_date = @begin_date,
+	end_date = @end_date,
+	source = @source,
+	source_id = @source_id,
+	trade_count = @trade_count,
+	remote_count = @remote_count,
+	new_remote_trades = @new_count,
+	matched = @matched_count,
+	mismatched = @mismatched_count,
+	unmatched = @unmatched_count
+	
+
+go
+	
