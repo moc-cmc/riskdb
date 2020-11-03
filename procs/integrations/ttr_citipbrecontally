@@ -2,7 +2,6 @@ create or replace procedure
         ttr_citipbrecontally
                 @source varchar(50),
                 @default_login varchar(50),
-                @broker varchar(50),
 		@client_ref varchar(50)=NULL,
 		@trade_key varchar(100),
 		@fund_name varchar(50),
@@ -103,7 +102,8 @@ select
  */
 
 select
-	@external_account_id = a.external_account_id
+	@external_account_id = a.external_account_id,
+	@external_account = a.symbol
 from
 	external_accounts a,
 	external_account_symbols b
@@ -118,7 +118,8 @@ begin
         select
                 status = "Error",
                 error = "Error",
-                message = "account mapping error trade not processed"
+                message = "account mapping error trade not processed",
+		account_lookup = @account_lookup
         return
 end
 
@@ -139,7 +140,8 @@ begin
         select
                 status = "Error",
                 error = "Error",
-                message = "counterparty mapping error trade not processed"
+                message = "counterparty mapping error trade not processed",
+		counterparty_lookup = @counterparty_lookup
         return
 end
 
@@ -186,7 +188,7 @@ exec
                 @counterparty=@counterparty,
                 @quantity=@quantity,
                 @price=@tally_price,
-                @contract=@symbol,
+                @contract=@contract,
                 @trade_date=@tally_trade_date,
                 @value_date=@tally_value_date,
                 @fixing_date=@tally_fixing_date,
