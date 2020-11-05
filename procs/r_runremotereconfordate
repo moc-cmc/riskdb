@@ -1,0 +1,127 @@
+create or replace procedure
+	r_runremotereconfordate
+		@login varchar(50),
+		@recon_date datetime = NULL
+
+as
+
+declare @tico_account_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @trade_date datetime
+declare @bo_trade_date datetime
+declare @id int
+declare @ids int
+declare @min_id int
+declare @source varchar(50)
+
+select
+	@trade_date = @recon_date
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+select
+	@bo_trade_date = convert(date, @end_date)
+
+create table
+	#remote_recon_sources(
+		id int identity,
+		source_id int,
+		name varchar(50)
+)
+
+insert into
+	#remote_recon_sources(
+		source_id,
+		name)
+select
+	b.source_id,
+	b.name
+from
+	remote_trade_symbols a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+group by
+	b.source_id,
+	b.name
+
+
+select
+	@min_id = 0
+
+select
+	@ids = count(*)
+from
+	#remote_recon_sources
+where	
+	id >= @min_id
+
+while @ids > 0
+begin
+	select
+		@source = NULL
+
+	select
+		@min_id = min(id)
+	from
+		#remote_recon_sources
+	where
+		id > @min_id
+
+	select
+		@source = name
+	from
+		#remote_recon_sources
+	where
+		id = @min_id
+
+	exec
+		api_runremotesourcerecon
+			@login = @login,
+			@source = @source,
+			@trade_date = @bo_trade_date
+
+	select
+		@ids = count(*)
+	from
+		#remote_recon_sources
+	where
+		id > @min_id
+end
+
+exec
+	r_remotetraderecon
+		@login = @login,
+		@trade_date = @bo_trade_date
+
+
+go
