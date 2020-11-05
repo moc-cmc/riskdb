@@ -19,7 +19,8 @@ create table
         trade_date datetime,
         value_date datetime,
         fixing_date datetime null,
-        identifier varchar(100)
+        identifier varchar(100),
+	bo_trade_date datetime
     )
 go
 
