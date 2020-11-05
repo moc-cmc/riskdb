@@ -18,6 +18,10 @@ declare @unmatched_count int
 declare @mismatched_count int
 declare @new_count int
 declare @remote_count int
+declare @debug char(1)
+
+select
+	@debug = "N"
 
 select
 	@tico_account_id = account_id
@@ -112,7 +116,8 @@ create table
         	trade_date datetime,
         	value_date datetime,
         	fixing_date datetime null,
-        	identifier varchar(100)
+        	identifier varchar(100),
+		multi_match_id int NULL
 )
 
 insert into
@@ -134,7 +139,7 @@ insert into
 select
 	remote_trade_symbol_id,
 	source_id,
-	NULL,
+	trade_id,
 	recon_status_id,
 	internal_account_id,
 	external_account_id,
@@ -156,9 +161,7 @@ and
 and
 	a.source_id = @source_id
 and
-	a.trade_date >= @begin_date
-and
-	a.trade_date < @end_date
+	a.bo_trade_date = @bo_trade_date
 select
 	@remote_count = @@rowcount
 
@@ -184,9 +187,7 @@ where
 and
  	a.source_id = @source_id
 and
-        a.trade_date >= @begin_date
-and
-	a.trade_date < @end_date
+	a.bo_trade_date = @bo_trade_date
 
 
 create table
@@ -199,7 +200,8 @@ create table
 		price float,
 		contract_id int,
 		value_date datetime,
-		remote_trade_id int NULL
+		remote_trade_id int NULL,
+		multi_match_id int NULL
 )
 
 insert into
@@ -240,16 +242,16 @@ set
         b.remote_trade_id = a.remote_trade_symbol_id
 from
         remote_trade_symbols a,
-        #trades b
+        #trades b,
+	#statuses c
 where
         a.trade_id = b.trade_id
 and
         a.source_id = @source_id
 and
-        a.trade_date >= @begin_date
+	a.bo_trade_date = @bo_trade_date
 and
-        a.trade_date < @end_date
-
+	c.name = "Matched"
 
 update
 	#trades
@@ -332,8 +334,6 @@ and
 and
 	a.price = c.price
 and
-	a.trade_id = NULL
-and
 	c.remote_trade_id = NULL
 select
 	@mismatched_count = @@rowcount
@@ -381,8 +381,6 @@ and
 and
 	a.value_date = c.value_date
 and
-	a.trade_id = NULL
-and
 	c.remote_trade_id = NULL
 select
         @mismatched_count = @mismatched_count + @@rowcount
@@ -411,7 +409,8 @@ create table
 		contract_id int,
 		value_date datetime,
 		fixing_date datetime NULL,
-		remote_trade_id int NULL
+		remote_trade_id int NULL,
+		multi_match_id int NULL
 )
 
 insert into
@@ -559,17 +558,20 @@ and
 create table
 	#extra_matches(
 		trade_id int,
+		recon_status_id int,
 		match_count int,
 		max_remote_trade_id int
 )
 insert into
 	#extra_matches(
 		trade_id,
+		recon_status_id,
 		match_count,
 		max_remote_trade_id
 )
 select
 	trade_id = trade_id,
+	recon_status_id = trade_id,
 	match_count = count(*),
 	max_remote_trade_id = max(remote_trade_symbol_id)
 from
@@ -577,15 +579,66 @@ from
 where
 	trade_id != NULL
 group by
-	trade_id
+	trade_id,
+	recon_status_id
 having
 	count(*) > 1
 
-select
-	section = "extra matches",
-	*
-from
-	#extra_matches
+	
+/* TODO - This needs to be implemented to prevent need to re-run matches when
+ *        there are multiple match cases. We do not have time to test this yet
+ *        so clients may have to re-run recon multiple times to get a clean set 
+ *
+ * Here, we handle extra matches by unmatching all extra matches except for the
+ * highest match id. This ensures we only end up with one match per trade without
+ * running subqueries. Right now, we are just leaving extra trades unmatched 
+ * instead of looking for another match. We dont want to force a loop to re-run
+ * the matching over and over until there are no matches left (or, if we do, we
+ * want that to exist in a wrapper that calls this over and over again). 
+ * 
+ * One strategy we can implement here is for every duplicate trade, assign a new
+ * identifier to both the #trade or #ndf_trade that matched with #remote_trades
+ * and then re-run the match one more time including that new ID in the join
+ *
+ * Consider this dataset 
+ * internal		             external
+ *  id123 BUY 10 EURUSD @ 1.08       id586 BUY 10 EURUSD @ 1.08 <- matches 123
+ *  id124 BUY 10 EURUSD @ 1.08       id587 BUY 10 EURUSD @ 1.08 <- matches 123
+ *  id125 BUY 10 EURUSD @ 1.08       id588 BUY 10 EURUSD @ 1.38 <- matches 123
+ *  id126 BUY 10 EURUSD @ 1.08       id589 BUY 10 EURUSD @ 1.08 <- matches 123
+ * 
+ * With #extra_matches and the update below, we keep the id123 - id586 match
+ * and discard the rest and move on. The above case requires recon to be run
+ * 4 times in order to match all 4 (discarding the remainng each time)
+ *
+ * What we can do is assign those remaining external IDs 1, 2, 3
+ * internal		             external
+ *  id123 BUY 10 EURUSD @ 1.08       id586 BUY 10 EURUSD @ 1.08 <- matched already
+ *  id124 BUY 10 EURUSD @ 1.08 (1)   id587 BUY 10 EURUSD @ 1.08 <- assign 1
+ *  id125 BUY 10 EURUSD @ 1.08 (2)   id588 BUY 10 EURUSD @ 1.38 <- assign 2
+ *  id126 BUY 10 EURUSD @ 1.08 (3)   id589 BUY 10 EURUSD @ 1.08 <- assign 3
+ * 
+ * For all the extra trades in the external duplicate list, assign an incremental id
+ * Find non matched trades with same details as the extra match id and assign those
+ * incremental ids (ie, 1, 2, 3)
+ *
+ * Attempt one more match including that ID
+ */
+
+if @debug = "Y"
+begin
+	select
+		section = "extra matches",
+		a.*,
+		b.name
+	from
+		#extra_matches a,
+		#statuses b
+	where
+		a.recon_status_id = b.status_id	
+	
+	select * from #remote_trades
+end
 	
 update
 	#remote_trades
@@ -603,6 +656,10 @@ and
 and
 	b.name = "Unmatched"
 
+if @debug = "Y"
+begin
+	select * from #remote_trades
+end
 
 update
         #remote_trades
@@ -617,12 +674,6 @@ and
         a.trade_id = NULL
 select
 	@unmatched_count = @@rowcount
-
-/*
-select debug="#remote_trades", * from #remote_trades
-select debug="remote_trade_symbols", * from remote_trade_symbols
-*/
-
 
 update
 	remote_trade_symbols
