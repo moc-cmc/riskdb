@@ -91,6 +91,12 @@ where
  *
  */
 
+if @fixing_date = ""
+begin
+	select
+		@fixing_date = NULL
+end
+
 select
 	@tally_qty = convert(numeric(30, 4), @amount_1),
 	@tally_price = convert(float, @trade_rate),
