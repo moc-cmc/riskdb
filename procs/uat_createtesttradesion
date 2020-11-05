@@ -225,7 +225,7 @@ select
                                 NULL
         end,
         create_sc_fwd = "CREATE FORWARD TRADE",
-        create_sc_swap_pend = "CREATE SWAP TRADE"
+        create_sc_swap = "CREATE SWAP TRADE"
 from
         current_prices a,
         contracts b,
@@ -256,7 +256,7 @@ select
                                 NULL
         end,
         create_sb_fwd = "CREATE FORWARD TRADE",
-        create_sb_swap_pend = "CREATE SWAP TRADE"
+        create_sb_swap = "CREATE SWAP TRADE"
 from
         current_prices a,
         contracts b,
@@ -286,8 +286,8 @@ select
                         else
                                 NULL
         end,
-        create_bb_fwd_pend = "CREATE FORWARD TRADES",
-        create_bb_swap_pend = "CREATE SWAP TRADES"
+        create_bb_fwd = "CREATE FORWARD TRADES",
+        create_bb_swap = "CREATE SWAP TRADES"
 from
         current_prices a,
         contracts b,
@@ -312,7 +312,7 @@ select
                 else
                         convert(numeric(30,6), @usdjpy_price)
         end,
-        create_internal_spotfwd_pend = "CREATE INTERNAL SPOT FORWARD TRADES"
+        create_internal_spotfwd = "CREATE INTERNAL SPOT FORWARD TRADES"
 from
         current_prices a,
         contracts b,
