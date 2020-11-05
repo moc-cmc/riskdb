@@ -135,6 +135,15 @@ values(
         "Number",
         "#,##0.000000####")
 
+insert into
+	#meta
+values(
+	"Column Link",
+	"run_recon",
+	"Run Remote Recon for Date",
+	NULL
+)
+
 select
         @tico_account_id = account_id
 from
@@ -381,7 +390,8 @@ create table
         style char(100) NULL,
 	std_contract varchar(30) NULL,
 	traded_ccy varchar(10) NULL,
-	counter_ccy varchar(10) NULL
+	counter_ccy varchar(10) NULL,
+	calc_price numeric(30, 10) NULL
 )
 
 insert into
@@ -683,7 +693,8 @@ update
 set
 	std_contract = b.symbol,
         traded_ccy = g.symbol,
-        counter_ccy = f.symbol
+        counter_ccy = f.symbol,
+	calc_price = a.price
 from
 	#match_list a,
 	contracts b,
@@ -702,7 +713,8 @@ and
 update
 	#match_list
 set
-	std_contract = rtrim(a.counter_ccy)+rtrim(a.traded_ccy)
+	std_contract = rtrim(a.counter_ccy)+rtrim(a.traded_ccy),
+	calc_price = 1/a.price
 from
 	#match_list a,
 	contracts b,
@@ -909,6 +921,7 @@ from
 select
         style = @style,
 	previous_date = "<< Previous Date",
+	run_recon = "Run Recon",
         recon_date = @bo_trade_date,
         source = @source,
 	next_date = "Next Date  >>"
@@ -956,6 +969,7 @@ select
 	value_date=convert(char(12), convert(datetime, value_date, 101)),
 	/*fixing_date=convert(datetime, fixing_date, 101),*/
 	quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
+	counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
 	rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 	internal_account,
 	external_account,
