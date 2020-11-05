@@ -24,6 +24,18 @@ declare @external_account_id int
 declare @counterparty_id int
 declare @contract_id int
 declare @new_status_id int
+declare @bo_trade_date datetime
+declare @begin_date datetime
+declare @end_date datetime
+
+exec     
+        r_daterangefordate
+                @trade_date, 
+                @begin_date output,
+                @end_date output
+             
+select
+        @bo_trade_date = convert(date, @end_date)  
 
 select
 	@tico_account_id = account_id
@@ -195,7 +207,8 @@ insert into
 		trade_date,
 		value_date,
 		fixing_date,
-		identifier)   
+		identifier,
+		bo_trade_date)   
 values(
 	@remote_trade_symbol_id,
 	@source_id,
@@ -210,7 +223,8 @@ values(
 	@trade_date,
 	@value_date,
 	@fixing_date,
-	@identifier)   
+	@identifier,
+	@bo_trade_date)   
 if @@rowcount != 1
 begin
 	select
