@@ -90,6 +90,20 @@ select
 	@identifier = rtrim(@deal_id),
 	@internal_account = "OANDA ALL"
 
+if @instrument = "Swap"
+begin
+	if @tally_qty > 0 
+	begin
+		select
+			@identifier = rtrim(@identifier)+"_B"
+	end
+	else
+	begin
+		select
+			@identifier = rtrim(@identifier)+"_S"
+	end
+end
+
 
 select
 	@account_lookup = rtrim(@account),
