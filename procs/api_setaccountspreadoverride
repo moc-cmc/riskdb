@@ -1,0 +1,143 @@
+create or replace procedure
+	 api_setaccountspreadoverride
+		@login varchar(50),
+		@account varchar(50),
+		@contract varchar(50),
+		@name varchar(50),
+		@pips float=NULL
+
+as
+
+declare @tico_account_id int
+declare @contract_id int
+declare @account_spread_id int
+declare @inverted char(1)
+declare @product_id int
+declare @currency_id int
+declare @standard_contract_id int
+declare @external_account_id int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @contract
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining contract"
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding external account",
+		account = @account
+	return
+end
+
+select
+	@product_id = b.product_id,
+	@currency_id = b.currency_id
+from
+	contracts a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+select
+	@inverted = "Y"
+from
+	contracts a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+and
+	a.contract_id = @contract_id
+if @inverted = "Y"
+begin
+	select
+		status = "Error",
+		message = "Can not set spread for inverted contract"
+	return
+end
+
+select
+	@account_spread_id = account_spread_id
+from
+	account_spread_overrides 
+where
+	contract_id = @contract_id
+and
+	external_account_id = @external_account_id
+
+
+update
+	account_spread_overrides
+set
+	external_account_id = @external_account_id,
+	contract_id = @contract_id,
+	pips = @pips,
+	name = @name
+where
+	account_spread_id = @account_spread_id
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"account_spread_overrides",
+			@account_spread_id output
+	insert into
+		account_spread_overrides(
+			account_spread_id,
+			external_account_id,
+			contract_id,
+			pips,
+			name)
+	values(
+		@account_spread_id,
+		@external_account_id,
+		@contract_id,
+		@pips,
+		@name
+	)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Error inserting row for account spread override"
+		return
+	end
+end
+
+go
