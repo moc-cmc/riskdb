@@ -1,0 +1,175 @@
+create or replace procedure
+	 r_managedefaultaccountspreads
+		@login varchar(50)
+
+as
+
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Link",
+	"set_spread",
+	"Set Default Account Spread",
+	NULL)
+
+
+insert into
+	#meta
+values (
+	"Column Link",
+	"set_override",
+	"Set Account Spread Override",
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Hidden",
+	"name",
+	NULL,
+	NULL)
+
+
+create table
+	#output(
+		id int identity,
+		section varchar(50),
+		ordering int,
+		contract_id int,
+		contract varchar(50) NULL,
+		account_spread varchar(50) NULL,
+		pips float NULL,
+		set_spread varchar(20) NULL,
+		set_override varchar(20) NULL
+)
+
+insert into
+	#output(
+		section,
+		ordering,
+		contract_id,
+		contract,
+		set_spread)
+select
+	"Missing Spread Assignement",
+	0,
+	a.contract_id,
+	a.symbol,
+	"Set"
+from
+	contracts a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+delete 
+	#output
+from
+	#output a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+update
+	#output
+set
+	section = "Default Contract Spreads",
+	ordering = 1,
+	account_spread = b.name,
+	pips = b.pips,
+	set_spread = "Edit",
+	set_override = "Set"
+from
+	#output a,
+	default_account_spreads b
+where
+	a.contract_id = b.contract_id
+
+
+select
+	* 
+from
+	#meta
+
+select
+	section,
+	contract,
+	account_spread,
+	/*pips,*/
+	set_spread,
+	set_override
+from
+	#output
+order by 
+	ordering,
+	contract
+
+go
+	
+	
+
+
+		
+	
+	
+	
