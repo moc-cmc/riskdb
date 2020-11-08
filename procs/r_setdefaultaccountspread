@@ -1,0 +1,38 @@
+create or replace procedure
+	 r_setdefaultaccountspread
+		@login varchar(50),
+		@contract varchr(50),
+		@name varchar(50),
+		@pips float=NULL
+
+as
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+exec
+	api_setdefaultaccountspread
+		@login = @login,
+		@contract = @contract,
+		@name = @name,
+		@pips = @pips
+
+exec
+	r_managedefaultaccountspreads
+		@login
+
+go
