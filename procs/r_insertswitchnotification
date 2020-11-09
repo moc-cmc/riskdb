@@ -1,0 +1,214 @@
+if object_id("r_insertswitchnotification") != NULL
+    drop procedure
+        r_insertswitchnotification
+go
+
+create procedure
+    r_insertswitchnotification
+        @trade_id int
+as
+
+
+declare @broker_id int
+declare @external_account_id int
+declare @trader_id int
+declare @counterparty_id int
+declare @status_id int
+declare @trade_type_id int
+
+declare @booking_id int
+declare @client_trade_id int
+declare @trade_match_id int
+declare @trade_matching_enabled varchar(10)
+
+declare @start_time datetime
+declare @end_time datetime
+declare @quantity numeric(30, 4)
+
+select
+    @start_time = getdate()
+
+select
+    source_id
+into
+    #notifications
+from
+    trade_notifications
+where
+    trade_id = @trade_id
+
+select
+    @broker_id = broker_id,
+    @external_account_id = external_account_id,
+    @trader_id = trader_id,
+    @counterparty_id = counterparty_id,
+    @status_id = status_id,
+    @trade_type_id = trade_type_id,
+    @quantity = quantity
+from
+    trades
+where
+    trade_id = @trade_id
+if @@rowcount = 0
+begin
+    return
+end
+
+if @quantity < 0 
+begin
+	return
+end
+
+/*
+create table
+    #exclusion_sources(
+	source_id int
+)
+create table
+    #notifier_exclusions (
+        source_id int,
+        status_id int NULL,
+        broker_id int NULL,
+        external_account_id int NULL,
+        trader_id int NULL,
+        counterparty_id int NULL,
+        trade_type_id int NULL
+    )
+*/
+
+select
+	a.source_id,
+	a.status_id,
+	a.broker_id,
+	a.external_account_id,
+        a.trader_id,
+	a.counterparty_id,
+	a.trade_type_id
+into
+	#notifier_exclusions
+from
+	notifier_exclusions a
+where
+    (
+        a.external_account_id = NULL
+    or
+        a.external_account_id = @external_account_id
+    )
+and (
+        a.broker_id = NULL
+    or
+        a.broker_id = @broker_id
+    )
+and (
+        a.status_id = NULL
+    or
+        a.status_id = @status_id
+    )
+and (
+        a.trader_id = NULL
+    or
+        a.trader_id = @trader_id
+    )
+and (
+        a.counterparty_id = NULL
+    or
+        a.counterparty_id = @counterparty_id
+    )
+and (
+        a.trade_type_id = NULL
+    or
+        a.trade_type_id = @trade_type_id
+    )
+
+
+
+/*create table
+    #notifiers (
+        source_id int,
+        status_id int NULL,
+	broker_id int NULL,
+	external_account_id int NULL,
+	trader_id int NULL,
+	counterparty_id int NULL,
+        notification_status_id int,
+    )*/
+
+select
+    a.source_id,
+    a.status_id,
+    a.broker_id,
+    a.external_account_id,
+    a.trader_id,
+    a.counterparty_id,
+    a.notification_status_id
+into
+    #notifiers
+from
+    trade_notifiers a
+where
+    a.source_id not in(select source_id from #notifier_exclusions)
+and
+    a.source_id not in(select source_id from #notifications)
+and
+    (
+        a.external_account_id = NULL
+    or
+        a.external_account_id = @external_account_id
+    )
+and (
+        a.broker_id = NULL
+    or
+        a.broker_id = @broker_id
+    )
+and (
+        a.status_id = NULL
+    or
+        a.status_id = @status_id
+    )
+and (
+        a.trader_id = NULL
+    or
+        a.trader_id = @trader_id
+    )
+and (
+        a.counterparty_id = NULL
+    or
+        a.counterparty_id = @counterparty_id
+    )
+and (
+        a.trade_type_id = NULL
+    or
+        a.trade_type_id = @trade_type_id
+    )
+
+
+insert into
+    trade_notifications (
+        source_id,
+        trade_id,
+        status_id,
+        capture_date
+    )
+select
+    a.source_id,
+    @trade_id,
+    min(a.notification_status_id),
+    getdate()
+from
+    #notifiers a
+group by
+    a.source_id
+
+	
+select
+    @end_time = getdate()
+
+exec 
+    sp_dogstatsdtimer 
+        @metric_name="ase.proc.r_insertswitchnotification",
+        @start_time=@start_time,
+        @end_time=@end_time,
+        @tags=NULL,
+        @sample_rate="1.0"
+
+go
