@@ -54,11 +54,6 @@ begin
     return
 end
 
-if @quantity < 0 
-begin
-	return
-end
-
 /*
 create table
     #exclusion_sources(
@@ -181,6 +176,22 @@ and (
         a.trade_type_id = @trade_type_id
     )
 
+/* If the source exists in switch_source_exclusions then the source expects
+ * both sides of the switch to be notified via one message. Since we book 
+ * each perspective of the switch trades, we only want to notify the long trade
+ * to that source. This prevents dupe reporting for sources that book both legs
+ * from one message in an external system
+ */
+if @quantity < 0 
+begin
+	delete
+		#notifiers
+	from
+		#notifiers a,
+		switch_source_exclusions b
+	where
+		a.source_id = b.source_id	
+end
 
 insert into
     trade_notifications (
