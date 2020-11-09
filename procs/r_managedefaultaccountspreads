@@ -155,9 +155,10 @@ select
 	section,
 	contract,
 	account_spread,
-	/*pips,*/
+	pips,
 	set_spread,
-	set_override
+	set_override,
+	name=account_spread
 from
 	#output
 order by 
