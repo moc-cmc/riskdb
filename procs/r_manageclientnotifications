@@ -223,6 +223,15 @@ values(
 
 insert into
         #meta
+values( 
+        "Column Link",
+        "manage_contract_spreads", 
+        "Manage Default Account Spreads",
+        NULL
+        )
+
+insert into
+        #meta
 values(
         "Column Link",
         "set_notification_alias",
@@ -278,6 +287,7 @@ order by
 	
 select
 	"manage_distribution_lists" = "Manage Distribution Lists",
+	"manage_contract_spreads" = "Manage Contract Spreads",
 	"manage_transfer_details" = "Manage Transfer Details"
 	
 
