@@ -193,7 +193,8 @@ select
 	pips,
 	set_spread,
 	set_override,
-	name=account_spread
+	name=account_spread,
+	style = @style
 from
 	#output
 order by 
