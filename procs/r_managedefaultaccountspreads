@@ -6,6 +6,8 @@ as
 
 
 declare @tico_account_id int
+declare @missing_count int
+declare @override_accounts int
 
 select
 	@tico_account_id = account_id
@@ -67,7 +69,6 @@ values (
 	"Set Default Account Spread",
 	NULL)
 
-
 insert into
 	#meta
 values (
@@ -75,6 +76,22 @@ values (
 	"set_override",
 	"Set Account Spread Override",
 	NULL)
+
+insert into
+	#meta
+values (
+	"Column Link",
+	"init_missing_defaults",
+	"Initialize Account Spread",
+	NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "view_account",
+        "View Account Spread Overrides",
+        NULL)
 
 insert into
 	#meta
@@ -106,7 +123,7 @@ insert into
 		contract,
 		set_spread)
 select
-	"Missing Spread Assignement",
+	"Missing Spread Assignment",
 	0,
 	a.contract_id,
 	a.symbol,
@@ -145,12 +162,30 @@ from
 where
 	a.contract_id = b.contract_id
 
+select
+	@missing_count = count(*)
+from
+	#output
+where
+	section = "Missing Spread Assignment"
+
+select
+	@override_accounts = count(*)
+from
+	account_spread_overrides
+group by
+	external_account_id
 
 select
 	* 
 from
 	#meta
 
+select
+	section = "Operations",
+	accounts_with_overrides = @override_accounts,
+	view_account = "View Overrides for Account",
+	init_missing_defaults = case when @missing_count > 0 then "Add Default Spread for Missing Contracts" else "" end
 select
 	section,
 	contract,

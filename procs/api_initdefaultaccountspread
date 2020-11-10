@@ -1,0 +1,118 @@
+create or replace procedure
+	 api_initdefaultaccountspread
+		@login varchar(50),
+		@name varchar(50),
+		@pips float=NULL
+
+as
+
+declare @tico_account_id int
+declare @contract_id int
+declare @id int
+declare @min_id int
+declare @ids int
+declare @symbol varchar(50)
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+create table
+	#contracts(
+		id int identity,
+		contract_id int,
+		symbol varchar(50)
+)
+
+insert into
+	#contracts
+select
+        a.contract_id,
+        a.symbol
+from
+        contracts a,
+        forwards b
+where
+        a.contract_id = b.contract_id
+
+
+delete
+        #contracts
+from
+        #contracts a,
+        contract_price_styles b,
+        price_styles c
+where
+        a.contract_id = b.contract_id
+and
+        b.price_style_id = c.price_style_id
+and
+        c.name = "Inverted"
+
+delete
+	#contracts
+from
+	#contracts a,
+	default_account_spreads b
+where
+	a.contract_id = b.contract_id
+
+select
+	@min_id = 0
+
+select
+	@ids = count(*) 
+from
+	#contracts
+where
+	id > @min_id
+
+while @ids > 0 
+begin
+	select
+		@contract_id = NULL,
+		@symbol = NULL
+
+	select
+		@min_id = min(id)
+	from
+		#contracts
+	where
+		id > @min_id
+
+	select
+		@contract_id = contract_id,
+		@symbol = symbol
+	from
+		#contracts
+	where
+		id = @min_id
+
+	exec
+		api_setdefaultaccountspread
+			@login=@login,
+			@contract=@symbol,
+			@name=@name,
+			@pips=@pips
+
+	select
+		@ids = count(*) 
+	from
+		#contracts
+	where
+		id > @min_id
+end
+
+go
