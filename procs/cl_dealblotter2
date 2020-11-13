@@ -194,4 +194,23 @@ begin
 end
 
 
+if @view_style = "Vertical Mark Up View"
+begin
+
+	if @trade_id = NULL
+	begin
+		select 
+			"error"="Error",
+			"msg"="Client configured for Vertical Mark Up View. TradeID is required for Vertical View. Trade ID not provided",
+			trade_id=@trade_id
+		return
+	end
+	exec 
+		tt_verticalmarkupview
+			@login=@login,
+			@trade_id=@trade_id
+
+end
+
+
 go
