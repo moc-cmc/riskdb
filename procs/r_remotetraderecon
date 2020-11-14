@@ -2,7 +2,9 @@ create or replace procedure
 	r_remotetraderecon
 		@login varchar(50),
 		@trade_date datetime = NULL,
-		@source varchar(50) = NULL
+		@source varchar(50) = NULL,
+		@contract varchar(50) = NULL,
+		@granularity varchar(50) = NULL
 
 as
 
@@ -26,7 +28,6 @@ declare @mismatched_style varchar(200)
 declare @committed_style varchar(200)
 declare @external_style varchar(200)
 declare @internal_style varchar(200)
-declare @contract varchar(50)
 
 declare @alert_high_style varchar(200)
 declare @alert_med_style varchar(200)
@@ -216,6 +217,22 @@ select
         "Remote Recon",
         "login=" + @login + "&tradeDate=" + convert(varchar(10), @next_trade_date, 101) + "&source="+ @source
 
+insert into
+        #meta
+select
+        "Column Link",
+        "details",
+        "Remote Recon",
+	"granularity=Breaks"
+
+insert into
+        #meta
+select
+        "Column Link",
+        "all_trades",
+        "Remote Recon",
+        "granularity=All"
+
 
 create table
         #statuses(
@@ -252,7 +269,8 @@ create table
                 trade_date datetime,
                 value_date datetime,
                 fixing_date datetime null,
-                identifier varchar(100)
+                identifier varchar(100),
+		recon_method_id int NULL
 )
 
 insert into
@@ -270,7 +288,8 @@ insert into
                 trade_date,
                 value_date,
                 fixing_date,
-                identifier)
+                identifier,
+		recon_method_id)
 select
         remote_trade_symbol_id,
         source_id,
@@ -285,7 +304,8 @@ select
         trade_date,
         value_date,
         fixing_date,
-        identifier
+        identifier,
+	recon_method_id
 from
         remote_trade_symbols a
 where
@@ -391,7 +411,9 @@ create table
 	std_contract varchar(30) NULL,
 	traded_ccy varchar(10) NULL,
 	counter_ccy varchar(10) NULL,
-	calc_price numeric(30, 10) NULL
+	calc_price numeric(30, 10) NULL,
+	recon_method_id int NULL,
+	recon_method varchar(50) NULL
 )
 
 insert into
@@ -421,6 +443,7 @@ insert into
 		broker,
 		in_identifier,
 		ex_identifier,
+		recon_method_id,
 		style
 )
 select
@@ -449,6 +472,7 @@ select
 	h.symbol,
 	d.identifier,
 	a.identifier,
+	a.recon_method_id,
 	@matched_style
 from
 	#remote_trades a,
@@ -503,6 +527,7 @@ insert into
                 broker,
                 in_identifier,
                 ex_identifier,
+		recon_method_id,
                 style
 )
 select
@@ -531,6 +556,7 @@ select
         h.symbol,
         d.identifier,
         a.identifier,
+	a.recon_method_id,
         @mismatched_style
 from
         #remote_trades a,
@@ -581,6 +607,7 @@ insert into
                 external_account,
                 counterparty,
                 ex_identifier,
+		recon_method_id,
                 style
 )
 select
@@ -603,6 +630,7 @@ select
         f.symbol,
         g.name,
         a.identifier,
+	a.recon_method_id,
         @external_style
 from
         #remote_trades a,
@@ -729,6 +757,15 @@ and
 and
 	d.name = "Inverted"
 
+update
+	#match_list
+set
+	recon_method = b.name
+from
+	#match_list a,
+	recon_methods b
+where
+	a.recon_method_id = b.recon_method_id
 
 create table
 	#report (
@@ -939,8 +976,8 @@ select
     mismatched = case when mismatched != 0 then mismatched else NULL end,
     external_only = case when external_only != 0 then external_only else NULL end,
     internal_only = case when internal_only != 0 then internal_only else NULL end,
-    details = "Show " + rtrim(symbol) + " Details",
-    all_trades = "Show All " + rtrim(symbol) + " Trades",
+    details = case when (mismatched != 0 or external_only != 0 or internal_only != 0) then "Show " +rtrim(symbol) + " Breaks" else NULL end,
+    all_trades = "Show All " + rtrim(symbol),
     style
 from
     #report
@@ -958,31 +995,134 @@ begin
             msg = "There are no mismatched, external-only nor internal-only trades for " + rtrim(@contract)
 end
 
-select
-	section = "Recon for " + external_account,
-	recon_id=id,
-        ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
-	contract,
-	match_status,
-	match_strength,
-	trade_date,
-	value_date=convert(char(12), convert(datetime, value_date, 101)),
-	/*fixing_date=convert(datetime, fixing_date, 101),*/
-	quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
-	counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
-	rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
-	internal_account,
-	external_account,
-	counterparty,
-	broker,
-	identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-	style
-from
-	#match_list
-order by 
-	external_account,
-	std_contract,
-	price,
-	match_status
 
+if @granularity = "All" and @contract = NULL
+begin
+	select
+		section = "Recon for " + external_account,
+		recon_id=id,
+        	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
+		contract,
+		match_status,
+		match_strength,
+		trade_date,
+		value_date=convert(char(12), convert(datetime, value_date, 101)),
+		/*fixing_date=convert(datetime, fixing_date, 101),*/
+		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
+		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
+		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
+		internal_account,
+		external_account,
+		counterparty,
+		broker,
+		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
+		recon_method,
+		style
+	from
+		#match_list
+	order by 
+		external_account,
+		std_contract,
+		price,
+		match_status
+end
+
+if @granularity = "All" and @contract != NULL
+begin
+	select
+		section = "Recon for " + external_account,
+		recon_id=id,
+        	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
+		contract,
+		match_status,
+		match_strength,
+		trade_date,
+		value_date=convert(char(12), convert(datetime, value_date, 101)),
+		/*fixing_date=convert(datetime, fixing_date, 101),*/
+		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
+		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
+		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
+		internal_account,
+		external_account,
+		counterparty,
+		broker,
+		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
+		recon_method,
+		style
+	from
+		#match_list
+	where
+		std_contract = @contract
+	order by 
+		external_account,
+		std_contract,
+		price,
+		match_status
+end
+if @granularity = "Breaks" and @contract = NULL
+begin
+	select
+		section = "Recon for " + external_account,
+		recon_id=id,
+        	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
+		contract,
+		match_status,
+		match_strength,
+		trade_date,
+		value_date=convert(char(12), convert(datetime, value_date, 101)),
+		/*fixing_date=convert(datetime, fixing_date, 101),*/
+		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
+		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
+		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
+		internal_account,
+		external_account,
+		counterparty,
+		broker,
+		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
+		recon_method,
+		style
+	from
+		#match_list
+	where
+		match_status != "Matched"
+	order by 
+		external_account,
+		std_contract,
+		price,
+		match_status
+end
+if @granularity = "Breaks" and @contract != NULL
+begin
+	select
+		section = "Recon for " + external_account,
+		recon_id=id,
+        	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
+		contract,
+		match_status,
+		match_strength,
+		trade_date,
+		value_date=convert(char(12), convert(datetime, value_date, 101)),
+		/*fixing_date=convert(datetime, fixing_date, 101),*/
+		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
+		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
+		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
+		internal_account,
+		external_account,
+		counterparty,
+		broker,
+		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
+		recon_method,
+		style
+	from
+		#match_list
+	where
+		match_status != "Matched"
+	and
+		std_contract = @contract
+	order by 
+		external_account,
+		std_contract,
+		price,
+		match_status
+end
 go
