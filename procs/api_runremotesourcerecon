@@ -1,3 +1,4 @@
+
 create or replace procedure
 	api_runremotesourcerecon
 		@login varchar(50),
@@ -19,6 +20,7 @@ declare @mismatched_count int
 declare @new_count int
 declare @remote_count int
 declare @debug char(1)
+declare @algo_recon_method_id int
 
 select
 	@debug = "N"
@@ -81,6 +83,20 @@ begin
 	return
 end
 
+select
+	@algo_recon_method_id = recon_method_id
+from
+	recon_methods
+where
+	name = "Algo"
+if @algo_recon_method_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Auto' recon method"
+	return
+end
+
 create table
 	#statuses(
 		status_id int,
@@ -117,7 +133,8 @@ create table
         	value_date datetime,
         	fixing_date datetime null,
         	identifier varchar(100),
-		multi_match_id int NULL
+		multi_match_id int NULL,
+		recon_method_id int NULL
 )
 
 insert into
@@ -135,7 +152,8 @@ insert into
 		trade_date,
 		value_date,
 		fixing_date,
-		identifier)   
+		identifier,
+		recon_method_id)   
 select
 	remote_trade_symbol_id,
 	source_id,
@@ -150,7 +168,8 @@ select
 	trade_date,
 	value_date,
 	fixing_date,
-	identifier
+	identifier,
+	recon_method_id
 from
 	remote_trade_symbols a,
 	#statuses b
@@ -267,7 +286,8 @@ update
 	#remote_trades
 set
 	recon_status_id = b.status_id,
-	trade_id = c.trade_id
+	trade_id = c.trade_id,
+	recon_method_id = @algo_recon_method_id
 from
 	#remote_trades a,
 	#statuses b,
@@ -312,7 +332,8 @@ update
 	#remote_trades
 set
 	recon_status_id = b.status_id,
-	trade_id = c.trade_id
+	trade_id = c.trade_id,
+	recon_method_id = @algo_recon_method_id
 from
 	#remote_trades a,
 	#statuses b,
@@ -355,7 +376,8 @@ update
         #remote_trades
 set
         recon_status_id = b.status_id,
-        trade_id = c.trade_id
+        trade_id = c.trade_id,
+	recon_method_id = @algo_recon_method_id
 from
         #remote_trades a,
         #statuses b,
@@ -464,7 +486,8 @@ update
 	#remote_trades
 set
 	recon_status_id = b.status_id,
-	trade_id = c.trade_id
+	trade_id = c.trade_id,
+	recon_method_id = @algo_recon_method_id
 from
 	#remote_trades a,
 	#statuses b,
@@ -511,7 +534,8 @@ update
 	#remote_trades
 set
 	recon_status_id = b.status_id,
-	trade_id = c.trade_id
+	trade_id = c.trade_id,
+	recon_method_id = @algo_recon_method_id
 from
 	#remote_trades a,
 	#statuses b,
@@ -679,7 +703,8 @@ update
 	remote_trade_symbols
 set
 	trade_id = b.trade_id,
-	recon_status_id = b.recon_status_id
+	recon_status_id = b.recon_status_id,
+	recon_method_id = b.recon_method_id	
 from
 	remote_trade_symbols a,
 	#remote_trades b

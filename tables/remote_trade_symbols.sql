@@ -20,7 +20,8 @@ create table
         value_date datetime,
         fixing_date datetime null,
         identifier varchar(100),
-	bo_trade_date datetime
+	bo_trade_date datetime,
+	recon_method_id int
     )
 go
 
