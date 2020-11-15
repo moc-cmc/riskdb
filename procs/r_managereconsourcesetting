@@ -16,7 +16,7 @@ exec
 		@source=@source,
 		@default_internal_account=@default_internal_account,
 		@match_inverted_trades=@match_inverted_trades,
-		@conventional_dates=conventional_dates,
+		@conventional_dates=@conventional_dates,
 		@recon_source_setting_id = @recon_source_setting_id output
 
 exec
