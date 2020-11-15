@@ -1,0 +1,132 @@
+drop procedure r_reconsourcesettings
+go
+
+create procedure
+	r_reconsourcesettings
+		@login varchar(50)
+as
+
+select "status" = "Hello"
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+        @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+        @subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+        @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+        @style = "background:#FFFFFF;border: 1px solid white",
+        @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+        @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "edit_setting",
+        "Manage Recon Source Setting",
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Link",
+        "manage_source_setting",
+        "Manage Recon Source Setting",
+        NULL)
+
+create table
+        #output(
+                id int identity,
+                section varchar(50),
+                ordering int,
+                source_id int,
+                source varchar(50),
+                default_internal_account_id int NULL,
+                default_internal_account varchar(50) NULL,
+                match_inverted_trades char(5) NULL,
+                conventional_dates char(5) NULL,
+                style varchar(200) NULL
+)
+
+insert into
+        #output(
+                section,
+                ordering,
+                source_id,
+                source,
+                default_internal_account_id,
+                match_inverted_trades,
+                conventional_dates)
+select
+        "Settings",
+        0,
+        a.source_id,
+        a.name,
+        b.default_internal_account_id,
+        b.match_inverted_trades,
+        b.conventional_dates
+from
+        sources a,
+        recon_source_settings b
+where
+        a.source_id = b.source_id
+
+update
+        #output
+set
+        default_internal_account = a.symbol
+from
+        internal_accounts a,
+        #output b
+where
+        a.internal_account_id = b.default_internal_account_id
+
+select
+        section = "Operations",
+        manage_source_setting = "Add Recon Setting",
+        style = @style
+
+select
+	section = "Settings",
+	source = source,
+	default_internal_account = default_internal_account,
+	match_inverted_trades = case when match_inverted_trades = NULL then "N" else match_inverted_trades end,
+	conventional_dates = case when conventional_dates = NULL then "N" else conventional_dates end,
+	edit_setting = "Edit",
+	style = @style
+from
+	#output
+order by
+	section,
+	ordering,
+	source
+
+go

@@ -1,0 +1,158 @@
+create or replace procedure
+	api_managereconsourcesetting
+		@login varchar(50),
+		@source varchar(50),
+		@default_internal_account varchar(50)=NULL,
+		@match_inverted_trades char(1)=NULL,
+		@conventional_dates char(1)=NULL,
+		@recon_source_setting_id int=NULL output
+
+as
+
+declare @tico_account_id int
+declare @internal_account_id int
+declare @source_id int
+
+declare @orig_default_ia_id int
+declare @orig_match_inverted_trades char(1)
+declare @orig_conventional_dates char(1)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id  = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding source",
+		source=@source
+	return
+end
+
+select
+	@recon_source_setting_id = NULL
+select
+	@recon_source_setting_id = recon_source_setting_id,
+	@orig_default_ia_id = default_internal_account_id,
+	@orig_match_inverted_trades = match_inverted_trades,
+	@orig_conventional_dates = conventional_dates
+from
+	recon_source_settings
+where
+	source_id = @source_id
+
+
+if @default_internal_account = NULL
+begin
+	select
+		@internal_account_id = @orig_default_ia_id
+end
+else
+begin
+	select
+		@internal_account_id = internal_account_id
+	from
+		internal_accounts
+	where
+		symbol = @default_internal_account
+	if @internal_account_id = NULL
+	begin
+		select
+			status="Error",
+			message="Problem finding internal account from provided",
+			default_internal_account = @default_internal_account
+		return
+	end
+end
+
+
+if @match_inverted_trades = NULL
+begin
+	select
+		@match_inverted_trades = @orig_match_inverted_trades
+end
+else
+begin
+	select
+		@match_inverted_trades = upper(@match_inverted_trades)
+	if @match_inverted_trades not in("Y", "N")
+	begin
+		select
+			status = "Error",
+			message = "Must provide match_inverted_trades as 'Y' or 'N'",
+			match_inverted_trades = @match_inverted_trades
+		return
+	end
+end
+
+if @conventional_dates = NULL
+begin
+	select
+		@conventional_dates = @orig_conventional_dates
+end
+else
+begin
+	select
+		@conventional_dates = upper(@conventional_dates)
+	if @conventional_dates not in("Y", "N")
+	begin
+		select
+			status = "Error",
+			message = "Must provide conventional_dates as 'Y' or 'N'",
+			conventional_dates = @conventional_dates
+		return
+	end
+end
+
+update
+	recon_source_settings
+set
+	default_internal_account_id = @internal_account_id,
+	match_inverted_trades = @match_inverted_trades,
+	conventional_dates = @conventional_dates
+where
+	recon_source_setting_id = @recon_source_setting_id
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"recon_source_settings",
+			@recon_source_setting_id output
+
+	insert into
+		recon_source_settings(
+			recon_source_setting_id,
+			source_id,
+			default_internal_account_id,
+			match_inverted_trades,
+			conventional_dates)
+	values(
+		@recon_source_setting_id,
+		@source_id,
+		@internal_account_id,
+		@match_inverted_trades,
+		@conventional_dates
+	)
+end	
+
+
+go

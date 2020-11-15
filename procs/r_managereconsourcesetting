@@ -1,0 +1,27 @@
+create or replace procedure
+	r_managereconsourcesetting
+		@login varchar(50),
+		@source varchar(50),
+		@default_internal_account varchar(50)=NULL,
+		@match_inverted_trades char(1)=NULL,
+		@conventional_dates char(1)=NULL
+
+as
+
+declare @recon_source_setting_id int
+
+exec
+	api_managereconsourcesetting
+		@login=@login,
+		@source=@source,
+		@default_internal_account=@default_internal_account,
+		@match_inverted_trades=@match_inverted_trades,
+		@conventional_dates=conventional_dates,
+		@recon_source_setting_id = @recon_source_setting_id output
+
+exec
+	r_reconsourcesettings
+		@login = @login
+
+go
+
