@@ -1,0 +1,66 @@
+create or replace procedure
+	api_changeremotetradebodate
+		@login varchar(50),
+		@remote_trade_symbol_id int,
+		@bo_trade_date datetime
+
+as
+
+declare @prev_bo_trade_date datetime
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+select
+	@prev_bo_trade_date = bo_trade_date
+from
+	remote_trade_symbols
+where
+	remote_trade_symbol_id = @remote_trade_symbol_id
+if @prev_bo_trade_date = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding remote trade symbol for ID",
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	return
+end
+
+
+select
+	@bo_trade_date = convert(date, @bo_trade_date)
+
+/* TODO: Add an audit table or edit table */
+
+begin tran
+	update
+		remote_trade_symbols
+	set
+		bo_trade_date = @bo_trade_date
+	where
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem setting new bo trade date",
+			remote_trade_symbol_id = @remote_trade_symbol_id
+		rollback tran
+		return
+	end
+commit tran	
+
+go
