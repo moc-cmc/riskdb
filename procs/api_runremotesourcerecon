@@ -305,7 +305,7 @@ and
 and
 	a.quantity = c.quantity
 and
-	a.price = c.price
+        convert(numeric(30, 10), a.price) = convert(numeric(30, 10), c.price)
 and
 	a.value_date = c.value_date
 and
@@ -353,7 +353,7 @@ and
 and
 	a.quantity = c.quantity
 and
-	a.price = c.price
+        convert(numeric(30, 10), a.price) = convert(numeric(30, 10), c.price)
 and
 	c.remote_trade_id = NULL
 select
