@@ -6,7 +6,7 @@ create or replace procedure
 
 as
 
-declare @prev_bo_trade_date datetime
+declare @old_bo_trade_date datetime
 declare @tico_account_id int
 
 select
@@ -25,12 +25,12 @@ end
 
 
 select
-	@prev_bo_trade_date = bo_trade_date
+	@old_bo_trade_date = bo_trade_date
 from
 	remote_trade_symbols
 where
 	remote_trade_symbol_id = @remote_trade_symbol_id
-if @prev_bo_trade_date = NULL
+if @old_bo_trade_date = NULL
 begin
 	select
 		status = "Error",
