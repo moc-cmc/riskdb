@@ -27,6 +27,8 @@ insert into recon_methods values(3, "Accepted External")
 go
 insert into recon_methods values(4, "Accepted Mismatch")
 go
+insert into recon_methods values(5, "Algo Inv")
+go
 
 
 if not exists(select name from tables where name = "recon_methods")
@@ -54,6 +56,6 @@ insert into
 	keys
 values(
 	"recon_methods",
-	4)
+	5)
 
 go
