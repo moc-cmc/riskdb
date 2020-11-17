@@ -1,0 +1,37 @@
+create or replace procedure
+	api_moveremotetradeprevdate
+		@login varchar(50),
+		@remote_trade_symbol_id int
+
+as
+
+declare @bo_trade_date datetime
+declare @prev_bo_trade_date datetime
+
+select
+        @bo_trade_date = bo_trade_date
+from
+        remote_trade_symbols
+where
+        remote_trade_symbol_id = @remote_trade_symbol_id
+if @bo_trade_date = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem finding remote trade symbol for ID",
+                remote_trade_symbol_id = @remote_trade_symbol_id
+        return
+end
+
+exec
+	r_prevbusinessday
+		@bo_trade_date,
+		@prev_bo_trade_date output
+exec
+	api_changeremotetradebodate
+                @login = @login,
+                @remote_trade_symbol_id = @remote_trade_symbol_id,
+                @bo_trade_date=@prev_bo_trade_date
+
+
+go
