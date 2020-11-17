@@ -89,7 +89,7 @@ select
 
 select
 	@account_lookup = rtrim(@fund_name),
-	@counterparty_lookup = rtrim(@cpty)
+	@counterparty_lookup = rtrim(@fund_name)+"-"+rtrim(@cpty)
 
 
 /* --------------------------------------------------------------------------
