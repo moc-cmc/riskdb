@@ -281,12 +281,12 @@ select
 if @exec_firm = "FXN96185"
 begin
 	select
-		@message_format = "client"
+		@message_format = "cover"
 end
 else
 begin
 	select
-		@message_format = "cover"
+		@message_format = "client"
 end
 
 if @message_format = "client"
