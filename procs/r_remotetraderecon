@@ -154,6 +154,36 @@ values(
         NULL
 )
 
+insert into
+        #meta
+values(
+        "Column Link",
+        "move_date",
+        "Change Recon Remote Trade Date",
+        NULL
+)
+
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "move_next",
+        "Move Recon Remote Next Date",
+        NULL
+)
+
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "move_prev",
+        "Move Remote Trade Prev Date",
+        NULL
+)
+
+
 select
         @tico_account_id = account_id
 from
@@ -318,9 +348,7 @@ select
 from
         remote_trade_symbols a
 where
-        a.trade_date >= @begin_date
-and
-        a.trade_date < @end_date
+	bo_trade_date = @bo_trade_date
 
 
 create table
@@ -1025,7 +1053,8 @@ begin
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-		recon_method,
+		method=recon_method,
+		move_date = case when trade_id = NULL then "Move" else NULL end,
 		style
 	from
 		#match_list
@@ -1056,7 +1085,8 @@ begin
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-		recon_method,
+		method=recon_method,
+		move_date = case when trade_id = NULL then "Move" else NULL end,
 		style
 	from
 		#match_list
@@ -1088,7 +1118,8 @@ begin
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-		recon_method,
+		method=recon_method,
+		move_date = case when trade_id = NULL then "Move" else NULL end,
 		style
 	from
 		#match_list
@@ -1120,7 +1151,8 @@ begin
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-		recon_method,
+		method=recon_method,
+		move_date = case when trade_id = NULL then "Move" else NULL end,
 		style
 	from
 		#match_list
