@@ -67,9 +67,7 @@ from
 where
 	a.source_id = b.source_id
 and
-	a.trade_date >= @begin_date
-and
-	a.trade_date < @end_date
+	a.bo_trade_date =  @bo_trade_date
 group by
 	b.source_id,
 	b.name
