@@ -792,7 +792,7 @@ begin
                 @m_quantity = @qty *-1
 end
 
-if @message_format = "client"
+if @message_format = "cover"
 begin
 	select
 		@c_quantity = @c_quantity * -1,
