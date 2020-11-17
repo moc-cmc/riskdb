@@ -1,0 +1,22 @@
+create or replace procedure
+	r_changeremotetradebodate
+		@login varchar(50),
+		@remote_id int,
+		@bo_trade_date datetime
+
+as
+
+exec
+	api_changeremotetradebodate
+		@login=@login,
+		@remote_trade_symbol_id = @remote_id,
+		@bo_trade_date = @bo_trade_date
+
+exec
+	r_remotetraderecon
+		@login = @login,
+		@trade_date = @bo_trade_date
+
+
+go
+
