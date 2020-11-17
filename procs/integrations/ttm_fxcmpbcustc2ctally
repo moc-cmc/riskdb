@@ -264,7 +264,7 @@ where
 
 /* We will receive two messages for this flow, depending on the message, perspective
  * and mappings will change. For purposed of this proc we are classifying the messages
- * as @message_format with values of "give up" or "fxcm taker" where the "fxcm taker" requires
+ * as @message_format with values of "cover" or "client" where the "client" requires
  * a mapping and perspective flip
  *
  *
@@ -277,36 +277,37 @@ where
 select
 	@deal_exec_symbol = rtrim(@trade_report_id)
 
-if @exec_firm = "FXCM_GU_CLIENT"
+/* Hardcoded FXCM FXN Number */
+if @exec_firm = "FXN96185"
 begin
 	select
-		@message_format = "fxcm taker"
+		@message_format = "client"
 end
 else
 begin
 	select
-		@message_format = "give up"
+		@message_format = "cover"
 end
 
-if @message_format = "fxcm_taker"
+if @message_format = "client"
 begin
 	select
         	@c_platform_identifier = rtrim(@trade_report_id)+".c",
-        	@c_trader_lookup = rtrim(@alloc_account),
+        	@c_trader_lookup = rtrim(@alloc_account)+"-C2C",
         	@c_counterparty_lookup = rtrim(@exec_firm),
         	@m_platform_identifier = rtrim(@trade_report_id)+".m",
-        	@m_counterparty_lookup = rtrim(@target_comp)+"-"+rtrim(@exec_firm),
-        	@m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@alloc_account)
+        	@m_counterparty_lookup = rtrim(@target_comp),
+        	@m_trader_lookup = rtrim(@target_comp)
 end
-else if @message_format = "give_up"
+else if @message_format = "cover"
 begin
 	select
         	@c_platform_identifier = rtrim(@trade_report_id)+".c",
-        	@c_trader_lookup = rtrim(@alloc_account),
-        	@c_counterparty_lookup = rtrim(@exec_firm),
+        	@c_trader_lookup = rtrim(@exec_firm),
+        	@c_counterparty_lookup = rtrim(@alloc_account),
         	@m_platform_identifier = rtrim(@trade_report_id)+".m",
-        	@m_counterparty_lookup = rtrim(@target_comp)+"-"+rtrim(@exec_firm),
-        	@m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@alloc_account)
+        	@m_counterparty_lookup = rtrim(@target_comp)+"-"+rtrim(@alloc_account),
+        	@m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@exec_firm)
 end
 else
 begin
@@ -791,7 +792,7 @@ begin
                 @m_quantity = @qty *-1
 end
 
-if @message_format = "fxcm_taker"
+if @message_format = "client"
 begin
 	select
 		@c_quantity = @c_quantity * -1,
