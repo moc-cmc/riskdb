@@ -91,22 +91,27 @@ where
  *
  */
 
-if @fixing_date = ""
-begin
-	select
-		@fixing_date = NULL
-end
 
 select
 	@tally_qty = convert(numeric(30, 4), @amount_1),
 	@tally_price = convert(float, @trade_rate),
 	@tally_trade_date = convert(datetime, @trade_date),
 	@tally_value_date = convert(datetime, @value_date),
-	@tally_fixing_date = convert(datetime, @fixing_date),
 	@ccy1 = @ccy_1,
 	@ccy2 = @ccy_2,
 	@identifier = rtrim(@db_trade_id)+"_"+rtrim(@db_trade_leg_id),
 	@internal_account = "OANDA ALL"
+
+if @fixing_date not in("", NULL, " ")
+begin
+	select
+		@tally_fixing_date = convert(datetime, @fixing_date)
+end
+else
+begin
+	select
+		@tally_fixing_date = NULL
+end
 
 
 select
