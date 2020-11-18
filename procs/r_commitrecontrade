@@ -1,0 +1,26 @@
+create or replace procedure
+	r_commitrecontrade
+		@login varchar(50),
+		@remote_id int,
+		@bo_trade_date datetime,
+		@contract varchar(50)=NULL,
+		@granularity varchar(50)=NULL
+
+as
+
+exec
+	api_commitrecontrade
+		@login=@login,
+		@remote_trade_symbol_id = @remote_id
+
+exec
+	r_remotetraderecon
+		@login = @login,
+		@trade_date = @bo_trade_date,
+		@contract = @contract,
+		@granularity = @granularity
+		
+
+
+go
+
