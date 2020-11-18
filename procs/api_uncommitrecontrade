@@ -1,0 +1,99 @@
+create or replace procedure
+	api_uncommitrecontrade
+		@login varchar(50),
+		@remote_trade_symbol_id int/*,
+		@note varchar(255)=NULL*/
+
+as
+
+declare @tico_account_id int
+declare @matched_status_id int
+declare @committed_status_id int
+declare @old_status_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+select
+	@matched_status_id = status_id
+from
+	statuses
+where
+	name = "Matched"
+if @matched_status_id = NULL
+begin
+	select
+		status="Error",
+		message = "Problem finding 'Matched' status"
+	return
+end
+
+select
+        @committed_status_id = status_id
+from
+        statuses
+where
+        name = "Committed"
+if @matched_status_id = NULL
+begin
+        select
+                status="Error",
+                message = "Problem finding 'Matched' status"
+        return
+end
+
+select
+	@old_status_id = recon_status_id
+from
+	remote_trade_symbols
+where
+	remote_trade_symbol_id = @remote_trade_symbol_id
+if @old_status_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding remote trade symbol"
+	return
+end
+
+if @old_status_id != @committed_status_id
+begin
+	select
+		status = "Error",
+		message = "Unable to uncommit a trade unless it is committed"
+	return
+end
+
+
+/* TODO: Add a log with note */
+
+begin tran
+	update
+		remote_trade_symbols
+	set
+		recon_status_id = @matched_status_id
+	where
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem uncommitting a committed record",
+			remote_trade_symbol_id = @remote_trade_symbol_id
+		rollback tran
+		return
+	end
+commit tran	
+
+go
