@@ -6,8 +6,6 @@ create procedure
 		@login varchar(50)
 as
 
-select "status" = "Hello"
-
 declare @error_style varchar(200)
 declare @total_style varchar(200)
 declare @style varchar(200)
@@ -108,6 +106,11 @@ from
         #output b
 where
         a.internal_account_id = b.default_internal_account_id
+
+select
+	*
+from
+	#meta
 
 select
         section = "Operations",
