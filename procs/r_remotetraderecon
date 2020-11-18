@@ -16,6 +16,8 @@ declare @end_date datetime
 declare @bo_trade_date datetime
 declare @previous_trade_date datetime
 declare @next_trade_date datetime
+declare @commit_available varchar(30)
+declare @uncommit_available varchar(30)
 
 declare @error_style varchar(200)
 declare @total_style varchar(200)
@@ -43,7 +45,10 @@ select
 	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
         @matched_style = "background:#fff;border: 1px solid white",
         @mismatched_style = "background:#decafc;border: 1px solid white;font-weight:bold",
-        @committed_style = "background:#f0f0f8;color:#666;border: 1px solid white",
+        @committed_style = "background:#f9f9fc;color:#666666;border: 1px solid white",
+        /*@committed_style = "background:#f0f0f8;color:#CCFFCC;border: 1px solid white",
+        @committed_style = "background:#f0f0f8;color:#CCFFCC;border: 1px solid white",
+	*/
         @external_style = "background:#c4ff5e;border: 1px solid white",
         @internal_style = "background:#fcf860;border: 1px solid white"
 
@@ -56,6 +61,7 @@ select
 select
 	@external_style = @alert_none_style,
 	@internal_style = @alert_low_style
+
 
 
 create table
@@ -151,6 +157,24 @@ values(
         "Column Link",
         "manage_settings",
         "Recon Source Settings",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "commit_date",
+        "Commit Recon For Date",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "uncommit_date",
+        "Uncommit Recon For Date",
         NULL
 )
 
@@ -289,6 +313,25 @@ values(
         NULL,
 	NULL
 )
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "remote_ID",
+        NULL,
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "bo_trade_date",
+        NULL,
+        NULL
+)
+
 
 
 create table
@@ -528,7 +571,7 @@ select
 	d.identifier,
 	a.identifier,
 	a.recon_method_id,
-	@matched_style
+	case when c.name = "Committed" then @committed_style else @matched_style end
 from
 	#remote_trades a,
 	contracts b,
@@ -985,7 +1028,7 @@ set
 where
 	external_only > 0
 
-
+	
 
 insert into
     #report
@@ -1006,6 +1049,24 @@ from
         #report
 
 select
+	@commit_available = "Commit Reconciled"
+from
+	#report
+where
+	status = "Total"
+and
+	reconciled > 0
+
+select
+        @uncommit_available = "Uncommit"
+from
+        #report
+where
+        status = "Total"
+and
+	committed > 0
+
+select
 	* 
 from
 	#meta
@@ -1014,7 +1075,11 @@ select
         style = @style,
 	previous_date = "<< Previous Date",
 	run_recon = "Run Recon",
+	run_aggressive_recon = "Run Aggressive Recon",
+	commit_date = @commit_available,
+	uncommit_date = @uncommit_available,
         recon_date = @bo_trade_date,
+        bo_trade_date = @bo_trade_date,
 	manage_settings = "Manage Settings",
 	next_date = "Next Date  >>"
 
@@ -1055,10 +1120,11 @@ if @granularity = "All" and @contract = NULL
 begin
 	select
 		section = "Recon for " + external_account,
-		recon_id=id,
+		/*recon_id=id,*/
         	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
 		contract,
 		match_status,
+		method=recon_method,
 		match_strength,
 		trade_date,
 		value_date=convert(char(12), convert(datetime, value_date, 101)),
@@ -1071,7 +1137,6 @@ begin
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-		method=recon_method,
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
 		remote_id = remote_trade_id,
@@ -1089,10 +1154,11 @@ if @granularity = "All" and @contract != NULL
 begin
 	select
 		section = "Recon for " + external_account,
-		recon_id=id,
+		/*recon_id=id,*/
         	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
 		contract,
 		match_status,
+		method=recon_method,
 		match_strength,
 		trade_date,
 		value_date=convert(char(12), convert(datetime, value_date, 101)),
@@ -1105,7 +1171,6 @@ begin
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-		method=recon_method,
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
 		remote_id = remote_trade_id,
@@ -1124,10 +1189,11 @@ if @granularity = "Breaks" and @contract = NULL
 begin
 	select
 		section = "Recon for " + external_account,
-		recon_id=id,
+		/*recon_id=id,*/
         	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
 		contract,
 		match_status,
+		method=recon_method,
 		match_strength,
 		trade_date,
 		value_date=convert(char(12), convert(datetime, value_date, 101)),
@@ -1140,7 +1206,6 @@ begin
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-		method=recon_method,
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
 		remote_id = remote_trade_id,
@@ -1159,10 +1224,11 @@ if @granularity = "Breaks" and @contract != NULL
 begin
 	select
 		section = "Recon for " + external_account,
-		recon_id=id,
+		/*recon_id=id,*/
         	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
 		contract,
 		match_status,
+		method=recon_method,
 		match_strength,
 		trade_date,
 		value_date=convert(char(12), convert(datetime, value_date, 101)),
@@ -1175,7 +1241,6 @@ begin
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
-		method=recon_method,
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
 		remote_id = remote_trade_id,
