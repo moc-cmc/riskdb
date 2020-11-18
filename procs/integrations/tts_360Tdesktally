@@ -50,6 +50,7 @@ declare @platform_identifier varchar(100)
 declare @far_platform_identifier varchar(100)
 declare @deal_exec_symbol varchar(100)
 declare @trigger_symbol varchar(50)
+declare @symbol_provided_as_inverted char(1)
 
 declare @broker_id int
 declare @source_id int
@@ -429,21 +430,40 @@ exec
 
 
 /* --------------------------------------------------------------------------
- * 360T sends inverted contracts with an inverted price. Flipping to standard price
+ * 360T can with send with an inverted price or note, depending on how the
+ * whether the execution was done on an inverted stream. It has nothing to
+ * do with notional. In cases where the symbol is inverted, just flip the price
+ * back to standard
  */
 
-if @inverted = "Y"
+select
+        @symbol_provided_as_inverted = "Y"
+from
+        contracts a,
+        contract_price_styles b,
+        price_styles c
+where
+        a.contract_id = b.contract_id
+and
+        b.price_style_id = c.price_style_id
+and
+	a.symbol = @symbol
+and
+        c.name = "Inverted"
+
+if @symbol_provided_as_inverted = "Y"
 begin
         select
                 @price = 1/@price,
-		@last_spot_rate = 1/@last_spot_rate
+                @last_spot_rate = 1/@last_spot_rate
 
-	if @far_price != NULL
-	begin
-		select
-			@far_price = 1/@far_price
-	end
+        if @far_price != NULL
+        begin
+                select
+                        @far_price = 1/@far_price
+        end
 end
+
 
 /* --------------------------------------------------------------------------
  * STEP: Adjust the perspective of the trade and set the quantity
