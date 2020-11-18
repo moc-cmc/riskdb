@@ -1,0 +1,85 @@
+create or replace procedure
+	api_uncommitreconfortradedate
+		@login varchar(50),
+		@bo_trade_date datetime
+
+as
+
+declare @tico_account_id int
+declare @matched_status_id int
+declare @committed_status_id int
+declare @old_status_id int
+declare @uncommitted_count int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+select
+	@bo_trade_date = convert(date, @bo_trade_date)
+
+select
+	@matched_status_id = status_id
+from
+	statuses
+where
+	name = "Matched"
+if @matched_status_id = NULL
+begin
+	select
+		status="Error",
+		message = "Problem finding 'Matched' status"
+	return
+end
+
+select
+        @committed_status_id = status_id
+from
+        statuses
+where
+        name = "Committed"
+if @matched_status_id = NULL
+begin
+        select
+                status="Error",
+                message = "Problem finding 'Matched' status"
+        return
+end
+
+/* TODO: Add a log with note */
+
+begin tran
+	update
+		remote_trade_symbols
+	set
+		recon_status_id = @matched_status_id
+	where
+		recon_status_id = @committed_status_id
+	and
+		bo_trade_date = @bo_trade_date
+
+	select
+		@uncommitted_count = @@rowcount
+
+	if @uncommitted_count != 0
+	begin
+		select
+			status = "Success",
+			message = "Uncommitted all committed records for date",
+			trade_date = @bo_trade_date,
+			uncommitted_count = @uncommitted_count
+	end
+commit tran	
+
+go

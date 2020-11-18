@@ -1,0 +1,21 @@
+create or replace procedure
+	r_uncommitreconfortradedate
+		@login varchar(50),
+		@bo_trade_date datetime
+
+as
+
+exec
+	api_uncommitreconfortradedate
+		@login=@login,
+		@bo_trade_date = @bo_trade_date
+
+exec
+	r_remotetraderecon
+		@login = @login,
+		@trade_date = @bo_trade_date
+		
+
+
+go
+
