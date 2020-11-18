@@ -272,6 +272,24 @@ select
         "Remote Recon",
         "granularity=All"
 
+insert into
+	#meta
+values(
+	"Column Link",
+	"accept",
+	"Accept Recon Mismatch",
+	"login=" + @login + "&boTradeDate=" + convert(varchar(10), @bo_trade_date, 101) + "&granularity=" + @granularity + "&contract=" + @contract
+)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "remote id",
+        NULL,
+	NULL
+)
+
 
 create table
         #statuses(
@@ -1048,13 +1066,15 @@ begin
 		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
 		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
-		internal_account,
+		/*internal_account,*/
 		external_account,
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		method=recon_method,
 		move_date = case when trade_id = NULL then "Move" else NULL end,
+		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
+		remote_id = remote_trade_id,
 		style
 	from
 		#match_list
@@ -1080,13 +1100,15 @@ begin
 		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
 		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
-		internal_account,
+		/*internal_account,*/
 		external_account,
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		method=recon_method,
 		move_date = case when trade_id = NULL then "Move" else NULL end,
+		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
+		remote_id = remote_trade_id,
 		style
 	from
 		#match_list
@@ -1113,13 +1135,15 @@ begin
 		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
 		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
-		internal_account,
+		/*internal_account,*/
 		external_account,
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		method=recon_method,
 		move_date = case when trade_id = NULL then "Move" else NULL end,
+		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
+		remote_id = remote_trade_id,
 		style
 	from
 		#match_list
@@ -1146,13 +1170,15 @@ begin
 		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
 		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
-		internal_account,
+		/*internal_account,*/
 		external_account,
 		counterparty,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		method=recon_method,
 		move_date = case when trade_id = NULL then "Move" else NULL end,
+		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
+		remote_id = remote_trade_id,
 		style
 	from
 		#match_list
