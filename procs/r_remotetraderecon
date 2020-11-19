@@ -27,6 +27,7 @@ declare @subtotal_style varchar(200)
 declare @client_style varchar(200)
 declare @matched_style varchar(200)
 declare @mismatched_style varchar(200)
+declare @aggressive_style varchar(200)
 declare @committed_style varchar(200)
 declare @external_style varchar(200)
 declare @internal_style varchar(200)
@@ -45,6 +46,7 @@ select
 	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
         @matched_style = "background:#fff;border: 1px solid white",
         @mismatched_style = "background:#decafc;border: 1px solid white;font-weight:bold",
+        @aggressive_style = "background:#ffcccc;border: 1px solid white;font-weight:bold",
         @committed_style = "background:#f9f9fc;color:#666666;border: 1px solid white",
         /*@committed_style = "background:#f0f0f8;color:#CCFFCC;border: 1px solid white",
         @committed_style = "background:#f0f0f8;color:#CCFFCC;border: 1px solid white",
@@ -149,6 +151,15 @@ values(
 	"run_recon",
 	"Run Remote Recon for Date",
 	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "run_aggressive_recon",
+        "Run Aggressive Recon for Date",
+        NULL
 )
 
 insert into
@@ -483,6 +494,7 @@ create table
         trade_id int NULL,
         contract varchar(10),
 	contract_id int NULL,
+        ex_contract varchar(10) NULL,
         match_status varchar(30),
         match_strength float NULL,
         trade_date datetime,
@@ -501,6 +513,8 @@ create table
         internal_account varchar(50) NULL, 
         external_account varchar(50),
         counterparty varchar(50),
+        in_counterparty varchar(50) NULL,
+        ex_counterparty varchar(50) NULL,
         broker varchar(50) NULL,
         in_identifier varchar(100) NULL,
         ex_identifier varchar(100) NULL,
@@ -520,6 +534,7 @@ insert into
 		trade_id,	
 		contract,
 		contract_id,
+		ex_contract,
 		match_status,
 		match_strength,
 		trade_date,
@@ -549,6 +564,7 @@ select
 	a.trade_id,
 	b.symbol,
 	a.contract_id,
+	i.symbol,
 	c.name,
 	1.00,
 	d.trade_date,
@@ -580,7 +596,8 @@ from
 	internal_accounts e,
 	external_accounts f,
 	counterparties g,
-	brokers h
+	brokers h,
+	contracts i
 where
 	a.trade_id = d.trade_id
 and
@@ -595,6 +612,8 @@ and
 	d.counterparty_id = g.counterparty_id
 and
 	d.broker_id = h.broker_id
+and
+	a.contract_id = i.contract_id
 and	
 	c.name in("Matched", "Committed")
 
@@ -604,6 +623,7 @@ insert into
                 trade_id,
                 contract,
 		contract_id,
+		ex_contract,
                 match_status,
                 match_strength,
                 trade_date,
@@ -622,6 +642,8 @@ insert into
                 internal_account,
                 external_account,
                 counterparty,
+                in_counterparty,
+                ex_counterparty,
                 broker,
                 in_identifier,
                 ex_identifier,
@@ -633,6 +655,7 @@ select
         a.trade_id,
         b.symbol,
 	a.contract_id,
+        j.symbol,
         c.name,
         0.99,
         d.trade_date,
@@ -651,6 +674,8 @@ select
         e.symbol,
         f.symbol,
         g.name,
+        g.name,
+        i.name,
         h.symbol,
         d.identifier,
         a.identifier,
@@ -664,7 +689,9 @@ from
         internal_accounts e,
         external_accounts f,
         counterparties g,
-        brokers h
+        brokers h,
+	counterparties i,
+	contracts j
 where
         a.trade_id = d.trade_id
 and
@@ -677,6 +704,10 @@ and
         d.external_account_id = f.external_account_id
 and
         d.counterparty_id = g.counterparty_id
+and
+        a.counterparty_id = i.counterparty_id
+and
+	a.contract_id = j.contract_id
 and
         d.broker_id = h.broker_id
 and     
@@ -1075,12 +1106,12 @@ select
         style = @style,
 	previous_date = "<< Previous Date",
 	run_recon = "Run Recon",
-	run_aggressive_recon = "Run Aggressive Recon",
 	commit_date = @commit_available,
 	uncommit_date = @uncommit_available,
         recon_date = @bo_trade_date,
         bo_trade_date = @bo_trade_date,
 	manage_settings = "Manage Settings",
+	run_aggressive_recon = "Run Aggressive Recon",
 	next_date = "Next Date  >>"
 
 select
@@ -1122,7 +1153,7 @@ begin
 		section = "Recon for " + external_account,
 		/*recon_id=id,*/
         	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
-		contract,
+		contract= case when contract != ex_contract then rtrim(contract)+" <br/>"+rtrim(ex_contract) else contract end,
 		match_status,
 		method=recon_method,
 		match_strength,
@@ -1134,13 +1165,13 @@ begin
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 		/*internal_account,*/
 		external_account,
-		counterparty,
+                counterparty = case when recon_method like "Aggressive%" then rtrim(in_counterparty)+" <br/>"+rtrim(ex_counterparty) else counterparty end,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
 		remote_id = remote_trade_id,
-		style
+		style = case when recon_method like "Aggressive%" then @aggressive_style else style end
 	from
 		#match_list
 	order by 
@@ -1156,7 +1187,7 @@ begin
 		section = "Recon for " + external_account,
 		/*recon_id=id,*/
         	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
-		contract,
+		contract= case when contract != ex_contract then rtrim(contract)+" <br/>"+rtrim(ex_contract) else contract end,
 		match_status,
 		method=recon_method,
 		match_strength,
@@ -1168,13 +1199,13 @@ begin
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 		/*internal_account,*/
 		external_account,
-		counterparty,
+                counterparty = case when recon_method like "Aggressive%" then rtrim(in_counterparty)+" <br/>"+rtrim(ex_counterparty) else counterparty end,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
 		remote_id = remote_trade_id,
-		style
+		style = case when recon_method like "Aggressive%" then @aggressive_style else style end
 	from
 		#match_list
 	where
@@ -1191,7 +1222,7 @@ begin
 		section = "Recon for " + external_account,
 		/*recon_id=id,*/
         	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
-		contract,
+		contract= case when contract != ex_contract then rtrim(contract)+" <br/>"+rtrim(ex_contract) else contract end,
 		match_status,
 		method=recon_method,
 		match_strength,
@@ -1203,17 +1234,17 @@ begin
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 		/*internal_account,*/
 		external_account,
-		counterparty,
+                counterparty = case when recon_method like "Aggressive%" then rtrim(in_counterparty)+" <br/>"+rtrim(ex_counterparty) else counterparty end,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
 		remote_id = remote_trade_id,
-		style
+		style = case when recon_method like "Aggressive%" then @aggressive_style else style end
 	from
 		#match_list
 	where
-		match_status != "Matched"
+		match_status not in("Matched", "Committed")
 	order by 
 		external_account,
 		std_contract,
@@ -1226,7 +1257,7 @@ begin
 		section = "Recon for " + external_account,
 		/*recon_id=id,*/
         	ids="IN "+rtrim(convert(varchar(30), trade_id)) + " <br/>EX " + rtrim(convert(varchar(30), remote_trade_id)),
-		contract,
+		contract= case when contract != ex_contract then rtrim(contract)+" <br/>"+rtrim(ex_contract) else contract end,
 		match_status,
 		method=recon_method,
 		match_strength,
@@ -1238,17 +1269,17 @@ begin
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 		/*internal_account,*/
 		external_account,
-		counterparty,
+                counterparty = case when recon_method like "Aggressive%" then rtrim(in_counterparty)+" <br/>"+rtrim(ex_counterparty) else counterparty end,
 		broker,
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
 		remote_id = remote_trade_id,
-		style
+		style = case when recon_method like "Aggressive%" then @aggressive_style else style end
 	from
 		#match_list
 	where
-		match_status != "Matched"
+		match_status not in("Matched", "Committed")
 	and
 		std_contract = @contract
 	order by 
