@@ -17,13 +17,16 @@ declare @trade_count int
 declare @matched_count int
 declare @unmatched_count int
 declare @mismatched_count int
+declare @inv_mismatched_count int
 declare @new_count int
 declare @remote_count int
 declare @debug char(1)
 declare @algo_recon_method_id int
+declare @algo_inv_recon_method_id int
 
 select
-	@debug = "N"
+	@debug = "N",
+	@inv_mismatched_count = 0
 
 select
 	@tico_account_id = account_id
@@ -97,6 +100,20 @@ begin
 	return
 end
 
+select
+        @algo_inv_recon_method_id = recon_method_id
+from
+        recon_methods
+where
+        name = "Algo Invert"
+if @algo_inv_recon_method_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem determining 'Algo Invert' recon method"
+        return
+end
+
 create table
 	#statuses(
 		status_id int,
@@ -134,7 +151,10 @@ create table
         	fixing_date datetime null,
         	identifier varchar(100),
 		multi_match_id int NULL,
-		recon_method_id int NULL
+		recon_method_id int NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		counter_quantity numeric(30, 8) NULL
 )
 
 insert into
@@ -153,28 +173,40 @@ insert into
 		value_date,
 		fixing_date,
 		identifier,
-		recon_method_id)   
+		recon_method_id,
+		product_id,
+		currency_id,
+		counter_quantity)
 select
-	remote_trade_symbol_id,
-	source_id,
-	trade_id,
-	recon_status_id,
-	internal_account_id,
-	external_account_id,
-	counterparty_id,
-	quantity,
-	price,
-	contract_id,
-	trade_date,
-	value_date,
-	fixing_date,
-	identifier,
-	recon_method_id
+	a.remote_trade_symbol_id,
+	a.source_id,
+	a.trade_id,
+	a.recon_status_id,
+	a.internal_account_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.quantity,
+	a.price,
+	a.contract_id,
+	a.trade_date,
+	a.value_date,
+	a.fixing_date,
+	a.identifier,
+	a.recon_method_id,
+	d.product_id,
+	d.currency_id,
+	convert(numeric(30, 2), a.quantity * a.price) * -1
 from
 	remote_trade_symbols a,
-	#statuses b
+	#statuses b,
+	contracts c,
+	forwards d
 where
 	a.recon_status_id = b.status_id
+and
+	a.contract_id = c.contract_id
+and
+	c.contract_id = d.contract_id
 and
 	b.match_candidate = "Y"
 and
@@ -183,6 +215,24 @@ and
 	a.bo_trade_date = @bo_trade_date
 select
 	@remote_count = @@rowcount
+
+update
+	#remote_trades
+set
+	counter_quantity = convert(numeric(30, 2), a.quantity * (1/a.price)) * -1
+from
+	#remote_trades a,
+	contracts b,
+	contract_price_styles c,
+	price_styles d
+where
+	a.contract_id = b.contract_id
+and
+	b.contract_id = c.contract_id
+and
+	c.price_style_id = d.price_style_id
+and
+	d.name = "Inverted"
 
 select
 	@new_count = count(*)
@@ -220,7 +270,10 @@ create table
 		contract_id int,
 		value_date datetime,
 		remote_trade_id int NULL,
-		multi_match_id int NULL
+		multi_match_id int NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		counter_quantity numeric(30, 8) NULL
 )
 
 insert into
@@ -232,26 +285,38 @@ insert into
 		quantity,
 		price,
 		contract_id,
-		value_date)
+		value_date,
+		product_id,
+		currency_id,
+		counter_quantity)
 select
-	trade_id,
-	internal_account_id,
-	external_account_id,
-	counterparty_id,
-	quantity,
-	price,
-	contract_id,
-	value_date
+	a.trade_id,
+	a.internal_account_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.quantity,
+	a.price,
+	a.contract_id,
+	a.value_date,
+	c.product_id,
+	c.currency_id,
+	a.quantity * convert(numeric(30, 10), a.price) * -1
 from
-	trades 
+	trades a,
+	contracts b,
+	forwards c
 where
-	trade_date >= @begin_date
+	a.trade_date >= @begin_date
 and
-	trade_date < @end_date
+	a.trade_date < @end_date
 and
-	value_date >= @bo_trade_date
+	a.value_date >= @bo_trade_date
 and
-	fixing_date = NULL
+	a.fixing_date = NULL
+and
+	a.contract_id = b.contract_id
+and
+	b.contract_id = c.contract_id
 select
 	@trade_count = @@rowcount
 
@@ -418,7 +483,58 @@ where
 	a.trade_id = b.trade_id
 and
 	b.remote_trade_id = NULL
-	
+
+
+update
+        #remote_trades
+set
+        recon_status_id = b.status_id,
+        trade_id = c.trade_id,
+        recon_method_id = @algo_inv_recon_method_id
+from
+        #remote_trades a,
+        #statuses b,
+        #trades c
+where
+        b.name = "Mismatched"
+and
+        a.trade_id = NULL
+and
+        c.remote_trade_id = NULL
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.counterparty_id = c.counterparty_id
+and
+	a.product_id = c.currency_id
+and
+	a.currency_id = c.product_id
+and
+        sign(a.quantity) = sign(c.counter_quantity)
+and
+(	
+	round(abs(a.quantity), 0) = round(abs(c.counter_quantity), 0)
+or
+	floor(abs(a.quantity)) = floor(abs(c.counter_quantity))
+)
+and
+        a.value_date = c.value_date
+select
+        @inv_mismatched_count = @inv_mismatched_count + @@rowcount
+
+update
+        #trades
+set
+        b.remote_trade_id = a.remote_trade_symbol_id
+from
+        #remote_trades a,
+        #trades b
+where
+        a.trade_id = b.trade_id
+and
+        b.remote_trade_id = NULL
 
 create table
 	#ndf_trades(
@@ -432,7 +548,10 @@ create table
 		value_date datetime,
 		fixing_date datetime NULL,
 		remote_trade_id int NULL,
-		multi_match_id int NULL
+		multi_match_id int NULL,
+                product_id int NULL,
+                currency_id int NULL,
+                counter_quantity numeric(30, 8) NULL
 )
 
 insert into
@@ -445,27 +564,39 @@ insert into
 		price,
 		contract_id,
 		value_date,
-		fixing_date)
+		fixing_date,
+		product_id,
+		currency_id,
+		counter_quantity)
 select
-	trade_id,
-	internal_account_id,
-	external_account_id,
-	counterparty_id,
-	quantity,
-	price,
-	contract_id,
-	value_date,
-	fixing_date
+	a.trade_id,
+	a.internal_account_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.quantity,
+	a.price,
+	a.contract_id,
+	a.value_date,
+	a.fixing_date,
+        c.product_id,
+        c.currency_id,
+        a.quantity * convert(numeric(30, 10), a.price) * -1
 from
-	trades 
+	trades a,
+	contracts b,
+	forwards c
 where
-	trade_date >= @begin_date
+	a.contract_id = b.contract_id
 and
-	trade_date < @end_date
+	b.contract_id = c.contract_id
 and
-	value_date >= @bo_trade_date
+	a.trade_date >= @begin_date
 and
-	fixing_date != NULL
+	a.trade_date < @end_date
+and
+	a.value_date >= @bo_trade_date
+and
+	a.fixing_date != NULL
 select
 	@trade_count = @trade_count + @@rowcount
 	
@@ -572,6 +703,59 @@ where
 	a.trade_id = b.trade_id
 and
 	b.remote_trade_id = NULL
+
+update
+        #remote_trades
+set
+        recon_status_id = b.status_id,
+        trade_id = c.trade_id,
+        recon_method_id = @algo_inv_recon_method_id
+from
+        #remote_trades a,
+        #statuses b,
+        #ndf_trades c
+where
+        b.name = "Mismatched"
+and
+        a.trade_id = NULL
+and
+        c.remote_trade_id = NULL
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.counterparty_id = c.counterparty_id
+and
+        a.product_id = c.currency_id
+and
+        a.currency_id = c.product_id
+and
+	a.fixing_date = c.fixing_date
+and
+        sign(a.quantity) = sign(c.counter_quantity)
+and
+(	
+	round(abs(a.quantity), 0) = round(abs(c.counter_quantity), 0)
+or
+	floor(abs(a.quantity)) = floor(abs(c.counter_quantity))
+)
+and
+        a.value_date = c.value_date
+select
+        @inv_mismatched_count = @inv_mismatched_count + @@rowcount
+
+update
+        #ndf_trades
+set
+        b.remote_trade_id = a.remote_trade_symbol_id
+from
+        #remote_trades a,
+        #ndf_trades b
+where
+        a.trade_id = b.trade_id
+and
+        b.remote_trade_id = NULL
 
 
 /*
@@ -721,6 +905,7 @@ select
 	new_remote_trades = @new_count,
 	matched = @matched_count,
 	mismatched = @mismatched_count,
+	inv_mismatched = @inv_mismatched_count,
 	unmatched = @unmatched_count
 	
 
