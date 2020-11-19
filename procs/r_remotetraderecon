@@ -1114,6 +1114,18 @@ select
 	run_aggressive_recon = "Run Aggressive Recon",
 	next_date = "Next Date  >>"
 
+if @contract != NULL
+begin
+	update 
+		#report
+	set
+		style = @style
+	from
+		#report
+	where
+		symbol not in("Total", @contract)
+end
+
 select
     section = "Summary",
     trade_date = convert(char(10), @trade_date, 101),
