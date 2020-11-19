@@ -27,7 +27,11 @@ insert into recon_methods values(3, "Accepted External")
 go
 insert into recon_methods values(4, "Accepted Mismatch")
 go
-insert into recon_methods values(5, "Algo Inv")
+insert into recon_methods values(5, "Algo Invert")
+go
+insert into recon_methods values(6, "Aggressive")
+go
+insert into recon_methods values(7, "Aggressive Invert")
 go
 
 
@@ -56,6 +60,6 @@ insert into
 	keys
 values(
 	"recon_methods",
-	5)
+	7)
 
 go
