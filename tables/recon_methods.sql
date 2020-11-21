@@ -33,6 +33,8 @@ insert into recon_methods values(6, "Aggressive")
 go
 insert into recon_methods values(7, "Aggressive Invert")
 go
+insert into recon_methods values(8, "Algo Prev Date")
+go
 
 
 if not exists(select name from tables where name = "recon_methods")
@@ -60,6 +62,6 @@ insert into
 	keys
 values(
 	"recon_methods",
-	7)
+	8)
 
 go
