@@ -1,0 +1,28 @@
+create function
+        f_striptrailingzeros(
+                @string varchar(30)
+	)
+returns varchar(30)
+
+as
+
+declare @first_trailing_zero int
+declare @new_string varchar(30)
+declare @last_char char(1)
+
+
+select
+        @last_char = substring(@string, len(rtrim(@string)), 1),
+        @new_string = @string
+
+while @last_char = "0"
+begin
+        select
+                @new_string = substring(@new_string, 1, len(rtrim(@new_string))-1)
+        select
+                @last_char = substring(@new_string, len(rtrim(@new_string)), 1)
+end
+
+return @new_string
+
+go
