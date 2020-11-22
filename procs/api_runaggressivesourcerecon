@@ -307,7 +307,7 @@ select
 	a.value_date,
 	c.product_id,
 	c.currency_id,
-	a.quantity * convert(numeric(30, 10), a.price) * -1
+	convert(numeric(30, 2), (a.quantity * convert(numeric(30, 10), a.price) * -1))
 from
 	trades a,
 	contracts b,
