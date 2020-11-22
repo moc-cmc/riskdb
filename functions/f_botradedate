@@ -1,0 +1,24 @@
+create or replace function
+        f_botradedate(
+                @trade_date datetime
+	)
+returns datetime
+
+as
+
+declare @bo_trade_date datetime
+
+if datepart(hour, @trade_date) >= 17
+begin
+	select
+		@bo_trade_date = convert(date, dateadd(day, 1, @trade_date))
+end
+else
+begin
+	select 
+		@bo_trade_date = convert(date, @trade_date)
+end
+
+return @bo_trade_date
+
+go
