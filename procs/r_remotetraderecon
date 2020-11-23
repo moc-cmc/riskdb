@@ -493,8 +493,9 @@ create table
         remote_trade_id int NULL,
         trade_id int NULL,
         contract varchar(10),
-	contract_id int NULL,
+        contract_id int NULL,
         ex_contract varchar(10) NULL,
+        ex_contract_id int NULL,
         match_status varchar(30),
         match_strength float NULL,
         trade_date datetime,
@@ -524,6 +525,7 @@ create table
 	traded_ccy varchar(10) NULL,
 	counter_ccy varchar(10) NULL,
 	calc_price numeric(30, 10) NULL,
+	ex_calc_price numeric(30, 10) NULL,
 	recon_method_id int NULL,
 	recon_method varchar(50) NULL
 )
@@ -535,6 +537,7 @@ insert into
 		contract,
 		contract_id,
 		ex_contract,
+		ex_contract_id,
 		match_status,
 		match_strength,
 		trade_date,
@@ -550,6 +553,7 @@ insert into
 		price,
 		in_price,
 		ex_price,
+		ex_calc_price,
 		internal_account,
 		external_account,
 		counterparty,
@@ -563,8 +567,9 @@ select
 	a.remote_trade_symbol_id,
 	a.trade_id,
 	b.symbol,
-	a.contract_id,
+	d.contract_id,
 	i.symbol,
+	a.contract_id,
 	c.name,
 	1.00,
 	d.trade_date,
@@ -579,6 +584,7 @@ select
 	a.quantity,
 	d.price,
 	d.price,
+	a.price,
 	a.price,
 	e.symbol,
 	f.symbol,
@@ -624,6 +630,7 @@ insert into
                 contract,
 		contract_id,
 		ex_contract,
+		ex_contract_id,
                 match_status,
                 match_strength,
                 trade_date,
@@ -639,6 +646,7 @@ insert into
                 price,
                 in_price,
                 ex_price,
+                ex_calc_price,
                 internal_account,
                 external_account,
                 counterparty,
@@ -654,8 +662,9 @@ select
         a.remote_trade_symbol_id,
         a.trade_id,
         b.symbol,
-	a.contract_id,
+	d.contract_id,
         j.symbol,
+        a.contract_id,
         c.name,
         0.99,
         d.trade_date,
@@ -670,6 +679,7 @@ select
         a.quantity,
         d.price,
         d.price,
+        a.price,
         a.price,
         e.symbol,
         f.symbol,
@@ -721,6 +731,7 @@ insert into
                 trade_id,
                 contract,
 		contract_id,
+		ex_contract_id,
                 match_status,
                 match_strength,
                 trade_date,
@@ -732,6 +743,7 @@ insert into
                 ex_quantity,
                 price,
                 ex_price,
+                ex_calc_price,
                 internal_account,
                 external_account,
                 counterparty,
@@ -744,6 +756,7 @@ select
         a.trade_id,
         b.symbol,
 	a.contract_id,
+	a.contract_id,
         c.name,
         NULL,
         a.trade_date,
@@ -755,6 +768,7 @@ select
         a.quantity,
         a.price,
         a.price,
+	a.price,
         e.symbol,
         f.symbol,
         g.name,
@@ -867,11 +881,25 @@ and
 and
         e.product_id=g.product_id
 
+/* Contract display deserves a comment because we use it for price display and
+ * there are formatting considerations. Im match_list we are storing several
+ * contract fields, contract_id, contract, ex_contract_id, ex_contract, std_contract
+ * the contract_id will always be populated either by the match using the internal contract
+ * or the external contract on external onlys. ex_contract_id and ex_contract are internals
+ * and the std_contract is the standard rep based off of match list contract
+ *
+ * prices are saved in true terms in the internal trades table for calcs. In the external recon
+ * tables we store price in standard always. Therefore, we can not do one blanket update on
+ * to get the calc prices or display prices for internal trades vs external trades.
+ */
+
+/* Get the standard contract for all matches, internal and externals using the contract_id
+ * which can be sourced from either intenral or external table depending on record type
+ */
 update
 	#match_list
 set
-	std_contract = rtrim(a.counter_ccy)+rtrim(a.traded_ccy),
-	calc_price = 1/a.price
+	std_contract = rtrim(a.counter_ccy)+rtrim(a.traded_ccy)
 from
 	#match_list a,
 	contracts b,
@@ -885,6 +913,49 @@ and
 	c.price_style_id = d.price_style_id
 and
 	d.name = "Inverted"
+
+/* Get the exernal calc price. can use default standard price inserted for all contracts
+ * unless inverted, then invert the standard price that would be stored in remote_trade_symbols
+ */
+update
+        #match_list
+set
+        ex_calc_price = 1/a.price
+from
+        #match_list a,
+        contracts b,
+        contract_price_styles c,
+        price_styles d
+where
+        a.ex_contract_id = b.contract_id
+and
+        b.contract_id = c.contract_id
+and
+        c.price_style_id = d.price_style_id
+and
+        d.name = "Inverted"
+
+/* Get the internal price used for display. The price column should be used for calcs */
+update
+        #match_list
+set
+        in_price = 1/a.price
+from
+        #match_list a,
+        contracts b,
+        contract_price_styles c,
+        price_styles d
+where
+        a.contract_id = b.contract_id
+and
+        b.contract_id = c.contract_id
+and
+        c.price_style_id = d.price_style_id
+and
+        d.name = "Inverted"
+
+
+
 
 update
 	#match_list
@@ -1173,7 +1244,7 @@ begin
 		value_date=convert(char(12), convert(datetime, value_date, 101)),
 		/*fixing_date=convert(datetime, fixing_date, 101),*/
 		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
-		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
+		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*ex_calc_price*-1))),
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 		/*internal_account,*/
 		external_account,
@@ -1207,7 +1278,7 @@ begin
 		value_date=convert(char(12), convert(datetime, value_date, 101)),
 		/*fixing_date=convert(datetime, fixing_date, 101),*/
 		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
-		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
+		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*ex_calc_price*-1))),
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 		/*internal_account,*/
 		external_account,
@@ -1242,7 +1313,7 @@ begin
 		value_date=convert(char(12), convert(datetime, value_date, 101)),
 		/*fixing_date=convert(datetime, fixing_date, 101),*/
 		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
-		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
+		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*ex_calc_price*-1))),
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 		/*internal_account,*/
 		external_account,
@@ -1277,7 +1348,7 @@ begin
 		value_date=convert(char(12), convert(datetime, value_date, 101)),
 		/*fixing_date=convert(datetime, fixing_date, 101),*/
 		quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity))),
-		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*calc_price*-1))),
+		counter_quantity=rtrim(convert(varchar(30), convert(numeric(30,2),in_quantity*calc_price*-1)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,2),ex_quantity*ex_calc_price*-1))),
 		rate=rtrim(convert(varchar(30), convert(numeric(30,8), in_price)))  + " <br/>" + rtrim(convert(varchar(30), convert(numeric(30,8),ex_price))),
 		/*internal_account,*/
 		external_account,
