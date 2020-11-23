@@ -30,6 +30,10 @@ declare @remote_count int
 declare @debug char(1)
 declare @algo_recon_method_id int
 declare @algo_inv_recon_method_id int
+declare @date_recon_method_id int
+declare @match_inverted char(1)
+declare @conventional_dates char(1)
+
 
 select
 	@debug = "N",
@@ -120,6 +124,17 @@ begin
                 message = "Problem determining 'Algo Invert' recon method"
         return
 end
+
+
+
+select
+        @conventional_dates = conventional_dates,
+        @match_inverted = match_inverted_trades
+from
+        recon_source_settings
+where
+        source_id = @source_id
+
 
 create table
 	#statuses(
@@ -222,6 +237,13 @@ and
 	a.bo_trade_date = @bo_trade_date
 select
 	@remote_count = @@rowcount
+
+/* We do not want to handle previous date checks with aggressive matching
+if @conventional_dates = "N"
+begin
+	
+end
+*/
 
 update
 	#remote_trades
@@ -443,104 +465,107 @@ and
 	b.remote_trade_id = NULL
 
 
-update
-        #remote_trades
-set
-        recon_status_id = b.status_id,
-        trade_id = c.trade_id,
-        recon_method_id = @algo_inv_recon_method_id
-from
-        #remote_trades a,
-        #statuses b,
-        #trades c
-where
-        b.name = "Mismatched"
-and
-        a.trade_id = NULL
-and
-        c.remote_trade_id = NULL
-and
-        a.internal_account_id = c.internal_account_id
-and
-        a.external_account_id = c.external_account_id
-and
-	a.product_id = c.currency_id
-and
-	a.currency_id = c.product_id
-and
-        sign(a.quantity) = sign(c.counter_quantity)
-and
-(	
-	round(abs(a.quantity), 0) = round(abs(c.counter_quantity), 0)
-or
-	floor(abs(a.quantity)) = floor(abs(c.counter_quantity))
-)
-and
-        a.value_date = c.value_date
-select
-        @inv_mismatched_count = @inv_mismatched_count + @@rowcount
+if @match_inverted = "Y"
+begin
+	update
+        	#remote_trades
+	set
+        	recon_status_id = b.status_id,
+        	trade_id = c.trade_id,
+        	recon_method_id = @algo_inv_recon_method_id
+	from
+        	#remote_trades a,
+        	#statuses b,
+        	#trades c
+	where
+        	b.name = "Mismatched"
+	and
+        	a.trade_id = NULL
+	and
+	        c.remote_trade_id = NULL
+	and
+        	a.internal_account_id = c.internal_account_id
+	and
+        	a.external_account_id = c.external_account_id
+	and
+		a.product_id = c.currency_id
+	and
+		a.currency_id = c.product_id
+	and
+        	sign(a.quantity) = sign(c.counter_quantity)
+	and
+	(	
+		round(abs(a.quantity), 0) = round(abs(c.counter_quantity), 0)
+	or
+		floor(abs(a.quantity)) = floor(abs(c.counter_quantity))
+	)
+	and
+        	a.value_date = c.value_date
+	select
+        	@inv_mismatched_count = @inv_mismatched_count + @@rowcount
 
-update
-        #trades
-set
-        b.remote_trade_id = a.remote_trade_symbol_id
-from
-        #remote_trades a,
-        #trades b
-where
-        a.trade_id = b.trade_id
-and
-        b.remote_trade_id = NULL
-
-
-update
-        #remote_trades
-set
-        recon_status_id = b.status_id,
-        trade_id = c.trade_id,
-        recon_method_id = @algo_inv_recon_method_id
-from
-        #remote_trades a,
-        #statuses b,
-        #trades c
-where
-        b.name = "Mismatched"
-and
-        a.trade_id = NULL
-and
-        c.remote_trade_id = NULL
-and
-        a.internal_account_id = c.internal_account_id
-and
-        a.external_account_id = c.external_account_id
-and
-        a.product_id = c.currency_id
-and
-        a.currency_id = c.product_id
-and
-        sign(a.quantity) = sign(c.counter_quantity)
-and
-(      
-        round(abs(c.quantity), 0) = round(abs(a.counter_quantity), 0)
-or
-        floor(abs(c.quantity)) = floor(abs(a.counter_quantity))
-)
-and
-        a.value_date = c.value_date
-select
-        @inv_mismatched_count = @inv_mismatched_count + @@rowcount
-
-update
-        #trades
-set
-        b.remote_trade_id = a.remote_trade_symbol_id
-from
-        #remote_trades a,
-        #trades b
-where
-        a.trade_id = b.trade_id
-and
-        b.remote_trade_id = NULL
+	update
+        	#trades
+	set
+        	b.remote_trade_id = a.remote_trade_symbol_id
+	from
+        	#remote_trades a,
+        	#trades b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.remote_trade_id = NULL
+	
+	
+	update
+        	#remote_trades
+	set
+        	recon_status_id = b.status_id,
+        	trade_id = c.trade_id,
+        	recon_method_id = @algo_inv_recon_method_id
+	from
+        	#remote_trades a,
+        	#statuses b,
+        	#trades c
+	where
+        	b.name = "Mismatched"
+	and
+        	a.trade_id = NULL
+	and
+        	c.remote_trade_id = NULL
+	and
+        	a.internal_account_id = c.internal_account_id
+	and
+        	a.external_account_id = c.external_account_id
+	and
+        	a.product_id = c.currency_id
+	and
+        	a.currency_id = c.product_id
+	and
+        	sign(a.quantity) = sign(c.counter_quantity)
+	and
+	(      
+        	round(abs(c.quantity), 0) = round(abs(a.counter_quantity), 0)
+	or
+        	floor(abs(c.quantity)) = floor(abs(a.counter_quantity))
+	)
+	and
+        	a.value_date = c.value_date
+	select
+        	@inv_mismatched_count = @inv_mismatched_count + @@rowcount
+	
+	update
+        	#trades
+	set
+        	b.remote_trade_id = a.remote_trade_symbol_id
+	from
+        	#remote_trades a,
+        	#trades b
+	where
+        	a.trade_id = b.trade_id
+		and
+        	b.remote_trade_id = NULL
+end
 
 
 create table
@@ -662,107 +687,110 @@ where
 and
 	b.remote_trade_id = NULL
 
-update
-        #remote_trades
-set
-        recon_status_id = b.status_id,
-        trade_id = c.trade_id,
-        recon_method_id = @algo_inv_recon_method_id
-from
-        #remote_trades a,
-        #statuses b,
-        #ndf_trades c
-where
-        b.name = "Mismatched"
-and
-        a.trade_id = NULL
-and
-        c.remote_trade_id = NULL
-and
-        a.internal_account_id = c.internal_account_id
-and
-        a.external_account_id = c.external_account_id
-and
-        a.product_id = c.currency_id
-and
-        a.currency_id = c.product_id
-and
-	a.fixing_date = c.fixing_date
-and
-        sign(a.quantity) = sign(c.counter_quantity)
-and
-(	
-	round(abs(a.quantity), 0) = round(abs(c.counter_quantity), 0)
-or
-	floor(abs(a.quantity)) = floor(abs(c.counter_quantity))
-)
-and
-        a.value_date = c.value_date
-select
-        @inv_mismatched_count = @inv_mismatched_count + @@rowcount
+if @match_inverted = "Y"
+begin
+	update
+        	#remote_trades
+	set
+        	recon_status_id = b.status_id,
+        	trade_id = c.trade_id,
+        	recon_method_id = @algo_inv_recon_method_id
+	from
+        	#remote_trades a,
+        	#statuses b,
+        	#ndf_trades c
+	where
+        	b.name = "Mismatched"
+	and
+        	a.trade_id = NULL
+	and
+        	c.remote_trade_id = NULL
+	and
+        	a.internal_account_id = c.internal_account_id
+	and
+        	a.external_account_id = c.external_account_id
+	and
+        	a.product_id = c.currency_id
+	and
+        	a.currency_id = c.product_id
+	and
+		a.fixing_date = c.fixing_date
+	and
+        	sign(a.quantity) = sign(c.counter_quantity)
+	and
+	(	
+		round(abs(a.quantity), 0) = round(abs(c.counter_quantity), 0)
+	or
+		floor(abs(a.quantity)) = floor(abs(c.counter_quantity))
+	)
+	and
+        	a.value_date = c.value_date
+	select
+        	@inv_mismatched_count = @inv_mismatched_count + @@rowcount
+	
+	update
+        	#ndf_trades
+	set
+        	b.remote_trade_id = a.remote_trade_symbol_id
+	from
+        	#remote_trades a,
+        	#ndf_trades b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.remote_trade_id = NULL
 
-update
-        #ndf_trades
-set
-        b.remote_trade_id = a.remote_trade_symbol_id
-from
-        #remote_trades a,
-        #ndf_trades b
-where
-        a.trade_id = b.trade_id
-and
-        b.remote_trade_id = NULL
-
-update
-        #remote_trades
-set
-        recon_status_id = b.status_id,
-        trade_id = c.trade_id,
-        recon_method_id = @algo_inv_recon_method_id
-from
-        #remote_trades a,
-        #statuses b,
-        #ndf_trades c
-where
-        b.name = "Mismatched"
-and
-        a.trade_id = NULL
-and
-        c.remote_trade_id = NULL
-and
-        a.internal_account_id = c.internal_account_id
-and
-        a.external_account_id = c.external_account_id
-and
-        a.product_id = c.currency_id
-and
-        a.currency_id = c.product_id
-and
-        a.fixing_date = c.fixing_date
-and
-        sign(a.quantity) = sign(c.counter_quantity)
-and
-(
-        round(abs(c.quantity), 0) = round(abs(a.counter_quantity), 0)
-or
-        floor(abs(c.quantity)) = floor(abs(a.counter_quantity))
-)
-and
-        a.value_date = c.value_date
-select
-        @inv_mismatched_count = @inv_mismatched_count + @@rowcount
-
-update
-        #ndf_trades
-set
-        b.remote_trade_id = a.remote_trade_symbol_id
-from
-        #remote_trades a,
-        #ndf_trades b
-where
-        a.trade_id = b.trade_id
-and
-        b.remote_trade_id = NULL
+	update
+        	#remote_trades
+	set
+        	recon_status_id = b.status_id,
+        	trade_id = c.trade_id,
+        	recon_method_id = @algo_inv_recon_method_id
+	from
+        	#remote_trades a,
+        	#statuses b,
+        	#ndf_trades c
+	where
+        	b.name = "Mismatched"
+	and
+        	a.trade_id = NULL
+	and
+        	c.remote_trade_id = NULL
+	and
+        	a.internal_account_id = c.internal_account_id
+	and
+        	a.external_account_id = c.external_account_id
+	and
+        	a.product_id = c.currency_id
+	and
+        	a.currency_id = c.product_id
+	and
+        	a.fixing_date = c.fixing_date
+	and
+        	sign(a.quantity) = sign(c.counter_quantity)
+	and
+	(
+        	round(abs(c.quantity), 0) = round(abs(a.counter_quantity), 0)
+	or
+        	floor(abs(c.quantity)) = floor(abs(a.counter_quantity))
+	)
+	and
+        	a.value_date = c.value_date
+	select
+        	@inv_mismatched_count = @inv_mismatched_count + @@rowcount
+	
+	update
+        	#ndf_trades
+	set
+        	b.remote_trade_id = a.remote_trade_symbol_id
+	from
+        	#remote_trades a,
+        	#ndf_trades b
+	where
+        	a.trade_id = b.trade_id
+	and
+        	b.remote_trade_id = NULL
+end
 
 
 
