@@ -472,29 +472,45 @@ end
  * of the FIX message. Some platforms have different perspectives for client
  * messages vs market messages. We tally trades in perspective of the fund
  * or agency so set the direction accordingly
+ *
+ *  BUY/SELL corresponds to the first ccy of @symbol so we need to substrign eval this
  */
 
 if @client_or_market = "C"
 begin
-        if @side = "BUY"
-                select
-                        @quantity = @qty * -1
-	if @side = "SELL"
-		select
-			@quantity = @qty
+	select
+		status = "Error",
+		message = "No client ticket supported on this flow"
+	return
 end
 else /* if @client_or_market = "M" */
 begin
         if @side = "SELL"
         begin
-                select
-                        @quantity = @qty * -1
+		if @ccy1 = substring(@symbol, 1, 3)
+		begin
+                        select
+                                @quantity = @qty * -1
+		end
+		else
+		begin
+                	select
+                        	@quantity = @qty 
+		end
         end
 
         if @side = "BUY"
         begin
-                select
-                        @quantity = @qty * 1
+                if @ccy1 = substring(@symbol, 1, 3) 
+                begin
+                        select
+                                @quantity = @qty 
+                end
+                else
+                begin
+                        select
+                                @quantity = @qty * -1
+                end
         end
 
 end
