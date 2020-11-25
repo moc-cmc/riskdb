@@ -34,7 +34,8 @@ create or replace procedure
 		@executing_system varchar(50)=NULL,
 		@contra_firm varchar(50)=NULL,
 		@clearing_firm varchar(50)=NULL,
-		@giveup_clearing_firm varchar(50)=NULL
+		@giveup_clearing_firm varchar(50)=NULL,
+		@subaccount varchar(50)=NULL
 as
 
 
@@ -299,6 +300,12 @@ end
 select
 	@c_trader_lookup = rtrim(@executing_firm),
 	@c_counterparty_lookup = rtrim(@contra_firm)
+
+if @subaccount = "Enabled"
+begin
+	select
+		@c_trader_lookup = rtrim(@c_trader_lookup)+"-"+rtrim(@clearing_firm)
+end
 
 /* Set suppression and trigger_symbol variables */
 select
