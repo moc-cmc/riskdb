@@ -38,13 +38,6 @@ create or replace procedure
                 @cfs_entity varchar(50)=NULL,
                 @cfs_trade_date varchar(50)=NULL,
                 @cfs_strategy varchar(50)=NULL
-/*
-		@executing_firm varchar(50)=NULL,
-		@executing_system varchar(50)=NULL,
-		@contra_firm varchar(50)=NULL,
-		@party_1 varchar(50)=NULL,
-		@party_2 varchar(50)=NULL
-*/
 
 as
 
@@ -271,6 +264,11 @@ else
 begin
         select
                 @client_or_market = "M"
+	select
+		status = "Error",
+		message = "Market type messages are not supported over Fenics ECN Connection",
+		cfs_entity_type = @cfs_entity_type
+	return
 end
 
 if @client_or_market = NULL
@@ -278,7 +276,7 @@ begin
         select
                 status = "Error",
                 message = "Could not determine if message was a client or market trade based on parties",
-                cfs_entity = @cfs_entity
+                cfs_entity_type = @cfs_entity_type
         return
 
 end
@@ -289,34 +287,21 @@ end
  * helps with debugging, as you can look here to see what is mapped
  * For multi-prime setups that don't have a pb tag, set the prime_broker_lookup to ""
  *
+ *
+ * FENICS NOTE: Tag 10056 may be a better use of identifying the client. However since this is begin deployed
+ * as a connection just for one pb customer vs fenics, we will not process that right now
  */
-/* if @suppress_taker_messages = "Y" and @client_or_market = "C"
-begin
-        select
-                status = "Suppressing taker trade"
-
-        if @ack_required = "Y"
-        begin
-                select
-                        trade_report_id=@trade_report_id,
-                        symbol=@symbol,
-                        exec_type="NEW"
-                return
-        end
-        return
-end
-*/
 
 select
-	@deal_exec_symbol = rtrim(@cfs_grouping_id)
+	@deal_exec_symbol = rtrim(@execution_id)+convert(char(8), @trade_date, 112)
 
 select
-	@c_platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".c",
-	@c_trader_lookup = rtrim(@cfs_entity),
-	@c_counterparty_lookup = rtrim(@sender_comp),
-	@m_platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".m",
-	@m_trader_lookup = rtrim(@sender_comp),
-	@m_counterparty_lookup = rtrim(@cfs_entity)
+        @c_platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".c",
+        @c_trader_lookup = rtrim(@target_comp),
+        @c_counterparty_lookup = rtrim(@sender_comp),
+        @m_platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".m",
+        @m_counterparty_lookup = rtrim(@target_comp)+"-"+rtrim(@sender_comp),
+        @m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@target_comp)
 
 select
 	@c_suppression_lookup = @c_trader_lookup,
@@ -324,9 +309,6 @@ select
 
 /**
  * Not using trigger symbols, ticket creation values are currently not supported.
- */
-
-/*
 select
 	@trigger_symbol = @c_trader_lookup,
 	@trigger_symbol = @m_counterparty_lookup
