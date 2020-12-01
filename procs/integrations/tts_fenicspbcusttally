@@ -674,13 +674,13 @@ exec
  * or agency so set the direction accordingly
  */
 
-if @side = "BUY"
+if @side = "SELL"
 begin
 	select
 		@c_quantity = @qty,
 		@m_quantity = @qty * -1
 end
-else /* @side = "SELL" */
+else /* @side = "BUY" */
 begin
 	select
 		@c_quantity = @qty * -1,
