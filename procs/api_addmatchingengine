@@ -1,0 +1,86 @@
+create or replace procedure	
+	api_addmatchingengine
+		@name varchar(50),
+		@source varchar(50),
+		@default_match_status varchar(50)=NULL,
+		@matching_engine_id int=NULL output
+
+as
+
+declare @source_id int
+declare @match_status_id int
+
+select
+	@source_id = a.source_id
+from
+	sources a,
+	source_types b
+where
+	a.source_type_id = b.source_type_id
+and
+	b.name = "Outbound"
+and
+	a.name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding outbound source",
+		source = @source
+	return
+end
+
+select
+	@matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = @name
+if @matching_engine_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Matching engine already exists"
+	return
+end
+
+if @default_match_status = NULL
+begin
+	select
+		@default_match_status = "Pending"
+end
+
+select
+	@match_status_id = match_status_id
+from
+	match_statuses
+where
+	name = @default_match_status
+if @match_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding default match status",
+		default_match_status = @default_match_status
+	return
+end
+
+exec
+	j_nextkey
+		"matching_engines",
+		@matching_engine_id output
+
+insert into
+	matching_engines(
+		matching_engine_id,
+		name,
+		outbound_source_id,
+		initial_match_status_id)
+values(
+	@matching_engine_id,
+	@name,
+	@source_id,
+	@match_status_id
+)
+
+go
