@@ -1,7 +1,7 @@
 
 
 create or replace procedure
-	ttm_etgfixtttally		
+	ttm_etgfixtttally
 		@source varchar(50),
 		@default_login varchar(50),
 		@broker varchar(50),
@@ -34,7 +34,8 @@ create or replace procedure
 		@executing_system varchar(50)=NULL,
 		@contra_firm varchar(50)=NULL,
 		@clearing_firm varchar(50)=NULL,
-		@giveup_clearing_firm varchar(50)=NULL
+		@giveup_clearing_firm varchar(50)=NULL,
+		@symbol_suffix varchar(10)=NULL
 as
 
 
@@ -657,6 +658,11 @@ select
 	@deal_type = "B2B Forward",
 	@trade_type = "Spot",
 	@tally_type = "Spot"
+
+if @symbol_suffix = "FO"
+	select
+		@trade_type = "Forward",
+		@tally_type = "Forward"
 
 if @fixing_date != NULL
 	select
