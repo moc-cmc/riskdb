@@ -659,7 +659,7 @@ select
 	@trade_type = "Spot",
 	@tally_type = "Spot"
 
-if @symbol_suffix = "FO"
+if @symbol_suffix in("FO", "FORWARD")
 	select
 		@trade_type = "Forward",
 		@tally_type = "Forward"
