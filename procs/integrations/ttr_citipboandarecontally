@@ -91,6 +91,20 @@ select
 	@account_lookup = rtrim(@fund_name),
 	@counterparty_lookup = rtrim(@fund_name)+"-"+rtrim(@cpty)
 
+/* --------------------------------------------------------------------------
+ * STEP: CUSTOM OANDA CITIBANK
+ *     The Hedger sends us citi swaps against citi and does not show the
+ *     actual counterparty. In order to help catch any real counterparty
+ *     mismatches, we are going to book any external swap records against
+ *     Citi instead of the real counterparty
+ */
+
+if @product = "SWAP"
+begin
+	select
+		@counterparty_lookup = rtrim(@fund_name)+"-CitiOverride"
+end
+
 
 /* --------------------------------------------------------------------------
  * STEP: Lookup trader and counterparty symbols
