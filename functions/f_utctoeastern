@@ -1,0 +1,60 @@
+create or replace function
+        f_utctoeastern(
+		@utc_date datetime
+	)
+returns datetime
+
+as
+
+/* Testing the change from standard time to daylight savings
+ *
+ * [61] SYB0302.risk_qson.1> select dbo.f_utctoeastern("March 8 2020 05:35:31:240AM")
+ * [61] SYB0302.risk_qson.2> select dbo.f_utctoeastern("March 8 2020 06:35:31:240AM")
+ * [61] SYB0302.risk_qson.3> select dbo.f_utctoeastern("March 8 2020 07:35:31:240AM")
+ * [61] SYB0302.risk_qson.4> select dbo.f_utctoeastern("March 8 2020 08:35:31:240AM")
+ * [61] SYB0302.risk_qson.5> go
+ * --------------------------
+ * Mar  8 2020 12:35:31:240AM
+ * --------------------------
+ * Mar  8 2020 01:35:31:240AM
+ * --------------------------
+ * Mar  8 2020 03:35:31:240AM
+ * --------------------------
+ * Mar  8 2020 04:35:31:240AM
+ *
+ *
+ *
+ *
+ *
+ * Testing the change from daylight savings to standard time
+ *
+ * [58] SYB0302.risk_qson.1> select dbo.f_utctoeastern("November 1 2020 05:35:31:240AM")
+ * [58] SYB0302.risk_qson.2> select dbo.f_utctoeastern("November 1 2020 06:35:31:240AM")
+ * [58] SYB0302.risk_qson.3> select dbo.f_utctoeastern("November 1 2020 07:35:31:240AM")
+ * [58] SYB0302.risk_qson.4> select dbo.f_utctoeastern("November 1 2020 08:35:31:240AM")
+ * [58] SYB0302.risk_qson.5> go
+ * --------------------------
+ * Nov  1 2020 01:35:31:240AM
+ * --------------------------
+ * Nov  1 2020 02:35:31:240AM
+ * --------------------------
+ * Nov  1 2020 02:35:31:240AM
+ * --------------------------
+ * Nov  1 2020 03:35:31:240AM
+ */
+
+
+declare @eastern_date datetime
+
+select
+	@eastern_date = dateadd(hour, -5, @utc_date)
+
+if dbo.f_estoredt(@eastern_date) = "edt"
+begin
+	select
+		@eastern_date = dateadd(hour, 1, @eastern_date)
+end
+
+return @eastern_date
+
+go
