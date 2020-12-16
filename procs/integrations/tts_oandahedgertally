@@ -132,29 +132,11 @@ select
 select
 	@tally_qty = convert(numeric(30, 4), @qty),
 	@tally_price = convert(float, @price),
-	@tally_trade_date = convert(datetime, @trade_date),
+	@tally_trade_date = dbo.f_utctoeastern(convert(datetime, @trade_date)),
 	@tally_value_date = convert(datetime, @value_date),
 	@tally_fixing_date = convert(datetime, @fixing_date),
 	@tally_far_value_date = convert(datetime, @far_value_date),
 	@tally_far_price = convert(float, @far_price)
-
-
-declare @gmt_adjustment int
-
-if @tally_trade_date <= "20101031"
-begin
-	select
-        	@gmt_adjustment = -5
-end
-else
-begin
-	select
-        	@gmt_adjustment = -4
-end
-
-if @gmt_adjustment != 0
-	select
-       		 @tally_trade_date = dateadd(hour, @gmt_adjustment, @tally_trade_date)
 
 
 
