@@ -10,7 +10,7 @@ create or replace procedure
 		@dealt_product varchar(30)=NULL,
 		@contra_amount varchar(30)=NULL,
 		@contra_product varchar(30)=NULL,
-		@strike varchar(10)=NULL,
+		@strike varchar(20)=NULL,
 		@expiration varchar(10)=NULL,
 		@cut varchar(10)=NULL,
 		@settlement varchar(20)=NULL,
