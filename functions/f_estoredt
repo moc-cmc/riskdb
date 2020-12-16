@@ -1,0 +1,104 @@
+create or replace function
+        f_estoredt(
+		@eastern_date datetime
+	)
+returns char(3)
+
+as
+
+declare @month int
+declare @day int
+declare @hour int
+declare @weekday int
+declare @monthname varchar(10)
+declare @marchcount int
+declare @novcount int
+declare @dst_start_date datetime
+declare @dst_end_date datetime
+declare @dst_start datetime
+declare @dst_end datetime
+declare @year int
+declare @tz char(3)
+
+select
+	@month = datepart(month, @eastern_date),
+	@monthname = datename(month, @eastern_date),
+	@hour = datepart(hour, @eastern_date),
+	@weekday = datepart(dw, @eastern_date),
+	@year = datepart(year, @eastern_date)
+
+
+
+/* Daylight savings begins at 2am on the second sunday in march 
+ * and ends on the first sunday in november.
+ */
+select
+	@dst_start_date = convert(date, "March 1, " + convert(char(4), @year)),
+	@dst_end_date = convert(date, "November 1, "+ convert(char(4), @year))
+
+
+if datename(dw, @dst_start_date) = "Sunday"
+begin
+	select
+		@marchcount = 1
+end
+else
+begin
+	select
+		@marchcount = 0
+end
+
+while (@marchcount < 2)
+begin	
+	select
+		@dst_start_date = dateadd(day, 1, @dst_start_date)
+
+	if datename(dw, @dst_start_date) = "Sunday"
+	begin
+		select
+			@marchcount = @marchcount + 1
+	end
+end
+
+
+if datename(dw, @dst_end_date) = "Sunday"
+begin
+        select
+                @novcount = 1
+end
+else
+begin
+        select
+                @novcount = 0
+end
+
+
+while (@novcount < 1)
+begin   
+        select
+                @dst_end_date = dateadd(day, 1, @dst_end_date)
+
+        if datename(dw, @dst_end_date) = "Sunday"
+        begin
+                select
+                        @novcount = @novcount + 1
+        end
+end
+
+select
+	@dst_start = dateadd(hour, 2, @dst_start_date),
+	@dst_end = dateadd(hour, 2, @dst_end_date)
+
+select
+	@tz = "est"
+if @eastern_date >= @dst_start and @eastern_date < @dst_end
+begin
+	select 
+		@tz = "edt"
+end
+
+return @tz
+
+
+
+go
