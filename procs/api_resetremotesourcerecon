@@ -1,0 +1,129 @@
+create or replace procedure
+	api_resetremotesourcerecon
+		@login varchar(50),
+                @source varchar(50),
+                @trade_date datetime
+
+as
+
+declare @tico_account_id int
+declare @source_id int
+declare @bo_trade_date datetime
+declare @committed_status_id int
+declare @new_status_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source",
+		source = @source
+	return
+end
+
+select
+	@committed_status_id = a.status_id
+from
+	statuses a,
+	remote_recon_statuses b
+where
+	a.status_id = b.status_id
+and
+	a.name = "Committed"
+if @committed_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding 'Committed' recon status"
+	return
+end
+
+select
+        @new_status_id = a.status_id
+from
+        statuses a,
+        remote_recon_statuses b
+where
+        a.status_id = b.status_id
+and
+	a.name = "New"
+if @new_status_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem finding 'Committed' recon status"
+        return
+end
+
+
+select
+	@bo_trade_date = convert(date, @trade_date)
+
+create table
+	#recon_trades(
+		remote_trade_symbol_id int,
+		trade_date datetime,
+		bo_trade_date datetime
+)
+insert into
+	#recon_trades
+select
+	remote_trade_symbol_id,
+	trade_date,
+	convert(date, trade_date)
+from
+	remote_trade_symbols
+where
+	bo_trade_date = @bo_trade_date
+and
+	source_id = @source_id
+and
+	recon_status_id != @committed_status_id
+
+begin tran
+	update
+		remote_trade_symbols
+	set
+		recon_status_id = @new_status_id,
+		trade_id = NULL,
+		recon_method_id = NULL,
+		bo_trade_date = b.bo_trade_date
+	from
+		remote_trade_symbols a,
+		#recon_trades b
+	where
+		a.remote_trade_symbol_id = b.remote_trade_symbol_id
+	and
+		a.bo_trade_date = @bo_trade_date
+	and
+		a.source_id = @source_id
+	and
+		a.recon_status_id != @committed_status_id
+commit tran
+
+go
+
+	
+
+
+		
