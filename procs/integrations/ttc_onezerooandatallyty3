@@ -215,7 +215,7 @@ begin
         @deal_exec_symbol = @order_id
 
     select
-        @counterparty_lookup = rtrim(@account)+'-'+rtrim(@clearing_firm),
+        @counterparty_lookup = rtrim(@clearing_firm),
         @trader_lookup = rtrim(@target_comp)
 
     /* Set suppression and trigger_symbol variables */
