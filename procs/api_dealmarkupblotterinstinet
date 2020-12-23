@@ -276,7 +276,7 @@ create table
                 deal_id int,
                 contract_id int,
                 quantity numeric(30, 4) NULL,
-		counter_quantity numeric(30, 4) NULL
+		counter_quantity numeric(30, 8) NULL
 )
 
 insert into
