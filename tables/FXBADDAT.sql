@@ -1,5 +1,3 @@
-use risk_hehmeyer_dev
-go
 drop table
 	FXBADDAT
 go
@@ -9,7 +7,7 @@ create table
 		CODE char(3),
 		DATE datetime,
 		MISC char(8),
-		HOL_NAME varchar(30),
+		HOL_NAME varchar(100),
 		timestamp timestamp NULL
 )
 go
