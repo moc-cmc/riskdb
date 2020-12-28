@@ -14,7 +14,8 @@ create unique index
 on
 	product_holidays(
 		product_id,
-		holiday_id)
+		holiday_id,
+		date)
 go
 
 
