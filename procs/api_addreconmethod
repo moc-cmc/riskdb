@@ -1,0 +1,43 @@
+create or replace procedure
+	api_addreconmethod
+		@login varchar(50),
+		@name varchar(25),
+		@recon_method_id int=NULL output
+
+as
+
+if @recon_method_id != NULL
+begin
+	return
+end
+
+select
+	@recon_method_id = recon_method_id
+from
+	recon_methods
+where
+	name = @name
+if @recon_method_id != NULL
+begin
+	return
+end
+
+exec
+        j_nextkey
+                "recon_methods",
+                @recon_method_id output
+
+insert into
+	recon_methods(
+		recon_method_id,
+		name)
+values(
+	@recon_method_id,
+	@name)
+
+select
+        status = "Success",
+        msg = "Recon method has been created"
+
+
+go
