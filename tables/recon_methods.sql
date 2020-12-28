@@ -35,6 +35,8 @@ insert into recon_methods values(7, "Aggressive Invert")
 go
 insert into recon_methods values(8, "Algo Prev Date")
 go
+insert into recon_methods values(9, "Batch Accept Mismatch")
+go
 
 
 if not exists(select name from tables where name = "recon_methods")
@@ -62,6 +64,6 @@ insert into
 	keys
 values(
 	"recon_methods",
-	8)
+	9)
 
 go
