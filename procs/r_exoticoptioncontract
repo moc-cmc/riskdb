@@ -449,7 +449,10 @@ begin
 		message = "Invalid contract specification error",
 		symbol = @contract_symbol,
 		contract_id = @contract_id,
-		ex_contract_id = @ex_contract_id
+		ex_contract_id = @ex_contract_id,
+		create_contract = @create_contract,
+		create_exotic_contract = @create_exotic_contract
+		
 	return
 end
 
