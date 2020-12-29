@@ -379,7 +379,7 @@ select
 	quantity = a.quantity * -1,
 	a.trade_price,
 	platform = d.symbol,
-	covert_ext_account = e.symbol,
+	cover_ext_account = e.symbol,
 	markup = dbo.f_striptrailingzeros(convert(char(10), abs(a.markup))),
 	"_1"="",
 	"_2"="",
