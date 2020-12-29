@@ -22,7 +22,7 @@ exec
 if @trade_date = NULL
 begin
 	select
-		@trade_date = dbo.f_botradedate(getdate())
+		@trade_date = convert(date, getdate())
 end	
 
 exec
@@ -376,7 +376,7 @@ select
 	value_date = convert(char(11), a.value_date, 1),
 	trader = c.symbol,
 	b.symbol,
-	a.quantity,
+	quantity = a.quantity * -1,
 	a.trade_price,
 	platform = d.symbol,
 	covert_ext_account = e.symbol,
