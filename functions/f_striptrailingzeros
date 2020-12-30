@@ -1,4 +1,4 @@
-create function
+create or replace function
         f_striptrailingzeros(
                 @string varchar(30)
 	)
@@ -22,6 +22,10 @@ begin
         select
                 @last_char = substring(@new_string, len(rtrim(@new_string)), 1)
 end
+
+if @new_string = "0."
+	select
+		@new_string = "0.0"
 
 return @new_string
 

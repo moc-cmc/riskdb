@@ -1,13 +1,15 @@
 create or replace function
-        f_botradedate(
-                @trade_date datetime
+	f_botradedate(
+		@trade_date datetime
 	)
 returns datetime
 
 as
 
 declare @bo_trade_date datetime
+declare @weekday int
 
+/* if its after 5PM turn to next day */
 if datepart(hour, @trade_date) >= 17
 begin
 	select
@@ -18,6 +20,17 @@ begin
 	select 
 		@bo_trade_date = convert(date, @trade_date)
 end
+
+/* if day is saturday or sunday, add appropriate to get to monday */
+select
+	@weekday = datepart(weekday, @bo_trade_date)
+if @weekday = 7
+	select
+		@bo_trade_date = dateadd(day, 2, @bo_trade_date)
+else if @weekday = 1
+	select
+		@bo_trade_date = dateadd(day, 1, @bo_trade_date)
+
 
 return @bo_trade_date
 

@@ -1,0 +1,21 @@
+create or replace procedure	
+	r_addsettlementmethod
+		@name varchar(50)
+
+as
+
+declare @settlement_method_id int
+exec
+	api_addsettlementmethod
+		@name = @name,
+		@settlement_method_id = @settlement_method_id output
+
+if @settlement_method_id != NULL
+begin
+	select
+		status = "Success",
+		message = "Settlement method has been added or already existed",
+		name = @name
+end
+
+go

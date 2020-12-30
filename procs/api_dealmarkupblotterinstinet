@@ -1,0 +1,414 @@
+create or replace procedure
+	api_dealmarkupblotterinstinet
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @run_id int
+declare @begin_day_string char(20)
+declare @end_day_string char(20)
+declare @evaluation_currency_id int
+declare @fund_id int
+declare @max_commit_date datetime
+declare @begin_date datetime
+declare @end_date datetime
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+	
+if @trade_date = NULL
+begin
+	select
+		@trade_date = convert(date, getdate())
+end	
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output	
+
+
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding run with name",
+		run = @run_name
+	return
+end
+
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Run must have an external account filter"
+end
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	a.trader_id
+from
+	run_traders a,
+	traders b,
+	#external_accounts c
+where
+	a.trader_id = b.trader_id
+and
+	b.external_account_id = c.external_account_id
+and
+	a.run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		a.trader_id
+	from
+        	traders a,
+        	#external_accounts b
+	where
+        	a.external_account_id = b.external_account_id
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount > 0
+begin
+	select
+		status = "Error",
+		message = "Incompatible Run - strategy not allowed - must only have external account and trader filters"
+	return
+end
+
+
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount > 0
+begin
+	select
+		status = "Error",
+		message = "Incompatible Run - internal account not allowed - must only have external account and trader filters"
+	return
+end
+
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount > 0
+begin
+	select
+		status = "Error",
+		message = "Incompatible Run - broker not allowed - must only have external account and trader filters"
+	return
+end
+
+create table
+	#counterparties(
+		counterparty_id int)
+
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount > 0
+begin
+	select
+		status = "Error",
+		message = "Incompatible Run - counterparty not allowed - must only have external account and trader filters"
+	return
+end
+
+
+create table
+	#client_trades(
+		deal_id int,
+		trade_id int,
+		trade_date datetime,
+		product_id int NULL,
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4),
+		volume float NULL,
+		trade_price float,
+		trader_id int,
+		broker_id int,
+		external_account_id int,
+		counterparty_id int,
+		sales_code_id int,
+		trade_type varchar(20),
+		status_id int,
+		markup numeric(20, 10) NULL
+)
+
+
+insert into
+	#client_trades
+select
+	a.deal_id,
+	a.trade_id,
+	a.trade_date,
+	product_id = NULL,
+	a.contract_id,
+	a.value_date,
+	a.quantity,
+	volume = NULL,
+	a.price,
+	a.trader_id,
+	a.broker_id,
+	a.external_account_id,
+	a.counterparty_id,
+	a.sales_code_id,
+	d.name,
+	a.status_id,
+	NULL
+from
+	trades a,
+	#external_accounts b,
+	#traders c,
+	trade_types d,
+	fund_agency_counterparties e
+where
+	a.external_account_id = b.external_account_id
+and
+	a.trader_id = c.trader_id
+and
+	a.counterparty_id = e.counterparty_id
+and
+	a.trade_type_id = d.trade_type_id
+and
+	e.fund_id = @fund_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date <= @end_date
+
+create table
+	#cover_counterparties(
+		counterparty_id int
+)
+
+insert into
+	#cover_counterparties
+select
+	a.counterparty_id
+from
+	counterparties a
+
+delete 
+	#cover_counterparties
+from
+	#cover_counterparties a,
+	fund_agency_counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.fund_id = @fund_id
+
+		
+create table
+        #cover_deals(
+                deal_id int,
+                contract_id int,
+                quantity numeric(30, 4) NULL,
+		counter_quantity numeric(30, 8) NULL
+)
+
+insert into
+	#cover_deals(
+		deal_id,
+		contract_id,
+		quantity,
+		counter_quantity)
+select
+	b.deal_id,
+	b.contract_id,
+	sum(b.quantity),
+	sum(b.quantity * b.price)
+from
+	#client_trades a,
+	trades b,
+	#cover_counterparties c
+where
+	a.deal_id = b.deal_id
+and
+	b.counterparty_id = c.counterparty_id
+and
+	b.trade_date >= @begin_date
+and
+	b.trade_date <= @end_date
+group by
+	b.deal_id,
+	b.contract_id
+
+update
+	#client_trades
+set
+	markup = a.trade_price - (b.counter_quantity / b.quantity)
+from
+	#client_trades a,
+	#cover_deals b
+where
+	a.deal_id = b.deal_id
+
+update
+	#client_trades
+set
+	a.trade_price = 1.0 / a.trade_price
+from
+	#client_trades a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+	
+update
+	#client_trades
+set
+	a.product_id = b.product_id
+from
+	#client_trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+
+select
+        @max_commit_date = max(a.commit_date)
+from
+	daily_commits a,
+	commit_statuses b
+where
+	b.name = "Commit Complete"
+
+if @max_commit_date > @begin_date
+begin
+
+	update
+		#client_trades
+	set
+		a.volume = b.volume
+	from
+		#client_trades a,
+		trade_volumes b
+	where
+		a.trade_id = b.trade_id
+	and
+		b.product_id = @evaluation_currency_id
+	/* The trade id will be the date query here */
+
+end
+
+select
+	a.trade_id,
+	/*a.deal_id,*/
+	a.trade_type,
+	trade_date = convert(char(11), dbo.f_botradedate(a.trade_date), 1),
+	value_date = convert(char(11), a.value_date, 1),
+	trader = c.symbol,
+	b.symbol,
+	quantity = a.quantity * -1,
+	a.trade_price,
+	platform = d.symbol,
+	cover_ext_account = e.symbol,
+	markup = dbo.f_striptrailingzeros(convert(char(10), abs(a.markup))),
+	"_1"="",
+	"_2"="",
+	"_3"="",
+	"_4"="",
+	"_5"="",
+	"_6"=""
+from
+	#client_trades a,
+	contracts b,
+	traders c,
+	brokers d,
+	external_accounts e,
+	external_account_prime_brokers f,
+	prime_brokers g
+where
+	a.contract_id = b.contract_id
+and
+	a.trader_id = c.trader_id
+and
+	a.broker_id = d.broker_id
+and
+	a.external_account_id = f.external_account_id
+and
+	f.prime_broker_id = g.prime_broker_id
+and
+	g.mkt_ext_account_id = e.external_account_id
+order by
+	a.deal_id,
+	a.trade_id
+
+go

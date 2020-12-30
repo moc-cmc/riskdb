@@ -39,12 +39,15 @@ where
 and
 	trade_id != @trade_id
 
-select
-	@liqstream_trade_id = eb_trade_id
-from
-	liquidity_stream_eb_trades
-where
-	market_pb_trade_id = @trade_id
+if @liqstream_aggregate_trade_id != NULL
+begin
+	select
+		@liqstream_trade_id = eb_trade_id
+	from
+		liquidity_stream_eb_trades
+	where
+		market_pb_trade_id = @trade_id
+end
 
 
 /* if remove_trade is not provided as "N", it is assumed we should remove the trade. Default is to remove the trade */
@@ -224,91 +227,93 @@ begin
 end
 
 
-
-insert into
-        aggregated_trades (
-                aggregate_trade_id,
-                trade_id,
-                deal_id,
-                user_id,
-                trade_type_id,
-                internal_account_id,
-                external_account_id,
-                counterparty_id,
-                quantity,
-                contract_id,
-                value_date,
-                fixing_date,
-                price,
-                trade_date,
-                trader_id,
-                strategy_id,
-                status_id,
-                broker_id,
-                sales_code_id,
-                identifier,
-                pct_price,
-                spot_reference
-                )
-select
-        @liqstream_aggregate_trade_id,
-        @liqstream_trade_id,
-        deal_id,
-        user_id,
-        trade_type_id,
-        internal_account_id,
-        external_account_id,
-        counterparty_id,
-        quantity,
-        contract_id,
-        value_date,
-        fixing_date,
-        price,
-        trade_date,
-        trader_id,
-        strategy_id,
-        status_id,
-        broker_id,
-        sales_code_id,
-        identifier,
-        pct_price,
-        spot_reference
-from
-        trades
-where
-        trade_id = @liqstream_trade_id
-if @@rowcount = 1
+if @liqstream_aggregate_trade_id != NULL
 begin
-        if @remove_trade = "Y"
-        begin
-                /* DELETE THE TRADE */
-                delete from
-                        trades
-                where
-                        trade_id = @liqstream_trade_id
-                if @@rowcount != 1
-                begin
-			exec
-				api_addaggerror
-                                	@agg_error_type="Inserted aggregate trade but did not delete from trades",
-                                	@trade_id = @liqstream_trade_id,
-                                	@ggregated_trade_id = @liqstream_aggregate_trade_id
-                        return
-                end
-        end
-        exec
-                r_insertaggtradenotification
-                        @trade_id = @liqstream_trade_id
+	insert into
+        	aggregated_trades (
+                	aggregate_trade_id,
+                	trade_id,
+                	deal_id,
+                	user_id,
+                	trade_type_id,
+                	internal_account_id,
+                	external_account_id,
+                	counterparty_id,
+                	quantity,
+                	contract_id,
+                	value_date,
+                	fixing_date,
+                	price,
+                	trade_date,
+                	trader_id,
+                	strategy_id,
+                	status_id,
+                	broker_id,
+                	sales_code_id,
+                	identifier,
+                	pct_price,
+                	spot_reference
+                	)
+	select
+        	@liqstream_aggregate_trade_id,
+        	@liqstream_trade_id,
+        	deal_id,
+        	user_id,
+        	trade_type_id,
+        	internal_account_id,
+        	external_account_id,
+        	counterparty_id,
+        	quantity,
+        	contract_id,
+        	value_date,
+        	fixing_date,
+        	price,
+        	trade_date,
+        	trader_id,
+        	strategy_id,
+        	status_id,
+        	broker_id,
+        	sales_code_id,
+        	identifier,
+        	pct_price,
+        	spot_reference
+	from
+        	trades
+	where
+        	trade_id = @liqstream_trade_id
+	if @@rowcount = 1
+	begin
+        	if @remove_trade = "Y"
+        	begin
+                	/* DELETE THE TRADE */
+                	delete from
+                        	trades
+                	where
+                        	trade_id = @liqstream_trade_id
+                	if @@rowcount != 1
+                	begin
+				exec
+					api_addaggerror
+                                		@agg_error_type="Inserted aggregate trade but did not delete from trades",
+                                		@trade_id = @liqstream_trade_id,
+                                		@ggregated_trade_id = @liqstream_aggregate_trade_id
+                        	return
+                	end
+        	end
+        	exec
+                	r_insertaggtradenotification
+                        	@trade_id = @liqstream_trade_id
+	end
+	else
+	begin
+		exec
+			api_addaggerror
+				@agg_error_type="Did not insert aggregate, did not delete trade from trades",
+                		@trade_id = @liqstream_trade_id,
+                		@aggregate_trade_id = @liqstream_aggregate_trade_id
+	end
 end
-else
-begin
-	exec
-		api_addaggerror
-			@agg_error_type="Did not insert aggregate, did not delete trade from trades",
-                	@trade_id = @liqstream_trade_id,
-                	@aggregate_trade_id = @liqstream_aggregate_trade_id
-end
-
+	
 
 select
     @end_time = getdate()
