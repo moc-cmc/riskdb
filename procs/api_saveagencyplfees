@@ -1,0 +1,37 @@
+drop procedure
+	api_saveagencyplfees
+go
+
+create procedure
+	api_saveagencyplfees
+		@login varchar(50),
+		@trade_date datetime,
+		@product_spread numeric(30,4)=NULL,
+		@product varchar(50),
+		@currency_spread numeric(30,4)=NULL,
+        	@currency varchar(50),
+		@taker_exec_fee numeric(30,4)=NULL,
+		@taker_exec varchar(50)=NULL,
+		@maker_exec_fee numeric(30,4)=NULL,
+		@maker_exec varchar(50)=NULL,
+		@taker_pb_fee numeric(30,4)=NULL,
+		@taker_pb varchar(50)=NULL,
+		@maker_pb_fee numeric(30,4)=NULL,
+		@maker_pb varchar(50)=NULL,
+		@taker_broker_fee numeric(30,4)=NULL,
+		@taker_broker varchar(50)=NULL,
+		@maker_broker_fee numeric(30,4)=NULL,
+		@maker_broker varchar(50)=NULL
+as
+
+declare @transaction_type_id int
+declare @transaction_date datetime
+
+select
+	currency = @currency
+
+
+return
+
+
+go
