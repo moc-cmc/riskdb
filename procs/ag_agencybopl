@@ -1,0 +1,1637 @@
+drop procedure
+	ag_agencybopl
+go
+
+create procedure
+	ag_agencybopl
+		@login varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+as
+
+declare @tico_account_id int
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @evaluation_currency varchar(50)
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+
+declare @id int
+declare @ids int
+declare @external_account_id int
+declare @contract_id int
+declare @trader_id int
+declare @broker_id int
+declare @counterparty_id int
+declare @trading_pl float
+declare @fees float
+declare @net float
+declare @trade_count int
+declare @volume float
+
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"change_date",
+	"Agency BO Dashboard",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "pct_of_total",
+	 "Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"fees_per_mio", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_per_mio", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"gross_per_mio", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"trading_pl", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"fees", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"avg_size", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"volume", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+
+ 	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF94
+ 2;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@evaluation_currency = symbol
+from
+	products
+where
+	product_id = @evaluation_currency_id
+
+
+if @begin_date = NULL
+begin
+	if @end_date = NULL
+	begin
+		select
+			@begin_date = convert(datetime, convert(date, getdate()))
+		select
+			@end_date = @begin_date
+	end
+	else
+		select
+			@begin_date = @end_date
+end
+
+if @end_date = NULL
+begin
+	select
+		@end_date = @begin_date
+end
+
+select
+	product_id,
+	rate
+into
+	#conversion_rates
+from
+	x_conversion_rates 
+where
+	_login = @login
+and
+	_as_of_date = @end_date
+and
+	_product = @evaluation_currency
+
+create table
+	#cpty_accounts(
+		external_account_id int)
+insert into
+	#cpty_accounts(
+		external_account_id)
+select
+	a.external_account_id
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.name = "Counterparty"
+
+create table
+	#client_accounts(
+		external_account_id int)
+insert into
+	#client_accounts(
+		external_account_id)
+select
+	a.external_account_id
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.name = "Client"
+
+create table
+	#netted_base(
+		external_account_id int NULL,
+		transaction_type_id int NULL,
+		contract_id int NULL,
+		trader_id int NULL,
+		broker_id int NULL,
+		counterparty_id int NULL,
+		product_id int NULL,
+		amount float NULL,
+		equiv float NULL)
+insert into
+	#netted_base(
+		external_account_id,
+		transaction_type_id,
+		contract_id,
+		trader_id,
+		broker_id,
+		counterparty_id,
+		product_id,
+		amount)
+select
+	a.external_account_id,
+	a.transaction_type_id,
+	f.contract_id,
+	f.trader_id,
+	f.broker_id,
+	f.counterparty_id,
+	a.currency_id,
+	sum(a.amount)
+from
+	account_transactions a,
+	scheduled_fee_transactions b,
+	scheduled_fees c,
+	fee_schedules d,
+	fee_schedule_types e,
+	trades f,
+	#client_accounts g
+where
+	a.external_account_id = g.external_account_id
+and
+	a.account_transaction_id = b.account_transaction_id
+and
+	b.scheduled_fee_id = c.scheduled_fee_id
+and
+	c.fee_schedule_id = d.fee_schedule_id
+and
+	d.fee_schedule_type_id = e.fee_schedule_type_id
+and
+	b.trade_id = f.trade_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date <= @end_date
+and
+	e.name = "Agency Pips"
+group by
+	a.external_account_id,
+	a.transaction_type_id,
+	f.contract_id,
+	f.trader_id,
+	f.broker_id,
+	f.counterparty_id,
+	a.currency_id
+
+update
+	#netted_base
+set
+	a.equiv = a.amount * b.rate
+from
+	#netted_base a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+/****************************** LP Side **************************/
+
+create table
+	#netted_lp(
+		external_account_id int NULL,
+		transaction_type_id int NULL,
+		contract_id int NULL,
+		trader_id int NULL,
+		broker_id int NULL,
+		counterparty_id int NULL,
+		product_id int NULL,
+		amount float NULL,
+		equiv float NULL)
+insert into
+	#netted_lp(
+		external_account_id,
+		transaction_type_id,
+		contract_id,
+		trader_id,
+		broker_id,
+		counterparty_id,
+		product_id,
+		amount)
+select
+	a.external_account_id,
+	a.transaction_type_id,
+	f.contract_id,
+	f.trader_id,
+	f.broker_id,
+	f.counterparty_id,
+	a.currency_id,
+	sum(a.amount)
+from
+	account_transactions a,
+	scheduled_fee_transactions b,
+	scheduled_fees c,
+	fee_schedules d,
+	fee_schedule_types e,
+	trades f,
+	#cpty_accounts g
+where
+	a.external_account_id = g.external_account_id
+and
+	a.account_transaction_id = b.account_transaction_id
+and
+	b.scheduled_fee_id = c.scheduled_fee_id
+and
+	c.fee_schedule_id = d.fee_schedule_id
+and
+	d.fee_schedule_type_id = e.fee_schedule_type_id
+and
+	b.trade_id = f.trade_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date <= @end_date
+and
+	e.name = "Agency Pips"
+group by
+	a.external_account_id,
+	a.transaction_type_id,
+	f.contract_id,
+	f.trader_id,
+	f.broker_id,
+	f.counterparty_id,
+	a.currency_id
+
+update
+	#netted_lp
+set
+	a.equiv = a.amount * b.rate
+from
+	#netted_lp a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+/****************************** LP Side **************************/
+create table
+	#fee_sum(
+		id int identity,
+		style varchar(250) NULL,
+		transaction_type varchar(100) NULL,
+		equiv float NULL)
+insert into
+	#fee_sum(
+		transaction_type,
+		equiv)
+select
+	transaction_type = b.name,
+	sum(a.equiv)
+from
+	#netted_base a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+group by
+	b.name
+order by
+	b.name
+
+update
+	#fee_sum
+set
+	style = @style
+
+select
+	@net = sum(equiv)
+from
+	#fee_sum
+
+insert into
+	#fee_sum(
+		style,
+		equiv)
+values(
+	@subtotal_style,
+	@net)
+
+create table
+	#accounts(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		account_type varchar(50) NULL,
+		volume float NULL,
+		trade_count float NULL,
+		avg_size float NULL,
+		trading_pl float NULL,
+		gross_per_mio float NULL,
+		fees float NULL,
+		fees_per_mio float NULL,
+		equiv float NULL,
+		net_per_mio float NULL)
+insert into
+	#accounts(
+		account,
+		equiv)
+select
+	acct = b.symbol,
+	sum(a.equiv)
+from
+	#netted_base a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+group by
+	b.symbol
+order by
+	b.symbol
+
+
+update
+	#accounts
+set
+	style = @style,
+	trade_count = 0.0,
+	volume = 0.0
+
+update
+	#accounts
+set
+	a.external_account_id = b.external_account_id
+from
+	#accounts a,
+	external_accounts b
+where
+	a.account = b.symbol
+
+update
+	#accounts
+set
+	a.account_type = c.name
+from
+	#accounts a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+	
+
+create table
+	#account_volumes(
+		external_account_id int,
+		trade_count int NULL,
+		volume float NULL)
+insert into
+	#account_volumes(
+		external_account_id,
+		trade_count,
+		volume)
+select
+	external_account_id,
+	sum(trade_count),
+	sum(volume)
+from
+	account_volumes
+where
+	product_id = @evaluation_currency_id
+and
+	volume_date >= @begin_date
+and
+	volume_date <= @end_date
+group by
+	external_account_id
+
+update
+	#account_volumes
+set
+	volume = volume / 1000000.0
+update
+	#accounts 
+set
+	a.volume = b.volume,
+	a.trade_count = b.trade_count
+from
+	#accounts a,
+	#account_volumes b
+where
+	a.external_account_id = b.external_account_id
+	
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#accounts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#accounts
+	where
+		id > @id
+
+	select
+		@trading_pl = NULL,
+		@fees = NULL,
+		@external_account_id = NULL
+
+	select
+		@external_account_id = external_account_id
+	from
+		#accounts
+	where
+		id = @id
+
+	select
+		@trading_pl = sum(a.equiv)
+	from
+		#netted_base a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.external_account_id = @external_account_id
+	and
+		b.name = "Pip Spread PL"
+	if @trading_pl = NULL
+		select
+			@trading_pl = 0.0
+
+	select
+		@fees = sum(a.equiv)
+	from
+		#netted_base a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.external_account_id = @external_account_id
+	and
+		b.name != "Pip Spread PL"
+	if @fees = NULL
+		select
+			@fees = 0.0
+
+
+	update
+		#accounts
+	set
+		trading_pl = @trading_pl,
+		fees = @fees
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#accounts
+	where
+		id > @id
+end
+
+select
+	@trading_pl = NULL,
+	@fees = NULL,
+	@net = NULL
+select
+	@trading_pl = sum(trading_pl),
+	@fees = sum(fees),
+	@net = sum(equiv),
+	@trade_count = sum(trade_count),
+	@volume = sum(volume)
+from
+	#accounts
+
+insert into
+	#accounts(
+		style,
+		trading_pl,
+		fees,
+		equiv,
+		trade_count,
+		volume)
+values(
+	@subtotal_style,
+	@trading_pl,
+	@fees,
+	@net,
+	@trade_count,
+	@volume)
+
+update
+	#accounts
+set
+	avg_size = (volume * 1000000.0)  / trade_count,
+	gross_per_mio = trading_pl / volume,
+	net_per_mio = equiv / volume,
+	fees_per_mio = fees / volume
+where
+	trade_count != 0
+and
+	volume != 0.0
+
+/*********************************************************************/
+create table
+	#contracts(
+		id int identity,
+		style varchar(250) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		volume float NULL,
+		trade_count float NULL,
+		avg_size float NULL,
+		trading_pl float NULL,
+		gross_per_mio float NULL,
+		fees float NULL,
+		fees_per_mio float NULL,
+		equiv float NULL,
+		net_per_mio float NULL)
+insert into
+	#contracts(
+		symbol,
+		equiv)
+select
+	acct = b.symbol,
+	sum(a.equiv)
+from
+	#netted_base a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+group by
+	b.symbol
+order by
+	b.symbol
+
+update
+	#contracts
+set
+	style = @style,
+	trade_count = 0.0,
+	volume = 0.0
+
+update
+	#contracts
+set
+	a.contract_id = b.contract_id
+from
+	#contracts a,
+	contracts b
+where
+	a.symbol = b.symbol
+
+create table
+	#contract_volumes(
+		contract_id int,
+		trade_count int NULL,
+		volume float NULL)
+insert into
+	#contract_volumes(
+		contract_id,
+		trade_count,
+		volume)
+select
+	contract_id,
+	sum(trade_count),
+	sum(volume)
+from
+	contract_volumes
+where
+	product_id = @evaluation_currency_id
+and
+	volume_date >= @begin_date
+and
+	volume_date <= @end_date
+group by
+	contract_id
+
+update
+	#contract_volumes
+set
+	volume = volume / 1000000.0
+update
+	#contracts 
+set
+	a.volume = (b.volume / 2.0),
+	a.trade_count = convert(int, (b.trade_count / 2.0))
+from
+	#contracts a,
+	#contract_volumes b
+where
+	a.contract_id = b.contract_id
+	
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#contracts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#contracts
+	where
+		id > @id
+
+	select
+		@trading_pl = NULL,
+		@fees = NULL,
+		@contract_id = NULL
+
+	select
+		@contract_id = contract_id
+	from
+		#contracts
+	where
+		id = @id
+
+	select
+		@trading_pl = sum(a.equiv)
+	from
+		#netted_base a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.contract_id = @contract_id
+	and
+		b.name = "Pip Spread PL"
+	if @trading_pl = NULL
+		select
+			@trading_pl = 0.0
+
+	select
+		@fees = sum(a.equiv)
+	from
+		#netted_base a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.contract_id = @contract_id
+	and
+		b.name != "Pip Spread PL"
+	if @fees = NULL
+		select
+			@fees = 0.0
+
+
+	update
+		#contracts
+	set
+		trading_pl = @trading_pl,
+		fees = @fees
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#contracts
+	where
+		id > @id
+end
+
+select
+	@trading_pl = NULL,
+	@fees = NULL,
+	@net = NULL
+select
+	@trading_pl = sum(trading_pl),
+	@fees = sum(fees),
+	@net = sum(equiv),
+	@trade_count = sum(trade_count),
+	@volume = sum(volume)
+from
+	#contracts
+
+insert into
+	#contracts(
+		style,
+		trading_pl,
+		fees,
+		equiv,
+		trade_count,
+		volume)
+values(
+	@subtotal_style,
+	@trading_pl,
+	@fees,
+	@net,
+	@trade_count,
+	@volume)
+
+update
+	#contracts
+set
+	avg_size = (volume * 1000000.0)  / trade_count,
+	gross_per_mio = trading_pl / volume,
+	net_per_mio = equiv / volume,
+	fees_per_mio = fees / volume
+where
+	trade_count != 0
+and
+	volume != 0.0
+
+/*********************************************************************/
+
+/*********************** Traders *************************************/
+
+create table
+	#traders(
+		id int identity,
+		style varchar(250) NULL,
+		trader_id int NULL,
+		trader varchar(50) NULL,
+		volume float NULL,
+		trade_count float NULL,
+		avg_size float NULL,
+		trading_pl float NULL,
+		gross_per_mio float NULL,
+		fees float NULL,
+		fees_per_mio float NULL,
+		equiv float NULL,
+		net_per_mio float NULL)
+insert into
+	#traders(
+		trader,
+		equiv)
+select
+	b.symbol,
+	sum(a.equiv)
+from
+	#netted_base a,
+	traders b
+where
+	a.trader_id = b.trader_id
+group by
+	b.symbol
+order by
+	b.symbol
+
+update
+	#traders
+set
+	style = @style,
+	trade_count = 0.0,
+	volume = 0.0
+
+update
+	#traders
+set
+	a.trader_id = b.trader_id
+from
+	#traders a,
+	traders b
+where
+	a.trader = b.symbol
+
+create table
+	#trader_volumes(
+		trader_id int,
+		trade_count int NULL,
+		volume float NULL)
+insert into
+	#trader_volumes(
+		trader_id,
+		trade_count,
+		volume)
+select
+	trader_id,
+	sum(trade_count),
+	sum(volume)
+from
+	trader_volumes
+where
+	product_id = @evaluation_currency_id
+and
+	volume_date >= @begin_date
+and
+	volume_date <= @end_date
+group by
+	trader_id
+
+update
+	#trader_volumes
+set
+	volume = volume / 1000000.0
+update
+	#traders 
+set
+	a.volume = b.volume,
+	a.trade_count = b.trade_count
+from
+	#traders a,
+	#trader_volumes b
+where
+	a.trader_id = b.trader_id
+	
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#traders
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#traders
+	where
+		id > @id
+
+	select
+		@trading_pl = NULL,
+		@fees = NULL,
+		@trader_id = NULL
+
+	select
+		@trader_id = trader_id
+	from
+		#traders
+	where
+		id = @id
+
+	select
+		@trading_pl = sum(a.equiv)
+	from
+		#netted_base a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.trader_id = @trader_id
+	and
+		b.name = "Pip Spread PL"
+	if @trading_pl = NULL
+		select
+			@trading_pl = 0.0
+
+	select
+		@fees = sum(a.equiv)
+	from
+		#netted_base a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.trader_id = @trader_id
+	and
+		b.name != "Pip Spread PL"
+	if @fees = NULL
+		select
+			@fees = 0.0
+
+
+	update
+		#traders
+	set
+		trading_pl = @trading_pl,
+		fees = @fees
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#traders
+	where
+		id > @id
+end
+
+select
+	@trading_pl = NULL,
+	@fees = NULL,
+	@net = NULL
+select
+	@trading_pl = sum(trading_pl),
+	@fees = sum(fees),
+	@net = sum(equiv),
+	@trade_count = sum(trade_count),
+	@volume = sum(volume)
+from
+	#traders
+
+insert into
+	#traders(
+		style,
+		trading_pl,
+		fees,
+		equiv,
+		trade_count,
+		volume)
+values(
+	@subtotal_style,
+	@trading_pl,
+	@fees,
+	@net,
+	@trade_count,
+	@volume)
+
+update
+	#traders
+set
+	avg_size = (volume * 1000000.0)  / trade_count,
+	gross_per_mio = trading_pl / volume,
+	net_per_mio = equiv / volume,
+	fees_per_mio = fees / volume
+where
+	trade_count != 0
+and
+	volume != 0.0
+
+/*********************** Traders *************************************/
+
+/*********************** Brokers  *************************************/
+
+create table
+	#brokers(
+		id int identity,
+		style varchar(250) NULL,
+		broker_id int NULL,
+		broker varchar(50) NULL,
+		volume float NULL,
+		trade_count float NULL,
+		avg_size float NULL,
+		trading_pl float NULL,
+		gross_per_mio float NULL,
+		fees float NULL,
+		fees_per_mio float NULL,
+		equiv float NULL,
+		net_per_mio float NULL)
+insert into
+	#brokers(
+		broker,
+		equiv)
+select
+	b.symbol,
+	sum(a.equiv)
+from
+	#netted_base a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+group by
+	b.symbol
+
+update
+	#brokers
+set
+	style = @style,
+	trade_count = 0.0,
+	volume = 0.0
+
+update
+	#brokers
+set
+	a.broker_id = b.broker_id
+from
+	#brokers a,
+	brokers b
+where
+	a.broker = b.symbol
+
+create table
+	#broker_volumes(
+		broker_id int,
+		trade_count int NULL,
+		volume float NULL)
+insert into
+	#broker_volumes(
+		broker_id,
+		trade_count,
+		volume)
+select
+	broker_id,
+	sum(trade_count / 2),
+	sum(volume / 2.0)
+from
+	broker_volumes
+where
+	product_id = @evaluation_currency_id
+and
+	volume_date >= @begin_date
+and
+	volume_date <= @end_date
+group by
+	broker_id
+
+update
+	#broker_volumes
+set
+	volume = volume / 1000000.0
+
+update
+	#brokers 
+set
+	a.volume = b.volume,
+	a.trade_count = b.trade_count
+from
+	#brokers a,
+	#broker_volumes b
+where
+	a.broker_id = b.broker_id
+	
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#brokers
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#brokers
+	where
+		id > @id
+
+	select
+		@trading_pl = NULL,
+		@fees = NULL,
+		@broker_id = NULL
+
+	select
+		@broker_id = broker_id
+	from
+		#brokers
+	where
+		id = @id
+
+	select
+		@trading_pl = sum(a.equiv)
+	from
+		#netted_base a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.broker_id = @broker_id
+	and
+		b.name = "Pip Spread PL"
+	if @trading_pl = NULL
+		select
+			@trading_pl = 0.0
+
+	select
+		@fees = sum(a.equiv)
+	from
+		#netted_base a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.broker_id = @broker_id
+	and
+		b.name != "Pip Spread PL"
+	if @fees = NULL
+		select
+			@fees = 0.0
+
+
+	update
+		#brokers
+	set
+		trading_pl = @trading_pl,
+		fees = @fees
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#brokers
+	where
+		id > @id
+end
+
+select
+	@trading_pl = NULL,
+	@fees = NULL,
+	@net = NULL
+select
+	@trading_pl = sum(trading_pl),
+	@fees = sum(fees),
+	@net = sum(equiv),
+	@trade_count = sum(trade_count),
+	@volume = sum(volume)
+from
+	#brokers
+
+insert into
+	#brokers(
+		style,
+		trading_pl,
+		fees,
+		equiv,
+		trade_count,
+		volume)
+values(
+	@subtotal_style,
+	@trading_pl,
+	@fees,
+	@net,
+	@trade_count,
+	@volume)
+
+update
+	#brokers
+set
+	avg_size = (volume * 1000000.0)  / trade_count,
+	gross_per_mio = trading_pl / volume,
+	net_per_mio = equiv / volume,
+	fees_per_mio = fees / volume
+where
+	trade_count != 0
+and
+	volume != 0.0
+
+/*********************** Brokers  *************************************/
+
+/*********************** Counterparties  *************************************/
+
+create table
+	#counterparties(
+		id int identity,
+		style varchar(250) NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		volume float NULL,
+		trade_count float NULL,
+		avg_size float NULL,
+		trading_pl float NULL,
+		gross_per_mio float NULL,
+		fees float NULL,
+		fees_per_mio float NULL,
+		equiv float NULL,
+		net_per_mio float NULL)
+insert into
+	#counterparties(
+		counterparty,
+		equiv)
+select
+	b.name,
+	sum(a.equiv)
+from
+	#netted_lp a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+group by
+	b.name
+order by
+	b.name
+
+update
+	#counterparties
+set
+	style = @style,
+	trade_count = 0.0,
+	volume = 0.0
+
+update
+	#counterparties
+set
+	a.counterparty_id = b.counterparty_id
+from
+	#counterparties a,
+	counterparties b
+where
+	a.counterparty = b.name
+
+create table
+	#counterparty_volumes(
+		counterparty_id int,
+		trade_count int NULL,
+		volume float NULL)
+insert into
+	#counterparty_volumes(
+		counterparty_id,
+		trade_count,
+		volume)
+select
+	counterparty_id,
+	sum(trade_count),
+	sum(volume)
+from
+	counterparty_volumes
+where
+	product_id = @evaluation_currency_id
+and
+	volume_date >= @begin_date
+and
+	volume_date <= @end_date
+group by
+	counterparty_id
+
+update
+	#counterparty_volumes
+set
+	volume = volume / 1000000.0
+update
+	#counterparties 
+set
+	a.volume = b.volume,
+	a.trade_count = b.trade_count
+from
+	#counterparties a,
+	#counterparty_volumes b
+where
+	a.counterparty_id = b.counterparty_id
+	
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#counterparties
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#counterparties
+	where
+		id > @id
+
+	select
+		@trading_pl = NULL,
+		@fees = NULL,
+		@counterparty_id = NULL
+
+	select
+		@counterparty_id = counterparty_id
+	from
+		#counterparties
+	where
+		id = @id
+
+	select
+		@trading_pl = sum(a.equiv)
+	from
+		#netted_lp a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.counterparty_id = @counterparty_id
+	and
+		b.name = "Pip Spread PL"
+	if @trading_pl = NULL
+		select
+			@trading_pl = 0.0
+
+	select
+		@fees = sum(a.equiv)
+	from
+		#netted_lp a,
+		transaction_types b
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.counterparty_id = @counterparty_id
+	and
+		b.name != "Pip Spread PL"
+	if @fees = NULL
+		select
+			@fees = 0.0
+
+
+	update
+		#counterparties
+	set
+		trading_pl = @trading_pl,
+		fees = @fees
+	where
+		id = @id
+
+	select
+		@ids = count(*)
+	from
+		#counterparties
+	where
+		id > @id
+end
+
+select
+	@trading_pl = NULL,
+	@fees = NULL,
+	@net = NULL
+select
+	@trading_pl = sum(trading_pl),
+	@fees = sum(fees),
+	@net = sum(equiv),
+	@trade_count = sum(trade_count),
+	@volume = sum(volume)
+from
+	#counterparties
+
+insert into
+	#counterparties(
+		style,
+		trading_pl,
+		fees,
+		equiv,
+		trade_count,
+		volume)
+values(
+	@subtotal_style,
+	@trading_pl,
+	@fees,
+	@net,
+	@trade_count,
+	@volume)
+
+update
+	#counterparties
+set
+	avg_size = (volume * 1000000.0)  / trade_count,
+	gross_per_mio = trading_pl / volume,
+	net_per_mio = equiv / volume,
+	fees_per_mio = fees / volume
+where
+	trade_count != 0
+and
+	volume != 0.0
+
+/*********************** Counterparties  *************************************/
+
+select
+	style = @style,
+	change_date = "Change Dates"
+
+select
+	section = "Activity",
+	style,
+	transaction_type,
+	equiv
+from
+	#fee_sum
+order by
+	id
+
+select
+	section = "Accounts",
+	style,
+	account,
+	volume,
+	trade_count,
+	avg_size,
+	trading_pl,
+	gross_per_mio,
+	fees,
+	fees_per_mio,
+	net = equiv,
+	net_per_mio
+from
+	#accounts
+order by
+	id
+
+select
+	section = "Contracts",
+	style,
+	symbol,
+	volume,
+	trade_count,
+	avg_size,
+	trading_pl,
+	gross_per_mio,
+	fees,
+	fees_per_mio,
+	net = equiv,
+	net_per_mio
+from
+	#contracts
+order by
+	id
+
+select
+	section = "Traders",
+	style,
+	trader,
+	volume,
+	trade_count,
+	avg_size,
+	trading_pl,
+	gross_per_mio,
+	fees,
+	fees_per_mio,
+	net = equiv,
+	net_per_mio
+from
+	#traders
+order by
+	id
+
+select
+	section = "Brokers",
+	style,
+	broker,
+	volume,
+	trade_count,
+	avg_size,
+	trading_pl,
+	gross_per_mio,
+	fees,
+	fees_per_mio,
+	net = equiv,
+	net_per_mio
+from
+	#brokers
+order by
+	id
+
+select
+	section = "Counterparties",
+	style,
+	counterparty,
+	volume,
+	trade_count,
+	avg_size,
+	trading_pl,
+	gross_per_mio,
+	fees,
+	fees_per_mio,
+	net = equiv,
+	net_per_mio
+from
+	#counterparties
+order by
+	id
+
+go
