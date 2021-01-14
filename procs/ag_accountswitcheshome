@@ -624,8 +624,6 @@ begin
 	and
 		convert(date, a.value_date) >= convert(date, @trade_date)
 	and
-		a.trade_date < @end_date
-	and
 		c.symbol = "CITI FXPB"
 	/* and	
 		convert(date, a.value_date) <= convert(date, @two_day) */
@@ -654,8 +652,6 @@ begin
 		trader_id = @cover_trader_id
 	and
 		convert(date, a.value_date) >= convert(date, @trade_date)
-	and
-		a.trade_date < @end_date
 	and
 		c.symbol = "CITI FXPB"
 	/* and
