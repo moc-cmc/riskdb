@@ -154,6 +154,7 @@ declare @should_tally_eb_to_pb char(1)
 declare @should_tally_eb_to_pb_ls char(1)
 declare @eb_to_pb_trader varchar(50)
 declare @eb_to_pb_trader_ls varchar(50)
+declare @should_tally_eb_to_pb_tfx char(1)
 
 
 select
@@ -1068,7 +1069,7 @@ begin
 end
 
 /* --------------------------------------------------------------------------
- * STEP: Book PB trades from an EB message, if necessary
+* STEP: Book PB trades from an EB message, if necessary
  *
  * Some EB clients are managed as PB clients. In this case, we may need to book
  * PB trades. Check if we should do this by looking up whether the client account
@@ -1113,6 +1114,42 @@ begin
 				@ea_account=@eb_to_pb_trader,
 				@cp_account=@counterparty
 	end
+
+        select
+                @should_tally_eb_to_pb_tfx = "Y",
+                @eb_to_pb_trader = c.symbol
+        from
+                trader_symbols a,
+                sources b,
+                traders c
+        where
+                a.source_id = b.source_id
+        and
+                a.trader_id = c.trader_id
+        and
+                b.name = "Jeff EB to PB TrueFX"
+        and
+                a.symbol = @trader
+
+        if @should_tally_eb_to_pb_tfx = "Y"
+        begin
+                exec
+                        ttc_ebtopbcusttallytfx
+                                @source = "Jeff EB to PB TrueFX",
+                                @default_login = @default_login,
+                                @broker = "EB TrueFX",
+                                @exec_id = @platform_identifier,
+                                @order_id = @deal_exec_symbol_eb_to_pb,
+                                @symbol = @contract,
+                                @qty = @quantity,
+                                @price = @tally_price,
+                                @trade_date = @tally_trade_date,
+                                @value_date = @tally_value_date,
+                                @fixing_date = @tally_fixing_date,
+                                @ea_account=@eb_to_pb_trader,
+                                @cp_account=@trader_lookup,
+				@eb_trade_id = @trade_id
+        end
 end
 
 if @client_or_market = "M" and @far_trade_id = NULL
