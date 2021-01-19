@@ -1,0 +1,82 @@
+create or replace procedure
+	api_clearremotesourcerecon
+		@login varchar(50),
+                @source varchar(50),
+                @trade_date datetime
+
+as
+
+declare @tico_account_id int
+declare @source_id int
+declare @bo_trade_date datetime
+declare @committed_count int
+declare @committed_status_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source",
+		source = @source
+	return
+end
+
+
+select
+	@bo_trade_date = convert(date, @trade_date)
+
+select
+	@committed_count = count(*)
+from
+	remote_trade_symbols
+where
+	bo_trade_date = @bo_trade_date
+and
+	source_id = @source_id
+and
+	recon_status_id = @committed_status_id
+
+if @committed_count > 0
+begin
+	select
+		status = "Error",
+		message = "Can not clear source recon with committed records",
+		committed_count = @committed_count
+	return
+end
+
+begin tran
+	delete
+		remote_trade_symbols
+	set
+		bo_trade_date = @bo_trade_date
+	and
+		source_id = @source_id
+commit tran
+
+
+
+go	
+
+
+		
