@@ -1,0 +1,67 @@
+drop procedure
+	cbo_wipeagencyplfees
+go
+
+create procedure
+	cbo_wipeagencyplfees
+		@login varchar(50),
+		@trade_date datetime
+as
+
+create table
+	#delete_transactions(
+		account_transaction_id int)
+insert into
+	#delete_transactions(
+		account_transaction_id)
+select
+	a.account_transaction_id
+from
+	account_transactions a,
+	scheduled_fee_transactions b,
+	scheduled_fees c,
+	fee_schedules d,
+	fee_schedule_types e
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	b.scheduled_fee_id = c.scheduled_fee_id
+and
+	c.fee_schedule_id = d.fee_schedule_id
+and
+	d.fee_schedule_type_id = e.fee_schedule_type_id
+and
+	convert(date, a.transaction_date) = convert(date, @trade_date)
+and
+	e.name = "Agency Pips"
+
+delete
+	scheduled_fees
+from
+	scheduled_fees a,
+	scheduled_fee_transactions b,
+	#delete_transactions c
+where
+	a.scheduled_fee_id = b.scheduled_fee_id
+and
+	b.account_transaction_id = c.account_transaction_id
+
+delete
+	scheduled_fee_transactions
+from
+	scheduled_fee_transactions a,
+	#delete_transactions b
+where
+	a.account_transaction_id = b.account_transaction_id
+
+delete
+	account_transactions
+from
+	account_transactions a,
+	#delete_transactions b
+where
+	a.account_transaction_id = b.account_transaction_id
+
+
+
+go

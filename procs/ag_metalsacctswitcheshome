@@ -1,0 +1,1156 @@
+
+create or replace procedure
+	ag_metalsacctswitcheshome
+		@login varchar(50),
+		@trade_date datetime=NULL,
+		@batch_id int=NULL
+as
+
+
+declare @tico_account_id int
+declare @admin_level int
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+
+declare @one_day datetime
+declare @two_day datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @id int
+declare @ids int
+declare @broker_id int
+declare @prime_broker_id int
+declare @evaluation_currency_id int
+declare @closing_trade_id int
+declare @opening_trade_id int
+declare @transfer_id int
+declare @product_id int
+declare @contract_id int
+declare @inverted_contract_id int
+declare @balance numeric(30,4)
+declare @value_date datetime
+declare @closing_qty numeric(30,4)
+declare @opening_qty numeric(30,4)
+declare @price float
+declare @cover_trader_id int
+declare @cover_account_id int
+declare @omnibus_trader_id int
+declare @fund_id int
+declare @equiv float
+declare @netted_equiv float
+declare @covered_equiv float
+declare @covered_tickets int
+declare @netted_tickets int
+declare @trades int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"batch_id",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"account",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"group_confirm",
+	"Group And Confirm Transfers",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"manage_traders",
+	"Manage PB Customer Traders",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"del_transfer",
+	"Remove Queued Portfolio Transfer",
+	NULL) 
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"edit_transfer",
+	"Edit Queued Portfolio Transfer",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ticket_compression",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"volume_compression", 
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	"#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"netted_equiv",
+	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"covered_equiv",
+	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv",
+	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"volume_improvement",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"netted_amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"covered_amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"quantity",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into 
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found"
+	return
+end
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+end
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+exec
+	r_nextbusinessday
+		@trade_date,
+		@one_day output
+
+exec
+	r_nextbusinessday
+		@one_day,
+		@two_day output
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = "Elysium Compression Tool"
+if @broker_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Elysium Compression Tool broker not found"
+	return
+end
+
+create table
+	#conversion_rates(
+		product_id int,
+		rate float NULL)
+insert into
+	#conversion_rates(
+		product_id)
+select
+	product_id
+from
+	products
+
+update
+	#conversion_rates
+set
+	rate = 1.0
+where 
+	product_id = @evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = a.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @trade_date)
+and 
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @trade_date)
+and
+	a.rate = NULL
+
+update
+	#conversion_rates 
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	current_prices c
+where
+	b.product_id = a.product_id 
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	current_prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+create table
+	#transfers(
+		id int identity,
+		prime_broker_id int NULL,
+		client_trader_id int NULL,
+		client_trader varchar(50) NULL,
+		client_account_id int NULL,
+		client_account varchar(50) NULL,
+		cover_trader_id int NULL,
+		cover_trader varchar(50) NULL,
+		cover_account_id int NULL,
+		cover_account varchar(50) NULL,
+		omnibus_trader_id int NULL,
+		omnibus_trader varchar(50) NULL,
+		evaluation_currency_id int NULL)
+insert into
+	#transfers(
+		client_trader_id,
+		client_trader,
+		client_account_id,
+		client_account,
+		cover_trader_id,
+		cover_trader, 
+ 		cover_account_id,
+		cover_account)
+select
+	a.client_trader_id,
+	b.symbol,
+	b.external_account_id,
+	c.symbol,
+	a.cover_trader_id,
+	d.symbol,
+	d.external_account_id,
+	e.symbol
+from
+	metals_pbcust_traders a,
+	traders b,
+	external_accounts c,
+	traders d,
+	external_accounts e,
+	statuses f
+where
+	a.client_trader_id = b.trader_id
+and
+	b.external_account_id = c.external_account_id
+and
+	a.cover_trader_id = d.trader_id
+and
+	d.external_account_id = e.external_account_id
+and
+	a.status_id = f.status_id
+and
+	f.name = "Included"
+order by
+	b.symbol
+
+update
+	#transfers
+set
+	a.prime_broker_id = b.prime_broker_id
+from
+	#transfers a,
+	external_account_prime_brokers b
+where
+	a.client_account_id = b.external_account_id
+
+update
+	#transfers
+set
+	a.omnibus_trader_id = b.omnibus_trader_id
+from
+	#transfers a,
+	pb_omnibus_metal_traders b
+where
+	a.prime_broker_id = b.prime_broker_id
+
+update
+	#transfers 
+set
+	a.omnibus_trader = b.symbol
+from
+	#transfers a,
+	traders b
+where
+	a.omnibus_trader_id = b.trader_id
+
+update
+	#transfers
+set
+	a.evaluation_currency_id = b.evaluation_currency_id
+from
+	#transfers a,
+	external_accounts b
+where
+	a.cover_account_id = b.external_account_id
+
+
+create table
+	#forwards(
+		contract_id int,
+		product_id int,
+		product varchar(50) NULL,
+		currency_id int,
+		currency varchar(50) NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL)
+insert into
+	#forwards(
+		contract_id,
+		product_id,
+		currency_id,
+		symbol)
+select
+	a.contract_id,
+	a.product_id,
+	a.currency_id,
+	b.symbol
+from
+	forwards a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#forwards
+set
+	a.product = b.symbol
+from
+	#forwards a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#forwards
+set
+	a.currency = b.symbol
+from
+	#forwards a,
+	products b
+where
+	a.currency_id = b.product_id
+
+
+update
+	#forwards
+set
+	value_date = @two_day
+
+update
+	#forwards
+set
+	value_date = @one_day
+where
+	symbol in("USDCAD", "CADUSD", "USDTRY", "TRYUSD", "MXNUSD", "USDMXN")
+
+
+
+create table
+	#positions(
+		product_id int,
+		value_date datetime,
+		quantity numeric(30,4))
+create table
+	#balances(
+		product_id int,
+		value_date datetime,
+		quantity numeric(30,4))
+create table
+	#details(
+		id int identity,
+		transfer_id int,
+		product_id int,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		balance numeric(30,4))
+
+
+create table
+	#current_prices(
+		contract_id int,
+		price float NULL)
+insert into
+	#current_prices(
+		contract_id,
+		price)
+select
+	contract_id,
+	price
+from
+	current_prices
+
+if @batch_id = NULL
+	exec
+		j_nextkey
+			"batches",
+			@batch_id output
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#transfers
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#transfers
+	where
+		id > @id
+
+	select
+		@cover_trader_id = NULL,
+		@prime_broker_id = NULL,
+		@evaluation_currency_id = NULL
+
+	truncate table
+		#positions
+	truncate table
+		#balances
+
+	select
+		@cover_trader_id = cover_trader_id,
+		@prime_broker_id = prime_broker_id,
+		@evaluation_currency_id = evaluation_currency_id
+	from
+		#transfers
+	where
+		id = @id
+
+	insert into
+		#positions(
+			product_id,
+			value_date,
+			quantity)
+	select
+		b.product_id,
+		a.value_date,
+		sum(a.quantity)
+	from
+		trades a,
+		forwards b,
+		external_accounts c
+	where
+		a.contract_id = b.contract_id
+	and
+		a.external_account_id = c.external_account_id
+	and
+		trader_id = @cover_trader_id
+	and
+		convert(date, a.value_date) >= convert(date, @trade_date)
+	and
+		c.symbol = "CITI FXPB"
+	/* and	
+		convert(date, a.value_date) <= convert(date, @two_day) */
+	group by
+		a.value_date,
+		b.product_id
+
+	insert into
+		#positions(
+			product_id,
+			value_date,
+			quantity)
+	select
+		b.currency_id,
+		a.value_date,
+		sum(a.quantity * a.price * -1.0)
+	from
+		trades a,
+		forwards b,
+		external_accounts c
+	where
+		a.contract_id = b.contract_id
+	and
+		a.external_account_id = c.external_account_id
+	and
+		trader_id = @cover_trader_id
+	and
+		convert(date, a.value_date) >= convert(date, @trade_date)
+	and
+		c.symbol = "CITI FXPB"
+	/* and
+		convert(date, a.value_date) <= convert(date, @two_day) */
+	group by
+		a.value_date,
+		b.currency_id
+
+	insert into
+		#balances(
+			product_id,
+			value_date,
+			quantity)
+	select
+		a.product_id,
+		a.value_date,
+		sum(a.quantity)
+	from
+		#positions a, 
+ 		products b
+	where
+		a.product_id = b.product_id
+	and
+		b.symbol in("XAU", "XAG")
+	and
+		a.product_id != @evaluation_currency_id
+	group by
+		a.value_date,
+		a.product_id
+
+
+
+/* Change here 
+	insert into
+		#details(
+			transfer_id, 
+ 			product_id,
+			symbol,
+			value_date,
+			balance)
+	select
+		transfer_id = @id,
+		a.product_id,
+		b.product,
+		a.value_date,
+		a.quantity
+	from
+		#balances a,
+		#forwards b
+	where
+		a.product_id = b.product_id
+	and
+		b.currency_id = @evaluation_currency_id
+	and
+		convert(date, a.value_date) = convert(date, b.value_date)
+ Change here */
+
+	insert into
+		#details(
+			transfer_id,
+			product_id,
+			symbol,
+			value_date,
+			balance)
+	select
+		transfer_id = @id,
+		a.product_id,
+		b.product,
+		a.value_date, 
+ 		a.quantity
+	from
+		#balances a,
+		#forwards b
+	where
+		a.product_id = b.product_id
+	and
+		b.currency_id = @evaluation_currency_id
+
+	select
+		@ids = count(*)
+	from
+		#transfers
+	where
+		id > @id
+end
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#details
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#details
+	where
+		id > @id
+
+	select
+		@transfer_id = NULL,
+		@cover_trader_id = NULL,
+		@cover_account_id = NULL,
+		@product_id = NULL,
+		@closing_trade_id = NULL,
+		@evaluation_currency_id = NULL,
+		@contract_id = NULL,
+		@inverted_contract_id = NULL,
+		@balance = NULL,
+		@closing_qty = NULL,
+		@price = NULL,
+		@omnibus_trader_id = NULL,
+		@value_date = NULL
+
+	exec
+		j_nextkey
+			"batch_portfolio_transfers",
+			@closing_trade_id output
+
+	select
+		@transfer_id = transfer_id,
+		@product_id = product_id,
+		@balance = balance,
+		@value_date = value_date
+	from
+		#details
+	where
+		id = @id
+	
+	select
+		@closing_qty = @balance * -1.0
+
+	select
+		@cover_trader_id = cover_trader_id,
+		@cover_account_id = cover_account_id,
+		@omnibus_trader_id = omnibus_trader_id,
+		@evaluation_currency_id = evaluation_currency_id
+	from
+		#transfers
+	where
+		id = @transfer_id
+
+	select
+		@contract_id = contract_id
+	from
+		forwards
+	where
+		product_id = @product_id
+	and
+		currency_id = @evaluation_currency_id
+	if @contract_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Unable to find closing contract for transfer",
+			cover_trader_id = @cover_trader_id,
+			product_id = @product_id
+		return
+	end
+
+	exec
+		r_invertedcontract
+			@contract_id = @contract_id,
+			@inverted_contract_id = @inverted_contract_id output
+
+	select
+		@price = price
+	from
+		#current_prices
+	where
+		contract_id = @contract_id
+	if @price = NULL
+	begin
+		select
+			@price = 1.0 / price 
+ 		from
+			#current_prices
+		where
+			contract_id = @inverted_contract_id
+		if @price = NULL
+		begin
+			select
+				status = "Error",
+				message = "Unable to find current price for contract",
+				contract_id = @contract_id
+			return
+		end
+	end
+			
+	/* insert the closing trade in the cover account */
+	insert into
+		batch_portfolio_transfers(
+			bpt_id,
+			batch_id,
+			style,
+			ordering,
+			trader_id,
+			omnibus_trader_id,
+			trade_date,
+			product_id,
+			currency_id,
+			contract_id,
+			value_date,
+			quantity,
+			price)
+	values(
+		@closing_trade_id,
+		@batch_id,
+		@style,
+		0,
+		@cover_trader_id,
+		@omnibus_trader_id,
+		@trade_date,
+		@product_id,
+		@evaluation_currency_id,
+		@contract_id,
+		@value_date,
+		@closing_qty,
+		@price)
+		
+	select
+		@ids = count(*)
+	from
+		#details
+	where
+		id > @id
+end
+	
+create table
+	#net_transfers(
+		id int identity,
+		omnibus_trader_id int NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		quantity numeric(30,4) NULL,
+		price float NULL)
+insert into
+	#net_transfers(
+		omnibus_trader_id,
+		symbol,
+		value_date,
+		quantity,
+		price)
+select
+	a.omnibus_trader_id,
+	b.symbol,
+	a.value_date,
+	sum(a.quantity * -1.0),
+	max(a.price)
+from
+	batch_portfolio_transfers a,
+	contracts b
+where
+	a.batch_id = @batch_id
+and
+	a.contract_id = b.contract_id
+group by
+	a.omnibus_trader_id,
+	b.symbol,
+	a.value_date
+order by
+	b.symbol
+
+update
+	#net_transfers
+set
+	a.contract_id = b.contract_id
+from
+	#net_transfers a,
+	contracts b
+where
+	a.symbol = b.symbol
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#net_transfers
+where
+	id > @id
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#net_transfers
+	where
+		id > @id
+
+	select
+		@opening_trade_id = NULL,
+		@omnibus_trader_id = NULL,
+		@contract_id = NULL,
+		@price = NULL,
+		@opening_qty = NULL,
+		@product_id = NULL,
+		@evaluation_currency_id = NULL,
+		@value_date = NULL
+
+	exec
+		j_nextkey
+			"batch_portfolio_transfers",
+			@opening_trade_id output
+
+	select
+		@omnibus_trader_id = omnibus_trader_id,
+		@contract_id = contract_id,
+		@price = price,
+		@value_date = value_date,
+		@opening_qty = quantity
+	from
+		#net_transfers
+	where
+		id = @id
+	select
+		@product_id = product_id,
+		@evaluation_currency_id = currency_id
+	from
+		forwards
+	where
+		contract_id = @contract_id
+
+
+	insert into
+		batch_portfolio_transfers(
+			bpt_id,
+			batch_id,
+			style,
+			ordering,
+			trader_id,
+			omnibus_trader_id,
+			trade_date,
+			product_id,
+			currency_id,
+			contract_id,
+			value_date,
+			quantity,
+			price)
+	values(
+		@opening_trade_id,
+		@batch_id,
+		@client_style,
+		100,
+		@omnibus_trader_id,
+		@omnibus_trader_id,
+		@trade_date,
+		@product_id,
+		@evaluation_currency_id,
+		@contract_id,
+		@value_date,
+		@opening_qty,
+		@price)
+
+	select
+		@ids = count(*)
+	from
+		#net_transfers
+	where
+		id > @id
+end
+
+
+update
+	batch_portfolio_transfers
+set
+	a.quantity = round(a.quantity, 2)
+from
+	batch_portfolio_transfers a,
+	products b
+where
+	a.batch_id = @batch_id
+and
+	a.product_id = b.product_id
+and
+	b.decimal_precision = NULL
+
+update
+	batch_portfolio_transfers
+set
+	quantity = round(a.quantity, b.decimal_precision)
+from
+	batch_portfolio_transfers a,
+	products b
+where
+	a.batch_id = @batch_id
+and
+	a.product_id = b.product_id
+and
+	b.decimal_precision != NULL
+
+update
+	batch_portfolio_transfers
+set
+	display_price = price
+where
+	batch_id = @batch_id
+
+update
+	batch_portfolio_transfers
+set
+	a.display_price = 1.0 / a.price
+from
+	batch_portfolio_transfers a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.batch_id = @batch_id
+and
+	a.contract_id = b.contract_id
+and 
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+/* MARKR  */
+delete
+
+from
+	batch_portfolio_transfers
+where
+	abs(quantity) < 0.01
+and
+	batch_id = @batch_id 
+
+delete
+	batch_portfolio_transfers
+from
+	batch_portfolio_transfers a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	b.symbol like "JPY%"
+and
+	abs(quantity) < 50
+	
+
+select
+	section = "Trades For Date",
+	style = @style,
+	a.deal_id,
+	a.trade_id,
+	trader = b.symbol,
+	a.trade_date,
+	c.symbol,
+	a.value_date,
+	a.quantity,
+	a.price,
+	status = d.name,
+	broker = e.symbol
+from
+	trades a,
+	traders b,
+	contracts c,
+	statuses d,
+	brokers e
+where
+	a.broker_id = e.broker_id
+and
+	a.trader_id = b.trader_id
+and
+	a.contract_id = c.contract_id
+and
+	a.status_id = d.status_id
+and
+	e.symbol = "Elysium Compression Tool"
+and
+	a.trade_date = @trade_date
+and
+	d.name = "Pending Confirmation"
+order by
+	c.symbol,
+	a.value_date,
+	b.symbol
+select
+	@trades = @@rowcount
+
+
+select
+	section = "Pending Confirmation",
+	group_confirm = "Group and Release Trades For Notification",
+	trade_date = @trade_date
+where
+	@trades > 0
+
+exec
+	ag_displaymetaltransfers
+		@login = @login,
+		@trade_date = @trade_date,
+		@batch_id = @batch_id
+
+
+
+
+go 
+
