@@ -1078,7 +1078,7 @@ delete
 from
 	batch_portfolio_transfers
 where
-	abs(quantity) < 0.01
+	abs(quantity) < 1
 and
 	batch_id = @batch_id 
 
