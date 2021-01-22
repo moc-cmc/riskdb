@@ -215,7 +215,7 @@ begin
 
 	select
 		@deal_exec_symbol = rtrim(@cfs_grouping_id) + convert(char(8), @trade_date, 112),
-		@deal_alias = @execution_id
+		@deal_alias = @cfs_trade_link
 
 	select
 		@counterparty_lookup = @prime_broker_lookup + "-" + rtrim(@sender_comp),
