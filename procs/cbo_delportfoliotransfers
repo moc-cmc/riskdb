@@ -1,0 +1,25 @@
+create or replace procedure
+	cbo_delportfoliotransfers
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @delete_date datetime
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+select
+	@delete_date = dateadd(day, -5, @trade_date)
+
+delete
+
+from
+	batch_portfolio_transfers
+where
+	value_date <= @delete_date
+
+
+go
+	
+
