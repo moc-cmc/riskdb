@@ -204,7 +204,7 @@ if @client_or_market = "C"
 begin
 	select
 		@platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".c",
-		@deal_exec_symbol = @cfs_grouping_id + convert(char(8), @trade_date, 112),
+		@deal_exec_symbol = rtrim(@cfs_grouping_id) + convert(char(8), @trade_date, 112),
 		@deal_alias = @execution_id
 
 	/*select
@@ -225,7 +225,7 @@ else /* @client_or_market = "M" */
 begin
         select
                 @platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".m",
-                @deal_exec_symbol = @cfs_grouping_id + convert(char(8), @trade_date, 112)
+                @deal_exec_symbol = rtrim(@cfs_grouping_id) + convert(char(8), @trade_date, 112)
                 
 
         /* select
