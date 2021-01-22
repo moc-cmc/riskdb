@@ -200,17 +200,22 @@ end
  *
  */
 
+declare @cutoff_date datetime
+
+select @cutoff_date = "Jan 23, 2021"
+
 if @client_or_market = "C"
 begin
+	if (@trading_day < @cutoff_date)
+		select
+			@platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".c"
+	else
+	        select
+			@platform_identifier = rtrim(@cfs_trade_link)+convert(char(8), @trade_date, 112)+".c"
+
 	select
-		@platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".c",
 		@deal_exec_symbol = rtrim(@cfs_grouping_id) + convert(char(8), @trade_date, 112),
 		@deal_alias = @execution_id
-
-	/*select
-		/* @prime_broker_lookup = rtrim(@sponsoring_firm)+"-" */
-                /*@prime_broker_lookup = ""*/
-	*/
 
 	select
 		@counterparty_lookup = @prime_broker_lookup + "-" + rtrim(@sender_comp),
@@ -223,15 +228,19 @@ begin
 end
 else /* @client_or_market = "M" */
 begin
-        select
-                @platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".m",
-                @deal_exec_symbol = rtrim(@cfs_grouping_id) + convert(char(8), @trade_date, 112)
-                
+        
+	if (@trading_day < @cutoff_date)
 
-        /* select
-                /* @prime_broker_lookup = rtrim(@sponsoring_firm)+"-" */
-                /*@prime_broker_lookup = ""*/
-	*/
+		select
+               		@platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".m"
+        else 
+		
+		select	
+			@platform_identifier = rtrim(@cfs_trade_link)+convert(char(8), @trade_date, 112)+".m"
+	
+	select
+		@deal_exec_symbol = rtrim(@cfs_grouping_id) + convert(char(8), @trade_date, 112)
+                
 
         select
                 @counterparty_lookup = @prime_broker_lookup + "-" + rtrim(@cfs_entity),
