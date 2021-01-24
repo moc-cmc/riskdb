@@ -207,11 +207,15 @@ select @cutoff_date = "Jan 23, 2021"
 if @client_or_market = "C"
 begin
 	if (@trading_day < @cutoff_date)
+	begin
 		select
 			@platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".c"
+	end
 	else
+	begin
 	        select
 			@platform_identifier = rtrim(@cfs_trade_link)+convert(char(8), @trade_date, 112)+".c"
+	end
 
 	select
 		@deal_exec_symbol = rtrim(@cfs_grouping_id) + convert(char(8), @trade_date, 112),
@@ -230,13 +234,15 @@ else /* @client_or_market = "M" */
 begin
         
 	if (@trading_day < @cutoff_date)
-
+	begin
 		select
                		@platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".m"
+	end
         else 
-		
+	begin
 		select	
 			@platform_identifier = rtrim(@cfs_trade_link)+convert(char(8), @trade_date, 112)+".m"
+	end
 	
 	select
 		@deal_exec_symbol = rtrim(@cfs_grouping_id) + convert(char(8), @trade_date, 112)
