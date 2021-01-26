@@ -1,13 +1,9 @@
 
-drop procedure
-	r_setupmapping
-go
-
-create procedure
+create or replace procedure
 	r_setupmapping
 		@login varchar(50)
-
 as
+
 
 declare @login_type varchar(50)
 declare @fund_sub_type varchar(50)
@@ -18,12 +14,14 @@ select
         @style = "background:#FFFFFF;border: 1px solid white"
 
 
+
 create table
 	#meta(
 		meta_type char(200),
 		name char(50) NULL,
 		action char(100) NULL,
 		value char(200) NULL)
+
 
 insert into
         #meta
@@ -57,8 +55,8 @@ values(
         "Trader List",
         NULL) 
 
-insert into 
- 	#meta
+insert into
+        #meta
 values(
         "Column Link",
         "ctpy_list",
@@ -91,8 +89,8 @@ values(
 
 insert into
         #meta
-values( 
-         "Column Link",
+values(
+        "Column Link",
         "suppression_symbols",
         "Suppression Symbols",
         NULL)
@@ -105,8 +103,8 @@ values(
         "View Ticket Creation Values",
         NULL) 
 
-insert into 
-         #meta
+insert into
+        #meta
 values(
         "Column Link",
         "manage_credit_profiles",
@@ -118,8 +116,8 @@ insert into
 values(
        "Column Link",
        "manage_margin_profiles",
-       "Manage Margin Profiles", 
-   	NULL)
+       "Manage Margin Profiles",
+       NULL)
 
 insert into
         #meta
@@ -134,8 +132,9 @@ insert into
 values(
         "Column Link",
         "manage_logins",
-        "Manage Logins", 
-    	NULL)
+        "Manage Logins",
+        NULL)
+
 
 insert into
         #meta
@@ -145,13 +144,15 @@ values(
         "Mapping Details",
         NULL)
 
+
 insert into
         #meta
 values(
         "Column Link",
         "fee_schedules",
-        "Manage Fee Schedules", 
-       	NULL)
+        "Manage Fee Schedules",
+        NULL)
+
 
 insert into
 	#meta
@@ -159,7 +160,8 @@ values(
 	"Column Link",
 	"fx_subscriptions",
 	"FX Master",
-	NULL)
+	NULL
+)
 
 insert into
         #meta
@@ -169,7 +171,7 @@ values(
         "Manage Contract Subscriptions",
         NULL)
 
-insert into 
+insert into
         #meta
 values(
         "Column Link",
@@ -185,8 +187,8 @@ values(
         "My Runs",
         NULL)
 
-insert into 
- 	#meta
+insert into
+        #meta
 values(
         "Column Link",
         "contact_info",
@@ -201,8 +203,8 @@ values(
         "Manage Regulatory Info",
         NULL)
 
-insert into 
-       #meta
+insert into
+        #meta
 values(
         "Column Link",
         "sources_list",
@@ -230,8 +232,8 @@ insert into
 values(
         "Column Link",
         "source_list",
-        "Sources List", 
-     	NULL)
+        "Sources List",
+        NULL)
 
 insert into
         #meta
@@ -270,8 +272,8 @@ insert into
 values(
         "Column Link",
         "manage_ops_tasks",
-        "Manage Ops Tasks", 
-     	NULL)
+        "Manage Ops Tasks",
+        NULL)
 
 insert into
         #meta
@@ -321,13 +323,21 @@ values(
         "Manage MC Dropdowns",
         NULL)
 
-insert into 
-	#meta
+insert into
+         #meta
 values(
-	"Column Link",
-	"prime_broker_list",
-	"Prime Brokers",
-	NULL)
+        "Column Link",
+        "filedrop_multiruns",
+        "Manage Filedrop Multiruns",
+        NULL)
+
+insert into
+         #meta
+values(
+        "Column Link",
+        "tico_reports",
+        "Tico Reports Home",
+        NULL)
 
 
 /* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
@@ -388,7 +398,6 @@ begin
 		section="System Static Data", 
 		style=@style,
 		legal_entity = "Legal Entities",
- 
 		accounts_list="Accounts List",
 		mapping_overview = "Mapping Overview",
 		manage_contracts="Manage Contract Subscriptions",
@@ -426,18 +435,24 @@ begin
 		broker_list="Broker List", 
 		strategy_list = "Strategy List",
 		sources_list = "Sources List",
-		prime_broker_list = "Prime Brokers List",
+		perspective_contracts = "Perspective Contracts",
 		tkt_creation_values = "Ticket Creation Values",
 	        notifications = "Source Notifications",
-		suppression_symbols = "Suppression Symbols",
-		perspective_contracts = "Perspective Contracts",
+		suppression_symbols = "Suppression Symbols"
+
+	select
+		section = "More Configurations",
 		mc_panels = "Mission Control Panels",
 		messages_home="Messages",
 		access_groups="Access Groups",
 		table_types="Table Types",
 		manage_integrations="Integrations",
 		manage_commits="Commits",
-		mc_runs="MC Dropdown Runs"
+		mc_runs="MC Dropdown Runs",
+		filedrop_multiruns="Filedrop Multiruns",
+		tico_reports = "Tico Reports Home"
 end
 
-go
+
+go 
+
