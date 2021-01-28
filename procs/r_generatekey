@@ -25,7 +25,7 @@ declare @value_next int
 /* If @value is not given, then use a serial date in seconds */
 if @value is NULL or @value <= 0
     select
-        @value = datediff(second, "Jan 1, 2001", getdate())
+        @value = convert(bigint, datediff(second, "Jan 1, 2001", getdate())) * 1000 + datepart(millisecond, getdate())
 
 if @template = "uuidv4"
     select
@@ -96,7 +96,8 @@ select
     @length = 25,
     @charset_width = len(@charset),
     @dividend = @value,
-    @value_next = 1
+    @value_next = 1,
+    @key = ""
 
 while @index <= 25
 begin
