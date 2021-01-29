@@ -1,0 +1,30 @@
+create or replace function
+        f_fmtqty(
+                @ccy varchar(10),
+		@quantity numeric(30, 10)
+	)
+returns numeric(30, 10)
+
+as
+
+declare @new_qty numeric(30, 10)
+declare @decimal_precision int
+
+select
+	@decimal_precision = decimal_precision
+from
+	products
+where
+	symbol = @ccy
+if @decimal_precision = NULL
+begin
+	select
+		@decimal_precision = 2
+end
+
+select
+	@new_qty= round(@quantity, @decimal_precision)
+
+return @new_qty
+
+go
