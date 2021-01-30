@@ -783,6 +783,20 @@ begin
                 @m_quantity = @qty  * -1
 end
 
+/* --------------------------------------------------------------------------
+ * STEP: Custom formatting to address Citadel issue with reporting trades and quantities
+ *
+ */
+
+if @symbol != @contract
+begin
+	select
+		@contract = @symbol
+	select
+		@c_quantity = dbo.f_fmtqty(substring(@contract, 1, 3), @c_quantity * (1/@price)) * -1,
+		@m_quantity = dbo.f_fmtqty(substring(@contract, 1, 3), @m_quantity * (1/@price)) * -1
+end
+
 
 /* --------------------------------------------------------------------------
  * STEP: Tally the trade client trade
