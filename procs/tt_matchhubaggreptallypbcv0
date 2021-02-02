@@ -276,6 +276,13 @@ select
 	@c_trader_lookup = @trade_reporter,
 	@c_counterparty_lookup = @counterparty
 
+if @counterparty = "HUBC2C"
+begin
+	select
+		@c_trader_lookup  = rtrim(@trade_reporter)+"-"+@counterparty
+end
+	
+
 select
 	@trigger_symbol = @c_trader_lookup	
 
