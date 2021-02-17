@@ -1,0 +1,335 @@
+create or replace procedure
+        r_ticketcreationvaluesbooking
+                @trigger_symbol varchar(50),
+                @login varchar(50),
+                @deal_id int,
+		@deal_exec_symbol varchar(50),
+                @source varchar(50),
+		@broker varchar(50),
+                @tally_type varchar(50),
+                @deal_type varchar(50),
+                @trade_type varchar(50),
+                @quantity numeric(30,4),
+                @symbol varchar(50),
+                @value_date datetime,
+                @fixing_date datetime,
+                @price float,
+                @trade_date datetime,
+                @trade_identifier varchar(100),
+                @spot_reference float
+
+
+as
+
+
+declare @auto_b2b_deal_status_id int
+declare @auto_b2b_deal_type_id int
+declare @auto_b2b_deal_id int
+declare @tally_deal_id int
+declare @cl_create varchar(50)
+declare @lp_create varchar(50)
+declare @source_id int
+
+/* Client variables */
+declare @t2_cl_ext_account varchar(50)
+declare @t2_cl_trader varchar(50)
+declare @t2_cl_counterparty varchar(50)
+declare @t2_cl_trade_id int
+declare @t2_cl_identifier varchar(100)
+declare @t2_cl_quantity numeric(30,4)
+declare @t2_cl_inv_qty char(1)
+
+/* LP variables */
+declare @t2_lp_ext_account varchar(50)
+declare @t2_lp_trader varchar(50)
+declare @t2_lp_counterparty varchar(50)
+declare @t2_lp_trade_id int
+declare @t2_lp_identifier varchar(100)
+declare @t2_lp_quantity numeric(30, 4)
+declare @t2_lp_inv_qty char(1)
+declare @t2_deal_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		msg = "Source not found",
+		source = @source
+	return
+end
+
+/* Verify if internal tickets are needed. If not, return */
+
+select
+	@cl_create = cl_create,
+	@lp_create = lp_create
+from
+	ticket_creation_values        
+where
+	trigger_symbol = @trigger_symbol
+and
+	source_id = @source_id
+
+if @cl_create = NULL and @lp_create = NULL
+begin
+	return
+end
+
+select
+	@tally_deal_id = @deal_id
+
+if @cl_create = "Y" and @lp_create = "Y"
+begin
+        select
+                msg = "Creating new deal to separate auto-generated tickets"
+
+        select
+                @auto_b2b_deal_status_id = status_id
+        from
+                statuses
+        where
+                name = "User Review"
+        if @auto_b2b_deal_status_id = NULL
+        begin
+                select
+                        status = "Error",
+                        message = "No status found named, 'User Review'"
+                return
+        end
+        select
+                @auto_b2b_deal_type_id = deal_type_id
+        from
+                deal_types
+        where
+                name = @deal_type
+        if @auto_b2b_deal_type_id = NULL
+        begin
+                select
+                        status = "Error",
+                        message = "No deal type found for @deal_type",
+                        deal_type = @deal_type
+                return
+        end
+
+	/* update original deal_exec_symbol for proper pairing */
+	update
+		deal_exec_symbols
+	set
+		symbol = rtrim(@deal_exec_symbol)+".autob2b"
+	where
+		deal_id = @deal_id
+
+        exec
+                j_nextkey
+                        "deals",
+                        @auto_b2b_deal_id output
+
+        insert into
+                deals(
+                        deal_id,
+                        deal_type_id,
+                        timestamp,
+                        status_id
+                        )
+                values(
+                        @auto_b2b_deal_id,
+                        @auto_b2b_deal_type_id,
+                        getdate(),
+                        @auto_b2b_deal_status_id
+                        )
+
+        insert into
+                deal_exec_symbols
+        values(
+                @auto_b2b_deal_id,
+                @deal_exec_symbol
+        )
+
+        select
+                @tally_deal_id = @auto_b2b_deal_id
+end
+
+if @cl_create = "Y" or @lp_create = "Y"
+begin
+        if @cl_create = "Y"
+        begin
+
+                select
+                        @t2_cl_ext_account = cl_ext_account,
+                        @t2_cl_trader = cl_trader,
+                        @t2_cl_counterparty = cl_counterparty,
+                        @t2_cl_inv_qty = cl_inv_qty
+                from
+                        ticket_creation_values
+                where
+                        trigger_symbol = @trigger_symbol
+
+                select
+                        @t2_cl_identifier = rtrim(@trade_identifier)+".t2cl_autob2b",
+                        @t2_cl_quantity = @quantity
+
+
+                if @t2_cl_inv_qty = "Y"
+                begin
+                        select
+                                @t2_cl_quantity = -@quantity
+                end
+
+                exec
+                        fxa_tallytrade
+                                @login = @login,
+                                @source = @source,
+                                @trade_id = @t2_cl_trade_id out,
+                                @deal_id = @tally_deal_id,
+                                @tally_type = @trade_type,
+                                @deal_type = @deal_type,
+                                @trade_type = @trade_type,
+                                @external_account = @t2_cl_ext_account,
+                                @counterparty = @t2_cl_counterparty,
+                                @quantity = @t2_cl_quantity,
+                                @symbol = @symbol,
+                                @value_date = @value_date,
+                                @fixing_date = @fixing_date,
+                                @price = @price,
+                                @trade_date = @trade_date,
+                                @trader = @t2_cl_trader,
+                                @broker = @broker,
+                                @identifier = @t2_cl_identifier,
+                                @spot_reference = @spot_reference
+
+
+                if @t2_cl_trade_id = NULL
+                begin
+                        select
+                                status = "Error",
+                                message = "Failed to tally trade"
+                        return
+                end
+
+
+                exec
+                	r_inserttradenotification
+                                @t2_cl_trade_id
+
+		select
+        		status = "Tallied",
+                        message = "Trade successfully tallied",
+                        trade_id = @t2_cl_trade_id,
+                        deal_id = @tally_deal_id,
+                        account = @t2_cl_ext_account,
+			trader = @t2_cl_trader,
+			@t2_cl_counterparty,
+                        symbol = @symbol,
+                        quantity = @t2_cl_quantity,
+                        price = @price,
+                        val_date = @value_date
+        end
+
+        if @lp_create = "Y"
+        begin
+
+                select
+                        @t2_lp_ext_account = lp_ext_account,
+                        @t2_lp_trader = lp_trader,
+                        @t2_lp_counterparty = lp_counterparty,
+                        @t2_lp_inv_qty = lp_inv_qty
+                from
+                        ticket_creation_values
+                where
+                        trigger_symbol = @trigger_symbol
+
+                select
+                        @t2_lp_identifier = rtrim(@trade_identifier)+".t2lp_autob2b",
+                        @t2_lp_quantity = @quantity
+
+                if @t2_lp_inv_qty = "Y"
+                begin
+                        select
+                                @t2_lp_quantity = -@quantity
+                end
+
+                if @cl_create = "Y"
+                begin
+                        select
+                                @t2_deal_id = @deal_id
+                end
+                else
+                begin
+                        select
+                                @t2_deal_id = @tally_deal_id
+                end
+
+		exec
+                        fxa_tallytrade
+                                @login = @login,
+                                @source = @source,
+                                @trade_id = @t2_lp_trade_id out,
+                                @deal_id = @t2_deal_id,
+                                @tally_type = @trade_type,
+                                @deal_type = @deal_type,
+                                @trade_type = @trade_type,
+                                @external_account = @t2_lp_ext_account,
+                                @counterparty = @t2_lp_counterparty,
+                                @quantity = @t2_lp_quantity,
+                                @symbol = @symbol,
+                                @value_date = @value_date,
+                                @fixing_date = @fixing_date,
+                                @price = @price,
+                                @trade_date = @trade_date,
+                                @trader = @t2_lp_trader,
+                                @broker = @broker,
+                                @identifier = @t2_lp_identifier,
+                                @spot_reference = @spot_reference
+
+                if @t2_lp_trade_id = NULL
+                begin
+                        select
+                                status = "Error",
+                                message = "Failed to tally trade"
+                        return
+                end
+
+                select
+                        status = "Tallied",
+                        message = "Trade successfully tallied",
+                        trade_id = @t2_lp_trade_id,
+                        deal_id = @t2_deal_id,
+                        account = @t2_lp_ext_account,
+			trader = @t2_lp_trader,
+			ctpy = @t2_lp_counterparty,
+                        symbol = @symbol,
+                        quantity = @t2_lp_quantity,
+                        price = @price,
+                        val_date = @value_date
+        end
+end
+
+
+if @t2_lp_trade_id != NULL and @t2_cl_trade_id != NULL
+begin
+	exec
+		tt_addtradebookings
+			@c_trade_id = @t2_cl_trade_id,
+			@m_trade_id = @t2_lp_trade_id
+end
+
+
+if @t2_cl_trade_id != NULL
+begin
+	exec
+		r_inserttradenotification
+			@t2_cl_trade_id
+end
+if @t2_lp_trade_id != NULL
+begin
+	exec
+		r_inserttradenotification
+			@t2_lp_trade_id
+end
+
+go
