@@ -688,7 +688,7 @@ end
 if @trade_id != NULL
 begin
 		exec
-				r_ticketcreationvalues
+				r_ticketcreationvaluesbooking
 						@trigger_symbol = @trigger_symbol,
 						@login = @trader_login,
 						@source = @source,
