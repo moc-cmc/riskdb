@@ -116,13 +116,14 @@ begin
                 return
         end
 
-	/* update original deal_exec_symbol for proper pairing */
+	/* update original deal_exec_symbol for proper pairing 
 	update
 		deal_exec_symbols
 	set
 		symbol = rtrim(@deal_exec_symbol)+".autob2b"
 	where
 		deal_id = @deal_id
+        */
 
         exec
                 j_nextkey
@@ -147,7 +148,7 @@ begin
                 deal_exec_symbols
         values(
                 @auto_b2b_deal_id,
-                @deal_exec_symbol
+                rtrim(@deal_exec_symbol)+".autob2b"
         )
 
         select
@@ -253,16 +254,8 @@ begin
                                 @t2_lp_quantity = -@quantity
                 end
 
-                if @cl_create = "Y"
-                begin
-                        select
-                                @t2_deal_id = @deal_id
-                end
-                else
-                begin
-                        select
-                                @t2_deal_id = @tally_deal_id
-                end
+                select
+                        @t2_deal_id = @tally_deal_id
 
 		exec
                         fxa_tallytrade
