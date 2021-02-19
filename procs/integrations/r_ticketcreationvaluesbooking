@@ -31,6 +31,7 @@ declare @lp_create varchar(50)
 declare @source_id int
 
 /* Client variables */
+declare @t2_cl_strategy varchar(50)
 declare @t2_cl_ext_account varchar(50)
 declare @t2_cl_trader varchar(50)
 declare @t2_cl_counterparty varchar(50)
@@ -40,6 +41,7 @@ declare @t2_cl_quantity numeric(30,4)
 declare @t2_cl_inv_qty char(1)
 
 /* LP variables */
+declare @t2_lp_strategy varchar(50)
 declare @t2_lp_ext_account varchar(50)
 declare @t2_lp_trader varchar(50)
 declare @t2_lp_counterparty varchar(50)
@@ -164,7 +166,8 @@ begin
                         @t2_cl_ext_account = cl_ext_account,
                         @t2_cl_trader = cl_trader,
                         @t2_cl_counterparty = cl_counterparty,
-                        @t2_cl_inv_qty = cl_inv_qty
+                        @t2_cl_inv_qty = cl_inv_qty,
+			@t2_cl_strategy = cl_strategy
                 from
                         ticket_creation_values
                 where
@@ -199,6 +202,7 @@ begin
                                 @price = @price,
                                 @trade_date = @trade_date,
                                 @trader = @t2_cl_trader,
+				@strategy = @t2_cl_strategy,
                                 @broker = @broker,
                                 @identifier = @t2_cl_identifier,
                                 @spot_reference = @spot_reference
@@ -224,6 +228,7 @@ begin
                         deal_id = @tally_deal_id,
                         account = @t2_cl_ext_account,
 			trader = @t2_cl_trader,
+			strategy = @t2_cl_strategy,
 			@t2_cl_counterparty,
                         symbol = @symbol,
                         quantity = @t2_cl_quantity,
@@ -238,7 +243,8 @@ begin
                         @t2_lp_ext_account = lp_ext_account,
                         @t2_lp_trader = lp_trader,
                         @t2_lp_counterparty = lp_counterparty,
-                        @t2_lp_inv_qty = lp_inv_qty
+                        @t2_lp_inv_qty = lp_inv_qty,
+			@t2_lp_strategy = lp_strategy
                 from
                         ticket_creation_values
                 where
@@ -275,6 +281,7 @@ begin
                                 @price = @price,
                                 @trade_date = @trade_date,
                                 @trader = @t2_lp_trader,
+				@strategy = @t2_lp_strategy,
                                 @broker = @broker,
                                 @identifier = @t2_lp_identifier,
                                 @spot_reference = @spot_reference
@@ -294,6 +301,7 @@ begin
                         deal_id = @t2_deal_id,
                         account = @t2_lp_ext_account,
 			trader = @t2_lp_trader,
+			strategy = @t2_lp_strategy,
 			ctpy = @t2_lp_counterparty,
                         symbol = @symbol,
                         quantity = @t2_lp_quantity,
