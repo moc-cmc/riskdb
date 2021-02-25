@@ -181,6 +181,8 @@ create table
                 e_inst_id int NULL, /* instrument type id */
                 e_inst varchar (20) NULL, /* instrument type */
                 e_ud char(1) NULL, /* up or down */
+                e_ws datetime NULL, /* up or down */
+                e_we datetime NULL, /* up or down */
                 /*  n/a */
 		/*- Swap Info -*/
 		far_quantity float NULL,
@@ -199,6 +201,7 @@ create table
 		far_tr_usi varchar(25) NULL,
                 is_ndf char(1) NULL,
 		is_inverted_contract char(1) NULL,
+		fc varchar(20) NULL,
                 product_id int NULL,
 		currency_id int NULL,
                 pd1_eq float NULL,
@@ -716,6 +719,20 @@ set
 where
 	fixing_date != NULL
 
+update
+        #trades
+set
+        fc = b.symbol
+from
+	#trades a,
+	fixing_centers b,
+	trade_attributes c
+where
+        a.fixing_date != NULL
+and	
+	a.trade_id = c.trade_id
+and
+	b.fixing_center_id = c.fixing_center_id
 
 update
 	#trades
@@ -1463,13 +1480,14 @@ set
         option_expiration_id = b.option_expiration_id,
 	e_timing_id = b.timing_id,
 	e_po_ccy_id = b.payout_ccy_id,
-	e_po_amt = b.payout_amount,
 	e_bt_id = b.barrier_type_id,
 	e_b = b.barrier,
 	e_lb = b.lower_barrier,
 	e_ub = b.upper_barrier,
 	e_inst_id = d.exotic_instrument_id,
-	e_inst = d.name
+	e_inst = d.name,
+	e_ws = b.window_start,
+	e_we = b.window_end
 from
         #trades a,
         exotic_contracts b,
@@ -1481,6 +1499,16 @@ and
 	b.exercise_style_id = c.exercise_style_id
 and
 	b.exotic_instrument_id  = d.exotic_instrument_id
+
+update
+	#trades 
+set
+	e_po_amt = b.payout_amount
+from
+	#trades a,
+	trade_attributes b
+where
+	a.trade_id = b.trade_id
 
 update
 	#trades
@@ -1532,6 +1560,33 @@ where
 and
         b.barrier in("OT", "NT")
 
+update
+	#trades
+set
+	e_ub = e_b
+where
+	e_ud = "U"
+
+update
+        #trades
+set
+        e_lb = NULL
+where
+        e_ud = "U"
+
+update
+        #trades
+set
+        e_lb = e_b
+where
+        e_ud = "D"
+
+update
+        #trades
+set
+        e_ub = NULL
+where
+        e_ud = "D"
 
 update
 	#trades
@@ -2151,6 +2206,7 @@ select
 	tr_usi,
 	far_tr_usi,
 	is_ndf,
+	fc,
 	abs_cntr_qty=abs_counter_qty,
         vo=vo,
         vo_rate=vo_rate,
@@ -2163,7 +2219,13 @@ select
 	e_lb,     /* lower_barrier   */
 	e_ub,     /* upper_barrier   */
 	e_inst,   /* instrument type */
-	e_ud,   /* up or down barrier */
+	e_ud,     /* up or down barrier */
+	e_ws = case when e_b = NULL or e_ub != NULL then NULL else e_ws end,     /* window start */
+	e_we = case when e_b = NULL or e_ub != NULL then NULL else e_we end,     /* window end */
+	e_wsl = case when e_lb = NULL then NULL else e_ws end,     /* window start */
+	e_wel = case when e_lb = NULL then NULL else e_we end,     /* window end */
+	e_wsu = case when e_ub = NULL then NULL else e_ws end,    /* window start */
+	e_weu = case when e_ub = NULL then NULL else e_we end,    /* window end */
         trade_type_detailed = case when abs_far_qty != NULL and abs_far_qty != abs(quantity) then "Mismatch" else trade_type end,
         mpt_tally_login,
 	allocation
