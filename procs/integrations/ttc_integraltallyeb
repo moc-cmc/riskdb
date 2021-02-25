@@ -207,12 +207,12 @@ begin
 
 	select
 		@counterparty_lookup = @on_behalf_of_comp_id,
-		@trader_lookup = rtrim(@order_origination_firm)
+		@trader_lookup = rtrim(@sender_sub_id)
 	
 	if @granularity = "Trader Level"
 	begin
 		select
-			@trader_lookup = rtrim(@order_origination_firm)+"-"+@order_origination_trader
+			@trader_lookup = rtrim(@sender_sub_id)+"-"+@order_origination_trader
 	end
 
 	/* Set suppression and trigger_symbol variables */
