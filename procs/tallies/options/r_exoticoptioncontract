@@ -15,7 +15,6 @@ create procedure
 		@instrument_type varchar(15),
 		@timing varchar(12)=NULL,
 		@payout_ccy varchar(5)=NULL,
-		@payout_amount numeric(30, 4)=NULL,
 		@barrier_type varchar(12)=NULL,
 		@lower_barrier varchar(15)=NULL,
 		@upper_barrier varchar(15)=NULL,
@@ -44,6 +43,8 @@ declare @upper_barrier_float float
 declare @barrier_float float
 declare @strike_float float
 declare @strike_num numeric(30, 8)
+declare @barrier_code char(4)
+declare @window_symbol varchar(8)
 
 if @lower_barrier = ""
 	select
@@ -271,7 +272,8 @@ where
 	symbol=@payout_ccy
 
 select
-	@barrier_type_id=barrier_type_id
+	@barrier_type_id=barrier_type_id,
+	@barrier_code = code
 from
 	barrier_types
 where
@@ -321,6 +323,7 @@ where
 	option_expiration_id = @option_expiration_id
 
 
+
 if(@instrument_type = "Digital")
 begin	
 	if @barrier_type not in(NULL, "")
@@ -328,12 +331,12 @@ begin
 		if @barrier != NULL
 		begin
 			select 
-				@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @barrier)) + " " + rtrim(@timing) + " " + rtrim(@payout_ccy)
+				@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@barrier_code) + " " + rtrim(convert(varchar(30), @barrier)) + " " + rtrim(@timing) + " " + rtrim(@payout_ccy)
 		end
 		if @lower_barrier != NULL and @upper_barrier != NULL
 		begin
 			select
-				@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @lower_barrier)) + " " + rtrim(convert(varchar(30), @upper_barrier)) + " " + rtrim(@timing) + " " + rtrim(@payout_ccy)
+				@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@barrier_code) + " " + rtrim(convert(varchar(30), @lower_barrier)) + " " + rtrim(convert(varchar(30), @upper_barrier)) + " " + rtrim(@timing) + " " + rtrim(@payout_ccy)
 		end
 	end
 	else
@@ -345,18 +348,47 @@ end
 if(@instrument_type = "Double Barrier")
 begin
 	select
-		@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@strike) + " " + upper(@put_call) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @lower_barrier)) + " " + rtrim(convert(varchar(30), @upper_barrier))
+		@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@strike) + " " + upper(@put_call) + " " + rtrim(@barrier_code) + " " + rtrim(convert(varchar(30), @lower_barrier)) + " " + rtrim(convert(varchar(30), @upper_barrier))
 end
 if(@instrument_type = "Single Barrier")
 begin
 	select
-		@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@strike) + " " + upper(@put_call) + " " + rtrim(@barrier_type) + " " + rtrim(convert(varchar(30), @barrier))
+		@contract_symbol = rtrim(@option_exp_symbol) + " " + rtrim(@strike) + " " + upper(@put_call) + " " + rtrim(@barrier_code) + " " + rtrim(convert(varchar(30), @barrier))
 end
 
 if @exercise_style = "American"
 begin
 	select
 		@contract_symbol = rtrim(@contract_symbol) + " Am"
+end
+
+if @window_start = "Jan  1 1900"
+	select
+		@window_start=NULL
+if @window_end = "Jan  1 1900"
+	select
+		@window_end=NULL
+
+/* If we have a barrier option, and we do not provide a window start and end, then set the window start and end to the expiration
+ * but do not append the window to the contract sumbol in that case
+ */
+if @barrier_code != NULL
+begin
+	if @window_start = NULL and @window_end = NULL
+	begin
+		select
+			@window_start = @expiration,
+			@window_end = @expiration,
+			@window_symbol = ""
+	end
+	else
+	begin
+		select
+			@window_symbol = substring(convert(char(8), @window_start, 112), 5, 4)+ substring(convert(char(8), @window_end, 112), 5, 4)
+	end
+
+        select
+                @contract_symbol = rtrim(@contract_symbol) + " " + @window_symbol
 end
 	
 select @contract_symbol
@@ -408,7 +440,6 @@ begin
 			put_call,
 			timing_id,
 			payout_ccy_id,
-			payout_amount,
 			barrier_type_id,
 			lower_barrier,
 			upper_barrier,
@@ -424,7 +455,6 @@ begin
 		@put_call,
 		@timing_id,
 		@payout_ccy_id,
-		@payout_amount,
 		@barrier_type_id,
 		@lower_barrier_float,
 		@upper_barrier_float,
