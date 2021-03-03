@@ -9,7 +9,9 @@ create table
 	mid_mark float NULL,
 	note varchar(255) NULL,
 	exec_price float NULL,
-	fixing_center_id int NULL
+	fixing_center_id int NULL,
+	fixing_currency_id int NULL,
+	payout_amount numeric(30, 4) NULL
     )
 go
 

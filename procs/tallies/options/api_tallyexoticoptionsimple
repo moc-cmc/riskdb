@@ -24,6 +24,8 @@ create procedure
 		@barrier varchar(25)=NULL,
 		@lower_barrier varchar(25)=NULL,
 		@upper_barrier varchar(25)=NULL,
+                @window_start datetime=NULL,
+                @window_end datetime=NULL,
 		@exercise_style varchar(30)=NULL,
 		@cl_or_lp char(2)=NULL,
 		@counterparty varchar(50)=NULL,
@@ -44,6 +46,10 @@ create procedure
 as
 
 declare @barrier_subtype char(4)
+declare @american_barrier char(1)
+
+select
+	@american_barrier = "N"
 
 if @exotic_instrument in(NULL, "")
 begin
@@ -249,6 +255,44 @@ begin
 		msg = "Option settle date can not be less than expiration. This is the expiration of an exercise if the option is ITM",
 		provided = "Expiration: "+rtrim(convert(varchar(8), convert(date, @expiration), 112))+" option settle date: "+rtrim(convert(varchar(8), convert(date, @option_settle), 112))
 	return
+end
+
+
+if (@window_start not in("",  NULL) and @window_end in("", NULL)) or (@window_start in("", NULL) and @window_end not in("", NULL)) 
+begin
+	select
+		status = "Error",
+		msg = "Must provide both a window start and window end when specifying either. Otherwise leave both blank",
+		provided = "window_start: "+rtrim(convert(varchar(8), convert(date, @window_start), 112))+" window_end: "+rtrim(convert(varchar(8), convert(date, @window_start), 112))
+	return
+end
+
+if @window_start not in("",  NULL) and @window_end not in("", NULL)
+begin
+	if @window_end < @window_start
+	begin
+		select
+			status = "Error",
+			msg = "Window start date can not be prior to window end date",
+                	provided = "window_start: "+rtrim(convert(varchar(8), convert(date, @window_start), 112))+" window_end: "+rtrim(convert(varchar(8), convert(date, @window_start), 112))
+		return
+	end
+
+	if convert(date,  @window_start) < convert(date, @trade_date)
+	begin
+        	select
+                	status = "Error",
+                	msg = "Window start can not be less than the trade date",
+                	provided = "trade date: "+rtrim(convert(varchar(8), convert(date, @trade_date), 112))+" window start: "+rtrim(convert(varchar(8), convert(date, @window_start), 112))
+        	return
+	end
+
+	/* we now have barrier windows provided */
+	if convert(date, @window_start) != convert(date, @expiration)
+	begin
+		select
+			@american_barrier = "Y"
+	end
 end
 
 
@@ -477,6 +521,10 @@ begin
         end
 end
 
+if @trade_date= NULL
+select
+        @trade_date = getdate()
+
 select
 	@barrier_subtype = subtype
 from
@@ -486,7 +534,7 @@ where
 
 if @barrier_subtype = "KOKI"
 begin
-	if @exercise_style = "American"
+	if @exercise_style = "American" 
 	begin
 		select
 			status = "Error",
@@ -496,11 +544,11 @@ begin
 end	
 if @barrier_subtype = "DIGI"
 begin
-	if @exercise_style = "European"
+	if @exercise_style = "European" and @window_start != @window_end and @window_start != @trade_date
 	begin
 		select
 			status = "Error",
-			msg = "Must provide option as 'American' for Digital option with barrier"
+			msg = "Must provide option as 'American' for Digital option with barrier with no windows"
 		return
 	end
 end
@@ -535,9 +583,6 @@ end
 
 
 
-if @trade_date= NULL
-select
-        @trade_date = getdate()
 
 if @cl_or_lp = "LP"
 begin
@@ -670,11 +715,12 @@ exec
                 @instrument_type=@exotic_instrument,
                 @timing=@timing,
                 @payout_ccy=@payout_ccy,
-                @payout_amount=@payout_amount,
                 @barrier_type=@barrier_type,
                 @lower_barrier=@lower_barrier,
                 @upper_barrier=@upper_barrier,
                 @barrier=@barrier,
+		@window_start=@window_start,
+		@window_end=@window_end,
 		@exercise_style=@exercise_style,
                 @contract_id=@contract_id output
 
@@ -699,13 +745,13 @@ begin
                 instrument_type=@exotic_instrument,
                 timing=@timing,
                 payout_ccy=@payout_ccy,
-                payout_amount=@payout_amount,
                 barrier_type=@barrier_type,
                 lower_barrier=@lower_barrier,
                 upper_barrier=@upper_barrier,
                 barrier=@barrier,
+                window_start=@window_start,
+                window_end=@window_end,
                 exercise_style=@exercise_style
-
 
         return
 end
@@ -772,6 +818,12 @@ exec
 		@trade_note = @trade_note,
 		@trade_date = @trade_date,
 		@fixing_date = @fixing_date
+
+exec
+	api_setexotictradeattribs
+		@login = @login,
+		@trade_id = @trade_id,
+		@payout_amount = @payout_amount
 
 exec r_inserttradenotification @trade_id
 

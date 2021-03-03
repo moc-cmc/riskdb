@@ -1,0 +1,93 @@
+create or replace procedure
+	api_setexotictradeattribs
+		@login char(50),
+		@trade_id int,
+		@payout_amount numeric(30, 4)
+
+as
+
+declare @tico_account_id int
+declare @fund_id int
+declare @payout_ccy_id int
+declare @trade_exists char(1)
+declare @trade_attrib_exists char(1)
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login, '" + @login + "'",
+        login = @login
+	return
+end
+
+
+select
+	@trade_exists = "Y"
+from
+	trades
+where
+	trade_id = @trade_id
+if @trade_exists != "Y"
+begin
+	select
+		status = "Error",
+		message = "Problem finding trade for attrib booking",
+		trade_id = @trade_id
+	return
+end
+
+select
+	@trade_attrib_exists = "Y"
+from
+	trade_attributes
+where
+	trade_id = @trade_id
+
+
+if @trade_attrib_exists = "Y"
+begin
+	begin tran
+		update
+			trade_attributes
+		set
+			payout_amount = @payout_amount
+		where
+			trade_id = @trade_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem setting trade attribs for exotic"
+
+			rollback tran
+			return	
+		end
+	commit tran
+end
+else
+begin
+	insert into
+		trade_attributes(
+			trade_id,
+			payout_amount)
+	values(
+		@trade_id,
+		@payout_amount
+	)
+
+end
+
+go

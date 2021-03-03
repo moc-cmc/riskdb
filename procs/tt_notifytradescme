@@ -29,8 +29,8 @@ declare @last_commit_date datetime
    Compression
    Confirmation means
    Intragroup
-   
-*/
+ */  
+
 
 select
         @last_commit_date = max(a.commit_date)
@@ -42,34 +42,35 @@ where
 and
         b.name = "Commit Complete"
 
-
+/*
 if @trade_date = NULL
 begin
-        /* runs on a 12pm-12pm schedule */
+         runs on a 12pm-12pm schedule 
         select
                 @trade_date = convert(date, getdate())
 end
+*/
 
 exec
         r_daterangefordate
-                @trade_date,
+                @last_commit_date,
                 @begin_date output,
                 @end_date output
 
-
+/*
 if convert(date, @end_date) > convert(date, @last_commit_date)
 begin
-        return
 
-        /*select
+        select
                 error = "Error",
                 msg = "Data is not committed for date, can not generate report",
                 trade_date = convert(date, @trade_date) ,
                 last_commit_date = @last_commit_date
         return
-        */
+        
 end
 
+*/
 
 
 select
@@ -329,8 +330,8 @@ where
         name = "Cancelled"
 
 
-/*
-| Insert into #trade_notifications anything with status_id "Active", "Edit", "Cancelled"
+
+/* insert into #trade_notifications anything with status_id "Active", "Edit", "Cancelled" */
 insert into
         #trade_notifications
 select
@@ -347,8 +348,6 @@ and
         b.name in("Active", "Edit", "Cancelled")
 and
         a.source_id = @source_id
-
-*/
 
 
 /*
@@ -417,17 +416,17 @@ select
 	abs_counter_qty = round(abs(a.quantity) * a.price, 2)
 from
 	trades a,
-	trade_notifications b,
+	#trade_notifications b,
 	trade_types c
 where
 	a.trade_id=b.trade_id
 and
 	b.source_id = @source_id
-and
+/* and
 	a.trade_date >= @begin_date
 and
-	a.trade_date < @end_date
-and 
+	a.trade_date < @end_date */ 
+and
 	a.trade_type_id=c.trade_type_id
 and
 	c.name in ("Forward","Swap Far","Swap Near") 
