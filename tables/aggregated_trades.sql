@@ -30,6 +30,7 @@ create table
         pct_price numeric(30,6) null,
         spot_reference float null
     )
+lock datarows
 go
 
 
