@@ -31,3 +31,27 @@ create table
         spot_reference float null
     )
 go
+
+
+create unique nonclustered index 
+	att_at 
+on 
+	aggregated_trades(aggregate_trade_id, trade_id)
+
+create unique nonclustered index 
+	att_t
+on
+	aggregated_trades(trade_id)
+
+create nonclustered index 
+	att_td 
+on 
+	aggregated_trades(trade_date)
+
+create nonclustered index 
+	att_vd 
+on
+	aggregated_trades(value_date)
+go
+go
+
