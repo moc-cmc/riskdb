@@ -1,0 +1,302 @@
+
+create or replace procedure
+	r_importwiretransactions	
+		@login varchar(50),
+                @transaction_id varchar(50)=NULL,
+		@office varchar(20)=NULL,
+		@account varchar(50),
+		@currency varchar(3),
+		@amount float,
+		@contra_office varchar(50)=NULL,
+		@contra_account varchar(50)=NULL,
+		@contra_currency varchar(50)=NULL,
+		@contra_amount varchar(50)=NULL,
+		@description varchar(255)
+
+as
+
+declare @account_transaction_id int
+declare @contra_account_transaction_id int
+declare @external_account_id int
+declare @contra_account_id int
+declare @tico_account_id int
+declare @transaction_type_id int
+declare @currency_id int
+declare @contra_currency_id int
+declare @source_id int
+declare @product_type_id int
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+if @tico_account_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Unable to resolve login"
+        return
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name=@description
+
+if @transaction_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Transaction Type does not exist",
+		transaction_type=@description
+	return
+end
+
+select
+	@product_type_id = product_type_id
+from
+	product_types
+where
+	name="Currency"
+
+if @product_type_id = NULL
+begin
+	select
+		status = "Error",
+		message="Product type does not exist",
+		product_type="Currency"
+	return
+end
+
+select
+	@source_id=source_id
+from
+	sources
+where
+	name="Cash Manager Import"
+
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message="Source does not exist",
+		source="Cash Manager Import"
+
+	return
+end
+
+select
+	@currency_id = product_id
+from
+	products 
+where
+	product_type_id=@product_type_id
+and
+	symbol=@currency
+
+if @currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Currency does not exist",
+		currency = @currency
+
+	return
+end
+
+select 
+	@contra_currency_id = product_id
+from
+	products
+where
+	product_type_id=@product_type_id
+and
+	symbol=@contra_currency
+
+if @contra_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contra Currency does not exist",
+		contra_currency = @contra_currency
+
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_account_symbols
+where
+	symbol = @account
+and
+	source_id = @source_id
+
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No mapping for External Account",
+ 		external_account = @account
+
+	return
+end
+
+select
+	@contra_account_id = external_account_id
+from
+	external_account_symbols
+where
+	symbol = @contra_account
+and
+	source_id = @source_id
+
+if @contra_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No mapping for Contra Account",
+		contra_account = @contra_account
+
+	return
+end
+
+exec
+        j_nextkey
+                "account_transactions",
+                @account_transaction_id output
+
+exec 
+	j_nextkey 
+		"account_transactions",
+		@contra_account_transaction_id output
+begin tran
+
+	insert into
+		account_transactions (
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values
+	(
+	  	@account_transaction_id,
+	  	@tico_account_id,
+	  	@external_account_id,
+	  	@transaction_type_id,
+	  	getdate(),
+	  	@currency_id,
+	  	@amount,
+	  	@transaction_id)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Could not insert account transaction",
+			identifier = @transaction_id
+
+		rollback tran
+
+		return
+	end
+
+	insert into
+		account_transactions (
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	values
+	(
+		@contra_account_transaction_id,
+		@tico_account_id,
+		@contra_account_id,
+		@transaction_type_id,
+		getdate(),
+		@contra_currency_id,
+		@amount,
+		@transaction_id)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Could not insert contra account transaction",
+			identifier = @transaction_id
+
+		rollback tran
+
+		return
+
+	end
+
+	if(@transaction_id != NULL)
+	begin
+		insert into
+			account_transaction_identifiers(
+			account_transaction_id,
+			source_id,
+			identifier)
+		values(
+			@account_transaction_id,
+			@source_id,
+			@transaction_id)
+
+		if @@rowcount !=1
+		begin
+			select
+				status = "Error",
+				message = "Could not insert account transaction identifier",
+				identifier = @transaction_id
+
+			rollback tran
+
+			return
+		end
+
+		insert into
+			account_transaction_identifiers(
+			account_transaction_id,
+			source_id,
+			identifier)
+		values(
+			@contra_account_transaction_id,
+			@source_id,
+			@transaction_id)
+
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Could not insert contra account transaction identifier",
+				identifier = @transaction_id
+
+			rollback tran
+
+			return
+		end
+	end
+
+commit tran
+
+select
+	status = "Success",
+	message = "Transaction Inserted",
+	transaction_id = @transaction_id
+return
+
+go
+
