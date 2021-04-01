@@ -147,6 +147,14 @@ insert into
 	#meta
 values(
 	"Column Link",
+	"import_wire_transactions",
+	"Import Wire Transactions",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
 	"import_citi_rolls",
 	"Import Citi Rolls",
 	NULL) 
@@ -921,7 +929,8 @@ and
 select
 	style = "background:#FFFFFF;border: 1px solid white",
 	import_eod_settles = "Import EOD Settles",
-	tally_roll = "Manual Roll Tally",
+	import_wire_transactions = "Import Wire Transactions",
+        tally_roll = "Manual Roll Tally",
 	client_roll_recon = "Client Roll Recon",
 	client_settlements = "Client Account Settlements",
 	close_settle_balances = "Close Settle Balances",
