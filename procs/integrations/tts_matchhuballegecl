@@ -1,0 +1,409 @@
+drop procedure tts_matchhuballegecl
+go
+
+create procedure
+        tts_matchhuballegecl
+                @source varchar(50),
+                @default_login varchar(50),
+                @broker varchar(50),
+		@ext_mh_trade_id int,
+                @ext_mh_deal_id int,
+		@ext_mh_trade_idenifier varchar(100),
+                @ccy1 varchar(50),
+                @ccy2 varchar(50),
+                @qty float,
+                @price float,
+                @buy_sell varchar(10),
+                @trade_d varchar(20),
+                @trade_dy varchar(20),
+                @value_d varchar(20),
+                @fixing_d varchar(20)=NULL,
+                @far_price float=NULL,
+                @far_value_d varchar(20)=NULL,
+                @far_fixing_d varchar(20)=NULL,
+                @far_qty float=NULL,
+                @reporting_party varchar(50)=NULL,
+                @reporting_party_trader varchar(50)=NULL,
+		@reporting_party_clearing varchar(50)=NULL,
+                @counter_party varchar(50)=NULL,
+                @counter_party_trader varchar(50)=NULL,
+		@counter_party_clearing varchar(50)=NULL,
+		@notification_status varchar(50)=NULL
+
+as
+
+declare @fixing_date datetime
+declare @value_date datetime
+declare @far_fixing_date datetime
+declare @far_value_date datetime
+declare @trade_date datetime
+declare @trade_day datetime
+declare @matchhub_trade_id int
+declare @platform_identifier varchar(100)
+declare @far_platform_identifier varchar(100)
+declare @deal_exec_symbol varchar(100)
+declare @symbol varchar(50)
+
+declare @broker_id int
+declare @source_id int
+declare @trade_id int
+declare @deal_id int
+
+declare @contract varchar(20)
+declare @quantity numeric(30, 2)
+declare @far_quantity numeric(30, 2)
+
+declare @prime_broker_lookup varchar(50)
+declare @trader_lookup varchar(50)
+declare @counterparty_lookup varchar(50)
+declare @trader_mapping_error_id int
+declare @cpty_mapping_error_id int
+declare @trader_id int
+declare @counterparty_id int
+declare @trader_external_account_id int
+declare @cpty_external_account_id int
+declare @external_account varchar(50)
+declare @suppress_trade varchar(50)
+declare @suppression_lookup varchar(50)
+declare @ack_required varchar(50)
+declare @deal_type varchar(50)
+declare @lookup_trader varchar(50)
+declare @counterparty varchar(50)
+declare @external_account_id int
+declare @external_account_type varchar(50)
+declare @trader_login varchar(50)
+declare @trader varchar(50)
+declare @deal_status varchar(50)
+declare @aggregation_style varchar(50)
+declare @last_spot_rate float
+declare @contract_id int
+declare @inverted varchar(50)
+declare @tally_status varchar(10)
+declare @tally_message varchar(25)
+declare @allege_status_id int
+
+/* --------------------------------------------------------------------------
+ * STEP: Initial MAP proc parameters to common tally params
+ * It may be that additional parameters are mapped further down in the
+ * stored procedure based on the result of @client_or_market
+ */
+
+select
+	@trade_date = convert(datetime, @trade_d),
+	@trade_day = convert(datetime, @trade_dy),
+	@value_date = convert(datetime, @value_d),
+	@fixing_date = convert(datetime, @fixing_d),
+	@far_value_date = convert(datetime, @far_value_d),
+	@far_fixing_date = convert(datetime, @far_fixing_d)
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+/* --------------------------------------------------------------------------
+ * STEP: Set broker_id and source_id
+ * Broker and source should be passed in via the the fix engine
+ * There should always be a broker and source specified. These are
+ * static, so don't even error check since the trade will fail.
+ */
+select
+        @broker_id = broker_id
+from
+        brokers
+where
+        symbol = @broker
+if @broker_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining broker",
+		broker = @broker
+	return
+end
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Map proc parameters to common tally variable name
+ * This mapping allows us to use common variable names in all tallies. It also
+ * helps with debugging, as you can look here to see what is mapped
+ * For multi-prime setups that don't have a pb tag, set the prime_broker_lookup to ""
+ *
+ */
+
+select
+        @platform_identifier = rtrim(convert(varchar(100), @ext_mh_trade_id))
+
+select
+        @trader_lookup = rtrim(@counter_party)+"-"+rtrim(@counter_party_clearing),
+        @counterparty_lookup = rtrim(@reporting_party)+"-"+rtrim(@reporting_party_clearing)
+
+
+select
+	@matchhub_trade_id = matchhub_trade_id
+from
+	matchhub_trades
+where
+	broker_id = @broker_id
+and
+	identifier = @platform_identifier
+if @matchhub_trade_id != NULL and @notification_status != "DELETE"
+begin
+        select
+		status = "Dupe",
+		matchhub_trade_id = @matchhub_trade_id,
+		platform_identifier = @platform_identifier,
+		ext_mh_trade_id = @ext_mh_trade_id
+        return
+end
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Lookup trader and counterparty symbols
+ *
+ * ag_pendingmappingerrors determines if there is currently a mapping error for a
+ * trade. If there is, then @mapping_error_id wont be NULL. The tt_resolve* procs
+ * will onlu send a message about the failed mapping if there is not an existing
+ * mapping error.
+ */
+exec
+        ag_pendingmappingerrors
+                @login = @default_login,
+                @broker_id = @broker_id,
+                @identifier = @platform_identifier,
+                @trader_mapping_error_id = @trader_mapping_error_id output,
+                @cpty_mapping_error_id = @cpty_mapping_error_id output
+
+exec
+        tt_resolvetradermapping
+                @login=@default_login,
+                @source_id=@source_id,
+                @source=@source,
+                @broker_id=@broker_id,
+                @identifier=@platform_identifier,
+                @mapping_error_id=@trader_mapping_error_id,
+                @mapping=@trader_lookup,
+                @trader_id=@trader_id output,
+                @trader=@trader output,
+                @trader_login=@trader_login output,
+                @external_account_id=@trader_external_account_id output
+
+exec
+        tt_resolvecptymapping
+                @login=@default_login,
+                @source_id=@source_id,
+                @source=@source,
+                @broker_id=@broker_id,
+                @identifier=@platform_identifier,
+                @mapping_error_id=@cpty_mapping_error_id,
+                @mapping = @counterparty_lookup,
+                @counterparty_id=@counterparty_id output,
+                @counterparty=@counterparty output,
+                @cpty_external_account_id=@cpty_external_account_id output
+
+if @trader_id = NULL
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "trader mapping error trade not processed"
+        return
+end
+
+if @counterparty_id = NULL
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "counterparty mapping error trade not processed"
+        return
+end
+
+/* --------------------------------------------------------------------------
+ * STEP: Lookup external account from the trader or counterparty,
+ *
+ * On a client trade, the external account is determined by the trader
+ * On a market trade, the external account is determined by the counterparty
+ */
+
+ select
+          @external_account_id = @trader_external_account_id
+
+
+select
+        @external_account = a.symbol,
+        @external_account_type = b.name,
+        @aggregation_style = c.name
+from
+        external_accounts a,
+        external_account_types b,
+        aggregation_styles c
+where
+        a.external_account_type_id = b.external_account_type_id
+and
+        a.aggregation_style_id = c.aggregation_style_id
+and
+        a.external_account_id = @external_account_id
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Determine the contract
+ *
+ */
+
+exec
+        r_validateccypair
+                @login=@default_login,
+                @symbol=@symbol,
+                @ccy1=@ccy1,
+                @ccy2=@ccy2,
+                @contract_id = @contract_id output,
+                @contract = @contract output,
+                @inverted = @inverted output
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Adjust the perspective of the trade and set the quantity
+ *
+ * The direction of the trade can be affected by the side and the perspective
+ * of the FIX message. Some platforms have different perspectives for client
+ * messages vs market messages. We tally trades in perspective of the fund
+ * or agency so set the direction accordingly
+ */
+
+if lower(@buy_sell) in("s", "sell", "sells", "sellbuy", "sellsbuys")
+begin
+        select
+                @quantity = @qty * -1
+end
+
+if lower(@buy_sell) in("b", "buy", "buys", "buysell", "buyssells")
+begin
+        select
+                @quantity = @qty * 1
+end
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Tally the trade
+ *
+ */
+if @notification_status in("Active", "New", NULL, "NEW")
+begin
+	select
+		@allege_status_id = status_id
+	from
+		statuses
+	where
+		name = "Alleged"
+	if @allege_status_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding 'Alleged' status"
+		return
+	end
+	
+	exec 
+		j_nextkey
+			"matchhub_trades",
+			@matchhub_trade_id output
+	
+	insert into
+        	matchhub_trades(
+                	matchhub_trade_id,
+                	capture_date,
+                	status_id,
+                	account_id,
+                	trader_id,
+                	counterparty_id,
+                	contract_id,
+                	quantity,
+                	price,
+                	trade_date,
+                	value_date,
+                	far_price,
+                	far_value_date,
+                	broker_id,
+                	identifier,
+			confirm_status_id,
+			confirmed_at)
+	values(
+		@matchhub_trade_id,
+		getdate(),
+		@allege_status_id,
+		@external_account_id,
+		@trader_id,
+		@counterparty_id,
+		@contract_id,
+		@quantity,
+		@price,
+		@trade_date,
+		@value_date,
+		@far_price,
+		@far_value_date,
+		@broker_id,
+		@platform_identifier,
+		@allege_status_id,
+		getdate())
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting matchub trade record for allege workflow"
+		return
+	end
+end
+
+if @notification_status = "DELETE"
+begin
+	begin tran
+		delete from
+			matchhub_trades
+		where
+			identifier = @platform_identifier
+		and
+			broker_id = @broker_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem processing cancel for match hub allege",
+				platform_identfier = @platform_identifier,
+				broker_id = @broker_id
+			rollback tran
+			return	
+		end
+	commit tran
+end
+	
+
+select
+	status = "Success",
+	notification_status = @notification_status,
+        matchhub_trade_id = @matchhub_trade_id,
+        external_account = @external_account,
+        trader = @trader,
+        counterparty = @counterparty,
+        contract = @symbol,
+        quantity = @quantity,
+        price = @price,
+        trade_date = @trade_date,
+        value_date = @value_date,
+        far_price = @far_price,
+        far_value_date = @far_value_date,
+        broker = @broker,
+        identifier = @platform_identifier
+
+
+
+go
