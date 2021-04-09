@@ -28,6 +28,7 @@ create or replace procedure
 		@fixing_date datetime=NULL,
                 /*swaps*/
                 @far_price float=NULL,
+		@far_qty float=NULL,
 		@far_value_date datetime=NULL,
 		@far_fixing_date datetime=NULL,
                 /*parties*/
@@ -431,8 +432,11 @@ if @fixing_date != NULL
 if @far_price != NULL
 begin
 
-        select
-                @qty = @qty * -1
+         select
+                @qty = @qty * -1 
+
+	 select
+		@far_qty = @far_qty * -1
 
         select
                 @deal_type = "B2B Swap",
@@ -581,11 +585,35 @@ begin
 	return
 end
 
-
 if @far_price != NULL
 begin
-	select
-		@far_quantity = @quantity * -1.0
+	if @far_qty != NULL
+	begin
+		if @client_or_market = "C"
+		begin
+			if @side = "BUY"
+				select
+					@far_quantity = @far_qty 
+			if @side = "SELL"
+				select
+					@far_quantity = @far_qty * -1
+		end
+		else
+		begin
+			if @side = "SELL"
+				select
+					@far_quantity = @far_qty
+			if @side = "BUY"
+				select
+					@far_quantity = @far_qty * -1
+		end	
+	end
+	else
+	begin
+
+		select
+			@far_quantity = @quantity * -1.0
+	end
 	
 	exec
 		fxa_tallytrade
