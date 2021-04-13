@@ -1,0 +1,76 @@
+create or replace procedure
+	tt_updatetrmtradematchstatus
+		@login varchar(50)=NULL,
+		@source varchar(50)=NULL,
+		@matching_engine varchar(50)=NULL,
+		@trml_version varchar(50)=NULL,
+		@messsage_type varchar(50)=NULL,
+		@id varchar(50)=NULL,
+		@action varchar(50)=NULL,
+		@trade_reporter varchar(50)=NULL,
+		@ticket_num varchar(50)=NULL,
+		@counterparty varchar(50)=NULL,
+		@cpty_ticket_number varchar(50)=NULL,
+		@prime_broker varchar(50)=NULL, 
+		@trade_date varchar(50)=NULL,
+		@origin_system varchar(50)=NULL,
+		@system_trade_id varchar(50)=NULL,
+		@client_noe varchar(50)=NULL,
+		@lifecycle_status varchar(50)=NULL,
+		@recon_status varchar(50)=NULL
+as
+
+declare @source_id int
+declare @match_status varchar(50)
+declare @matching_engine_id int
+declare @trade_id_str varchar(50)
+
+select
+	debug = "DEBUG",
+	login = @login,
+	source = @source,
+	matching_engine = @matching_engine,
+	trml_version = @trml_version,
+	message_type = @messsage_type,
+	id = @id,
+	action = @action,
+	trade_reporter = @trade_reporter,
+	ticket_num = @ticket_num,
+	counterparty = @counterparty,
+	cpty_ticket_number = @cpty_ticket_number,
+	prime_broker = @prime_broker,
+	trade_date = @trade_date,
+	origin_system = @origin_system,
+	system_trade_id = @system_trade_id,
+	client_noe = @client_noe,
+	lf_status = @lifecycle_status,
+	recon_status = @recon_status
+
+if @recon_status != "Matched"
+begin
+	select
+		status = "Warn",
+		message = "Only processing Matched or Unmatched statuses"
+	return
+end
+
+
+/*-----------------------------------------------------------------------------------
+ * STEP: Here we assign the appropriate trade_id to be used to look up the 
+ *    trade that us being updated. Harmony reports back our ID since we are reporting
+ *    inbound
+ */
+select
+	@trade_id_str = @ticket_num
+		
+
+/*exec
+	ag_edittradematchstatus
+		@login=@login,
+		@trade_id= @trade_id_str,
+		@matching_engine=@matchin_engine.
+		@match_status=@match_status
+*/
+
+		
+go
