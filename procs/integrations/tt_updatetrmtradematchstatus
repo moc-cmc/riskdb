@@ -21,10 +21,10 @@ create or replace procedure
 as
 
 declare @source_id int
-declare @match_status varchar(50)
-declare @matching_engine_id int
 declare @trade_id_str varchar(50)
+declare @matching_engine_id int
 
+/*
 select
 	debug = "DEBUG",
 	login = @login,
@@ -45,12 +45,28 @@ select
 	client_noe = @client_noe,
 	lf_status = @lifecycle_status,
 	recon_status = @recon_status
+*/
 
-if @recon_status != "Matched"
+if @recon_status not in("Matched", "Unmatched")
 begin
 	select
 		status = "Warn",
 		message = "Only processing Matched or Unmatched statuses"
+	return
+end
+
+select
+	@matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = @matching_engine
+if @matching_engine_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining matching engine from provided",
+		proviced = @matching_engine
 	return
 end
 
@@ -64,13 +80,13 @@ select
 	@trade_id_str = @ticket_num
 		
 
-/*exec
+exec
 	ag_edittradematchstatus
 		@login=@login,
 		@trade_id= @trade_id_str,
-		@matching_engine=@matchin_engine.
-		@match_status=@match_status
-*/
+		@matching_engine=@matching_engine,
+		@match_status=@recon_status
+
 
 		
 go
