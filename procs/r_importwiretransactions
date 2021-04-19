@@ -10,7 +10,7 @@ create or replace procedure
 		@contra_office varchar(50)=NULL,
 		@contra_account varchar(50)=NULL,
 		@contra_currency varchar(50)=NULL,
-		@contra_amount varchar(50)=NULL,
+		@contra_amount float=NULL,
 		@description varchar(255)
 
 as
@@ -227,7 +227,7 @@ begin tran
 		@transaction_type_id,
 		getdate(),
 		@contra_currency_id,
-		@amount,
+		@contra_amount,
 		@transaction_id)
 
 	if @@rowcount != 1
