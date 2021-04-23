@@ -1,6 +1,3 @@
-use
-	risk_jeff
-go
 
 drop procedure
 	r_operations
@@ -101,7 +98,6 @@ values(
 	"Edit Settle Prices",
 	"Settles",
 	"View settle prices for previous trade dates")
-
 
 /* insert into
 	#output

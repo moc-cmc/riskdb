@@ -1,6 +1,3 @@
-use
-	risk_jeff
-go
 
 drop procedure
 	r_runopslink
@@ -85,7 +82,6 @@ begin
 			@login = @login,
 			@trade_date = NULL
 end
-	
 	
 /* 
 if @op_task = "Align Settles"
