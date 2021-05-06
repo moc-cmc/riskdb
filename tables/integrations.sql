@@ -3,7 +3,8 @@ create table
 	integrations (
 		integration_id int,
 		name       varchar(50),
-		org_id int NULL)
+		org_id int NULL,
+                format_swaps char(1) NULL)
 go
 
 create unique index pk on
