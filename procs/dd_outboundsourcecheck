@@ -18,10 +18,14 @@ declare @status_id int
 declare @source varchar(50)
 declare @status varchar(50)
 declare @queued varchar(10)
+declare @stale_count int
 declare @tags varchar(255)
 declare @ops_name varchar(70)
 declare @integration varchar(50)
 declare @org varchar(50)
+declare @swap_far_trade_type int
+declare @format_swaps char(1)
+declare @far_swaps int
 
 select
 	@now = getdate()
@@ -48,6 +52,21 @@ where
 	name in("Active", "Edit", "Cancelled")
 
 
+select
+	@swap_far_trade_type = trade_type_id
+from
+	trade_types
+where
+	name = "Swap Far"
+
+if @@rowcount != 1
+begin
+	select
+		status="Warning",
+		msg="Trade Type not available",
+		trade_type="Swap Far"
+end
+
 create table
 	#outbound_sources(
 		id int identity, 
@@ -58,6 +77,8 @@ create table
 		stale_threshold datetime,
 		org_id int NULL,
 		org varchar(50) NULL,
+		format_swaps char(1) NULL,
+		far_leg_count int,
 		stale_count int
 )
 
@@ -69,6 +90,8 @@ insert into
 		integration,
 		stale_threshold,
 		org_id,
+		format_swaps,
+		far_leg_count,
 		stale_count)
 select
 	a.source_id,
@@ -77,6 +100,8 @@ select
 	e.name,
 	dateadd(ss, c.stale_threshold * -1, getdate()),
 	e.org_id,
+	e.format_swaps,
+        0,
 	0
 from	
 	sources a,
@@ -108,6 +133,50 @@ from
 	orgs b
 where
 	a.org_id = b.org_id
+
+create table
+	#far_swap_counts (
+		source_id int,
+		far_swap_count int)
+
+insert into
+	#far_swap_counts(
+		source_id,
+		far_swap_count)
+select
+        d.source_id,
+	count(*)
+from
+        trade_notifications a,
+        trades b,
+        #statuses c,
+        #outbound_sources d
+where
+        a.trade_id = b.trade_id
+and
+        a.status_id = c.status_id
+and
+        a.source_id = d.source_id
+and
+        b.trade_date >= @begin_date
+and
+        a.capture_date <= d.stale_threshold
+and
+        c.name="Active"
+and
+        b.trade_type_id=@swap_far_trade_type
+group by
+        d.source_id	
+	
+update
+        #outbound_sources
+set
+        far_leg_count = a.far_swap_count 
+from
+	#far_swap_counts a,
+	#outbound_sources b
+where
+	a.source_id = b.source_id	
 
 /* debug  
 select * from #outbound_sources
@@ -270,6 +339,13 @@ from
 where
 	a.id = b.obs_id
 
+update
+	#outbound_sources
+set
+	stale_count = stale_count - far_leg_count
+where
+	format_swaps = "N"
+
 /* debug 
 select * from #outbound_sources
 */
@@ -297,7 +373,9 @@ begin
 		@integration = NULL,
 		@org = NULL,
 		@queued = NULL,
-		@tags = ""
+		@stale_count = NULL,
+		@format_swaps = NULL,
+                @tags = ""
 
 	select
 		@source_id = source_id,
@@ -305,16 +383,13 @@ begin
 		@ops_name = ops_name,
 		@integration = integration,
 		@org = org,
-		@queued = convert(varchar(10), stale_count)
+		@stale_count = stale_count,
+                @format_swaps = format_swaps
 	from
 		#outbound_sources
 	where
 		id = @next_id
-	if @queued = NULL
-	begin
-		select
-			@queued = "0"
-	end
+	
 	select
 		@tags = "source_name:"+rtrim(@source)
 			+",ops_name:"+rtrim(@ops_name)
@@ -326,7 +401,9 @@ begin
 			@tags = rtrim(@tags)+",org:"+rtrim(@org)
 	end
 
-		
+	select
+		@queued = convert(varchar(10), @stale_count)
+
 	/* debug
 	select
 		metric = "stp.outbound",
