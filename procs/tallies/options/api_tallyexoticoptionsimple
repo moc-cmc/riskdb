@@ -1,7 +1,4 @@
-drop procedure api_tallyexoticoptionsimple
-go
-
-create procedure
+create or replace procedure
 	api_tallyexoticoptionsimple
 		@login varchar(50)=NULL,
 		@buy_sell varchar(1)=NULL,
@@ -293,6 +290,14 @@ begin
 		select
 			@american_barrier = "Y"
 	end
+	if convert(date, @window_end) > convert(date, @expiration)
+	begin
+                select
+                        status = "Error",
+                        msg = "Window end can not be greater than the expiration",
+                        provided = "expirations: "+rtrim(convert(varchar(8), convert(date, @expiration), 112))+" window end: "+rtrim(convert(varchar(8), convert(date, @window_end), 112))
+                return
+	end
 end
 
 
@@ -521,6 +526,17 @@ begin
         end
 end
 
+/* We are not mandating that you provide a window start and window end on all barrier options 
+if ((@barrier not in(NULL, "") or @lower_barrier not in(NULL, "") or  @upper_barrier not in(NULL, "")) and (@window_end in("", NULL)) or (@window_start in("", NULL)))
+begin
+                select
+                        status = "Error",
+                        msg = "Must provide window start and window end for any barrier option",
+                        provided = @barrier_type
+                return
+end
+*/
+
 if @trade_date= NULL
 select
         @trade_date = getdate()
@@ -542,6 +558,8 @@ begin
 		return
 	end
 end	
+
+/*
 if @barrier_subtype = "DIGI"
 begin
 	if @exercise_style = "European" and @window_start != @window_end and @window_start != @trade_date
@@ -552,6 +570,7 @@ begin
 		return
 	end
 end
+*/
 
 if @source = NULL
 begin
@@ -827,4 +846,5 @@ exec
 
 exec r_inserttradenotification @trade_id
 
-go
+
+go 

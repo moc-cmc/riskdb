@@ -1,7 +1,4 @@
-drop procedure mc4_tallycliexoticdigi
-go
-
-create procedure
+create or replace procedure
 	mc4_tallycliexoticdigi
 		@login varchar(50)=NULL,
 		@client_user varchar(50)=NULL,
@@ -117,4 +114,5 @@ exec
 		@login,
 		@deal_id
 
-go
+
+go 
