@@ -1,0 +1,26 @@
+create or replace procedure
+	pd_yn
+
+as
+
+create table
+	#yn
+(
+	id int,
+	name char(3)
+)
+
+insert into #yn values(1, "N")
+insert into #yn values(2, "Y")
+
+select
+	name
+from
+	#yn
+order by
+	id
+
+go
+
+
+

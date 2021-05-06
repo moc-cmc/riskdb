@@ -73,9 +73,6 @@ values(
         NULL,
         NULL)
 
-
-
-
 select * from #meta
 
 select
@@ -161,7 +158,8 @@ create table
 		integration_name varchar(50),
 		org_id int NULL,
 		org_name varchar(50) NULL,
-		connection_status_id int,
+		format_swaps char(1) NULL,
+                connection_status_id int,
 		connection_status varchar(50),
 		stale_threshold int NULL,
 		monitoring_enabled char(1) NULL,
@@ -180,6 +178,7 @@ insert into
 		integration_id,
 		integration_name,
 		org_id,
+		format_swaps,
 		connection_status_id,
 		connection_status,
 		stale_threshold,
@@ -196,6 +195,7 @@ select
 	a.integration_id,
 	d.name,
 	d.org_id,
+	d.format_swaps,
 	a.connection_status_id,
 	e.name,
 	a.stale_threshold,
@@ -243,7 +243,8 @@ select
         source_type,
         integration_name,
 	org_name,
-        connection_status,
+        format_swaps,
+	connection_status,
         stale_threshold,
         monitoring_enabled,
 	edit_connection,
