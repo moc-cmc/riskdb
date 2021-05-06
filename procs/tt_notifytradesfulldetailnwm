@@ -1,6 +1,5 @@
-
 create or replace procedure
-	tt_notifytradesfulldetail
+	tt_notifytradesfulldetailnwm
 		@source varchar(50),
 		@query_options char(1)=NULL,
 		@query_exotics char(1)=NULL,
@@ -174,7 +173,7 @@ create table
 		e_po_ccy varchar(3) NULL, /* payout currency */
 		e_po_amt float NULL, /* payout amount */
 		e_bt_id int NULL, /* barrier type */
-		e_bt varchar(12) NULL, /* barrier type */
+		e_bt varchar(15) NULL, /* barrier type */
 		e_b float NULL, /* barrier */
 		e_lb float NULL, /* lower_barrier */
 		e_ub float NULL, /* upper_barrier */
@@ -1533,6 +1532,7 @@ from
 where
 	a.e_bt_id = b.barrier_type_id
 
+
 update 
 	#trades
 set
@@ -1639,7 +1639,6 @@ where
         a.e_bt_id = b.barrier_type_id
 and
         b.barrier in("DOT", "DNT")
-		
 
 update 
 	#trades
@@ -1648,7 +1647,7 @@ set
 where
 	e_po_ccy_id != NULL
 
-/* end exotic */
+/* end exotic except for window barriers which is further below */
 
 update
 	#trades
@@ -1803,6 +1802,26 @@ set
 	trm_opt_delivery = "CASH"
 where
 	fixing_date != NULL
+
+
+update
+        #trades
+set
+        e_bt = rtrim(e_bt)+"W"
+where
+        e_bt in("Down and In", "Down and Out", "Up and Out", "Up and In", "DKO", "DKI")
+and
+        e_ws != NULL
+and
+        e_we != NULL
+and
+        convert(date, e_ws) != convert(date, e_we)
+and
+        (
+        convert(date, e_ws) != convert(date, trade_day)
+or       
+         convert(date, e_we) != convert(date, optexp_expiration)
+        )
 
 end /* end option lookups */
 
@@ -2255,8 +2274,12 @@ select
 	e_ub,     /* upper_barrier   */
 	e_inst,   /* instrument type */
 	e_ud,     /* up or down barrier */
-	e_ws = case when e_b = NULL or e_ub != NULL then NULL else e_ws end,     /* window start */
-	e_we = case when e_b = NULL or e_ub != NULL then NULL else e_we end,     /* window end */
+        /*
+	e_ws = case when e_b = NULL or e_ub != NULL then NULL else e_ws end,    
+	e_we = case when e_b = NULL or e_ub != NULL then NULL else e_we end,
+        */
+	e_ws = e_ws,
+	e_we = e_we,
 	e_wsl = case when e_lb = NULL then NULL else e_ws end,     /* window start */
 	e_wel = case when e_lb = NULL then NULL else e_we end,     /* window end */
 	e_wsu = case when e_ub = NULL then NULL else e_ws end,    /* window start */
@@ -2268,6 +2291,7 @@ from
         #trades
 order by
         trade_id
+
 
 
 go 

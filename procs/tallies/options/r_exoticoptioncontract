@@ -1,10 +1,4 @@
-
-if object_id("r_exoticoptioncontract") != NULL
-    drop procedure
-       	r_exoticoptioncontract 
-go
-
-create procedure
+create or replace procedure
 	r_exoticoptioncontract	
 		@underlying_contract varchar(50),
 		@timezone varchar(25),
@@ -474,4 +468,5 @@ begin
 		@instrument_id)
 end
 
-go
+
+go 
