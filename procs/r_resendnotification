@@ -124,12 +124,12 @@ begin tran
 	update
 		trade_notifications
 	set
-		status_id = @status_id
+		status_id = @status_id,
+		error = "Resend "+ rtrim(@login)+" "+rtrim(NEWID())
 	where
 		trade_id = @notify_trade
 	and
 		source_id = @source_id
-
 commit 
 
 select
