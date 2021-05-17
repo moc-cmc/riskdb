@@ -1,14 +1,12 @@
-drop procedure
-	r_fxnotifications
-go
 
-create procedure
+create or replace procedure
 	r_fxnotifications
 		@login varchar(50),
 		@run_name varchar(50),
 		@begin_date datetime= NULL,
 		@end_date datetime=NULL
 as
+
 
 declare @run_id int
 declare @begin_day_string char(20)
@@ -640,7 +638,8 @@ Update #trades to PROCESSING if trade is NEW, EDIT or DELETE in trade_notificati
 update
         #trades
 set
-        delivery_status = "<span style=""color:black"">PROCESSING</span>"
+        delivery_status = "<span style=""color:black"">PROCESSING</span>",
+	send_as = "FORCE SEND"
 from
         #trades a,
         trade_notifications b,
@@ -882,4 +881,6 @@ order by
 	
 
 
-go
+
+go 
+
