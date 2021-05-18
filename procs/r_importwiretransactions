@@ -4,14 +4,14 @@ create or replace procedure
 		@login varchar(50),
                 @transaction_id varchar(50)=NULL,
 		@office varchar(20)=NULL,
-		@account varchar(50),
-		@currency varchar(3),
-		@amount float,
+		@account varchar(50)=NULL,
+		@currency varchar(3)=NULL,
+		@amount varchar(20)=NULL,
 		@contra_office varchar(50)=NULL,
 		@contra_account varchar(50)=NULL,
 		@contra_currency varchar(50)=NULL,
-		@contra_amount float=NULL,
-		@description varchar(255)
+		@contra_amount varchar(20)=NULL,
+		@description varchar(255)=NULL
 
 as
 
@@ -25,6 +25,12 @@ declare @currency_id int
 declare @contra_currency_id int
 declare @source_id int
 declare @product_type_id int
+declare @amt float
+declare @contra_amt float
+
+select 
+	@amt        = convert(float, @amount),
+	@contra_amt = convert(float, @contra_amount)
 
 select
         @tico_account_id = account_id
@@ -192,9 +198,9 @@ begin tran
 	  	@tico_account_id,
 	  	@external_account_id,
 	  	@transaction_type_id,
-	  	getdate(),
+	  	convert(datetime, convert(date, getdate())),
 	  	@currency_id,
-	  	@amount,
+	  	@amt,
 	  	@transaction_id)
 
 	if @@rowcount != 1
@@ -225,9 +231,9 @@ begin tran
 		@tico_account_id,
 		@contra_account_id,
 		@transaction_type_id,
-		getdate(),
+		convert(datetime, convert(date, getdate())),
 		@contra_currency_id,
-		@contra_amount,
+		@contra_amt,
 		@transaction_id)
 
 	if @@rowcount != 1
