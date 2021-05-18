@@ -185,9 +185,6 @@ values(
 	NULL
 )
 
-
-
-
 insert into
 	#meta
 values(
@@ -235,6 +232,15 @@ values(
         "mark_as",
         "Mark Ops Task",
         NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"import_wire_transactions",
+	"Import Wire Transactions",
+	NULL
 )
 
 select
@@ -493,6 +499,7 @@ order by
 	section desc,
 	ordering
 
+select import_wire_transactions="Import Wire Transactions"
 
 go
 
