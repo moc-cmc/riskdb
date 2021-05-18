@@ -1,0 +1,160 @@
+
+create or replace procedure
+	r_resendnotification
+		@login varchar(50),
+		@run_name varchar(50),
+		@begin_date datetime,
+		@end_date datetime,
+		@notify_trade int,
+		@source varchar(50),
+		@send_as varchar(40)
+as
+
+
+declare @source_id int
+declare @status_id int
+declare @status varchar(50)
+declare @msg varchar(100)
+declare @fund_type varchar(50)
+
+
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(30),
+                action char(200) NULL,
+                value char(255) NULL
+)
+
+insert into
+       #meta
+values(
+       "Column Link",
+       "back",
+       "Run Trade Notifications",
+       NULL
+)
+
+
+insert into
+       #meta
+values(
+       "Column Hidden",
+       "run_name",
+       NULL,
+       NULL
+)
+
+insert into
+       #meta
+values(
+       "Column Hidden",
+       "begin_date",
+       NULL,
+       NULL
+)
+
+insert into
+       #meta
+values(
+       "Column Hidden",
+       "end_date",
+       NULL,
+       NULL
+)
+
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+select
+	@status = name
+from	
+	statuses
+where
+	name = "Held"
+
+exec
+	r_inserttradenotificationscr
+        	@notify_trade,
+                @source,
+		@status
+
+
+if @source = "Email Confirm"
+begin
+	select
+		@source = "Agency Client"
+end
+
+select
+	@source_id = source_id
+from	
+	sources
+where
+	name = @source
+
+if @send_as = "NEW"
+	select
+		@status_id = status_id
+	from		
+		statuses
+	where
+		name = "Active"
+
+if @send_as = "MODIFY"
+        select
+                @status_id = status_id
+        from    
+                statuses
+        where
+                name = "Edit"
+
+if @send_as = "DELETE"
+        select
+                @status_id = status_id
+        from    
+                statuses
+        where
+                name = "Cancelled"
+
+begin tran
+	update
+		trade_notifications
+	set
+		status_id = @status_id,
+		error = "Resend "+ rtrim(@login)+" "+rtrim(NEWID())
+	where
+		trade_id = @notify_trade
+	and
+		source_id = @source_id
+commit 
+
+select
+        @fund_type = a.name
+from
+        fund_types a,
+        funds b
+where
+        a.fund_type_id = b.fund_type_id
+
+if @fund_type != "FX Agency"
+begin
+	select
+		@source = "Email Confirm"
+end
+
+select
+	run_name = @run_name,
+	begin_date = @begin_date,
+	end_date = @end_date,
+	msg = "Successfully queued trade ID  " +  convert(varchar(40), @notify_trade) + " to be sent as " + @send_as + " for source " + @source,
+	back = "Back to Trade Notifications"
+
+
+
+
+go 
+
