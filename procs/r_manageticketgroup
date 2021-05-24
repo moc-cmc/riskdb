@@ -29,10 +29,11 @@ declare @now_date datetime
 declare @new_trade_id int
 declare @new_deal_id int
 
-
 declare @account_status_id int
 declare @readonly_status_id int
 
+declare @edit_status_id int
+declare @sent_status_id int
 
 select
     	@account_status_id = status_id
@@ -63,6 +64,33 @@ begin
 end
 
 
+select
+	@edit_status_id = status_id
+from
+	statuses
+where
+	name = "Edit"
+if @edit_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Can not find 'Edit' status"
+	return
+end
+
+select
+	@sent_status_id = status_id
+from
+	statuses
+where
+	name = "Sent"
+if @sent_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Can not find 'Sent' status"
+	return
+end
 
 
 select
@@ -91,16 +119,33 @@ begin
             deal_id = @deal_id
         return
     end
-    
+ 
+	create table
+		#working_trades(
+			trade_id int,
+			deal_id int
+	)
+	 
+	insert into 
+		#working_trades(
+			trade_id,
+			deal_id)
+	select
+		trade_id,
+		deal_id
+	from
+		trades
+	where
+		deal_id = @deal_id
+		
     begin tran
-    
         insert into
             trade_origin_deals
         select
             a.trade_id,
             a.deal_id
         from
-            trades a
+            #working_trades a
         where
             a.deal_id = @deal_id
         and
@@ -111,13 +156,33 @@ begin
                     trade_origin_deals b
             )
         
-        update
-            trades
-        set
-            deal_id = @group_deal_id
-        where
-            deal_id = @deal_id
-    
+	update
+		trade_notifications
+	set
+		status_id = @edit_status_id
+	from
+		#working_trades a,
+		trade_notifications b,
+		source_edit_settings c
+	where
+		a.trade_id = b.trade_id
+	and
+		b.source_id = c.source_id
+	and
+		b.status_id = @sent_status_id
+	and
+		c.deal_id = "Y"
+
+	update
+		trades
+	set
+		deal_id = @group_deal_id
+	from
+		trades a,
+		#working_trades b
+	where
+		a.trade_id = b.trade_id
+
     commit
     
     
