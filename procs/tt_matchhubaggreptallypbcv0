@@ -1,8 +1,4 @@
-drop procedure
-	tt_matchhubaggreptallypbcv0
-go
-
-create procedure
+create or replace procedure
 	tt_matchhubaggreptallypbcv0
 		@login varchar(50)=NULL,
 		@trade_reporter varchar(50)=NULL,
@@ -280,6 +276,12 @@ if @counterparty = "HUBC2C"
 begin
 	select
 		@c_trader_lookup  = rtrim(@trade_reporter)+"-"+@counterparty
+end
+
+if @counterparty != "HUB" and @counterparty != "HUBC2C"
+begin
+	select
+		@c_trader_lookup = rtrim(@trade_reporter)+"-CPTY"
 end
 	
 
