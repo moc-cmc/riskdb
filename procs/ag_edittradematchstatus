@@ -16,6 +16,7 @@ declare @client_trade_match_id int
 declare @allege_matching_engine_id int
 declare @c2c_matching_engine_id int
 declare @recon_matching_engine_id int
+declare @cpty_matching_engine_id int
 
 declare @client_trade_id int
 declare @booking_id int
@@ -180,6 +181,15 @@ from
 where
         name = rtrim(@matching_engine) +" Recon"
 
+
+/* We will use this if we dont find a match for the matching engine */
+select
+        @cpty_matching_engine_id = matching_engine_id
+from
+        matching_engines
+where
+        name = rtrim(@matching_engine) +" Cpty"
+
 select
 	@match_status_id = match_status_id
 from
@@ -259,12 +269,31 @@ begin
 			end
 			else
 			begin
-				select
-					status = "Error",
-					msg = "Could not find trade_match_id",
-					trade_id = @trade_id_int,
-					matching_engine_id = @matching_engine_id
-				return
+                        	if @cpty_matching_engine_id != NULL
+                        	begin
+                                	select
+                                        	@trade_match_id = trade_match_id
+                                	from
+                                        	trade_matches
+                                	where
+                                        	trade_id = @trade_id_int
+                                	and
+                                        	matching_engine_id = @cpty_matching_engine_id
+                        	end
+                        	if @trade_match_id != NULL
+                        	begin
+                                	select
+                                        	@matching_engine_id = @cpty_matching_engine_id
+                        	end
+				else
+				begin
+					select
+						status = "Error",
+						msg = "Could not find trade_match_id",
+						trade_id = @trade_id_int,
+						matching_engine_id = @matching_engine_id
+					return
+				end
 			end
 		end
 	end
