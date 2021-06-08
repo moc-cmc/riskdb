@@ -140,7 +140,7 @@ begin
 		@mfa_phone_number = "+" + rtrim(@mfa_phone_number)
 end
 
-if len(@mfa_phone_number) < 12
+if len(@mfa_phone_number) < 10
 begin
 	select
 		status = "Error",
