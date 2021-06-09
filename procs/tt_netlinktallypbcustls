@@ -263,6 +263,40 @@ select
 	@c_tally_quantity = abs(convert(numeric(30, 8), @traded_amount_near)) * -1
 
 /* --------------------------------------------------------------------------
+ * STEP: Custom MXNJPY conversion 
+ * Netlink / Traiana consider JPYMXN the standard pair instead of MXNJPY so 
+ * when we receive aggregates back from Netlink for that cross, we need to 
+ * unwind the logic at Netlink and re-assign some variables
+ *
+ * https://ghe.mptracker.com/elysium/riskdb/issues/258
+ */
+
+if @counter_ccy = "MXN" and @traded_ccy="JPY"
+begin
+	select
+		@m_tally_quantity = abs(convert(numeric(30, 8), @counter_amount_near)), /* MXN amount */
+		@c_tally_quantity = abs(convert(numeric(30, 8), @counter_amount_near)) * -1, /* JPY amount */
+		@traded_ccy = "MXN",
+		@counter_ccy = "JPY"
+
+	/* since we're flipping counter and traded amounts, flip direction. We could have done this
+         * above with setting the quantity * -1 but this is more explicit
+         */
+	if @direction = "BUY"
+	begin
+		select
+			@direction = "SELL"
+	end
+	else
+	begin
+		select
+			@direction = "BUY"
+	end
+end
+
+
+
+/* --------------------------------------------------------------------------
  * STEP: Set broker_id and source_id
  * Broker and source should be passed in via the the fix engine
  * There should always be a broker and source specified. These are
