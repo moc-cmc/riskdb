@@ -21,7 +21,8 @@ create or replace procedure
 		@premium_amt varchar(50)=NULL,
 		@value_date varchar(50)=NULL,
 		@settle_date varchar(50)=NULL,
-		@cut_time varchar(25)=NULL
+		@cut_time varchar(25)=NULL,
+		@terms varchar(25)=NULL
 
 as
 
@@ -213,6 +214,9 @@ declare @c_far_tally_message varchar(25)
 declare @single_ticket varchar(10)
 
 declare @c_status varchar(50)
+
+declare @terms_symbol varchar(10)
+declare @flip_price char(1)
 
 
 if @prod_type = "MADJ"
@@ -802,6 +806,33 @@ begin
 	end
 end
 
+/* --------------------------------------------------------------------------
+ * STEP: Determine the price terms - this is custom for spectrum
+ *
+ */
+select
+	@terms_symbol = rtrim(substring(@terms, 1, 3))+rtrim(substring(@terms, 5, 7)) /* EUR/USD -> EURUSD */
+
+select
+	@flip_price = "N"
+from
+	contracts a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+and
+	a.symbol = @terms_symbol
+
+if @flip_price != "N"
+begin
+	select
+		@tally_price = 1/@tally_price
+end
 
 
 /* NOTE: Options wont use the above info for symbol or contract or anything*/
