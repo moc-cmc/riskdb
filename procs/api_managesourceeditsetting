@@ -1,0 +1,352 @@
+create or replace procedure
+	api_managesourceeditsetting
+		@login varchar(50),
+		@source varchar(50),
+		@deal_id char(1)=NULL,
+		@user_id char(1)=NULL,
+		@internal_account char(1)=NULL,
+		@external_account char(1)=NULL,
+		@counterparty char(1)=NULL,
+		@quantity char(1)=NULL,
+		@contract char(1)=NULL,
+		@trade_date char(1)=NULL,
+		@value_date char(1)=NULL,
+		@fixing_date char(1)=NULL,
+		@price char(1)=NULL,
+		@trader char(1)=NULL,
+		@strategy char(1)=NULL,
+		@status char(1)=NULL,
+		@broker char(1)=NULL,
+		@sales_code char(1)=NULL,
+		@identifier char(1)=NULL,
+		@pct_price char(1)=NULL,
+		@spot_reference char(1)=NULL
+	
+
+as
+
+
+
+declare @orig_deal_id char(1)
+declare @orig_user_id char(1)
+declare @orig_internal_account char(1)
+declare @orig_external_account char(1)
+declare @orig_counterparty char(1)
+declare @orig_quantity char(1)
+declare @orig_contract char(1)
+declare @orig_trade_date char(1)
+declare @orig_value_date char(1)
+declare @orig_fixing_date char(1)
+declare @orig_price char(1)
+declare @orig_trader char(1)
+declare @orig_strategy char(1)
+declare @orig_status char(1)
+declare @orig_broker char(1)
+declare @orig_sales_code char(1)
+declare @orig_identifier char(1)
+declare @orig_pct_price char(1)
+declare @orig_spot_reference char(1)
+declare @tico_account_id int
+declare @source_id int
+declare @action varchar(4)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source from provided",
+		provided = @source
+	return
+end
+
+
+if @deal_id = NULL 
+	and @user_id = NULL
+	and @internal_account = NULL
+	and @external_account = NULL
+	and @counterparty = NULL
+	and @quantity = NULL
+	and @contract = NULL
+	and @trade_date = NULL
+	and @value_date = NULL
+	and @fixing_date = NULL
+	and @price = NULL
+	and @trader = NULL
+	and @strategy = NULL
+	and @status = NULL
+	and @broker = NULL
+	and @sales_code = NULL
+	and @identifier = NULL
+	and @pct_price = NULL
+	and @spot_reference = NULL
+begin
+	select
+		status = "Error",
+		messasge = "Must provide an edit qualifier to add or edit"
+	return
+end
+
+if @deal_id not in(NULL, "Y", "N")
+	or @user_id not in(NULL, "Y", "N")
+	or @internal_account not in(NULL, "Y", "N")
+	or @external_account not in(NULL, "Y", "N")
+	or @counterparty not in(NULL, "Y", "N")
+	or @quantity not in(NULL, "Y", "N")
+	or @contract not in(NULL, "Y", "N")
+	or @trade_date not in(NULL, "Y", "N")
+	or @value_date not in(NULL, "Y", "N")
+	or @fixing_date not in(NULL, "Y", "N")
+	or @price not in(NULL, "Y", "N")
+	or @trader not in(NULL, "Y", "N")
+	or @strategy not in(NULL, "Y", "N")
+	or @status not in(NULL, "Y", "N")
+	or @broker not in(NULL, "Y", "N")
+	or @sales_code not in(NULL, "Y", "N")
+	or @identifier not in(NULL, "Y", "N")
+	or @pct_price not in(NULL, "Y", "N")
+	or @spot_reference not in(NULL, "Y", "N")
+begin
+	select
+		status = "Error",
+		messasge = "Must provide values as 'Y', 'N', or NULL (empty)"
+	return
+end
+
+select
+	@orig_deal_id = deal_id,
+	@orig_user_id = user_id,
+	@orig_internal_account = internal_account,
+	@orig_external_account = external_account,
+	@orig_counterparty = counterparty,
+	@orig_quantity = quantity,
+	@orig_contract = contract,
+	@orig_trade_date = trade_date,
+	@orig_value_date = value_date,
+	@orig_fixing_date = fixing_date,
+	@orig_price = price,
+	@orig_trader = trader,
+	@orig_strategy = strategy,
+	@orig_status = status,
+	@orig_broker = broker,
+	@orig_sales_code = sales_code,
+	@orig_identifier = identifier,
+	@orig_pct_price = pct_price,
+	@orig_spot_reference = spot_reference
+from
+	source_edit_settings
+where
+	source_id = @source_id
+if @@rowcount = 0
+begin
+	select
+		@action = "Add"
+end
+else
+begin
+	select
+		@action = "Edit"
+end
+
+
+if @deal_id = NULL
+        select
+                @deal_id = @orig_deal_id
+
+if @user_id = NULL
+        select
+                @user_id = @orig_user_id
+
+if @internal_account = NULL
+        select
+                @internal_account = @orig_internal_account
+
+if @external_account = NULL
+        select
+                @external_account = @orig_external_account
+
+if @counterparty = NULL
+        select
+                @counterparty = @orig_counterparty
+
+if @quantity = NULL
+        select
+                @quantity = @orig_quantity
+
+if @contract = NULL
+        select
+                @contract = @orig_contract
+
+if @trade_date = NULL
+        select
+                @trade_date = @orig_trade_date
+
+if @value_date = NULL
+        select
+                @value_date = @orig_value_date
+
+if @fixing_date = NULL
+        select
+                @fixing_date = @orig_fixing_date
+
+if @price = NULL
+        select
+                @price = @orig_price
+
+if @trader = NULL
+        select
+                @trader = @orig_trader
+
+if @strategy = NULL
+        select
+                @strategy = @orig_strategy
+
+if @status = NULL
+        select
+                @status = @orig_status
+
+if @broker = NULL
+        select
+                @broker = @orig_broker
+
+if @sales_code = NULL
+        select
+                @sales_code = @orig_sales_code
+
+if @identifier = NULL
+        select
+                @identifier = @orig_identifier
+
+if @pct_price = NULL
+        select
+                @pct_price = @orig_pct_price
+
+if @spot_reference  = NULL
+        select
+                @spot_reference = @orig_spot_reference
+
+
+if @action = "Add"
+begin
+	insert into
+		source_edit_settings(
+			source_id,
+			deal_id,
+			user_id,
+			internal_account,
+			external_account,
+			counterparty,
+			quantity,
+			contract,
+			trade_date,
+			value_date,
+			fixing_date,
+			price,
+			trader,
+			strategy,
+			status,
+			broker,
+			sales_code,
+			identifier,
+			pct_price,
+			spot_reference)
+	values(
+		@source_id,
+		@deal_id,
+		@user_id,
+		@internal_account,
+		@external_account,
+		@counterparty,
+		@quantity,
+		@contract,
+		@trade_date,
+		@value_date,
+		@fixing_date,
+		@price,
+		@trader,
+		@strategy,
+		@status,
+		@broker,
+		@sales_code,
+		@identifier,
+		@pct_price,
+		@spot_reference
+	)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding edit settings for source",
+			provided = @source
+		return
+	end
+end
+
+if @action = "Edit"
+begin
+	begin tran
+		update
+			source_edit_settings
+		set
+			deal_id = @deal_id,
+			user_id = @user_id,
+			internal_account = @internal_account,
+			external_account = @external_account,
+			counterparty = @counterparty,
+			quantity = @quantity,
+			contract = @contract,
+			trade_date = @trade_date,
+			value_date = @value_date,
+			fixing_date = @fixing_date,
+			price = @price,
+			trader = @trader,
+			strategy = @strategy,
+			status = @status,
+			broker = @broker,
+			sales_code = @sales_code,
+			identifier = @identifier,
+			pct_price = @pct_price,
+			spot_reference = @spot_reference
+		where
+			source_id = @source_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem updating single source setting for source",
+				provided = @source
+			rollback tran
+			return
+		end
+	commit tran
+end
+
+select
+	status = "OK",
+	message = "Successfuly saved edit settings for source",
+	action = @action,
+	source = @source
+
+
+
+go
+
