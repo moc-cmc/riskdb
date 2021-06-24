@@ -1,0 +1,207 @@
+
+create or replace procedure
+	ag_fxlaffirmations
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @tico_account_id int
+declare @admin_level int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @source_id int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"reporting_type",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"fxl_affirmations",
+	"FXL Affirmations For Date",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"enable_user",
+	"Enable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"disable_user",
+	"Disable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_admin_user",
+	"Add Approval User",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "FXL Affirmation"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "FXL Affirmation source not found"
+	return
+end
+
+select
+	fxl_affirmations = "Change Date"
+
+select
+	section = "By Trade Date",
+	style = @style,
+	a.trade_date,
+	a.trade_id,
+	external_account = b.symbol,
+	a.identifier,
+	c.notify_date
+from
+	trades a,
+	external_accounts b,
+	trade_notifications c
+where
+	a.trade_id = c.trade_id
+and
+	a.external_account_id = b.external_account_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	c.source_id = @source_id
+order by
+	a.trade_date,
+	a.trade_id
+
+
+
+select
+	section = "By Notify Date",
+	style = @style,
+	a.trade_date,
+	a.trade_id,
+	external_account = b.symbol,
+	a.identifier,
+	c.notify_date
+from
+	trades a,
+	external_accounts b,
+	trade_notifications c
+where
+	a.trade_id = c.trade_id
+and
+	a.external_account_id = b.external_account_id
+and
+	c.notify_date >= @begin_date
+and
+	c.notify_date < @end_date
+and
+	c.source_id = @source_id
+order by
+	a.trade_date,
+	a.trade_id
+
+
+
+
+go 
+
