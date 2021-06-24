@@ -153,11 +153,14 @@ select
 	a.trade_id,
 	external_account = b.symbol,
 	a.identifier,
-	c.notify_date
+	c.notify_date,
+	e.login
 from
 	trades a,
 	external_accounts b,
-	trade_notifications c
+	trade_notifications c,
+	affirmation_log d,
+	tico_accounts e
 where
 	a.trade_id = c.trade_id
 and
@@ -168,6 +171,11 @@ and
 	a.trade_date < @end_date
 and
 	c.source_id = @source_id
+and
+	a.trade_id=d.trade_id
+and
+	d.tico_account_id=e.account_id
+
 order by
 	a.trade_date,
 	a.trade_id
@@ -181,11 +189,14 @@ select
 	a.trade_id,
 	external_account = b.symbol,
 	a.identifier,
-	c.notify_date
+	c.notify_date,
+	e.login
 from
 	trades a,
 	external_accounts b,
-	trade_notifications c
+	trade_notifications c,
+	affirmation_log d,
+        tico_accounts e
 where
 	a.trade_id = c.trade_id
 and
@@ -196,6 +207,10 @@ and
 	c.notify_date < @end_date
 and
 	c.source_id = @source_id
+and
+	a.trade_id=d.trade_id
+and
+	d.tico_account_id=e.account_id
 order by
 	a.trade_date,
 	a.trade_id
