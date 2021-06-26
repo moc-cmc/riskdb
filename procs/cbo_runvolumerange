@@ -363,7 +363,7 @@ insert into
                 bo_trade_date,
 		evaluation_currency_id)
 select
-	a.trade_id,
+	b.daily_trade_net_id,
 	b.contract_id,
 	b.broker_id,
 	b.counterparty_id,
@@ -371,12 +371,11 @@ select
 	b.trader_id,
 	b.trade_type_id,
 	abs(b.quantity),
-	a.volume,
-	a.volume_date,
+	b.volume,
+	b.trade_date,
 	@evaluation_currency_id
 from
-	trade_volumes a,
-	trades b,
+	daily_trade_nets b,
 	#external_accounts c,
 	#internal_accounts d,
 	#traders e,
@@ -384,8 +383,6 @@ from
 	#brokers g,
 	#counterparties h
 where
-	a.trade_id = b.trade_id
-and
 	b.external_account_id = c.external_account_id
 and
 	b.internal_account_id = d.internal_account_id
@@ -398,11 +395,9 @@ and
 and
 	b.counterparty_id = h.counterparty_id
 and
-	a.volume_date >= @start_date
+	b.trade_date >= @start_date
 and
-	a.volume_date < @stop_date
-and
-	a.product_id = @evaluation_currency_id
+	b.trade_date < @stop_date
 
 update
 	#trades
