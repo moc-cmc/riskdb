@@ -694,6 +694,46 @@ end
 
 
 create table
+	#trade_type(
+		trade_type varchar(50),
+		trade_count float NULL,
+		volume float NULL)
+insert into
+	#trade_type
+select
+	a.name,
+	trade_count = count(*),
+	volume = sum(b.volume)
+from
+	trade_types a,
+	#trades b
+where
+	a.trade_type_id = b.trade_type_id
+group by
+	a.name
+order by
+	a.name
+
+select
+	@total_volume = sum(volume),
+	@trade_count = sum(trade_count)
+from
+	#trade_type
+insert into
+	#trade_type
+values(
+	"Total",
+	@trade_count,
+	@total_volume)
+
+select
+	section="Trade Type Volume",
+	* 
+from 
+	#trade_type
+
+
+create table
 	#contract(
 		symbol varchar(50),
 		trade_count float NULL,
@@ -735,7 +775,11 @@ values(
 	@total_notional_volume,
 	@total_volume)
 
-select * from #contract
+select 
+	section="Contract Volume",
+	*
+from 
+	#contract
 
 create table
 	#broker(
@@ -770,7 +814,11 @@ values(
 	@trade_count,
 	@total_volume)
 
-select * from #broker
+select 
+	section="Platform Volume",
+	* 
+from 
+	#broker
 
 
 create table
@@ -819,7 +867,11 @@ values(
 	@avg_ticket_size,
         @total_volume)
 
-select * from #external_account
+select 
+	section="Account Volume",
+	* 
+from 
+	#external_account
 	
 
 create table
@@ -871,7 +923,11 @@ values(
 	@avg_ticket_size,
 	@total_volume)
 
-select * from #counterparty
+select 
+	section="Counterparty Volume",
+	* 
+from 
+	#counterparty
 
 create table
         #trader(
@@ -921,42 +977,11 @@ values(
 	@avg_ticket_size,
         @total_volume)
 
-select * from #trader
-
-create table
-	#trade_type(
-		trade_type varchar(50),
-		trade_count float NULL,
-		volume float NULL)
-insert into
-	#trade_type
-select
-	a.name,
-	trade_count = count(*),
-	volume = sum(b.volume)
+select 
+	section="Trader Volume",
+	* 
 from
-	trade_types a,
-	#trades b
-where
-	a.trade_type_id = b.trade_type_id
-group by
-	a.name
-order by
-	a.name
-
-select
-	@total_volume = sum(volume),
-	@trade_count = sum(trade_count)
-from
-	#trade_type
-insert into
-	#trade_type
-values(
-	"Total",
-	@trade_count,
-	@total_volume)
-
-select * from #trade_type
+	#trader
 
 create table
         #contract_trade_type(
@@ -1007,7 +1032,11 @@ values(
         @total_notional_volume,
         @total_volume)
 
-select * from #contract_trade_type
+select 
+	section = "Contract Trade Type Volume",
+	* 
+from
+	#contract_trade_type
 
 
 create table
@@ -1071,7 +1100,11 @@ values(
 	NULL,
         @total_volume)
 
-select * from #contract_trade_type_td
+select 
+	section = "Daily Historical Volume",
+	* 
+from 
+	#contract_trade_type_td
 
 /*select * from #trades*/
 
