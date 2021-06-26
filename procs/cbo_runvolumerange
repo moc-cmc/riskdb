@@ -343,7 +343,8 @@ create table
 		product_id int NULL,
 		evaluation_currency_id int NULL,
 		evaluation_contract_id int NULL,
-		evaluation_settle float NULL)
+		evaluation_settle float NULL,
+		trade_count int NULL)
 
 
 /*
@@ -361,7 +362,8 @@ insert into
 		notional_volume,
 		volume,
                 bo_trade_date,
-		evaluation_currency_id)
+		evaluation_currency_id,
+		trade_count)
 select
 	b.daily_trade_net_id,
 	b.contract_id,
@@ -373,7 +375,8 @@ select
 	abs(b.quantity),
 	b.volume,
 	b.trade_date,
-	@evaluation_currency_id
+	@evaluation_currency_id,
+	b.trade_count
 from
 	daily_trade_nets b,
 	#external_accounts c,
@@ -702,7 +705,7 @@ insert into
 	#trade_type
 select
 	a.name,
-	trade_count = count(*),
+	trade_count = sum(b.trade_count),
 	volume = sum(b.volume)
 from
 	trade_types a,
@@ -745,7 +748,7 @@ insert into
 	#contract
 select
 	a.symbol,
-	trade_count = count(*),
+	trade_count = sum(b.trade_count),
 	native_volume=sum(b.notional_volume),
 	volume = sum(b.volume)
 from
@@ -790,7 +793,7 @@ insert into
 	#broker
 select
 	a.symbol,
-	trade_count = count(*),
+	trade_count = sum(b.trade_count),
 	volume = sum(b.volume)
 from
 	brokers a,
@@ -831,7 +834,7 @@ insert into
 	#external_account
 select
 	external_account=a.symbol,
-	trade_count = count(*),
+	trade_count = sum(b.trade_count),
 	NULL,
 	volume = sum(b.volume)
 from
@@ -884,7 +887,7 @@ insert into
 	#counterparty
 select
 	a.name,
-	trade_count = count(*),
+	trade_count = sum(b.trade_count),
 	NULL,
 	volume = sum(b.volume)
 from
@@ -939,7 +942,7 @@ insert into
         #trader
 select
         trader=a.symbol,
-	trade_count = count(*),
+	trade_count = sum(b.trade_count),
 	NULL,
         volume = sum(b.volume)
 from
@@ -995,7 +998,7 @@ insert into
 select
 	c.symbol,
         a.name,
-	trade_count = count(*),
+	trade_count = sum(b.trade_count),
 	native_volume=sum(b.notional_volume),
         volume = sum(b.volume)
 from
@@ -1018,8 +1021,7 @@ select
 
 select
         @total_volume = sum(volume),
-	@trade_count = sum(trade_count),
-        @total_notional_volume = sum(native_volume)
+	@trade_count = sum(trade_count)
 from
         #contract_trade_type
 
@@ -1029,7 +1031,7 @@ values(
         "Total",
 	"",
 	@trade_count,
-        @total_notional_volume,
+        NULL,
         @total_volume)
 
 select 
@@ -1055,7 +1057,7 @@ select
 	convert(varchar(11), b.bo_trade_date, 100),
         c.symbol,
         a.name,
-	trade_count = count(*),
+	trade_count = sum(b.trade_count),
         native_volume=sum(b.notional_volume),
         d.symbol,
 	b.evaluation_settle,
@@ -1083,8 +1085,7 @@ select
 
 select
         @total_volume = sum(volume),
-	@trade_count = sum(trade_count),
-        @total_notional_volume = sum(native_volume)
+	@trade_count = sum(trade_count)
 from
         #contract_trade_type_td
 
@@ -1095,7 +1096,7 @@ values(
         "",
 	"",
 	@trade_count,
-        @total_notional_volume,
+        NULL,
 	NULL,
 	NULL,
         @total_volume)
