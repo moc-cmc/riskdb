@@ -110,5 +110,25 @@ and
         d.trade_date < @end_date
 group by
 	a.source_name
+UNION
+select
+	client = "Edgewater "+rtrim(@month)+" "+rtrim(@year)+" - EmailBlock3000",
+	tickets = count(*),
+	billable = case when count(*) - 3000 < 0 then 0.0 else -1 end
+from
+	trades a,
+	trade_notifications b,
+	sources c
+where
+	a.trade_id = b.trade_id
+and
+	b.source_id = c.source_id
+and
+	c.name = "Agency Client"
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+
 
 go
