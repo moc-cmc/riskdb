@@ -110,7 +110,8 @@ select
 	@tally_quantity = convert(float, @quantity),
 	@value_date = convert(datetime, @valuedate),
 	@trade_date = convert(datetime, @orderdate),
-	@fixing_date = NULL
+	@fixing_date = NULL,
+	@platform_identifier = NULL
 
 /* --------------------------------------------------------------------------
  * STEP: Set broker_id and source_id
@@ -181,7 +182,7 @@ end
 if @client_or_market = "C"
 begin
 	select
-		@platform_identifier = rtrim(@ticket)+rtrim(@id)+".c",
+		@platform_identifier = rtrim(@ticket)+rtrim(@accountnumber)+".c",
 		@deal_exec_symbol = rtrim(@ticket)+convert(varchar(8), @trade_date, 112)
 
 	select
@@ -199,7 +200,7 @@ end
 else /* @client_or_market = "M" */
 begin
         select
-		@platform_identifier = rtrim(@ticket)+rtrim(@id)+".m",
+		@platform_identifier = rtrim(@ticket)+rtrim(@accountnumber)+".m",
 		@deal_exec_symbol = rtrim(@ticket)+convert(varchar(8), @trade_date, 112)
 
 	select
