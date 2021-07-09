@@ -120,11 +120,17 @@ where
 and
 	a.trade_id >= @min_trade_id
 
+create table
+	#max_affirmations(
+		trade_id int,
+		latest_affirm datetime
+)
 
-update 
-	#trades
-set
-        affirm_date = max(b.affirm_date)
+insert into
+	#max_affirmations
+select
+	a.trade_id,
+	max(b.affirm_date)
 from
 	#trades a,
 	affirmation_log b
@@ -132,6 +138,18 @@ where
 	a.trade_id = b.trade_id
 and
 	b.trade_id >= @min_trade_id
+group by
+	a.trade_id
+
+update
+	#trades
+set
+	affirm_date = b.latest_affirm
+from
+	#trades a,
+	#max_affirmations b
+where
+	a.trade_id = b.trade_id
 select
 	@notified = convert(varchar(10), @@rowcount)
 
@@ -181,7 +199,7 @@ and
 select
 	trade_id,
 	affirmation_status="Matched",
-	affirm_date,
+	affirm_date = dbo.f_easterntoutc(affirm_date),
 	trade_notification_id,
 	tnum,
 	snum,
