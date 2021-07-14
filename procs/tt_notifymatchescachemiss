@@ -254,6 +254,19 @@ from
 	#trades
 
 
+select
+	"type" = "trmx",
+	"id" = a.trade_match_id,
+	"trid" = a.trade_id,
+	"mxe6id" = a.matching_engine_id,
+	"mxstid" = a.match_status_id
+from
+	trade_matches a,
+	#trades b
+where
+	a.trade_id = b.trade_id
+
+	
 create table
 	#deals(
 		deal_id int
