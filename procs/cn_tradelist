@@ -203,6 +203,7 @@ if @@rowcount = 0
 		internal_account_id
 	from
 		internal_accounts
+
 create table
 	#brokers(
 		broker_id int)
@@ -309,7 +310,6 @@ and
 	a.trade_date >= @begin_date
 and
 	a.trade_date <= @end_date
-
 
 update
 	#trades
