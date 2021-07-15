@@ -9,8 +9,10 @@ declare @source_id int
 declare @prime_broker_id int
 declare @external_account_id int
 declare @run_id int
-declare @ext_acct_symbol varchar(50)
 declare @pb_symbols int
+declare @pb_accounts int
+declare @deleted_eapbs int
+declare @ext_acct_symbol varchar(50)
 
 select
 	@source_id = source_id
@@ -63,6 +65,12 @@ from
 where
 	prime_broker_id = @prime_broker_id
 
+select
+	@pb_accounts = count(*)
+from
+	#prime_broker_ext_accounts
+
+select * from #prime_broker_ext_accounts
 
 
 if exists (select prime_broker_id from external_account_prime_brokers where prime_broker_id=@prime_broker_id and external_account_id != @external_account_id)
@@ -132,16 +140,7 @@ begin tran
 		external_account_prime_brokers
 	where
 		prime_broker_id = @prime_broker_id
-	if @@rowcount != (select count(*) from #prime_broker_ext_accounts)
-	begin
-		select
-			status = "Error",
-			message = "Problem deleting ext acct pbs for prime broker",
-			prime_broker = @name
 
-		rollback tran
-		return
-	end
 
 	select
 		@pb_symbols = count(*)
