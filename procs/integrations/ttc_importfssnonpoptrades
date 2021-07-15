@@ -362,18 +362,14 @@ end
 
 if @bank = NULL and @snum = "1"
 begin
+	select
+		@bank = "JEFF EB"
+
+	/* keeping the above CORP analysis in case we need to change NULL case later */
 	if @trader = "CORP"
 	begin
 		select
 			@bank = "JEFF EB"
-	end
-	else
-	begin
-        	select
-                	status = "Error",
-                	error = "Error",
-                	message = "bank should never be NULL on option exercise"
-        	return
 	end
 end
 

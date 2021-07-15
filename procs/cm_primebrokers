@@ -263,7 +263,7 @@ select
 	/* trades,
 	account_transactions,
 	external_accounts, */
-	delete_pb,
+	/*delete_pb,*/
 	style	
 from
 	#primes

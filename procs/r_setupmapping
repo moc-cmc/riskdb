@@ -211,6 +211,14 @@ values(
         "Sources List",
         NULL)
 
+insert into 
+	#meta
+values(
+	"Column Link",
+	"prime_broker_list",
+	"Prime Brokers",
+	NULL)
+
 insert into
         #meta
 values(
@@ -435,6 +443,7 @@ begin
 		broker_list="Broker List", 
 		strategy_list = "Strategy List",
 		sources_list = "Sources List",
+		prime_broker_list = "Prime Brokers List",
 		perspective_contracts = "Perspective Contracts",
 		tkt_creation_values = "Ticket Creation Values",
 	        notifications = "Source Notifications",

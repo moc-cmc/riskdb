@@ -9,6 +9,9 @@ declare @source_id int
 declare @prime_broker_id int
 declare @external_account_id int
 declare @run_id int
+declare @pb_symbols int
+declare @pb_accounts int
+declare @deleted_eapbs int
 declare @ext_acct_symbol varchar(50)
 
 select
@@ -46,34 +49,42 @@ begin
 	return
 end
 
+create table
+	#prime_broker_ext_accounts(
+		prime_broker_id int,
+		external_account_id int
+)
+
+insert into
+	#prime_broker_ext_accounts
 select
-	@ext_acct_symbol = symbol
+	prime_broker_id,
+	external_account_id
 from
-	external_accounts
+	external_account_prime_brokers 
 where
-	external_account_id = @external_account_id
+	prime_broker_id = @prime_broker_id
 
-if @@rowcount !=1
-begin
-	select
-		status="Warning",
-		message="Cannot locate external account..continuing delete",
-		external_account_id=@external_account_id
+select
+	@pb_accounts = count(*)
+from
+	#prime_broker_ext_accounts
 
-end
+select * from #prime_broker_ext_accounts
+
 
 if exists (select prime_broker_id from external_account_prime_brokers where prime_broker_id=@prime_broker_id and external_account_id != @external_account_id)
 begin
 
 	select
 		status="Warning",
-		message="Cannot delete, external account prime brokers exists for prime broker",
-		prime_broker=@name	
+		message="Cannot delete, external account prime brokers exists for prime broker. Delete accounts individually first",
+		prime_broker=@name
 
 	return
 end
 
-if exists (select trade_id from trades where external_account_id=@external_account_id)
+if exists (select trade_id from trades where external_account_id in(select external_account_id from #prime_broker_ext_accounts))
 begin
 	select
 		status="Warning",
@@ -83,7 +94,7 @@ begin
 	return
 end
 
-if exists (select account_transaction_id from account_transactions where external_account_id=@external_account_id)
+if exists (select account_transaction_id from account_transactions where  external_account_id in(select external_account_id from #prime_broker_ext_accounts))
 begin
 	select
 		status="Warning",
@@ -93,18 +104,26 @@ begin
 	return
 end
 
-exec
+select
+	@ext_acct_symbol = symbol
+from
+	external_accounts
+where
+	external_account_id = @external_account_id
+if @ext_acct_symbol != NULL
+begin
+	exec
                 api_delexternalaccount
                                 @login,
                                 @ext_acct_symbol
+end
 
 begin tran
 
 	delete from
 		prime_brokers
 	where
-		source_id=@source_id
-
+		prime_broker_id = @prime_broker_id
 	if @@rowcount != 1
 	begin
 		select
@@ -114,6 +133,34 @@ begin tran
 
 		rollback tran
 
+		return
+	end
+
+	delete from
+		external_account_prime_brokers
+	where
+		prime_broker_id = @prime_broker_id
+
+
+	select
+		@pb_symbols = count(*)
+	from
+		prime_broker_symbols
+	where
+		prime_broker_id = @prime_broker_id
+		
+	delete from
+		prime_broker_symbols
+	where 
+		prime_broker_id = @prime_broker_id
+	if @@rowcount != @pb_symbols
+	begin
+		select
+			status = "Error",
+			message = "Problem deleting prime_broker_symbols for prime broker",
+			prime_broker = @name
+
+		rollback tran
 		return
 	end
 
