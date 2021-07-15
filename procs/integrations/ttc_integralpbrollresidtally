@@ -16,7 +16,8 @@ create or replace procedure
                 @ccy1 varchar(50)=NULL,
                 @ccy2 varchar(50)=NULL,
                 @qty float,
-		@counter_qty float=NULL,
+		@qty2 float,
+                @counter_qty float=NULL,
                 @price float,
 		@last_spot_rate float=NULL,
                 @side varchar(10),
@@ -765,13 +766,18 @@ end
 
 if @far_price != NULL
 begin
+
 	/* perspective is in far leg */
-        select
-                @far_quantity = @quantity
-	select
-		@quantity = @quantity * -1.0
-	
-				
+	/* qty2 always starts out > 0 */
+
+	if (@quantity < 0)
+		select
+			@far_quantity = @qty2 * -1
+	else
+		select
+			@far_quantity = @qty2
+
+	select @quantity = @quantity * -1	 
 end
 	
 
