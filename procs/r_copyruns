@@ -1,0 +1,122 @@
+
+
+create or replace procedure
+	r_copyruns
+		@login varchar(25),
+		@from_user varchar(25),
+		@to_user varchar(25)
+
+as
+
+declare @user1_id int
+declare @user2_id int
+declare @num_runs int
+declare @to_num_runs int
+
+select
+	@user1_id = account_id
+from
+	tico_accounts
+where
+	login=@from_user
+
+if @@rowcount !=1
+begin
+	select
+		status="Error",
+		message="From User login does not exist",
+		from_user=@from_user
+
+	return
+end
+
+select
+	@user2_id = account_id
+from
+	tico_accounts
+where
+	login=@to_user
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="To User Login does not exist",
+		to_user=@to_user
+
+	return
+end
+
+select
+	@to_num_runs=count(*)
+from
+	user_runs
+where
+	tico_account_id=@user2_id
+
+if @to_num_runs > 0
+begin
+	select
+		status="Error",
+		message="To User Login already has runs",
+		to_user=@to_user
+
+	return
+end
+
+select
+	@num_runs=count(*) 
+from
+	user_runs
+where
+	tico_account_id=@user1_id
+
+if @num_runs = 0
+begin
+	select
+		status="Warning",
+		message="No runs to copy for user",
+		from_user=@from_user
+
+	return
+end
+
+begin tran
+	
+	insert into
+		user_runs
+	select
+		@user2_id,
+		run_id
+	from
+		user_runs
+	where
+		tico_account_id=@user1_id
+
+	if @@rowcount != @num_runs
+	begin
+		select
+			status="Error",
+			message="Could not copy runs",
+			users=@from_user + " " + @to_user
+
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status="Success",
+	message=convert(varchar(4), @num_runs) + " copied from " + @from_user + " to " + @to_user,
+	users=@from_user + " " + @to_user
+
+
+exec 
+	cm_myruns @login
+
+return
+
+go
+
+	

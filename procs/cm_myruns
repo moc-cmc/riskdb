@@ -68,6 +68,15 @@ values(
         NULL,
         NULL)
 
+insert into 
+	#links
+values(
+	"Column Link",
+	"copy_runs",
+	"Copy Runs",
+	NULL,
+	NULL)
+
 --Adaptive Server has expanded all '*' elements in the following statement
 
 
@@ -75,7 +84,8 @@ select #links.meta_type, #links.column, #links.link, #links.arguments, #links.fo
 
 select
 	create_run = "CREATE NEW RUN",
-	manage_access = "MANAGE ACCESS"
+	manage_access = "MANAGE ACCESS",
+	copy_runs = "COPY RUNS"
 
 create table
 	#output(
