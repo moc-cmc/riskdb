@@ -6,7 +6,8 @@ create procedure
 	uat_createforwardtradeionlp
 		@login varchar(50),
 		@symbol varchar(50),
-		@price numeric(30,8)
+		@price numeric(30,8),
+		@fixing_date datetime=NULL
 as
 
 declare @trade_id int
@@ -24,7 +25,6 @@ declare @source_id int
 declare @non_deliverable int
 declare @product_id int
 declare @currency_id int
-declare @fixing_date datetime
 declare @identifier varchar(100)
 declare @traders int
 declare @counterparties int
@@ -131,14 +131,31 @@ exec
 select
 	@value_date = dateadd(week, 4, convert(datetime, convert(date, @end_date)))
 
-	
-if @non_deliverable > 0
-	exec
-		r_prevbusinessday
-			@value_date,
-			@fixing_date output
+if @symbol like "%RUB%" and @fixing_date = NULL
+begin
+	select
+		@non_deliverable = 0
+end
 
-		
+if @non_deliverable > 0
+begin
+	if @fixing_date = NULL
+	begin
+		exec
+			r_prevbusinessday
+				@value_date,
+				@fixing_date output
+	end
+	if @fixing_date <= @value_date
+	begin
+		select
+			status = "Error",
+			message = "Can not provide a fixing date less than or equal to the value date"
+	end
+end	
+
+
+	
 
 select
 	@quan = convert(int, rand() * 20.0)
