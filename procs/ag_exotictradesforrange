@@ -752,7 +752,7 @@ select
 	section = "Exotic Trades",
 	trade_id,
 	deal_id,
-        trade_day = rtrim(convert(varchar(10), trade_day, 112)),
+        trade_day,
 	prime_broker,
         vs_counterparty=agency_vs_counterparty,
 	/*external_account,
@@ -785,7 +785,8 @@ select
 	e_ud,     /* up or down barrier */
 	window_start = e_ws,
 	window_end = e_we,
-	note = note
+	note = note,
+	style = @style
 from
         #trades
 where
@@ -799,7 +800,7 @@ select
         section = "Cancels",
         trade_id,
         deal_id,
-        trade_day = rtrim(convert(varchar(10), trade_day, 112)),
+        trade_day,
         prime_broker,
         vs_counterparty=agency_vs_counterparty,
         /*external_account,
@@ -832,7 +833,8 @@ select
         e_ud,     /* up or down barrier */
         window_start = e_ws,
         window_end = e_we,
-        note = note
+        note = note,
+	style = @style
 from
         #trades
 where
