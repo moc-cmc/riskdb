@@ -50,12 +50,21 @@ values(
         "Option PL PB Recon",
         NULL)
 
+insert into
+        #meta
+values(
+        "Column Link",
+        "exotic_blotter",
+        "Exotic Trades for Range",
+        NULL)
+
 select * from #meta
 
 
 select
 	blotter = "Spot/Forward PL PB Recon",
-	option_blotter = "Option PL PB Recon"
+	option_blotter = "Option PL PB Recon",
+	exotic_blotter = "Exotic Trades for Range"
 
 	
 
