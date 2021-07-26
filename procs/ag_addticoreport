@@ -13,6 +13,21 @@ declare @status_id int
 declare @pdf_login varchar(50)
 
 select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login=@login
+if @@rowcount != 1
+begin
+	select
+		error="Error",
+		msg="Login not found",
+		login=@login
+	return
+end
+
+select
 	@pdf_login = login
 from
 	tico_accounts
@@ -23,6 +38,25 @@ begin
 	select
 		status = "Error",
 		msg = "Could not find pdf login"
+	return
+end
+
+# Verify run exists by it's name.
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	a.name = @run_name
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Could not find run.",
+		run = @run_name
 	return
 end
 
