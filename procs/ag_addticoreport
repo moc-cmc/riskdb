@@ -41,16 +41,13 @@ begin
 	return
 end
 
-# Verify run exists by it's name.
+# Check that a run exists for the provided run name.
 select
-	@run_id = a.run_id
+	@run_id = run_id
 from
-	runs a,
-	user_runs b
+	runs
 where
-	a.run_id = b.run_id
-and
-	a.name = @run_name
+	name = @run_name
 if @run_id = NULL
 begin
 	select
@@ -60,7 +57,7 @@ begin
 	return
 end
 
-# Automatically grant the PDF Gen. account access to the run.
+# Automatically grant the PDF account access to the run.
 select
 	@run_id = a.run_id
 from
