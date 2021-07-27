@@ -1,0 +1,141 @@
+create or replace procedure
+	api_refreshloginstats
+		@login varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL,
+		@force char(1)=NULL
+
+as
+
+
+declare @tico_account_id int
+declare @max_activity_date datetime
+declare @placeholder_date datetime
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+/* Dates for this dont include timestamps */
+if @begin_date = NULL
+begin
+	select
+		@begin_date = getdate()
+end
+
+if @end_date = NULL
+begin
+	select
+		@end_date = @begin_date
+end
+
+select
+	@begin_date = dbo.f_botradedate(@begin_date),
+	@end_date = dbo.f_botradedate(@end_date)
+
+exec
+	r_daterangefordate
+		@begin_date,
+		@begin_date output,
+		@placeholder_date output
+
+exec
+        r_daterangefordate
+                @end_date,
+                @placeholder_date output,
+                @end_date output
+
+
+select
+	@max_activity_date = max(activity_date)
+from
+	user_login_stats
+
+if @begin_date < @max_activity_date
+begin
+	if @force = "Y"
+	begin
+		select
+			status = "Warning",
+		 	message = "Force overwrite of user_login_stats"
+	end
+	else
+	begin
+		select
+			status = "Error",
+			message = "Activity for date already exists in range provided. Provide force as 'Y' to force a recalc",
+			max_activity_date = @max_activity_date,
+			begin_date = @begin_date,
+			end_date = @end_date
+		return
+	end
+end
+
+
+if @force = "Y"
+begin
+	begin tran
+		delete from
+			user_login_stats
+		where
+			activity_date >= @begin_date
+		and
+			activity_date <= @end_date
+	commit tran
+end
+
+
+/* Calc login info for MC from the login_attempts table */
+insert into
+	user_login_stats(
+		activity_date,
+		tico_account_id,
+		mc_logins,
+		mpt_logins)
+select
+	dbo.f_botradedate(timestamp),
+	tico_account_id,
+	count(*),
+	0
+from
+	user_login_attempts
+where
+	tico_account_id != NULL
+and
+	timestamp >= @begin_date
+and
+	timestamp < @end_date
+group by
+	tico_account_id,
+	dbo.f_botradedate(timestamp)
+if @@rowcount = 0
+begin
+	select
+		status = "ok",
+		message = "No MC activity for range",
+		begin_date = @begin_date,
+		end_date = @end_date
+end
+
+
+/* TODO: Add access to tico via existing table command via external stored procedure and update stats for date 
+ *
+ *
+ * 1. Update logins that have logged into both MC and MPT
+ * 2. Insert logins that have only logged into MPT and set MC count 0
+ *
+ */
+
+
+
+go
