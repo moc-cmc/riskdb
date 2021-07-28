@@ -318,6 +318,13 @@ begin
 	select
 		@m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@executing_firm)+"-"+rtrim(@contra_firm)
 end
+
+/* HARDCODED VALUES FOR CITADEL TO FEED EES SPECTRUM BOOK */
+if @contra_firm in("JFSIF1")
+begin
+	select
+		@c_trader_lookup = rtrim(@executing_firm)+'-'+rtrim(@contra_firm)
+end
     
 
 /* Set suppression and trigger_symbol variables */
