@@ -1,0 +1,138 @@
+
+/* This proc is a sucessor to r_generatekey, but has a different implementation 
+ * which produces different results, so this is used for key generation for 
+ * user_auths. */
+create procedure
+    ur_genkey
+        @template varchar(100),
+        @charset varchar(65) = "numeric",
+        @value bigint = NULL,
+        @key varchar(100) = NULL output
+as
+
+declare @index int
+declare @base int
+declare @char varchar(1)
+declare @ord int
+
+/* If @value is not given, then use a serial date in microseconds */
+if @value is NULL or @value <= 0
+    select
+        @value = datediff(microsecond, "Jan 1, 2001", current_bigdatetime())
+
+if @template = "uuidv4"
+    select
+        @template = "????????-????-4???-8???-????????????",
+        @charset = "0123456789ABCDEF"
+
+if @template = "apikeyv1"
+    select
+        @charset = "alphanumeric",
+        @template = "akv1????%%%%%%%%%%????????????????????????????"
+        /* akv1 + 4 random + microseconds + 28 bytes */
+
+if @template = "hmacsha256"
+    select
+        @charset = "alphanumeric",
+        @template = '???????????????????????????????????????????'
+        /* 62-base, 43 char = 32 bytes */
+
+if @template = "hmacsha512"
+    select
+        @charset = "alphanumeric",
+        @template = '??????????????????????????????????????????????????????????????????????????????????????'
+        /* 62-base, 86 char = 64 bytes */
+
+else if @charset = "numeric"
+    select
+        @charset = "0123456789"
+
+else if @charset = "upper"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+else if @charset = "lower"
+    select
+        @charset = "abcdefghijklmnopqrstuvwxyz"
+
+else if @charset = "alpha"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+else if @charset = "uppernumeric"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+else if @charset = "lowernumeric"
+    select
+        @charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+else if @charset = "alphanumeric"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+else if @charset = "numericlower"
+    select
+        @charset = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+else if @charset = "numericupper"
+    select
+        @charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+else if @charset = "numericalpha"
+    select
+        @charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+else if @charset = "base64"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+else if @charset = "hex" or @charset = "lowerhex"
+    select
+        @charset = "0123456789abcdef"
+
+else if @charset = "upperhex"
+    select
+        @charset = "0123456789ABCDEF"
+
+else if @charset = "password"
+    select
+        @charset = "abcdefghjkmnpqrstuvwxyz23456789ABCDEFGHJKLMNPQRSTUVWXYZ.-_"
+
+select
+    @index = len(@template),
+    @base = len(@charset),
+    @key = ""
+    
+while @index > 0
+begin
+    
+    select
+        @char = substring(@template, @index, 1)
+    
+    if @char = '?'
+    begin
+        /* Append a random char from the charset */
+        select
+            @ord = convert(int, rand() * @base),
+            @char = substring(@charset, @ord + 1, 1)
+
+    end
+    else if @char = '%'
+    begin
+        /* Append the next char from our value */
+        select
+            @ord = @value % @base,
+            @value = @value / @base,
+            @char = substring(@charset, @ord + 1, 1)
+
+    end
+
+    select
+        @key = @char + @key,
+        @index = @index - 1
+
+end
+
+go
+
