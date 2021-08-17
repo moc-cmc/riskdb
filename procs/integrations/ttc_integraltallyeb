@@ -32,6 +32,8 @@ create procedure
 		@trade_day datetime,
 		@value_date datetime,
 		@fixing_date datetime=NULL,
+		@last_spot_rate float=NULL,
+		@last_fwd_points float=NULL,
 		/*swaps*/
 		@far_price float=NULL,
 		@far_value_date datetime=NULL,
@@ -93,7 +95,6 @@ declare @far_trade_id int
 declare @far_trade_type varchar(50)
 declare @deal_status varchar(50)
 declare @aggregation_style varchar(50)
-declare @last_spot_rate float
 declare @contract_id int
 declare @inverted varchar(50)
 declare @tally_status varchar(10)
@@ -445,7 +446,7 @@ select
 	@trade_type = "Spot",
 	@tally_type = "Spot"
 
-if @fixing_date != NULL
+if @fixing_date != NULL or @last_fwd_points != NULL
 	select
 		@trade_type = "Forward",
 		@tally_type = "Forward"
