@@ -446,7 +446,7 @@ select
 	@trade_type = "Spot",
 	@tally_type = "Spot"
 
-if @fixing_date != NULL or @last_fwd_points != NULL
+if @fixing_date != NULL or @last_fwd_points not in(NULL, 0.0)
 	select
 		@trade_type = "Forward",
 		@tally_type = "Forward"
