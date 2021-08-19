@@ -38,6 +38,7 @@ create procedure
 		@far_price float=NULL,
 		@far_value_date datetime=NULL,
 		@far_fixing_date datetime=NULL,
+		@provided_far_qty float=NULL,
 		/*parties*/
 		@order_origination_firm varchar(50)=NULL,
 		@order_origination_trader varchar(50)=NULL,
@@ -706,7 +707,11 @@ begin
 						@trade_date = @trade_date,
 						@broker = @broker,
 						@trade_identifier = @platform_identifier,
-						@spot_reference = @last_spot_rate
+						@spot_reference = @last_spot_rate,
+						@far_price = @far_price,
+						@far_value_date = @far_value_date,
+						@far_fixing_date = @far_fixing_date,
+						@far_quantity = @far_quantity
 end
 
 /* --------------------------------------------------------------------------

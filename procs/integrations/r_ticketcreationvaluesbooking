@@ -16,7 +16,11 @@ create or replace procedure
                 @price float,
                 @trade_date datetime,
                 @trade_identifier varchar(100),
-                @spot_reference float
+                @spot_reference float,
+		@far_price float=NULL,
+		@far_value_date datetime=NULL,
+		@far_fixing_date datetime=NULL,
+		@far_quantity float=NULL
 
 
 as
@@ -37,8 +41,11 @@ declare @t2_cl_trader varchar(50)
 declare @t2_cl_counterparty varchar(50)
 declare @t2_cl_trade_id int
 declare @t2_cl_identifier varchar(100)
+declare @t2_cl_far_identifier varchar(100)
 declare @t2_cl_quantity numeric(30,4)
 declare @t2_cl_inv_qty char(1)
+declare @t2_cl_far_quantity numeric(30,4)
+
 
 /* LP variables */
 declare @t2_lp_strategy varchar(50)
@@ -47,9 +54,17 @@ declare @t2_lp_trader varchar(50)
 declare @t2_lp_counterparty varchar(50)
 declare @t2_lp_trade_id int
 declare @t2_lp_identifier varchar(100)
+declare @t2_lp_far_identifier varchar(100)
 declare @t2_lp_quantity numeric(30, 4)
 declare @t2_lp_inv_qty char(1)
+declare @t2_lp_far_quantity numeric(30,4)
 declare @t2_deal_id int
+
+/* Swap variables */
+declare @t2_cl_near_trade_id int
+declare @t2_cl_far_trade_id int
+declare @t2_lp_near_trade_id int
+declare @t2_lp_far_trade_id int
 
 select
 	@source_id = source_id
@@ -84,6 +99,15 @@ end
 
 select
 	@tally_deal_id = @deal_id
+
+if @far_price != NULL
+begin
+	if @far_quantity = NULL
+	begin
+		select
+			@far_quantity = @quantity * -1
+	end
+end
 
 if @cl_create = "Y" and @lp_create = "Y"
 begin
@@ -175,14 +199,17 @@ begin
 
                 select
                         @t2_cl_identifier = rtrim(@trade_identifier)+".t2cl_autob2b",
-                        @t2_cl_quantity = @quantity
+                        @t2_cl_quantity = @quantity,
+			@t2_cl_far_quantity = @far_quantity
 
 
                 if @t2_cl_inv_qty = "Y"
                 begin
                         select
-                                @t2_cl_quantity = -@quantity
+                                @t2_cl_quantity = -@quantity,
+				@t2_cl_far_quantity = -@far_quantity
                 end
+
 
                 exec
                         fxa_tallytrade
@@ -190,7 +217,7 @@ begin
                                 @source = @source,
                                 @trade_id = @t2_cl_trade_id out,
                                 @deal_id = @tally_deal_id,
-                                @tally_type = @trade_type,
+                                @tally_type = @tally_type,
                                 @deal_type = @deal_type,
                                 @trade_type = @trade_type,
                                 @external_account = @t2_cl_ext_account,
@@ -216,10 +243,53 @@ begin
                         return
                 end
 
+		if @far_price != NULL
+		begin
+			select
+				@t2_cl_near_trade_id = @t2_cl_trade_id,
+				@t2_cl_far_identifier = rtrim(@t2_cl_identifier)+".f"
 
-                exec
-                	r_inserttradenotification
-                                @t2_cl_trade_id
+                	exec
+                        	fxa_tallytrade
+                                	@login = @login,
+                                	@source = @source,
+                                	@trade_id = @t2_cl_far_trade_id out,
+                                	@deal_id = @tally_deal_id,
+                                	@tally_type = @tally_type,
+                                	@deal_type = @deal_type,
+                                	@trade_type = "Swap Far",
+                                	@external_account = @t2_cl_ext_account,
+                                	@counterparty = @t2_cl_counterparty,
+                                	@quantity = @t2_cl_far_quantity,
+                                	@symbol = @symbol,
+                                	@value_date = @far_value_date,
+                                	@fixing_date = @far_fixing_date,
+                                	@price = @far_price,
+                                	@trade_date = @trade_date,
+                                	@trader = @t2_cl_trader,
+					@strategy = @t2_cl_strategy,
+                                	@broker = @broker,
+                                	@identifier = @t2_cl_far_identifier,
+                                	@spot_reference = @spot_reference
+
+
+                	if @t2_cl_far_trade_id = NULL
+                	begin
+                        	select
+                                	status = "Error",
+                                	message = "Failed to tally far trade"
+                        	return
+                	end
+			exec
+				tt_resolveswapsymbol
+					@deal_id=@tally_deal_id,
+					@near_trade_id=@t2_cl_near_trade_id,
+					@far_trade_id=@t2_cl_far_trade_id,
+					@client_or_market="C"
+		end
+
+
+
 
 		select
         		status = "Tallied",
@@ -234,6 +304,22 @@ begin
                         quantity = @t2_cl_quantity,
                         price = @price,
                         val_date = @value_date
+		if @t2_cl_far_trade_id != NULL
+		begin
+			select
+        			status = "Tallied",
+                        	message = "Far Trade successfully tallied",
+                        	trade_id = @t2_cl_far_trade_id,
+                        	deal_id = @tally_deal_id,
+                        	account = @t2_cl_ext_account,
+				trader = @t2_cl_trader,
+				strategy = @t2_cl_strategy,
+				@t2_cl_counterparty,
+                        	symbol = @symbol,
+                        	quantity = @t2_cl_far_quantity,
+                        	price = @far_price,
+                        	val_date = @far_value_date
+		end
         end
 
         if @lp_create = "Y"
@@ -252,12 +338,14 @@ begin
 
                 select
                         @t2_lp_identifier = rtrim(@trade_identifier)+".t2lp_autob2b",
-                        @t2_lp_quantity = @quantity
+                        @t2_lp_quantity = @quantity,
+			@t2_lp_far_quantity = @far_quantity
 
                 if @t2_lp_inv_qty = "Y"
                 begin
                         select
-                                @t2_lp_quantity = -@quantity
+                                @t2_lp_quantity = -@quantity,
+				@t2_lp_far_quantity = -@far_quantity
                 end
 
                 select
@@ -269,7 +357,7 @@ begin
                                 @source = @source,
                                 @trade_id = @t2_lp_trade_id out,
                                 @deal_id = @t2_deal_id,
-                                @tally_type = @trade_type,
+                                @tally_type = @tally_type,
                                 @deal_type = @deal_type,
                                 @trade_type = @trade_type,
                                 @external_account = @t2_lp_ext_account,
@@ -293,7 +381,50 @@ begin
                                 message = "Failed to tally trade"
                         return
                 end
+		if @far_price != NULL
+		begin
+			select
+				@t2_lp_near_trade_id = @t2_lp_trade_id,
+				@t2_lp_far_identifier = rtrim(@t2_lp_identifier)+".f"
 
+			exec
+                        	fxa_tallytrade
+                                	@login = @login,
+                                	@source = @source,
+                                	@trade_id = @t2_lp_far_trade_id out,
+                                	@deal_id = @t2_deal_id,
+                                	@tally_type = @tally_type,
+                                	@deal_type = @deal_type,
+                                	@trade_type = "Swap Far",
+                                	@external_account = @t2_lp_ext_account,
+                                	@counterparty = @t2_lp_counterparty,
+                                	@quantity = @t2_lp_far_quantity,
+                                	@symbol = @symbol,
+                                	@value_date = @far_value_date,
+                                	@fixing_date = @far_fixing_date,
+                                	@price = @far_price,
+                                	@trade_date = @trade_date,
+                                	@trader = @t2_lp_trader,
+					@strategy = @t2_lp_strategy,
+                                	@broker = @broker,
+                                	@identifier = @t2_lp_far_identifier,
+                                	@spot_reference = @spot_reference
+	
+                	if @t2_lp_far_trade_id = NULL
+                	begin
+                        	select
+                                	status = "Error",
+                                	message = "Failed to tally far trade"
+                        	return
+                	end
+			exec
+				tt_resolveswapsymbol
+					@deal_id=@t2_deal_id,
+					@near_trade_id=@t2_lp_near_trade_id,
+					@far_trade_id=@t2_lp_far_trade_id,
+					@client_or_market="M"
+		end
+	
                 select
                         status = "Tallied",
                         message = "Trade successfully tallied",
@@ -307,6 +438,22 @@ begin
                         quantity = @t2_lp_quantity,
                         price = @price,
                         val_date = @value_date
+		if @t2_lp_far_trade_id != NULL	
+		begin
+                	select
+                        	status = "Tallied",
+                        	message = "Trade successfully tallied",
+                        	trade_id = @t2_lp_far_trade_id,
+                        	deal_id = @t2_deal_id,
+                        	account = @t2_lp_ext_account,
+				trader = @t2_lp_trader,
+				strategy = @t2_lp_strategy,
+				ctpy = @t2_lp_counterparty,
+                        	symbol = @symbol,
+                        	quantity = @t2_lp_far_quantity,
+                        	price = @far_price,
+                        	val_date = @far_value_date
+		end
         end
 end
 
@@ -318,6 +465,15 @@ begin
 			@c_trade_id = @t2_cl_trade_id,
 			@m_trade_id = @t2_lp_trade_id
 end
+
+if @t2_lp_far_trade_id != NULL and @t2_cl_far_trade_id != NULL
+begin
+        exec
+                tt_addtradebookings
+                        @c_trade_id = @t2_cl_far_trade_id,
+                        @m_trade_id = @t2_lp_far_trade_id
+end
+
 
 
 if @t2_cl_trade_id != NULL
@@ -331,6 +487,18 @@ begin
 	exec
 		r_inserttradenotification
 			@t2_lp_trade_id
+end
+if @t2_cl_far_trade_id != NULL
+begin
+       	exec
+              	r_inserttradenotification
+                      	@t2_cl_far_trade_id
+end
+if @t2_lp_far_trade_id != NULL
+begin
+       	exec
+              	r_inserttradenotification
+                      	@t2_lp_far_trade_id
 end
 
 go
