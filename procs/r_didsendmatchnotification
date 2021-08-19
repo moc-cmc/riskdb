@@ -1,62 +1,68 @@
 
-if object_id("r_didsendmatchnotification") != NULL
-    drop procedure
-        r_didsendmatchnotification
-go
-
-create procedure
+create or replace procedure
 	r_didsendmatchnotification
 		@match_notification_id int,
-        	@status varchar(25),
-        	@error varchar(250)
+		@status varchar(25),
+		@error varchar(250)
 as
 
 declare @status_id int
-declare @sent_status_id int
+declare @record_status_id int
 
 select
-    @sent_status_id = status_id,
-    @status_id = status_id
+	@status_id = status_id
 from
-    statuses
+	statuses
 where
-    name = 'Sent'
-if @status_id = null
+	name = @status
+if @status_id = NULL
 begin
-    select
-        id = -1,
-        err = "No status named, 'Sent'"
-    return
+	select
+		status = "Error",
+		message = "Problem finding status",
+		status_provided = @status
+	return
 end
 
-if @status != null
+select
+	@record_status_id = status_id
+from
+	match_notifications
+where
+	match_notification_id = @match_notification_id
+if @record_status_id = NULL
 begin
-    select
-        @status_id = status_id
-    from
-        statuses
-    where
-        name = @status
-    if @status_id = null
-    begin
-        select
-            id = -1,
-            err = "No status named, '" + @status + "'"
-        return
-    end
-    
-    if @status_id != @sent_status_id
-        select
-            @status_id = @status_id
+	select
+		status = "Error",
+		message = "Problem finding match notification",
+		match_notification_id = @match_notification_id
+	return
 end
 
-update
-    match_notifications
-set
-    status_id = @status_id,
-    error = @error,
-    notify_date = getdate()
-where
-    match_notification_id = @match_notification_id
+/* Do nothing if the status is already in proper state */
+if @record_status_id = @status_id
+begin
+	return
+end
+
+begin tran
+	update
+		match_notifications
+	set
+		status_id = @status_id,
+		error = @error,
+		notify_date = getdate()
+	where
+		match_notification_id = @match_notification_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem marking status on match notification",
+			match_notification_id = @match_notification_id
+		rollback tran
+		return
+	end
+commit tran
 
 go
