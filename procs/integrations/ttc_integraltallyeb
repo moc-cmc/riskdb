@@ -532,7 +532,13 @@ begin
 	if @side = "BUY"
 		select
 			@quantity = @qty
+end
 
+/* Swap direction needs to be flipped again since its in terms of far leg */
+if @far_price != NULL
+begin
+	select
+		@quantity = @quantity * -1
 end
 
 /* --------------------------------------------------------------------------
