@@ -31,7 +31,8 @@ create procedure
                 @far_value_date datetime=NULL,
                 @far_fixing_date datetime=NULL,
 		/*parties*/
-                @contra_firm varchar(50)=NULL
+                @contra_firm varchar(50)=NULL,
+                @executing_firm varchar(50)=NULL
 
 as
 
@@ -271,10 +272,10 @@ exec
 select
 	@deal_exec_symbol = rtrim(@cl_order_id),
 	@c_platform_identifier = rtrim(@execution_id) + convert(char(8), @trade_date, 112) + ".c",
-        @c_trader_lookup = rtrim(@sender_comp),
+        @c_trader_lookup = rtrim(@executing_firm),
         @c_counterparty_lookup = rtrim(@contra_firm),
         @m_platform_identifier = rtrim(@execution_id) + convert(char(8), @trade_date, 112) + ".m", 
-	@m_trader_lookup = rtrim(@target_comp) + "-" + rtrim(@sender_comp),
+	@m_trader_lookup = rtrim(@target_comp) + "-" + rtrim(@executing_firm),
         @m_counterparty_lookup = rtrim(@target_comp) + "-" + rtrim(@contra_firm)
 
 /* --------------------------------------------------------------------------
