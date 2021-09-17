@@ -1,0 +1,206 @@
+
+create or replace procedure
+	api_tallyhehmeyerfwd
+		@product varchar(30),
+		@currency varchar(30),
+		@quantity numeric(30,8),
+		@price float,
+		@cpty varchar(30),
+		@broker varchar(30),
+		@strategy varchar(30),
+		@ref_id varchar(100)=NULL,
+		@trade_date varchar(50)
+as
+
+
+declare @buy_sell varchar(10)
+declare @now datetime
+declare @trade1_id int
+declare @trade2_id int
+declare @trade3_id int
+declare @deal_id int
+declare @product_id int
+declare @currency_id int
+declare @symbol varchar(50)
+declare @counterparty varchar(50)
+declare @external_account varchar(50)
+declare @source_id int
+declare @source varchar(50)
+declare @value_date datetime
+declare @tdate datetime
+declare @identifier1 varchar(100)
+declare @identifier2 varchar(100)
+declare @identifier3 varchar(100)
+declare @opp_qty numeric(30,8)
+
+select
+	@tdate = convert(datetime, @trade_date)
+
+select
+	@value_date = convert(datetime, convert(date, @trade_date))
+
+if datepart(hour, @tdate) >= 17
+	select
+		@value_date = dateadd(day, 1, @value_date)
+
+select
+	@product_id = product_id
+from
+	products
+where
+	symbol = @product
+if @product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Product not found",
+		product = @product
+	return
+end
+
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+
+select
+	@symbol = a.symbol
+from
+	contracts a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+and
+	b.product_id = @product_id
+and
+	b.currency_id = @currency_id
+if @symbol = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		product = @product,
+		currency = @currency
+	return
+end
+
+
+select
+	@buy_sell = "Buy"
+
+if @quantity < 0
+	select
+		@buy_sell = "Sell"
+
+select
+	@source = "REST API"
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+select
+	@counterparty = a.name
+from
+	counterparties a,
+	counterparty_symbols b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	b.symbol = rtrim(@cpty)
+and
+	b.source_id = @source_id
+if @counterparty = NULL
+	select
+		@counterparty = @cpty
+
+select
+	@external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name = @counterparty
+
+
+select
+	@identifier1 = rtrim(@ref_id) + ".C1",
+	@identifier2 = rtrim(@ref_id) + ".C2",
+	@identifier3 = rtrim(@ref_id) + ".F1"
+
+select
+	@opp_qty = @quantity * -1.0
+
+/* tally the leg vs the central counterparty */
+
+exec
+	fxa_tallytrade
+		@login = "hn.etg",
+		@source = @source,
+		@trade_id = @trade1_id output,
+		@deal_id = @deal_id output,
+		@tally_type = "Spot",
+		@deal_type = "Market Forward",
+		@trade_type = "Spot",
+		@external_account = @external_account,
+		@counterparty = @counterparty,
+		@quantity = @quantity,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@price = @price,
+		@trade_date = @tdate,
+		@trader = "HNT",
+		@strategy = @strategy,
+		@broker = @broker,
+		@identifier = @identifier1
+
+exec
+	fxa_tallytrade
+		@login = "hn.etg",
+		@source = @source,
+		@trade_id = @trade3_id output,
+		@deal_id = @deal_id output,
+		@tally_type = "Spot",
+		@deal_type = "Market Forward",
+		@trade_type = "Spot",
+		@external_account = "Trader A",
+		@counterparty = @counterparty,
+		@quantity = @opp_qty,
+		@symbol = @symbol,
+		@value_date = @value_date,
+		@price = @price,
+		@trade_date = @tdate,
+		@trader = "HNT",
+		@strategy = @strategy,
+		@broker = @broker,
+		@identifier = @identifier3
+
+
+
+
+go 
+
