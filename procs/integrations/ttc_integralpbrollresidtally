@@ -25,7 +25,8 @@ create or replace procedure
                 @trade_day datetime,
                 @value_date datetime,
 		@fixing_date datetime=NULL,
-		@trade_report_type varchar(50)=NULL,
+		@last_fwd_points float=NULL,
+                @trade_report_type varchar(50)=NULL,
 		@trade_input_source varchar(50)=NULL,
 		@security_type varchar(50)=NULL,
                 @far_price float=NULL,
@@ -677,7 +678,7 @@ select
 	@trade_type = "Spot",
 	@tally_type = "Spot"
 
-if @fixing_date != NULL
+if @fixing_date != NULL or @last_fwd_points not in(NULL, 0.0)
 	select
 		@trade_type = "Forward",
 		@tally_type = "Forward"
