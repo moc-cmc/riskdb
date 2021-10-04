@@ -168,7 +168,7 @@ begin
 	select
 		@user_name = lower(@last_name)
 end
-if @login_type = "Elysium"
+if @login_type = "Elysium" and @first_name = "Elysium"
 begin
 	select
 		@user_name = lower(fund_code)
