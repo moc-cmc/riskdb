@@ -1,0 +1,69 @@
+
+create or replace procedure
+	r_didsendticoreportrequest
+		@tico_report_request_id int,
+		@status varchar(25),
+		@error varchar(250),
+		@filename varchar(100) = null,
+		@params varchar(150) = null,
+		@url varchar(150) = null
+as
+
+
+declare @status_id int
+declare @sent_status_id int
+
+select
+    @sent_status_id = status_id,
+    @status_id = status_id
+from
+    statuses
+where
+    name = 'Sent'
+
+if @status_id = null
+begin
+    select
+        id = -1,
+        err = "No status named, 'Sent'"
+    return
+end
+
+if @status != null
+begin
+    select
+        @status_id = status_id
+    from
+        statuses
+    where
+        name = @status
+    if @status_id = null
+    begin
+        select
+            id = -1,
+            err = "No status named, '" + @status+ "'"
+        return
+    end
+    
+    if @status_id != @sent_status_id
+        select
+            @status_id = @status_id
+end
+
+update
+    tico_report_requests
+set
+    status_id = @status_id,
+    modify_date = getdate(),
+    error = @error,
+    filename =
+  case when @filename != null then @filename else filename end,
+    params = case when @params != null then @params else params end,
+    url = case when @url != null then @url else url end
+where
+    tico_report_request_id = @tico_report_request_id
+
+       
+
+go 
+
