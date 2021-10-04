@@ -49,7 +49,7 @@ begin
 	return
 end	
 
-
+/*
 if @clearing_counterparty like "JEFF-%"
 begin
 	select
@@ -67,6 +67,7 @@ begin
                 client_counterparty = @client_counterparty
         return
 end
+*/
 
 	
 
