@@ -1,0 +1,22 @@
+
+create or replace procedure
+	r_cipfdailylpstatement
+		@login varchar(50),
+		@run_name varchar(50)=NULL,
+		@trade_date datetime=NULL
+as
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = convert(date, getdate())
+end
+
+exec
+	r_cipflpstatement
+		@login = @login,
+		@run_name = @run_name,
+		@begin_date = @trade_date,
+		@end_date = @trade_date
+
+go
