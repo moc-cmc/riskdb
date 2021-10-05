@@ -1,9 +1,5 @@
 
-drop procedure
-	r_managelogins
-go
-
-create procedure
+create or replace procedure
 	r_managelogins 
 		@login varchar(50),
 		@user_login varchar(50)=NULL
@@ -113,6 +109,14 @@ values(
         "Column Link",
         "add_login",
         "Add New Login",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "active_users",
+        "Active Users",
         NULL)
 
 select * from #meta
@@ -369,7 +373,9 @@ order by
 
 select
 	section = "Addional Login Tools",
-	client_access="Client Acess"
+	client_access="Client Access",
+	active_users="Active Users for Range"
+	
 go
 
 
