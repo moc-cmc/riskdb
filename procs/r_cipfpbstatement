@@ -487,22 +487,6 @@ create table
 		label varchar(50) NULL,
 		value varchar(50) NULL)
 
-select
-	@external_account_id = external_account_id
-from
-	external_accounts
-where
-	symbol = @run_name
-
-if @external_account_id != NULL
-begin
-	select
-		@name = name,
-		@address_line1 = address_line1,
-		@address_line2 = address_line2
-	from
-		client_contacts
-end
 
 insert into
 	#header(
@@ -547,7 +531,7 @@ values(
 select
 	section = "Statement",
 	style = @style,
-	"liquidity provider"=customer,
+	"pb account"=customer,
 	" "=label,
 	"  "=value
 from
