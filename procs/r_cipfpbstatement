@@ -126,6 +126,15 @@ values (
 
 
 insert into
+        #meta
+values(
+        "Column Format",
+        "fund code",
+        "Number",
+        "###0.#")
+
+
+insert into
 	#meta
 values(
 	"Column Format",
@@ -477,14 +486,24 @@ create table
 		customer varchar(100) NULL,
 		label varchar(50) NULL,
 		value varchar(50) NULL)
-if @run_name = "LP OCAN DEUTSCHEBANK"
-begin
 
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @run_name
+
+if @external_account_id != NULL
+begin
 	select
-		@name = "Deutsche Bank Aktiengesellschaft",
-		@address_line1 = "Floor 19, 6-8 Bishopgate",
-		@address_line2 = "London, EC2N 4DA"
+		@name = name,
+		@address_line1 = address_line1,
+		@address_line2 = address_line2
+	from
+		client_contacts
 end
+
 insert into
 	#header(
 		customer,
@@ -1470,6 +1489,13 @@ where
 and
         b.name in("Adjustment")
 
+
+if @opening_unrealized = NULL
+	select
+		@opening_unrealized = 0
+if @opening_nav = NULL
+	select
+		@opening_nav = 0
 	
 if @withdrawals = NULL
 	select
@@ -1571,7 +1597,7 @@ where
 select
 	section = "Trade Transaction History",
 	style = "background:#fff",
-	fund_id = "27507",
+	fund_code = "27507",
 	row_type = "Cash",
 	trade_status = "New",
 	reason = "NEW",
