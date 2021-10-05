@@ -1,0 +1,64 @@
+create or replace procedure
+	ag_loginstatsummary
+		@login varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
+
+as
+
+declare @tico_account_id int
+declare @session_id varchar(100)
+
+select
+	@session_id = newid()
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+
+create table
+   #meta(
+           meta_type char(200),
+           name char(50) NULL,
+           action char(100) NULL,
+           value char(200) NULL)
+insert into
+   #meta
+values(
+   "Row Style",
+   "style",
+   NULL,
+   NULL)
+
+insert into
+   #meta
+values (
+   "Column Group",
+   "section",
+   NULL,
+   NULL)
+
+select
+	*
+from
+	#meta
+
+exec 
+	api_loginstatsummary
+		@login = @login,
+		@begin_date = @begin_date,
+		@end_date = @end_date,
+		@session_id = @session_id
+		
+go	
