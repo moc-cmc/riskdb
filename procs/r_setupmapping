@@ -347,6 +347,14 @@ values(
         "Tico Reports Home",
         NULL)
 
+insert into
+        #meta
+values(
+        "Column Link",
+        "active_logins",
+        "Active Users",
+        NULL)
+
 
 /* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
@@ -430,7 +438,8 @@ begin
 		style = @style,
 		manage_logins="Manage Logins",
 		manage_runs="Manage Runs",
-		manage_client_notifications="Manage Client Notifications"
+		manage_client_notifications="Manage Client Notifications",
+		active_logins="Active Logins"
 end
 
 if @login_type = "Elysium"
