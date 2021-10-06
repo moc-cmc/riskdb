@@ -1,0 +1,197 @@
+create or replace procedure
+	api_slownotifications
+		@login varchar(50),
+		@source varchar(50)=NULL,
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL,
+		@threshold_override int=NULL
+
+as
+
+declare @tico_account_id int
+declare @placeholder_date datetime
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+if @begin_date = NULL 
+begin
+	select
+		@begin_date = getdate()
+	exec
+		r_daterangefordate
+			@begin_date,
+			@begin_date output,
+			@end_date output
+end
+else
+begin
+	exec
+		r_daterangefordate
+			@begin_date,
+			@begin_date output,
+			@placeholder_date output
+
+	exec
+		r_daterangefordate
+			@end_date,
+			@placeholder_date output,
+			@end_date output
+end
+
+
+create table
+	#sources(
+		source_id int,
+		name varchar(50)
+)
+
+if @source != NULL
+begin
+	insert into
+		#sources
+	select
+		a.source_id,
+		a.name
+	from
+		sources a,
+		source_types b
+	where
+		a.source_type_id = b.source_type_id
+	and
+		b.name = "Outbound"
+	and
+		a.name = @source
+	if @@rowcount = 0
+	begin
+		select
+			status = "Error",
+			message = "Problem finding outbound source",
+			source = @source
+		return
+	end
+end
+else
+begin
+	insert into
+		#sources
+	select
+		a.source_id,
+		a.name
+	from
+		sources a,
+		source_types b
+	where
+		a.source_type_id = b.source_type_id
+	and
+		b.name = "Outbound"
+end
+
+create table
+	#outbound_connections(
+		source_id int,
+		source_name varchar(50),
+		connection_name varchar(50),
+		ops_name varchar(50),
+		integration_name varchar(50),
+		stale_threshold int NULL
+)
+
+insert into
+	#outbound_connections(
+		source_id,
+		source_name,
+		connection_name,
+		ops_name,
+		integration_name,
+		stale_threshold)
+select
+	a.source_id,
+	a.name,
+	b.name,
+	b.ops_name,
+	c.name,
+	b.stale_threshold
+from
+	#sources a,
+	connections b,
+	integrations c
+where
+	a.source_id = b.source_id
+and
+	b.integration_id = c.integration_id
+
+update
+	#outbound_connections
+set
+	stale_threshold = 10
+where
+	stale_threshold = NULL
+
+
+if @threshold_override != NULL
+begin
+	update
+		#outbound_connections
+	set
+		stale_threshold = @threshold_override
+end
+	
+
+
+select
+	section = "Slow Notifications",
+	b.source_name,
+	b.ops_name,
+	b.stale_threshold,
+	a.trade_notification_id,
+	a.trade_id,
+	a.capture_date,
+	a.notify_date,
+	round_trip = datediff(ms, capture_date, notify_date) 
+from
+	trade_notifications a,
+	trades c,
+	#outbound_connections b
+where
+	a.source_id = b.source_id
+and
+	a.trade_id = c.trade_id
+and
+	c.trade_date >= @begin_date
+and
+	c.trade_date < @end_date
+and
+	datediff(ms, a.capture_date, a.notify_date) > (b.stale_threshold * 1000)
+order by
+	a.capture_date
+
+
+go
+
+	
+
+		
+
+
+
+
+
+
+
+
+
+
+
