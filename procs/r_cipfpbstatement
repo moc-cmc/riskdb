@@ -539,7 +539,19 @@ from
 order by
 	id
 
+create table
+	#transaction_types(
+		transaction_type_id int
+)
 
+insert into
+	#transaction_types
+select
+	transaction_type_id
+from
+	transaction_types
+where
+	name not in("Commission", "Markup", "Fees/Commissions/Brokerage", "Management Fee", "Incentive Fee", "Prime Brokerage Fee", "Execution Fee")
 	
 create table
 	#begin_balances(
@@ -556,11 +568,14 @@ select
 from
 	account_transactions a,
 	products b,
-	#external_accounts c
+	#external_accounts c,
+	#transaction_types d
 where
 	a.currency_id = b.product_id
 and
 	a.external_account_id = c.external_account_id
+and
+	a.transaction_type_id = d.transaction_type_id
 and
 	a.transaction_date < @begin_date
 group by
@@ -598,9 +613,12 @@ select
 	a.note
 from
 	account_transactions a,
-	#external_accounts b
+	#external_accounts b,
+	#transaction_types c
 where
 	a.external_account_id = b.external_account_id
+and
+        a.transaction_type_id = c.transaction_type_id
 and
 	transaction_date >= @begin_date
 and
