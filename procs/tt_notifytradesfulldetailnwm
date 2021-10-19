@@ -726,9 +726,9 @@ set
 where
         fixing_date = NULL
 and
-	traded_ccy = "USD"
-and
-	counter_ccy = "RUB"
+	(traded_ccy = "RUB"
+or
+	counter_ccy = "RUB")
 
 
 update
