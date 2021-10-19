@@ -1,0 +1,81 @@
+create or replace procedure
+	c_editlpcontact
+		@login varchar(50),
+		@counterparty varchar(50),
+		@name varchar(200)=NULL,
+		@phone varchar(200)=NULL,
+		@email varchar(200)=NULL,
+		@address_line1 varchar(200)=NULL,
+		@address_line2 varchar(200)=NULL,
+		@additional1 varchar(200)=NULL,
+		@additional2 varchar(200)=NULL,
+		@additional3 varchar(200)=NULL
+as
+
+
+declare @total int
+declare @fund_id int
+declare @counterparty_id int
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@counterparty_id = c.counterparty_id
+from
+	external_accounts a,
+	fund_external_accounts b,
+	counterparties c
+where
+	a.external_account_id = c.external_account_id
+and
+	a.external_account_id = b.external_account_id
+and
+	c.name = @counterparty
+
+if @counterparty_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Counterparty not found",
+		counterparty = @counterparty
+	return
+end
+
+select
+	@total = count(*)
+from
+	cpty_contacts
+where
+	counterparty_id = @counterparty_id
+if @total = NULL or @total = 0
+begin
+	insert into
+		cpty_contacts(
+			counterparty_id)
+	values(
+		@counterparty_id)
+end
+	
+update
+	cpty_contacts
+set
+	name = 	@name,
+	phone =	@phone,
+	email =	@email,
+	address_line1 =	@address_line1,
+	address_line2 =	@address_line2,
+	additional1 = @additional1,
+	additional2 = @additional2,
+	additional3 = @additional3
+where
+	counterparty_id = @counterparty_id
+
+exec
+	c_clientcontacts
+		@login
+
+
+go

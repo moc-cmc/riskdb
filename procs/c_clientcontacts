@@ -1,8 +1,4 @@
-drop procedure
-	c_clientcontacts
-go
-
-create procedure
+create or replace procedure
 	c_clientcontacts
 		@login varchar(50)
 as
@@ -39,6 +35,15 @@ values(
 	"edit_info",
 	"Edit Client Contact Info",
 	NULL) 
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_lp_info",
+        "Edit LP Contact Info",
+        NULL)
+
 
 insert into
 	#meta
@@ -141,6 +146,54 @@ where
 	a.external_account_id = b.external_account_id
 
 
+create table
+	#lp_contacts(
+		counterparty_id int,
+		symbol varchar(50) NULL,
+		name varchar(200) NULL,
+		phone varchar(200) NULL,
+		email varchar(200) NULL,
+		address_line1 varchar(200) NULL,
+		address_line2 varchar(200) NULL,
+		additional1 varchar(200) NULL,
+		additional2 varchar(200) NULL,
+		additional3 varchar(200) NULL)
+insert into
+	#lp_contacts(
+		counterparty_id,
+		symbol)
+select
+	c.counterparty_id,
+	c.name
+from
+	external_accounts a,
+	fund_external_accounts b,
+	counterparties c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	b.fund_id = @fund_id
+
+update
+	#lp_contacts
+set
+	a.name = b.name,
+	a.phone = b.phone,
+	a.email = b.email,
+	a.address_line1 = b.address_line1,
+	a.address_line2 = b.address_line2,
+	a.additional1 = b. additional1,
+	a.additional2 = b. additional2,
+	a.additional3 = b. additional3
+from
+	#lp_contacts a,
+	cpty_contacts b
+where
+	a.counterparty_id = b.counterparty_id
+
+
 select
 	section = "Accounts",
 	style = @style,
@@ -158,6 +211,27 @@ from
 	#client_contacts 
 order by
 	symbol
+
+if exists(select name from enabled_product_features where name = "LP Client Contact Tracking")
+begin
+	select
+        	section = "LPs",
+        	style = @style,
+        	counterparty = symbol,
+        	edit_lp_info = "EDIT",
+        	name,
+        	phone,
+        	email,
+        	address_line1,
+        	address_line2,
+        	additional1,
+        	additional2,
+        	additional3
+	from
+        	#lp_contacts
+	order by
+        	symbol
+end
 
 
 go
