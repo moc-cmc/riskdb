@@ -28,6 +28,7 @@ declare @additional3 varchar(100)
 declare @cfd_transaction_type_id int
 declare @cfd_roll_type_id int
 declare @equiv float
+declare @counterparty_id int
 
 declare @begin_equiv float
 declare @begin_end_equiv float 
@@ -279,20 +280,26 @@ if @@rowcount = 0
 
 create table
 	#counterparties(
-		counterparty_id int)
+		counterparty_id int,
+		name varchar(50))
 insert into
 	#counterparties
 select
-	counterparty_id
+	a.counterparty_id,
+	b.name
 from
-	run_counterparties
+	run_counterparties a,
+	counterparties b
 where
-	run_id = @run_id
+	a.counterparty_id = b.counterparty_id
+and
+	a.run_id = @run_id
 if @@rowcount = 0
 	insert into
 		#counterparties
 	select
-		counterparty_id
+		counterparty_id,
+		name
 	from
 		counterparties
 
@@ -318,6 +325,33 @@ from
 	client_contacts
 where
 	external_account_id = @external_account_id
+
+if @external_account_id = NULL
+begin
+	select
+		@counterparty_id = a.counterparty_id
+	from
+		#counterparties a,
+		counterparties b
+	where
+		a.counterparty_id = b.counterparty_id
+	and
+		b.name = (select min(c.name) from #counterparties c)
+
+	select
+		@name = name,
+		@phone = phone,
+		@email = email,
+		@address_line1 = address_line1,
+		@address_line2 = address_line2,
+		@additional1 = additional1,
+		@additional2 = additional2,
+		@additional3 = additional3
+	from
+		cpty_contacts
+	where
+		counterparty_id = @counterparty_id
+end
 
 create table
         #fund_header(
