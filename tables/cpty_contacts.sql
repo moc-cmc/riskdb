@@ -1,7 +1,3 @@
-drop table
-	cpty_contacts
-go
-
 create table
 	cpty_contacts(
 		counterparty_id int,
@@ -22,4 +18,12 @@ on
 	cpty_contacts(
 		counterparty_id)
 
+go
+
+insert into
+	tables
+values(
+	"cpty_contacts",
+	"L"
+)
 go
