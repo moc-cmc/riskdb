@@ -1,0 +1,12 @@
+create or replace procedure
+	apiv0_stub
+		@login varchar(50)
+
+as
+
+select
+	status = "ok",
+	message = "login stub: " + rtrim(@login)
+
+
+go
