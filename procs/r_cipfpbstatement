@@ -1380,20 +1380,32 @@ and
 
 select
 	@opening_nav = @opening_balance + @opening_unrealized
+	
 
 select
-	@realized_profit =  sum(equiv)
+	@realized_profit =  sum(a.amount)
 from
-	#realized_equivs
+	#ledger a,
+	transaction_types b
 where
-	equiv > 0
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.amount > 0
+and
+	b.name = "FX Settlement"
 
 select
-        @realized_loss =  sum(equiv)
+	@realized_loss =  sum(a.amount)
 from
-        #realized_equivs
+	#ledger a,
+	transaction_types b
 where
-        equiv < 0
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.amount < 0
+and
+	b.name = "FX Settlement"
+
 
 if @realized_profit = NULL
 	select
