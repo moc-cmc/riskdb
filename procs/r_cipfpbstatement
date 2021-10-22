@@ -551,7 +551,7 @@ select
 from
 	transaction_types
 where
-	name not in("Commission", "Markup", "Fees/Commissions/Brokerage", "Management Fee", "Incentive Fee", "Prime Brokerage Fee", "Execution Fee")
+	name not in("Commission", "Markup", "Management Fee", "Incentive Fee", "Execution Fee")
 	
 create table
 	#begin_balances(
@@ -1491,7 +1491,7 @@ from
 where
         a.transaction_type_id = b.transaction_type_id
 and
-        b.name in("Commission", "Markup", "Fees/Commissions/Brokerage", "Management Fee", "Incentive Fee", "Prime Brokerage Fee", "Execution Fee")
+        b.name in("Commission", "Markup", "Management Fee", "Incentive Fee", "Execution Fee")
 
 select
         @adjustments = sum(a.equiv)
