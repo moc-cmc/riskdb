@@ -1,0 +1,108 @@
+create or replace procedure
+	apiv0_querycounterparties
+		@login varchar(50),
+		@clearing_entity varchar(50)=NULL
+as
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+create table
+	#counterparties(
+		counterparty_id int,
+		name varchar(50) NULL,
+		clearing_entity varchar(50) NULL,
+		country varchar(50) NULL,
+		branch_location varchar(50) NULL,
+		corporate_sector varchar(50) NULL,
+		party_region varchar(10) NULL,
+		financial_juristiction varchar(10) NULL,
+		lei_number varchar(50) NULL
+)
+
+	
+if @clearing_entity = NULL
+begin
+	insert into
+		#counterparties(counterparty_id, name)
+	select
+		counterparty_id,
+		name
+	from
+		counterparties
+end
+
+
+if @clearing_entity != NULL
+begin
+	insert into
+		#counterparties(
+			counterparty_id,
+			name,
+			clearing_entity)
+	select
+		a.counterparty_id,
+		a.name,
+		d.name
+	from
+		counterparties a,
+		external_account_prime_brokers b,
+		prime_brokers c,
+		sources d,
+		external_accounts e
+	where
+		e.external_account_id = b.external_account_id
+	and
+		e.external_account_id = a.external_account_id
+	and
+		b.prime_broker_id = c.prime_broker_id
+	and
+		c.source_id = d.source_id
+	and
+		d.name  = @clearing_entity
+end
+
+
+
+update 
+	#counterparties
+set
+	country = b.country,
+	branch_location = b.branch_location,
+	corporate_sector = b.corporate_sector,
+	party_region = b.party_region,
+	financial_juristiction = b.financial_juristiction,
+	lei_number = b.lei_number
+from
+	#counterparties a,
+	cpty_regulatory_info b
+where
+	a.counterparty_id = b.counterparty_id
+	
+
+select
+        name = b.name,
+        clearing_entity = b.name,
+	country = b.country,
+	branch_location = b.branch_location,
+	corporate_sector = b.corporate_sector,
+	party_region = b.party_region,
+	financial_juristiction = b.financial_juristiction,
+	lei_number = b.lei_number
+from
+        #counterparties b
+		
+go
