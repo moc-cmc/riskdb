@@ -6,7 +6,7 @@ as
 
 select
 	status = "ok",
-	message = "login stub: " + rtrim(@login)
+	message = "inusfficient permissions: " + rtrim(@login)
 
 
 go
