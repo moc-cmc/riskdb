@@ -1,31 +1,31 @@
 
 create or replace procedure
-    mc4_edittrade
-        @login char(75),
-        @trade_id int,
-        @deal_id int = NULL,
-        @identifier varchar(100) = NULL,
-        @trade_date datetime = NULL,
-        @trade_type varchar(25) = NULL,
-        @contract varchar(50) = NULL,
-        @value_date datetime = NULL,
-        @fixing_date datetime = NULL,
-        @quantity float = NULL,
-        @price float = NULL,
-        @internal_account varchar(100) = NULL,
-        @external_account varchar(50) = NULL,
-        @trader varchar(25) = NULL,
-        @counterparty varchar(100) = NULL,
-        @broker varchar(25) = NULL,
-        @strategy varchar(100) = NULL,
-        @pct_price numeric(30,6) = NULL,
-        @spot_reference float = NULL,
-        @sales_code varchar(25) = NULL,
-        @status varchar(100) = NULL,
-        @premium float = NULL,
-        @premium_currency varchar(10) = NULL,
-        @prem_settle_date datetime = NULL,
-	@option_settle_date datetime = NULL
+	mc4_edittrade
+		@login char(75),
+		@trade_id int,
+		@deal_id int = NULL,
+		@identifier varchar(100) = NULL,
+		@trade_date datetime = NULL,
+		@trade_type varchar(25) = NULL,
+		@contract varchar(50) = NULL,
+		@value_date datetime = NULL,
+		@fixing_date datetime = NULL,
+		@quantity float = NULL,
+		@price float = NULL,
+		@internal_account varchar(100) = NULL,
+		@external_account varchar(50) = NULL,
+		@trader varchar(25) = NULL,
+		@counterparty varchar(100) = NULL,
+		@broker varchar(25) = NULL,
+		@strategy varchar(100) = NULL,
+		@pct_price numeric(30,6) = NULL,
+		@spot_reference float = NULL,
+		@sales_code varchar(25) = NULL,
+		@status varchar(100) = NULL,
+		@premium float = NULL,
+		@premium_currency varchar(10) = NULL,
+		@prem_settle_date datetime = NULL,
+		@option_settle_date datetime = NULL
 
 as
 
@@ -81,6 +81,7 @@ declare @readonly_status_id int
 
 declare @pend_affirm_status_id int
 declare @affirm_status_id int
+declare @cancelled_status_id int
 
 select
 	@send_edit = "N"
@@ -98,6 +99,13 @@ from
 	statuses
 where
 	name = "Affirmed"
+
+select
+        @cancelled_status_id = status_id
+from
+        statuses
+where
+        name = "Cancelled"
 
 select
     @user_id = account_id,
@@ -679,6 +687,12 @@ if @orig_status_id = @affirm_status_id and @pend_affirm_status_id != NULL and @a
 begin
 	select
 		@status_id = @pend_affirm_status_id
+end
+
+if (@orig_status_id = @pend_affirm_status_id or @orig_status_id = @affirm_status_id) and @cancelled_status_id != NULL and @quantity = 0
+begin
+	select
+		@status_id = @cancelled_status_id
 end
 
 select
