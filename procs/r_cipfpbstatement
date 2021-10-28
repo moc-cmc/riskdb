@@ -1491,7 +1491,7 @@ from
 where
         a.transaction_type_id = b.transaction_type_id
 and
-        b.name in("Commission", "Markup", "Management Fee", "Incentive Fee", "Execution Fee")
+        b.name in("Prime Brokerage Fee", "Fees/Commissions/Brokerage")
 
 select
         @adjustments = sum(a.equiv)
