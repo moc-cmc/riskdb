@@ -1,0 +1,165 @@
+create or replace procedure 
+	apiv0_addcptyregulatoryinfo
+		@login varchar(50),
+		@counterparty varchar(50),
+		@country varchar(50)=NULL,
+		@branch_location varchar(50)=NULL,
+		@corporate_sector varchar(50)=NULL,
+		@party_region varchar(50)=NULL,
+		@financial_juristiction varchar(10)=NULL,
+		@lei_type varchar(10)=NULL,
+		@lei_number varchar(50)=NULL
+
+as
+
+declare @cpty_regulatory_info_id int
+declare @counterparty_id int
+declare @orig_country varchar(50)
+declare @orig_branch varchar(50)
+declare @orig_sector varchar(50)
+declare @orig_region varchar(50)
+declare @orig_juristiction varchar(10)
+declare @orig_lei varchar(50)
+declare @orig_type varchar(10)
+declare @status varchar(50)
+
+
+select
+	@counterparty_id = counterparty_id
+from
+	counterparties
+where
+	name = @counterparty
+if @counterparty_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem determining counterparty",
+		external_account=@counterparty
+	return
+end
+
+select
+	@cpty_regulatory_info_id = cpty_regulatory_info_id
+from
+	cpty_regulatory_info
+where
+	counterparty_id = @counterparty_id
+
+if @cpty_regulatory_info_id = NULL
+begin
+
+	/* Add new record */
+	exec
+		j_nextkey 
+			"cpty_regulatory_info",
+			@cpty_regulatory_info_id output
+
+	insert into
+		cpty_regulatory_info(
+			cpty_regulatory_info_id,
+			counterparty_id,
+			country,
+			branch_location,
+			corporate_sector,
+			party_region,
+			financial_juristiction,
+			lei_type,
+			lei_number )
+	values(
+		@cpty_regulatory_info_id,
+		@counterparty_id,
+		@country,
+		@branch_location,
+		@corporate_sector,
+		@party_region,
+		@financial_juristiction,
+		@lei_type,
+		@lei_number)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			msg = "Problem adding regulatory info for account"
+		return
+	end
+	select
+		@status = "Added"
+end
+else
+begin
+	select
+		@orig_country = country,
+		@orig_branch = branch_location,
+		@orig_sector = corporate_sector,
+		@orig_region = party_region,
+		@orig_juristiction = financial_juristiction,
+		@orig_type = lei_type,
+		@orig_lei = lei_number
+	from
+		cpty_regulatory_info
+	where
+		cpty_regulatory_info_id = @cpty_regulatory_info_id
+
+	if @country = NULL
+		select
+			@country = @orig_country
+	if @branch_location = NULL
+		select
+			@branch_location = @orig_branch
+	if @corporate_sector = NULL
+		select
+			@corporate_sector = @orig_sector
+	if @party_region = NULL
+		select
+			@party_region = @orig_region
+	if @financial_juristiction = NULL
+		select
+			@financial_juristiction = @orig_juristiction
+	if @lei_type = NULL
+		select 
+			@lei_type = @orig_type
+	if @lei_number = NULL
+		select
+			@lei_number = @orig_lei
+		
+		
+	/* Update info */
+	update
+		cpty_regulatory_info
+	set
+		country = @country,
+		branch_location = @branch_location,
+		corporate_sector = @corporate_sector,
+		party_region = @party_region,
+		financial_juristiction = @financial_juristiction,
+		lei_type = @lei_type,
+		lei_number = @lei_number
+	where
+		cpty_regulatory_info_id = @cpty_regulatory_info_id
+	if @@rowcount != 1
+	begin
+                select
+                        status = "Error",
+                        msg = "Problem updating regulatory info for counterparty"
+                return
+	end
+	select
+		@status = "Updated"
+end
+
+select
+	status = @status,
+	counterparty = @counterparty,
+	country = @country,
+	branch_location = @branch_location,
+	corporate_sector = @corporate_sector,
+	party_region = @party_region,
+	financial_juristiction = @financial_juristiction,
+	lei_type = @lei_type,
+	lei_number = @lei_number
+
+	
+
+go
+

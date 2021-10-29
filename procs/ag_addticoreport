@@ -5,7 +5,7 @@ create or replace procedure
 		@run_name varchar(50)
 as
 
-
+declare @tico_account_id int
 declare @tico_report_id int
 declare @run_id int
 declare @report_user_id int
@@ -72,9 +72,10 @@ and
 	a.name = @run_name
 if @run_id = NULL
 begin
-	r_grantaccount
-		@account=@pdf_login,
-		@run_name=run_name
+	exec 
+		r_grantaccount
+			@account=@pdf_login,
+			@run_name=run_name
 end
 
 if @tico_report = "Daily Trading Statement"
@@ -149,6 +150,43 @@ begin
                         @pdf_login=@pdf_login,
                         @run_name=@run_name
 end
+
+
+if @tico_report = "Daily LP Account Statement"
+begin
+        exec
+                r_enablelpdailystatement
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end
+
+if @tico_report = "Monthly LP Account Statement"
+begin
+        exec
+                r_enablelpmonthlystatement
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end
+
+if @tico_report = "Daily PB Account Statement"
+begin
+        exec
+                r_enablepbdailystatement
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end
+
+if @tico_report = "Monthly PB Account Statement"
+begin
+        exec
+                r_enablepbmonthlystatement
+                        @login=@login,
+                        @pdf_login=@pdf_login,
+                        @run_name=@run_name
+end    
 
 
 

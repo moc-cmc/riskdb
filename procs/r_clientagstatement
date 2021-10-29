@@ -1905,7 +1905,6 @@ from
 where
 	a.trade_type_id = b.trade_type_id
 
-/* 
 update
 	#option_trades
 set
@@ -1918,7 +1917,6 @@ set
 	buy_sell = "SELL"
 where
 	quantity < 0.0
-*/
 
 create table
 	#open_options(

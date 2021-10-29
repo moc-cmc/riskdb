@@ -12,6 +12,9 @@ as
 
 declare @swap_symbol_id int
 declare @swap_symbol varchar(50)
+declare @found_symbol char(1)
+declare @found_near char(1)
+declare @found_far char(1)
 
 if @client_or_market not in("C", "M")
 begin
@@ -22,50 +25,137 @@ begin
 end
 
 /* Create and assign market swap symbol */
-exec
-	j_nextkey
-		"swap_symbols",
-		@swap_symbol_id output
 select
 	@swap_symbol = rtrim(convert(varchar(50), @deal_id)) +"."+@client_or_market
 
-insert into
+select
+	@swap_symbol_id = swap_symbol_id
+from
 	swap_symbols
-(
-	swap_symbol_id,
-	symbol,
-	timestamp
-)
-values
-(
-	@swap_symbol_id,
-	@swap_symbol,
-	getdate()
-)
+where
+	symbol = @swap_symbol
 
-/* Tie bothe legs to the swap symbol */
-insert into 
+if @swap_symbol_id = NULL
+begin
+	exec
+		j_nextkey
+			"swap_symbols",
+			@swap_symbol_id output
+end
+else
+begin
+	select
+		@found_symbol = "Y"
+end
+
+select
+	@found_near = "Y"
+from
 	swap_symbol_trades
-(
-	swap_symbol_id,
-	trade_id
-)
-values
-(
-	@swap_symbol_id,
-	@near_trade_id
-)
-insert into 
+where
+	trade_id = @near_trade_id
+
+select
+	@found_far = "Y"
+from
 	swap_symbol_trades
-(
-	swap_symbol_id,
-	trade_id
-)
-values
-(
-	@swap_symbol_id,
-	@far_trade_id
-)
+where
+	trade_id = @far_trade_id
+
+
+if @found_symbol = "Y" and @found_near = "Y" and @found_far = "Y"
+begin
+	return
+end
+
+begin tran
+	if @found_symbol != "Y"
+	begin
+		insert into
+			swap_symbols
+		(
+			swap_symbol_id,
+			symbol,
+			timestamp
+		)
+		values
+		(
+			@swap_symbol_id,
+			@swap_symbol,
+			getdate()
+		)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem inserting swap symbol",
+				deal_id = @deal_id,
+				near_trade_id = @near_trade_id,
+				far_trade_id = @far_trade_id,
+				client_or_market = @client_or_market,
+				swap_symbol_id = @swap_symbol_id
+			rollback tran
+			return
+		end
+	end
+	
+	/* Tie both legs to the swap symbol */
+	if @found_near != "Y"
+	begin
+		insert into 
+			swap_symbol_trades
+		(
+			swap_symbol_id,
+			trade_id
+		)
+		values
+		(
+			@swap_symbol_id,
+			@near_trade_id
+		)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem inserting near swap symbol trade",
+				deal_id = @deal_id,
+				near_trade_id = @near_trade_id,
+				far_trade_id = @far_trade_id,
+				client_or_market = @client_or_market,
+				swap_symbol_id = @swap_symbol_id
+			rollback tran
+			return
+		end
+	end
+
+	if @found_far != "Y"
+	begin
+		insert into 
+			swap_symbol_trades
+		(
+			swap_symbol_id,
+			trade_id
+		)
+		values
+		(
+			@swap_symbol_id,
+			@far_trade_id
+		)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem inserting fqr swap symbol trade",
+				deal_id = @deal_id,
+				near_trade_id = @near_trade_id,
+				far_trade_id = @far_trade_id,
+				client_or_market = @client_or_market,
+				swap_symbol_id = @swap_symbol_id
+			rollback tran
+			return
+		end
+	end
+commit tran
 
 
 go

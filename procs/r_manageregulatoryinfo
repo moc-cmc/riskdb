@@ -45,6 +45,14 @@ insert into
         #meta
 values(
         "Column Link",
+        "edit_lp_info",
+        "Edit LP Regulatory Info",
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Link",
         "edit_fund",
         "Edit Regulatory Fund Info",
         NULL
@@ -116,6 +124,7 @@ where
 	a.fund_id = b.fund_id
 
 
+
 create table
 	#external_accounts(
 		external_account_id int,
@@ -156,6 +165,48 @@ from
 where
 	a.external_account_id = b.external_account_id
 
+
+create table
+	#counterparties(
+		counterparty_id int,
+		symbol varchar(50),
+                country varchar(50) NULL,
+                branch_location varchar(50) NULL,
+                corporate_sector varchar(50) NULL,
+                party_region varchar(10) NULL,
+                financial_juristiction varchar(10) NULL,
+                lei_number varchar(50) NULL,
+		lei_type varchar(10) NULL,
+		style varchar(50) NULL
+)
+
+insert into
+	#counterparties(
+		counterparty_id,
+		symbol)
+select
+	counterparty_id,
+	name
+from
+	counterparties
+
+update
+	#counterparties
+set
+	country = a.country,
+	branch_location = a.branch_location,
+	corporate_sector = a.corporate_sector,
+	party_region = a.party_region,
+	financial_juristiction = a.financial_juristiction,
+	lei_number = a.lei_number,
+	lei_type = a.lei_type
+from
+	cpty_regulatory_info a,
+	#counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+
 update
 	#funds
 set
@@ -189,6 +240,36 @@ where
 	b.o_code != convert(varchar(4), a.lei_number)
 and
 	a.lei_type = "Internal"
+
+update
+	#counterparties
+set
+	style = "background:#FFFFFF;border: 1px solid white"
+
+update
+	#counterparties
+set
+	style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+from
+	#counterparties a,
+	#funds b
+where
+	b.o_code = convert(varchar(4), a.lei_number)
+and
+	a.lei_type = "Issued"
+
+update
+	#counterparties
+set
+        style = "background:#FFF942;border: 1px solid white;font-weight:bold"
+from
+        #counterparties a,
+        #funds b
+where
+	b.o_code != convert(varchar(4), a.lei_number)
+and
+	a.lei_type = "Internal"
+
 
 /* OUTPUT */
 
@@ -229,6 +310,25 @@ from
 	#external_accounts
 order by
 	symbol
+
+
+select
+        section = "Counterparty Regulatory Info",
+        style,
+        counterparty = symbol,
+        country,
+        branch_location,
+        corporate_sector,
+        party_region,
+        financial_juristiction,
+        lei_type,
+        lei_number,
+        edit_lp_info = "EDIT",
+        gen_lei = case when lei_number = NULL then "Generate LEI" else "" end
+from
+        #counterparties
+order by
+        symbol
 
 go
 	

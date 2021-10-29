@@ -10,6 +10,10 @@ create table
 
 insert into #output values("Daily Trading Statement")
 insert into #output values("Monthly Trading Statement")
+insert into #output values("Daily LP Account Statement")
+insert into #output values("Monthly LP Account Statement")
+insert into #output values("Daily PB Account Statement")
+insert into #output values("Monthly PB Account Statement")
 /*
 insert into #output values("Trading Daily Statement")
 insert into #output values("Trading Monthly Statement")

@@ -1,0 +1,1675 @@
+
+create or replace procedure
+	r_cipfpbstatement
+		@login varchar(50),
+		@run_name varchar(50),
+		@begin_date datetime,
+		@end_date datetime
+as
+
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @evaluation_currency varchar(50)
+declare @run_id int
+declare @placeholder_date datetime
+declare @fx_transaction_type_id int
+declare @option_premium_type_id int
+declare @source_id int
+declare @external_account_id int
+declare @account_symbol varchar(50)
+declare @name varchar(200)
+declare @phone varchar(20)
+declare @email varchar(20)
+declare @address_line1 varchar(100)
+declare @address_line2 varchar(100)
+declare @additional1 varchar(100)
+declare @additional2 varchar(100)
+declare @additional3 varchar(100)
+declare @cfd_transaction_type_id int
+declare @cfd_roll_type_id int
+declare @equiv float
+
+declare @begin_equiv float
+declare @begin_end_equiv float 
+declare @activity_equiv float
+declare @end_equiv float
+declare @fwd_open_equiv float
+declare @opt_open_equiv float
+declare @start_time datetime
+declare @end_time datetime
+declare @tag_run_name varchar(50)
+declare @proc_start_time datetime
+declare @proc_end_time datetime
+declare @activate_timer int
+declare @statement_period varchar(50)
+
+declare @id int
+declare @ids int
+declare @account varchar(50)
+declare @product_id int
+declare @product varchar(50)
+declare @begin_balance numeric(30, 8)
+declare @end_balance numeric(30, 8)
+
+declare @xact_id int
+declare @xacts int
+declare @running_balance numeric(30, 8)
+declare @amount numeric(30, 8)
+
+declare @withdrawals numeric(30, 8)
+declare @adjustments numeric(30, 8)
+declare @commissions numeric(30, 8)
+declare @deposits numeric(30, 8)
+declare @financing numeric(30, 8)
+declare @opening_balance numeric(30, 8)
+declare @opening_nav numeric(30, 8)
+declare @opening_unrealized numeric(30, 8)
+declare @realized_loss numeric(30, 8)
+declare @realized_profit numeric(30, 8)
+declare @net_realized numeric(30, 8)
+declare @closing_balance numeric(30, 8)
+declare @closing_unrealized numeric(30, 8)
+declare @closing_nav numeric(30, 8)
+
+
+select @activate_timer = 1
+
+select @proc_start_time = getdate()
+
+if (@activate_timer = 1)
+begin
+	select @start_time = getdate()
+end
+
+if @run_name = NULL
+	return
+
+select @tag_run_name = "run:" + lower(STR_REPLACE(@run_name, " ", "_"))
+
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+   @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+   @subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+   @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+   @style = "background:#FFFFFF;border: 1px solid white",
+   @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+   @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+   #meta(
+           meta_type char(200),
+           name char(50) NULL,
+           action char(100) NULL,
+           value char(200) NULL)
+insert into
+   #meta
+values(
+   "Row Style",
+   "style",
+   NULL,
+   NULL)
+
+insert into
+   #meta
+values (
+   "Column Group",
+   "section",
+   NULL,
+   NULL)
+
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "fund code",
+        "Number",
+        "###0.#")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount_1", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">-#,##0.00</span>")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "amount_2",
+        "Number",
+        "#,##0.00;<span style=""color:red"">-#,##0.00</span>")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "amount",
+        "Number",
+        "#,##0.00;<span style=""color:red"">-#,##0.00</span>")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "balance",
+        "Number",
+        "#,##0.00;<span style=""color:red"">-#,##0.00</span>")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "average_rate",
+        "Number",
+        "#,##0.00000")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "unrealized_pl_usd",
+        "Number",
+        "#,##0.00;<span style=""color:red"">-#,##0.00</span>")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "equiv_usd",
+        "Number",
+        "'" + CHAR(36) + "' #,##0.00;<span style=""color:red"">'"+ CHAR(36) +"' (#,##0.00)</span>")
+
+/*
+        "'" + CHAR(36) + "' #,##0.00")
+*/
+
+
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "trade_date",
+        "Number",
+        "########")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "value_date",
+        "Number",
+        "########")
+
+
+
+select * from #meta
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@evaluation_currency = symbol
+from
+	products
+where 
+	product_id = @evaluation_currency_id
+
+if convert(date, @begin_date) = convert(date, @end_date)
+begin
+	select
+		@statement_period = convert(varchar(11), @end_date, 116)
+end
+else
+begin
+	select
+		@statement_period = datename(mm, @end_date)+" "+convert(char(4), datepart(yy, @end_date))
+
+end
+exec
+	r_daterangefordate
+		@begin_date,
+		@begin_date output,
+		@placeholder_date output
+
+exec
+        r_daterangefordate
+                @end_date,
+                @placeholder_date output,
+                @end_date output
+
+
+if @run_name = NULL
+begin
+	select
+		@run_name = name
+	from
+		funds
+	where
+		fund_id = @fund_id
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int,
+		symbol varchar(50),
+		name varchar(50))
+insert into
+	#external_accounts
+select
+	b.external_account_id,
+	b.symbol,
+	b.name
+from
+	run_external_accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.run_id = @run_id
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "PB Statement requires external accounts in run def"
+	return
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+
+
+select
+	@external_account_id = external_account_id,
+	@account_symbol = symbol
+from
+	external_accounts
+where
+	symbol = @run_name
+select
+	@name = name,
+	@phone = phone,
+	@email = email,
+	@address_line1 = address_line1,
+	@address_line2 = address_line2,
+	@additional1 = additional1,
+	@additional2 = additional2,
+	@additional3 = additional3
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+
+create table
+        #fund_header(
+                id int identity,
+                customer varchar(100) NULL,
+                label varchar(50) NULL,
+                value varchar(50) NULL)
+
+
+insert into
+        #fund_header(
+                customer,
+                label)
+values(
+        "<b>OANDA Canada</b>",
+        "Phone: +1 416 593 9436 or")
+
+insert into
+        #fund_header(
+                customer,
+                label)
+values(
+        "370 King Street West, 2nd Floor, Box 60",
+        "+1 877 OANDA FX")
+
+insert into
+        #fund_header(
+                customer,
+                label)
+values(
+        "Toronto, ON M5V 1J9",
+        "Email: frontdesk@oanda.com")
+
+select 
+	style = @style,
+        " " = customer,
+	"  " = label,
+	"   " = value
+from
+	#fund_header
+	
+
+create table
+	#header(
+		id int identity,
+		customer varchar(100) NULL,
+		label varchar(50) NULL,
+		value varchar(50) NULL)
+
+
+insert into
+	#header(
+		customer,
+		label,
+		value)
+values(
+	@name,
+	"<b>Statement Period</b>",
+	"<b>"+@statement_period+"</b>")
+
+insert into
+	#header(
+		customer,
+		label,
+		value)
+values(
+	@address_line1,
+	"",
+	"")
+
+insert into
+	#header(
+		customer,
+		label,
+		value)
+values(
+	@address_line2,
+	"",
+	"")
+
+insert into
+	#header(
+		customer,
+		label,
+		value)
+values(
+	NULL,
+	"Account Currency:",
+	@evaluation_currency)
+
+select
+	section = "Statement",
+	style = @style,
+	"pb account"=customer,
+	" "=label,
+	"  "=value
+from
+	#header
+order by
+	id
+
+create table
+	#transaction_types(
+		transaction_type_id int
+)
+
+insert into
+	#transaction_types
+select
+	transaction_type_id
+from
+	transaction_types
+where
+	name not in("Commission", "Markup", "Management Fee", "Incentive Fee", "Execution Fee")
+	
+create table
+	#begin_balances(
+		product_id int,
+		balance numeric(30, 8) NULL,
+		equiv numeric(30, 8) NULL)
+insert into
+	#begin_balances(
+		product_id,
+		balance)
+select
+	a.currency_id,
+	sum(convert(numeric(30, 8), floor(abs(a.amount) * 100000000) / 100000000 ) * sign(a.amount))
+from
+	account_transactions a,
+	products b,
+	#external_accounts c,
+	#transaction_types d
+where
+	a.currency_id = b.product_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.transaction_type_id = d.transaction_type_id
+and
+	a.transaction_date < @begin_date
+group by
+	a.currency_id
+
+
+create table
+	#account_transactions(
+		account_transaction_id int,
+		entered_by int,
+		external_account_id int,
+		transaction_type_id int,
+		transaction_date datetime,
+		currency_id int,
+		amount numeric(30,8),
+		note varchar(250) NULL)
+insert into
+	#account_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		note)
+select
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	convert(numeric(30, 8), floor(abs(a.amount) * 100000000) / 100000000 ) * sign(a.amount),
+	a.note
+from
+	account_transactions a,
+	#external_accounts b,
+	#transaction_types c
+where
+	a.external_account_id = b.external_account_id
+and
+        a.transaction_type_id = c.transaction_type_id
+and
+	transaction_date >= @begin_date
+and
+	transaction_date < @end_date
+
+
+
+/* Get transaction data */
+
+update
+	#account_transactions
+set
+	a.amount = convert(numeric(30, 2), floor(abs(a.amount) * 100) / 100 ) * sign(a.amount)
+from
+	#account_transactions a,
+	products b
+where
+	a.currency_id = b.product_id
+
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		trade_type_id int,
+		trade_date datetime,
+		external_account_id int,
+		prime_broker_id int NULL,
+		margin_multiplier float NULL,
+		quantity float,
+		contract_id int,
+		symbol varchar(50) NULL,
+		product_id int,
+		currency_id int,
+		price float,
+		value_date datetime,
+		fixing_date datetime NULL,
+		counterparty_id int, 
+ 		lp_transparency varchar(5) NULL,
+		counterparty varchar(50) NULL,
+		margin float NULL,
+		product_qty float NULL,
+		product_equiv float NULL,
+		currency_qty float NULL,
+		currency_equiv float NULL,
+		buy_sell varchar(5) NULL, 
+ 		display_price float NULL,
+		reval_counter_qty float NULL,
+		reval_price_db float NULL,
+		reval_price_std float NULL,
+		discount_factor float NULL,
+		mtm float NULL,
+		entry_type char(1) NULL /* G for giveup, O for offset*/
+		)
+insert into
+	#trades(
+		trade_id,
+		deal_id, 
+ 		trade_type_id,
+		trade_date,
+		external_account_id,
+		quantity,
+		contract_id,
+		product_id,
+		currency_id,
+		price,
+		value_date,
+		fixing_date,
+		counterparty_id,
+		display_price,
+		entry_type)
+select
+	a.trade_id,
+	a.deal_id,
+	a.trade_type_id,
+	a.trade_date,
+	a.external_account_id,
+	a.quantity,
+	a.contract_id,
+	b.product_id,
+	b.currency_id,
+	a.price,
+	a.value_date,
+	a.fixing_date,
+	a.counterparty_id, 
+	a.price,
+        "G"
+from
+	trades a,
+	forwards b,
+	#external_accounts c,
+	#internal_accounts d,
+	#traders e,
+	#strategies f,
+	#brokers g,
+	#counterparties h
+where
+	a.external_account_id = c.external_account_id
+and
+	a.internal_account_id = d.internal_account_id
+and
+	a.trader_id = e.trader_id
+and
+	a.strategy_id = f.strategy_id
+and
+	a.broker_id = g.broker_id
+and
+	a.counterparty_id = h.counterparty_id
+and
+	a.contract_id = b.contract_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+
+create table
+	#all_products(
+		product_id int)
+insert into
+	#all_products
+select
+	distinct(product_id)
+from
+	#begin_balances
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(currency_id)
+from
+	#account_transactions
+where
+	currency_id not in(
+		select
+			product_id
+		from
+			#all_products)
+
+insert into
+        #all_products(
+                product_id)
+select
+        distinct(currency_id)
+from
+        #trades
+where
+        currency_id not in(
+                select
+                        product_id
+                from
+                        #all_products)
+insert into
+        #all_products(
+                product_id)
+select
+        distinct(product_id)
+from
+        #trades
+where
+        product_id not in(
+                select
+                        product_id
+                from
+                        #all_products)
+
+
+create table
+	#ordered_products(
+		id int identity,
+		product_id int NULL,
+		product varchar(50) NULL)
+insert into
+	#ordered_products(
+		product_id,
+		product)
+select
+	a.product_id,
+	a.symbol
+from
+	products a,
+	#all_products b
+where
+	a.product_id = b.product_id
+order by
+	a.symbol
+
+
+create table
+	#conversion_rates(
+		product_id int,
+		evaluation_currency_id int NULL,
+		begin_rate float NULL,
+		end_rate float NULL,
+		contract_id int NULL,
+		inverted_contract_id int NULL,
+		begin_display_rate float NULL,
+		end_display_rate float NULL)
+insert into
+	#conversion_rates(
+		product_id)
+select
+	distinct(product_id)
+from
+	#all_products 
+
+update
+	#conversion_rates
+set
+	evaluation_currency_id = @evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	begin_rate = 1.0,
+	end_rate = 1.0
+where
+	product_id = evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	a.begin_rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	a.evaluation_currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @begin_date)
+
+update
+	#conversion_rates
+set
+	a.begin_rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	a.evaluation_currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @begin_date)
+and
+	a.begin_rate = NULL
+
+update
+	#conversion_rates
+set
+	a.end_rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	a.evaluation_currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+
+update
+	#conversion_rates
+set
+	a.end_rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	a.evaluation_currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.end_rate = NULL
+
+update
+	#conversion_rates
+set
+	a.contract_id = b.contract_id
+from
+	#conversion_rates a,
+	forwards b
+where
+	a.product_id = b.product_id
+and
+	a.evaluation_currency_id = b.currency_id
+
+update
+	#conversion_rates
+set
+	a.inverted_contract_id = b.contract_id
+from
+	#conversion_rates a,
+	forwards b
+where
+	a.product_id = b.currency_id
+and
+	a.evaluation_currency_id = b.product_id
+
+update
+	#conversion_rates
+set
+	begin_display_rate = begin_rate,
+	end_display_rate = end_rate
+
+update
+	#conversion_rates
+set
+	a.begin_display_rate = 1.0 / a.begin_display_rate,
+	a.end_display_rate = 1.0 / a.end_display_rate
+from
+	#conversion_rates a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+
+
+/* Calc our begin balance equivs */
+
+update
+	#begin_balances
+set
+	equiv = a.balance * b.end_rate
+from
+	#begin_balances a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+	
+/* Fetch all the trades */
+
+
+
+update
+	#trades
+set
+	a.display_price = 1.0 / a.display_price
+from
+	#trades a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+and
+	a.display_price != 0.0
+
+update
+	#trades
+set
+	product_qty = a.quantity,
+	currency_qty = a.quantity * a.price * -1.0 * b.quantity
+from
+	#trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.symbol = b.symbol
+from
+	#trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.product_equiv = a.product_qty * b.end_rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+
+update
+	#trades
+set
+	a.currency_equiv = a.currency_qty * b.end_rate
+from
+	#trades a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+
+create table
+	#pair_balances(
+		id int identity,
+		ordering int,
+		style varchar(100),
+                contract_id int NULL,
+                quantity float NULL,
+                symbol varchar(50) NULL,
+                product_id int NULL,
+                currency_id int NULL,
+                price float NULL,
+                value_date datetime NULL,
+                product_qty float NULL,
+                product_equiv float NULL,
+                currency_qty float NULL,
+                currency_equiv float NULL,
+                display_price float NULL,
+                mtm float NULL
+                )
+
+insert into
+	#pair_balances(
+		ordering,
+		style,
+		contract_id,
+		product_id,
+		currency_id,
+		value_date,
+		quantity,
+		product_qty,
+		currency_qty,
+		product_equiv,
+		currency_equiv)
+select
+	1,
+	@style,
+        a.contract_id,
+        a.product_id,
+        a.currency_id,
+        a.value_date,
+	sum(a.product_qty),
+	sum(a.product_qty),
+	sum(a.currency_qty),
+	sum(a.product_equiv),
+	sum(a.currency_equiv)
+from
+	#trades a
+where
+	a.value_date > @end_date
+group by
+	a.contract_id,
+        a.product_id,
+        a.currency_id,
+        a.value_date
+
+update
+	#pair_balances
+set
+	symbol = a.symbol
+from
+	contracts a,
+	#pair_balances b
+where
+	a.contract_id = b.contract_id
+
+update
+	#pair_balances
+set
+	price = currency_qty/product_qty
+where
+	product_qty != 0
+
+update
+	#pair_balances
+set
+	mtm = product_equiv + currency_equiv
+
+insert into
+	#pair_balances(
+		ordering,
+		style,
+		symbol,
+		mtm)
+select
+	2,
+	@total_style,
+	"Total",
+	sum(mtm)
+from
+	#pair_balances
+
+
+
+
+
+create table
+	#ledger(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		prod varchar(50) NULL,
+		account varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		account_transaction_id int NULL,
+		transaction_type_id int NULL,
+		transaction_type varchar(50) NULL,
+		transaction_date datetime NULL,
+		amount numeric(30, 8) NULL,
+		balance numeric(30,8) NULL)
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#ordered_products
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#ordered_products
+	where
+		id > @id
+
+	select
+		@product_id = NULL,
+		@product = NULL,
+		@begin_balance = NULL,
+		@end_balance = NULL
+	
+	select
+		@product_id = product_id
+	from
+		#ordered_products
+	where
+		id = @id
+
+	select
+		@product = symbol
+	from
+		products
+	where
+		product_id = @product_id
+
+	select
+		@begin_balance = balance
+	from
+		#begin_balances
+	where
+		product_id = @product_id
+	if @begin_balance = NULL
+		select
+			@begin_balance = 0.0
+
+	insert into
+		#ledger(
+			style,
+			prod)
+	values(
+		@total_style,
+		@product)
+
+	insert into
+		#ledger(
+			style,
+			transaction_type,
+			transaction_date,
+			product,
+			balance)
+	values(
+		@total_style,
+		"Beginning balance",
+		@begin_date,
+		@product,
+		@begin_balance)
+
+	insert into
+		#ledger(
+			style,
+			external_account_id,
+			account,
+			product_id,
+			product,
+			account_transaction_id,
+			transaction_type_id,
+			transaction_type,
+			transaction_date,
+			amount,
+			balance)
+	select
+		style = @style,
+		external_account_id = c.external_account_id,
+		account = c.symbol,
+		a.currency_id,
+		product = @product,
+		a.account_transaction_id,
+		a.transaction_type_id,
+		b.name,
+		a.transaction_date,
+		a.amount,
+		balance = 0.0
+	from
+		#account_transactions a,
+		transaction_types b,
+		#external_accounts c
+	where
+		a.transaction_type_id = b.transaction_type_id
+	and
+		a.external_account_id = c.external_account_id
+	and
+		a.currency_id = @product_id
+	order by
+		a.transaction_date,
+		a.account_transaction_id
+
+	select
+		@xact_id = 0
+	select
+		@xacts = count(*)
+	from
+		#ledger
+	where
+		product_id = @product_id
+	and
+		id > @xact_id
+
+	select
+		@running_balance = @begin_balance
+
+	while @xacts > 0
+	begin
+		select
+			@xact_id = min(id)
+		from
+			#ledger
+		where
+			product_id = @product_id
+		and
+			id > @xact_id
+
+		select
+			@amount = NULL
+		select
+			@amount = amount
+		from
+			#ledger
+		where
+			id = @xact_id
+		
+		select
+			@running_balance = @running_balance + @amount
+
+		update
+			#ledger
+		set
+			balance = @running_balance
+		where 
+			id = @xact_id
+
+		select
+			@xacts = count(*)
+		from
+			#ledger
+		where
+			product_id = @product_id
+		and
+			id > @xact_id
+	end
+		
+        insert into
+                #ledger(
+                        style,
+                        transaction_type,
+                        transaction_date,
+                        product_id,
+                        product,
+                        balance)
+        values(
+                @total_style,
+                "Ending balance",
+                @end_date,
+                @product_id,
+                @product,
+		@running_balance)	
+
+	select
+		@ids = count(*)
+	from
+		#ordered_products
+	where
+		id > @id
+end		
+
+create table
+	#realized_equivs(
+		id int identity,
+		value_date datetime,
+		equiv numeric(30, 4) NULL
+)
+
+insert into
+	#realized_equivs(
+		value_date,
+		equiv)
+select
+	a.value_date,
+	sum(a.currency_equiv + a.product_equiv)
+from
+	#trades a
+where
+	a.value_date >= @begin_date
+and
+	a.value_date <= @end_date
+group by
+	a.value_date
+
+	
+
+create table
+	#summary(
+		id int identity,
+		name varchar(50) NULL,
+		value numeric(30,8) NULL
+)
+
+select
+	@opening_balance = sum(equiv)
+from
+	#begin_balances
+
+select
+	@opening_unrealized = sum(a.product_equiv + a.currency_equiv)
+from
+	#trades a
+where
+        a.value_date >= @begin_date
+and
+	a.trade_date < @begin_date
+
+select
+	@opening_nav = @opening_balance + @opening_unrealized
+	
+
+select
+	@realized_profit =  sum(a.amount)
+from
+	#ledger a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.amount > 0
+and
+	b.name = "FX Settlement"
+
+select
+	@realized_loss =  sum(a.amount)
+from
+	#ledger a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.amount < 0
+and
+	b.name = "FX Settlement"
+
+
+if @realized_profit = NULL
+	select
+		@realized_profit = 0
+
+if @realized_loss = NULL
+	select
+		@realized_loss = 0
+
+select
+	@net_realized = @realized_profit + @realized_loss
+
+
+create table
+	#transaction_type_summary(
+		id int identity,
+		transaction_type_id int,
+		product_id int,
+		amount numeric(30, 4),
+		equiv numeric(30, 4) NULL
+)
+
+insert into
+	#transaction_type_summary(
+		transaction_type_id,
+		product_id,
+		amount)
+select
+	transaction_type_id,
+	currency_id,
+	sum(amount)
+from
+	#account_transactions
+group by
+	transaction_type_id,
+	currency_id
+
+update
+        #transaction_type_summary
+set
+        a.equiv = a.amount * b.end_rate
+from
+        #transaction_type_summary a,
+        #conversion_rates b
+where
+        a.product_id = b.product_id
+
+select
+	@withdrawals = sum(a.equiv)
+from
+	#transaction_type_summary a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	b.name in("Withdrawal")
+
+select
+        @deposits = sum(a.equiv)
+from
+        #transaction_type_summary a,
+        transaction_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+and
+        b.name in("Deposit")
+
+select
+        @financing = sum(a.equiv)
+from
+        #transaction_type_summary a,
+        transaction_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+and
+        b.name in("Interest", "Interest Accrual")
+
+select
+        @commissions = sum(a.equiv)
+from
+        #transaction_type_summary a,
+        transaction_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+and
+        b.name in("Prime Brokerage Fee", "Fees/Commissions/Brokerage")
+
+select
+        @adjustments = sum(a.equiv)
+from
+        #transaction_type_summary a,
+        transaction_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+and
+        b.name in("Adjustment")
+
+
+if @opening_unrealized = NULL
+	select
+		@opening_unrealized = 0
+if @opening_nav = NULL
+	select
+		@opening_nav = 0
+	
+if @withdrawals = NULL
+	select
+		@withdrawals = 0
+if @deposits = NULL
+	select
+		@deposits = 0
+if @financing = NULL
+	select
+		@financing = 0
+if @commissions = NULL
+	select
+		@commissions = 0
+if @adjustments = NULL
+	select
+		@adjustments = 0
+
+
+insert into #summary values("Opening Balance", @opening_balance)
+insert into #summary values("Opening Unrealized P/L", @opening_unrealized)
+insert into #summary values("Opening NAV", @opening_nav)
+insert into #summary values(NULL, NULL)
+insert into #summary values("Realized Profit", @realized_profit)
+insert into #summary values("Realized Loss", @realized_loss)
+insert into #summary values("Net Realized P/L", @net_realized)
+insert into #summary values(NULL, NULL)
+insert into #summary values("Withdrawals", @withdrawals)
+insert into #summary values("Deposits", @deposits)
+insert into #summary values("Financing", @financing)
+insert into #summary values("Commission", @commissions)
+insert into #summary values("Adjustments", @adjustments)
+insert into #summary values(NULL, NULL)
+
+select 
+	@closing_balance = @opening_balance + @net_realized + @withdrawals + @deposits + @financing + @commissions + @adjustments
+
+select
+	@closing_unrealized = mtm
+from
+	#pair_balances
+where
+	symbol like "%Total%"
+
+if @closing_unrealized = NULL
+	select
+		@closing_unrealized = 0
+
+select
+	@closing_nav = @closing_balance + @closing_unrealized
+
+insert into #summary values("Closing Balance", @closing_balance)
+insert into #summary values("Closing Unrealized P/L", @closing_unrealized)
+insert into #summary values("Closing NAV", @closing_nav)
+select
+	section = "Account Summary",
+	style = @style,
+	" " = name,
+	"equiv_usd" = value
+from
+	#summary
+
+select
+	section = "Open Positions as of "+ convert(varchar(20), @end_date, 106),
+	style = a.style,
+	ccy_pair = a.symbol,
+	ccy1 = case when a.symbol != "Total" then substring(a.symbol, 1, 3) else '' end,
+	ccy2 = case when a.symbol != "Total" then substring(a.symbol, 4, 6) else '' end,
+	value_date = convert(varchar(8), a.value_date, 112),
+	amount_1 = a.product_qty,
+	amount_2 = a.currency_qty,
+	average_rate = case when a.product_qty != 0 then abs(round(a.currency_qty/a.product_qty, 5)) when a.product_qty = 0 then 0.0000 else NULL end,
+	/*product_equiv,
+	currency_equiv,*/
+	unrealized_pl_usd = mtm
+from
+	#pair_balances a
+order by
+	a.ordering,
+	a.symbol
+
+
+	
+select
+	section = "Movements in Cash Balance",
+	style = a.style,
+	transaction_date = convert(varchar(12), a.transaction_date, 106),
+	description = a.transaction_type,
+	direction = case when a.amount = NULL then NULL when amount > 0 then 'Receipt' else 'Payment' end,
+	amount = a.amount,
+	ccy = a.product,
+	balance = a.balance,
+	comments = a.transaction_type
+from
+	#ledger a
+where
+	a.product = @evaluation_currency
+	
+		
+select
+	section = "Trade Transaction History",
+	style = "background:#fff",
+	fund_code = "27507",
+	row_type = "Cash",
+	trade_status = "New",
+	reason = "NEW",
+	trade_id = a.trade_id,
+	executing_venue = b.name,
+	trade_date = convert(varchar(8), a.trade_date, 112),
+	value_date = convert(varchar(8), a.value_date, 112),
+	ccy_pair = a.symbol,
+	ccy1 = substring(a.symbol, 1, 3),
+	amount_1 = a.product_qty,
+	ccy2 = substring(a.symbol, 4, 6),
+	amount_2  = a.currency_qty,
+	trade_rate = a.price
+from
+	#trades a,
+	counterparties b
+where
+	a.trade_date >= @begin_date
+and
+	a.counterparty_id = b.counterparty_id
+order by
+	a.trade_date,
+	a.trade_id
+
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	_ = '<img id="cipf-logo" src="/WebObjects/Themes/OandaTheme.themed/Resources/cipf_logo.png">',
+	disclaimer = '<b>Member - Canadian Investor Protection Fund.</b><br>
+Customers’ accounts are protected by the Canadian Investor Protection Fund within specified limits. A brochure describing the nature and limits of coverage is available upon request. A copy of our most recent Financial Statement and a list of Directors and Senior Officers is available for your personal inspection at our offices. Our clients in British Columbia are entities, upon request, to certain additional information about us, including information about our registration status and any administrative proceedings that may relate to the firm or our staff. <br><br>
+
+Forex transactions are disclosed to the Canada Revenue Agency and Revenue Quebec (residents of Quebec only) on a yearly basis. These transactions are to be reported on your annual return of income. <br><br>
+
+For a details itemization of each transactions in this reporting month, please access the Full Transaction History (/account/transaction-history)<br><br>
+
+Order execution only<br><br>
+
+Any free credit balances represent funds layabout on demand which, although properly recorded in our books, are not segregated and may be used in the conduct of our business. <br><br>
+
+This statement provides unrealized profit/loss information for positions that remain open as at the end of the statement period and realized profit/loss information for positions closed during the statement period. It does not provide a roll-forward of the change in account market value that occurred during the statement period<br><br>
+
+<p style="font-size:80%;">[1] Markup is calculated based on the difference between your trade execution price and the price our pricing engine determines we may be able to immediately offset your trade at. Since OANDA typically only offsets its aggregate client exposure, the markup paid does not necessarily reflect the revenue earned by OANDA<p>'
+
+	
+select
+	style = @style,
+	" " = "For information purposes only. Errors & omissions excluded. Not intended as investement advice or for trading purposes. No warranties of accuracy, completeness, or timliness apply. OANDA assumes no liability for any decisions made in reliance thereon."
+
+
+select
+	@proc_end_time = getdate()
+
+exec
+	sp_dogstatsdtimer
+		@metric_name="ase.proc.r_cipfdailylpstatement",
+		@start_time=@proc_start_time,
+		@end_time=@proc_end_time,
+		@tags=@tag_run_name,
+		@sample_rate="1.0"
+
+go 
+

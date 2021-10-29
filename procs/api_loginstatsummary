@@ -1,0 +1,169 @@
+create or replace procedure
+	api_loginstatsummary
+		@login varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL,
+		@session_id varchar(50)=NULL
+
+as
+
+declare @tico_account_id int
+declare @placeholder_date datetime
+declare @last_login_stat_refresh datetime
+declare @active_logins int
+declare @total_mc_logins int
+declare @total_mpt_logins int
+declare @has_permission char(1)
+declare @source varchar(30)
+
+select
+   @tico_account_id = account_id
+from
+   tico_accounts
+where
+   login = @login
+if @tico_account_id = NULL
+begin
+   select
+           status="Error",
+           message="Problem finding account for login"
+   return
+end
+
+/* Validate session location */
+if @session_id != NULL
+	select
+		@source = "MPT"
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+   @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+   @subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+   @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+   @style = "background:#FFFFFF;border: 1px solid white",
+   @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+   @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+
+if @begin_date = NULL 
+begin
+	select
+		@begin_date = getdate()
+	exec
+		r_daterangefordate
+			@begin_date,
+			@begin_date output,
+			@end_date output
+end
+else
+begin
+	exec
+		r_daterangefordate
+			@begin_date,
+			@begin_date output,
+			@placeholder_date output
+
+	exec
+		r_daterangefordate
+			@end_date,
+			@placeholder_date output,
+			@end_date output
+end
+
+/*
+exec
+	r_checkaccessgrouppermission
+		@login = @login,
+		@access_group = "Login Admin",
+		@has_permission = @has_permission output,
+		@show_perm_denied = "Y"
+
+if @has_permission != "Y"
+begin
+	return
+end
+*/
+
+select
+	@last_login_stat_refresh = max(activity_date)
+from
+	user_login_stats
+
+if @last_login_stat_refresh = NULL
+begin
+	return
+end
+
+if @last_login_stat_refresh < @begin_date
+begin
+	select
+		status = "Error",
+		message = "Missing stat data for range",
+		last_login_stat_refresh = @last_login_stat_refresh
+end
+
+create table
+	#active_users(
+		tico_account_id int,
+		mc_logins int NULL,
+		mpt_logins int NULL,
+		last_login datetime NULL
+)
+
+insert into
+	#active_users
+select
+	a.tico_account_id,
+	sum(a.mc_logins),
+	sum(a.mpt_logins),
+	max(a.activity_date)
+from
+	user_login_stats a
+where
+	a.activity_date > @begin_date
+and
+	a.activity_date <= @end_date
+group by
+	a.tico_account_id
+		
+select
+	@active_logins = count(*),
+	@total_mc_logins = sum(mc_logins),
+	@total_mpt_logins = sum(mpt_logins)
+from
+	#active_users
+	
+select
+	section="Summary",
+	begin_date = @begin_date,
+	end_date = @end_date,
+	active_logins = @active_logins,
+	total_mc_logins = @total_mc_logins,
+	total_mpt_logins = @total_mpt_logins,
+	style = case when @source = "MPT" then @total_style else "" end
+
+select
+	section = "Active Users",
+	login = a.login,
+	given_names = a.given_names,
+	surname = a.surname,
+	mc_logins = b.mc_logins,
+	mpt_logins = b.mpt_logins,
+	last_login = b.last_login,
+	style = case when @source = "MPT" then @style else "" end
+from
+	tico_accounts a,
+	#active_users b
+where
+	a.account_id = b.tico_account_id
+order by
+	a.login
+	
+		
+go	
