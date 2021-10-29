@@ -502,14 +502,14 @@ begin
 	update
 		#trades
 	set
-		quantity = b.quantity,
-		abs_qty = abs(b.quantity),
-		abs_counter_qty = abs(b.quantity) * b.price
+		old_qty_if_deleted = b.quantity
 	from
 		#trades a,
 		#trade_edits b
 	where
 		a.trade_id = b.trade_id
+	and
+		a.quantity = 0
 	and
 		b.timestamp = (select max(c.timestamp) from #trade_edits c where c.trade_id = b.trade_id)
 end
