@@ -985,7 +985,7 @@ from
 where
         a.external_account_id = b.external_account_id
 and
-	a.cl_or_lp = "LP"
+	a.cl_or_lp = "CL"
 
 update
 	#trades
