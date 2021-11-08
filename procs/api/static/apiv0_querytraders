@@ -1,0 +1,103 @@
+create or replace procedure
+	apiv0_querytraders	
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+create table
+	#traders(
+		trader_id int,
+		symbol varchar(50) NULL,
+		login varchar(25) NULL,
+                strategy varchar(100) NULL,
+		external_account varchar(50) NULL,
+		sales_code varchar(25) NULL
+)
+
+insert into
+	#traders
+		(trader_id,
+                 symbol)
+	select
+		trader_id,
+		symbol
+	from
+	        traders	
+
+update
+	#traders
+set
+	a.login=c.login
+from
+	#traders a,
+	traders b,
+	tico_accounts c
+where
+	a.trader_id=b.trader_id
+and
+	b.tico_account_id=c.account_id
+	
+update 
+	#traders
+set
+	a.strategy = c.name
+from
+	#traders a,
+	traders b,
+	strategies c 
+where
+	a.trader_id = b.trader_id
+and
+	b.default_strategy_id=c.strategy_id
+
+update
+        #traders
+set
+        a.external_account = c.symbol
+from
+        #traders a,
+	traders b,	
+        external_accounts c 
+where
+        a.trader_id = b.trader_id
+and
+	b.external_account_id = c.external_account_id
+
+update 
+	#traders
+set
+	sales_code = c.name
+from
+	#traders a,
+	traders b,	
+	sales_codes c 
+where
+	a.trader_id = b.trader_id
+and
+	b.sales_code_id = c.sales_code_id
+
+select
+        symbol = symbol,
+        login = login,
+	external_account = external_account,
+	strategy = strategy,
+	sales_code = sales_code 
+from
+	#traders
+	
+go

@@ -1,0 +1,65 @@
+create or replace procedure
+	apiv0_users	
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+create table
+	#users(
+		user_id int,
+		login char(25) NULL,
+		status char(100) NULL 
+)
+
+insert into
+	#users (user_id)
+select
+	account_id
+from
+        tico_accounts	
+
+update 
+	#users
+set
+	login = b.login
+from
+	#users a,
+	tico_accounts b
+where
+	a.user_id = b.account_id
+	
+update
+        #users
+set
+        a.status = c.name
+from
+        #users a,
+        tico_accounts b,
+	statuses c
+where
+        a.user_id = b.account_id
+and
+	b.status_id=c.status_id
+
+select
+        login,
+        status 
+from
+	#users
+	
+go

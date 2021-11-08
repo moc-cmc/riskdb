@@ -1,0 +1,52 @@
+create or replace procedure
+	apiv0_querysalescodes	
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+create table
+	#sales_codes(
+		sales_code_id int,
+		name varchar(25) NULL
+)
+
+
+insert into
+	#sales_codes
+		(sales_code_id)
+select
+	sales_code_id
+from
+        sales_codes	
+
+update 
+	#sales_codes
+set
+	name = b.name
+from
+	#sales_codes a,
+	sales_codes b
+where
+	a.sales_code_id = b.sales_code_id
+	
+select
+       	name 
+from
+	#sales_codes
+	
+go

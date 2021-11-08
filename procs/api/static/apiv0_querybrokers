@@ -1,0 +1,102 @@
+create or replace procedure
+	apiv0_querybrokers	
+		@login varchar(50),
+                @source varchar(100)=NULL
+as
+
+declare @tico_account_id int
+declare @source_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+create table
+	#brokers(
+		broker_id int,
+		symbol char(25) NULL,
+		source char(100) NULL 
+)
+
+	
+if @source = NULL
+begin
+	insert into
+		#brokers(broker_id)
+	select
+		broker_id
+	from
+	        brokers	
+end
+
+
+if @source != NULL 
+begin
+
+	select @source_id=source_id  from sources where name=@source
+	
+	if(@source_id = NULL)
+        begin
+		select
+                	status="Error",
+			message="Source does not exist",
+			source=@source
+		return		
+	end
+
+	insert into
+		#brokers(broker_id)
+	select
+		a.broker_id
+	from
+		brokers a,
+		sources b
+	where
+		a.source_id = b.source_id
+	and
+		b.name=@source
+end
+
+update 
+	#brokers
+set
+	symbol = b.symbol,
+	source = c.name
+from
+	#brokers a,
+	brokers  b,
+        sources  c
+where
+	a.broker_id = b.broker_id
+and
+	b.source_id = c.source_id
+	
+update
+        #brokers
+set
+        symbol = b.symbol
+from
+        #brokers a,
+        broker_symbols b
+where
+        a.broker_id = b.broker_id
+and
+        b.source_id = @source_id
+
+select
+        symbol = symbol,
+        source = source 
+from
+	#brokers
+	
+go
