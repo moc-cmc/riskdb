@@ -1,0 +1,149 @@
+create or replace procedure 
+	apiv0_managetrader	
+		@login varchar(50),
+		@symbol varchar(50),
+		@trader_login varchar(25)=NULL,
+	        @strategy varchar(100)=NULL,
+		@external_account varchar(50)=NULL,
+		@sales_code varchar(25)=NULL
+
+as
+
+declare @user_id int
+declare @trader_id int
+declare @external_account_id int
+declare @trader_login_id int
+declare @strategy_id int
+declare @sales_code_id int
+declare @orig_trader_login varchar(25)
+declare @orig_strategy varchar(50)
+declare @orig_external_account varchar(50)
+declare @orig_sales_code varchar(25)
+
+select
+	@user_id = account_id
+from
+	tico_accounts 
+where
+	login = @login
+
+if @user_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining user login " + @login
+	return
+end
+
+if (@external_account != NULL)
+begin
+	select
+		@external_account_id = external_account_id
+	from
+		external_accounts
+	where
+		symbol = @external_account
+	
+	if (@external_account_id = NULL)
+	begin
+		select
+			status = "Error",
+			message = "Problem determining external_account " + @external_account
+		return
+	end
+end
+
+if @trader_login != NULL
+begin
+
+	select
+		@trader_login_id = account_id
+	from
+		tico_accounts
+	where
+		login=@trader_login
+	
+	if (@trader_login_id = NULL)
+	begin
+		select
+			status = "Error",
+			message = "Problem determining trader login " + @trader_login
+		return
+	end
+end
+
+if @strategy != NULL
+begin
+	select
+		@strategy_id = strategy_id
+	from
+		strategies
+	where
+		name=@strategy
+	if (@strategy_id = NULL)
+	begin
+		select
+			status = "Error",
+			message = "Problem determining strategy " + @strategy
+		return
+	end
+end
+
+if @sales_code != NULL
+begin
+
+	select
+		@sales_code_id = sales_code_id
+	from
+		sales_codes
+	where
+		name=@sales_code
+	if (@sales_code_id = NULL)
+	begin
+		select
+			status = "Error",
+			message = "Problem determining sales code " + @sales_code
+		return
+	end
+end
+
+select
+	@trader_id = trader_id
+from
+	traders	
+where
+	symbol = @symbol
+
+if @trader_id = NULL
+begin
+
+	exec
+		apiv0_inserttrader 
+			@user_id=@user_id,
+			@symbol=@symbol,
+			@tico_account_id=@trader_login_id,
+			@default_strategy_id=@strategy_id,
+			@external_account_id=@external_account_id,
+			@sales_code_id=@sales_code_id
+
+			
+end
+else
+begin
+
+	exec
+		apiv0_updatetrader
+			@user_id=@user_id,
+                        @trader_id=@trader_id,
+			@symbol=@symbol,
+                        @tico_account_id=@trader_login_id,
+                        @default_strategy_id=@strategy_id,
+                        @external_account_id=@external_account_id,
+                        @sales_code_id=@sales_code_id
+
+end
+
+return	
+
+go
+

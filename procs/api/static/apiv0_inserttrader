@@ -1,0 +1,177 @@
+
+create or replace procedure
+	apiv0_inserttrader
+		@user_id int,
+		@symbol varchar(50)=NULL,
+		@tico_account_id int=NULL,
+		@default_strategy_id int=NULL,
+		@external_account_id int=NULL,
+		@sales_code_id int=NULL
+as
+
+declare @trader_id int
+declare @trader_log_id int
+declare @static_action_id int
+declare @user_static_action_id int
+
+if @symbol = NULL
+begin
+	select
+		status = "Error",
+		message = "Symbol for Trader cannot be NULL "
+	return
+end
+
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Trader Login cannot be NULL "
+	return
+end
+
+if @default_strategy_id = NULL
+begin
+	select 
+		status = "Error",
+		message = "Strategy cannot be NULL "
+	return
+end
+
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "External Account cannot be NULL "
+	return
+end
+
+if @sales_code_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Sales Code cannot be NULL "
+	return
+end
+
+select
+	@static_action_id = static_action_id
+from
+	static_actions
+where
+	name="Add"
+
+if @static_action_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Static Action for Add does not exist "
+	return
+end
+
+exec
+	j_nextkey
+		"traders",
+		@trader_id output
+
+exec 
+	j_nextkey
+		"trader_log",
+		@trader_log_id output
+
+exec
+	j_nextkey
+		"user_static_actions",
+		@user_static_action_id output
+begin tran
+
+	insert into
+		traders(
+			trader_id,
+			symbol,
+			tico_account_id,
+			default_strategy_id,
+			external_account_id,
+			sales_code_id)
+		values(
+			@trader_id,
+			@symbol,
+			@tico_account_id,
+			@default_strategy_id,
+			@external_account_id,
+			@sales_code_id)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding trader for symbol " + @symbol
+                
+		rollback tran
+		return
+        end
+
+	insert into
+		user_static_actions (
+			user_static_action_id,
+			user_id,
+			static_action_id,
+			table_name,
+			timestamp)
+	values(
+		@user_static_action_id,
+		@user_id,
+		@static_action_id,
+		"traders",
+		getdate())	
+	
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding user static action "
+		
+		rollback tran
+		return
+	end
+
+	insert into 
+		trader_log (
+			trader_log_id,
+			user_static_action_id,
+			trader_id,
+			symbol,
+			tico_account_id,
+			default_strategy_id,
+			external_account_id,
+			sales_code_id)
+	values(
+		@trader_log_id,
+		@user_static_action_id,
+		@trader_id,
+		@symbol,
+		@tico_account_id,
+		@default_strategy_id,
+		@external_account_id,
+		@sales_code_id)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting trader log " + @symbol 
+	
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status = "Success",
+	message = "Trader added " + @symbol
+
+return
+
+go
+
