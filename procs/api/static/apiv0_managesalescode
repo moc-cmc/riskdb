@@ -1,0 +1,90 @@
+create or replace procedure 
+	apiv0_managesalescode	
+		@login varchar(50),
+		@sales_code varchar(50),
+		@new_sales_code varchar(50)=NULL
+
+as
+
+declare @user_id int
+declare @sales_code_id int
+
+if len(@sales_code)  > 25
+begin
+	select
+		status="Error",
+		message="Sales Code must be less than 25 characters " + @sales_code
+
+	return
+end
+
+if @sales_code = NULL
+begin
+	select
+		status="Error",
+		message="Sales Code cannot be NULL"
+	return
+end
+
+select
+	@user_id = account_id
+from
+	tico_accounts 
+where
+	login = @login
+
+if @user_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining user login " + @login
+	return
+end
+
+select
+	@sales_code_id = sales_code_id
+from
+	sales_codes	
+where
+	name = @sales_code
+
+if @sales_code_id = NULL
+begin
+
+	exec
+		apiv0_insertsalescode 
+			@user_id=@user_id,
+			@sales_code=@sales_code
+end
+else
+begin
+
+	if (@new_sales_code = NULL)
+	begin
+		select
+			status = "Error",
+			message = "New Sales Code cannot be NULL"
+
+		return
+	end
+
+	if len(@new_sales_code) > 25
+        begin
+                select
+                        status = "Error",
+                        message = "Sales Code must be less than 25 characters " + @new_sales_code
+                return
+        end
+
+	exec
+		apiv0_updatesalescode
+			@user_id=@user_id,
+			@sales_code_id=@sales_code_id,
+			@new_sales_code=@new_sales_code
+
+end
+
+return	
+
+go
+

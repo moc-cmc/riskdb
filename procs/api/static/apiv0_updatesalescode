@@ -1,0 +1,111 @@
+
+create or replace procedure
+	apiv0_updatesalescode
+		@user_id int,
+		@sales_code_id int,
+		@new_sales_code varchar(25)
+as
+
+declare @static_action_id int
+declare @user_static_action_id int
+declare @sales_code_log_id int
+
+select
+        @static_action_id = static_action_id
+from
+        static_actions
+where
+        name="Edit"
+
+if @static_action_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Static Action for Edit does not exist "
+        return
+end
+
+exec 
+        j_nextkey
+                "sales_code_log",
+                @sales_code_log_id output
+
+exec
+        j_nextkey
+                "user_static_actions",
+                @user_static_action_id output
+
+begin tran
+
+	update
+		sales_codes	
+	set
+		name=@new_sales_code	
+	where
+		sales_code_id=@sales_code_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Problem updating sales code for name " + @new_sales_code
+		
+		rollback tran
+		return
+	end
+
+	insert into
+		user_static_actions (
+			user_static_action_id,
+			user_id,
+			static_action_id,
+			table_name,
+			timestamp)
+	values(
+		@user_static_action_id,
+		@user_id,
+		@static_action_id,
+		"sales_codes",
+		getdate())      
+        
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding user static action "
+                
+		rollback tran
+		return
+	end	
+
+	insert into 
+		sales_code_log (
+			sales_code_log_id,
+			user_static_action_id,
+			sales_code_id,
+			name)	
+	values(
+		@sales_code_log_id,
+		@user_static_action_id,
+		@sales_code_id,
+		@new_sales_code)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting sales code log " + @new_sales_code 
+        
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status = "Success",
+	message = "Sales Code updated " + @new_sales_code
+
+return
+
+go	
