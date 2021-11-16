@@ -1,7 +1,4 @@
-drop procedure fxa_tallynetlinkpbjeff
-go
-
-create procedure
+create or replace procedure
 	fxa_tallynetlinkpbjeff
 		@login varchar(50),
 		@tally_type varchar(25),
@@ -16,16 +13,17 @@ create procedure
 		@val_date datetime,
 		@fixing_date datetime=NULL,
                 @trade_note varchar(255)=NULL,
-		@trade_date datetime=NULL
+		@trade_date datetime=NULL,
+		@strategy varchar(50)=NULL
 
 as
 
 declare @deal_id int
-declare @strategy varchar(50)
 declare @cover_trader varchar(50)
 
-select
-	@strategy = "Agency"
+if @strategy in("", NULL)
+	select
+		@strategy = "Agency"
 
 select
 	@cover_trader = c.symbol
