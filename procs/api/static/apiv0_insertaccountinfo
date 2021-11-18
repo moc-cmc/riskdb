@@ -1,0 +1,161 @@
+
+create or replace procedure
+	apiv0_insertaccountinfo
+		@user_id int,
+		@external_account_id int,
+		@symbol varchar(50),
+		@country varchar(50)=NULL,
+		@branch_location varchar(50)=NULL,
+		@corporate_sector varchar(50)=NULL,
+		@party_region varchar(50)=NULL,
+		@financial_jurisdiction varchar(50)=NULL,
+                @lei_number varchar(50)=NULL,
+		@lei_type varchar(50)=NULL
+as
+
+declare @account_regulatory_info_id int
+declare @account_regulatory_info_log_id int
+declare @static_action_id int
+declare @user_static_action_id int
+
+if @lei_type = NULL
+begin
+	select
+		status = "Error",
+		message = "Lei Type cannot be NULL "
+	return
+end
+
+select
+	@static_action_id = static_action_id
+from
+	static_actions
+where
+	name="Add"
+
+if @static_action_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Static Action for Add does not exist "
+	return
+end
+
+exec
+	j_nextkey
+		"account_regulatory_info",
+		@account_regulatory_info_id output
+
+exec 
+	j_nextkey
+		"account_regulatory_info_log",
+		@account_regulatory_info_log_id  output
+
+exec
+	j_nextkey
+		"user_static_actions",
+		@user_static_action_id output
+begin tran
+
+	insert into
+		account_regulatory_info(
+			account_regulatory_info_id,
+			external_account_id,
+			country,
+			branch_location,
+			corporate_sector,
+			party_region,
+			financial_juristiction,
+			lei_number,
+			lei_type)
+		values(
+			@account_regulatory_info_id,
+			@external_account_id,
+			@country,
+			@branch_location,
+			@corporate_sector,
+			@party_region,
+			@financial_jurisdiction,
+			@lei_number,
+			@lei_type)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding account regulatory info for external account " + @symbol
+                
+		rollback tran
+		return
+        end
+
+	insert into
+		user_static_actions (
+			user_static_action_id,
+			user_id,
+			static_action_id,
+			table_name,
+			timestamp)
+	values(
+		@user_static_action_id,
+		@user_id,
+		@static_action_id,
+		"account_regulatory_info",
+		getdate())	
+	
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding user static action "
+		
+		rollback tran
+		return
+	end
+
+	insert into 
+		account_regulatory_info_log (
+			account_regulatory_info_log_id,
+			user_static_action_id,
+			account_regulatory_info_id,
+			external_account_id,
+			country,
+			branch_location,
+			corporate_sector,
+			party_region,
+		        financial_jurisdiction,
+			lei_number,
+			lei_type)	
+	values(
+		@account_regulatory_info_log_id,
+		@user_static_action_id,
+		@account_regulatory_info_id,
+		@external_account_id,
+		@country,
+		@branch_location,
+		@corporate_sector,
+		@party_region,
+		@financial_jurisdiction,
+		@lei_number,
+		@lei_type)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting account regulatory info log " + @symbol 
+	
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status = "Success",
+	message = "Account info added " + @symbol
+
+return
+
+go
+

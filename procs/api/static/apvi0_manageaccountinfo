@@ -1,0 +1,96 @@
+create or replace procedure 
+	apvi0_manageaccountinfo	
+		@login varchar(50),
+		@symbol varchar(50),
+		@country varchar(50)=NULL,
+	        @branch_location varchar(50)=NULL,
+                @corporate_sector varchar(50)=NULL,
+		@party_region varchar(10)=NULL,
+		@financial_jurisdiction varchar(10)=NULL,
+		@lei_number varchar(50)=NULL,
+		@lei_type varchar(10)
+
+as
+
+declare @user_id int
+declare @external_account_id int
+declare @reg_info int
+
+select
+	@user_id = account_id
+from
+	tico_accounts 
+where
+	login = @login
+
+if @user_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining user login " + @login
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts	
+where
+	symbol = @symbol
+
+if (@external_account_id = NULL)
+begin
+	select
+		status = "Error",
+		message = "Problem determining external account " + @symbol
+	return
+end
+
+select
+	@reg_info = count(*) 
+from
+	account_regulatory_info
+where
+	external_account_id = @external_account_id
+
+
+if @reg_info = 0
+begin
+
+	exec
+		apiv0_insertaccountinfo 
+			@user_id=@user_id,
+			@external_account_id=@external_account_id,
+ 			@symbol=@symbol,
+			@country=@country,
+			@branch_location=@branch_location,
+			@corporate_sector=@corporate_sector,
+			@party_region=@party_region,
+			@financial_jurisdiction=@financial_jurisdiction,
+			@lei_number=@lei_number,
+			@lei_type=@lei_type
+
+			
+end
+else
+begin
+
+	exec
+		apiv0_updateaccountinfo
+			@user_id=@user_id,
+                        @external_account_id=@external_account_id,
+			@symbol=@symbol,
+			@country=@country,
+			@branch_location=@branch_location,
+                        @corporate_sector=@corporate_sector,
+                        @party_region=@party_region,
+                        @financial_jurisdiction=@financial_jurisdiction,
+			@lei_number=@lei_number,
+			@lei_type=@lei_type
+
+end
+
+return	
+
+go
+

@@ -1,0 +1,247 @@
+
+create or replace procedure
+	apiv0_updateaccountinfo
+		@user_id int,
+		@external_account_id int,
+		@symbol varchar(50),
+		@country varchar(50)=NULL,
+		@branch_location varchar(50)=NULL,
+		@corporate_sector varchar(50)=NULL,
+		@party_region varchar(50)=NULL,
+		@financial_jurisdiction varchar(50)=NULL,
+		@lei_number varchar(50)=NULL,
+		@lei_type varchar(10)
+as
+
+declare @orig_country varchar(50)
+declare @orig_branch_location varchar(50) 
+declare @orig_corporate_sector varchar(50)
+declare @orig_party_region varchar(50)
+declare @orig_financial_jurisdiction varchar(50)
+declare @orig_lei_number varchar(50)
+declare @orig_lei_type varchar(10)
+
+declare @upd_country varchar(50)
+declare @upd_branch_location varchar(50)
+declare @upd_corporate_sector varchar(50)
+declare @upd_party_region varchar(50)
+declare @upd_financial_jurisdiction varchar(50)
+declare @upd_lei_number varchar(50)
+declare @upd_lei_type varchar(10)
+
+declare @static_action_id int
+declare @user_static_action_id int
+declare @account_regulatory_info_id int
+declare @account_regulatory_info_log_id int
+
+select
+	@account_regulatory_info_id=account_regulatory_info_id,
+	@orig_country=country,
+	@orig_branch_location=branch_location,
+	@orig_corporate_sector=corporate_sector,
+	@orig_party_region=party_region,
+	@orig_financial_jurisdiction=financial_juristiction,
+	@orig_lei_number=lei_number,
+	@orig_lei_type=lei_type
+from
+	account_regulatory_info	
+where
+	external_account_id = @external_account_id
+
+if (@country != NULL and @country != @orig_country)
+begin
+	select
+		@upd_country = @country
+end
+else
+begin
+		select
+			@upd_country = @orig_country
+end
+
+if (@branch_location != NULL and @branch_location != @orig_branch_location)
+begin
+        select  
+                @upd_branch_location = @branch_location
+end     
+else    
+begin   
+                select
+                        @upd_branch_location = @orig_branch_location 
+end
+
+if (@corporate_sector != NULL and @corporate_sector != @orig_corporate_sector)
+begin
+        select  
+                @upd_corporate_sector = @corporate_sector
+end     
+else    
+begin   
+                select
+                        @upd_corporate_sector = @orig_corporate_sector
+end
+
+if (@party_region != NULL and @party_region != @orig_party_region)
+begin
+        select  
+                @upd_party_region = @party_region
+end     
+else    
+begin   
+                select
+                        @upd_party_region = @orig_party_region
+end
+
+
+if (@financial_jurisdiction != NULL and @financial_jurisdiction != @orig_financial_jurisdiction)
+begin
+        select 
+                @upd_financial_jurisdiction = @financial_jurisdiction
+end    
+else   
+begin  
+                select
+                        @upd_financial_jurisdiction = @orig_financial_jurisdiction
+end
+
+if (@lei_number != NULL and @lei_number != @orig_lei_number)
+begin
+        select 
+                @upd_lei_number = @lei_number
+end    
+else   
+begin  
+                select
+                        @upd_lei_number = @orig_lei_number
+end
+
+if (@lei_type != NULL and @lei_type != @orig_lei_type)
+begin
+        select
+                @upd_lei_type = @lei_type
+end   
+else    
+begin
+                select
+                        @upd_lei_type = @orig_lei_type
+end
+
+select
+        @static_action_id = static_action_id
+from
+        static_actions
+where
+        name="Edit"
+
+if @static_action_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Static Action for Edit does not exist "
+        return
+end
+
+exec 
+        j_nextkey
+                "account_regulatory_info_log",
+                @account_regulatory_info_log_id output
+
+exec
+        j_nextkey
+                "user_static_actions",
+                @user_static_action_id output
+
+begin tran
+
+	update
+		account_regulatory_info	
+	set
+		country=@upd_country,
+		branch_location=@upd_branch_location,
+		corporate_sector=@upd_corporate_sector,
+		party_region=@upd_party_region,
+		financial_juristiction=@upd_financial_jurisdiction,
+		lei_number=@upd_lei_number,
+		lei_type=@upd_lei_type
+	where
+		external_account_id=@external_account_id	
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Problem updating account regulatory info for symbol " + @symbol
+		
+		rollback tran
+		return
+	end
+
+	insert into
+		user_static_actions (
+			user_static_action_id,
+			user_id,
+			static_action_id,
+			table_name,
+			timestamp)
+	values(
+		@user_static_action_id,
+		@user_id,
+		@static_action_id,
+		"account_regulatory_info",
+		getdate())      
+        
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding user static action "
+                
+		rollback tran
+		return
+	end	
+
+	insert into 
+		account_regulatory_info_log (
+			account_regulatory_info_log_id,
+			user_static_action_id,
+			account_regulatory_info_id,
+			external_account_id,
+			country,
+			branch_location,
+			corporate_sector,
+			party_region,
+			financial_jurisdiction,
+			lei_number,
+			lei_type)	
+	values(
+		@account_regulatory_info_log_id,
+		@user_static_action_id,
+		@account_regulatory_info_id,
+		@external_account_id,
+		@country,
+		@branch_location,
+		@corporate_sector,
+		@party_region,
+		@financial_jurisdiction,
+		@lei_number,
+		@lei_type)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting account regulatory info log " + @symbol 
+        
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status = "Success",
+	message = "Account info updated " + @symbol
+
+return
+
+go	
