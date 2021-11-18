@@ -1,0 +1,38 @@
+create or replace procedure
+	espy_sendchannelmessage
+		@login varchar(50),
+		@channel varchar(100),
+		@message_type varchar(100),
+		@subject varchar(250),
+		@content varchar(250),
+		@priority varchar(100)
+as
+
+declare @message_id int
+
+exec
+	api_sendchannelmessage
+		@login = @login,
+		@channel = @channel,
+		@message_type = @message_type,
+		@subject = @subject,
+		@content = @content,
+		@priority = @priority,
+		@message_id = @message_id output
+
+if @message_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No message id created for channel message"
+end
+else
+begin
+	select
+		status = "Success",
+		message = "Posted channel message with message id",
+		message_id = @message_id
+end
+
+
+go
