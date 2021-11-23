@@ -1,0 +1,171 @@
+
+create proc
+    r_contracts
+        @include_expired char(1) = "N"
+as
+
+declare @as_of_date datetime
+
+select 
+    @as_of_date = getdate()
+
+/*
+ * Write the this proc which has the following columns populated. We can safely 
+ * exclude the columns that are not currently in use, ones marked with "-x-". 
+ *
+ *   Contracts Columns            Contract Forward  Future   Options  Exotics
+ *   ---------------------------- -------- -------- -------- -------- -------- 
+ *   contract_id                  *
+ *   instrument_id                *
+ *   symbol                       *
+ *   exchange_id                  *        *        *        *        *
+ *   quantity_id                  *        *        *        *        *
+ *   forward_id                            * <----- * <----- * <----- *
+ *   product_id                            * <----- ' <----- ' <----- '
+ *   currency_id                           * <----- ' <----- ' <----- '
+ *   price_style_id                        * <----- ' <----- ' <----- ' 
+ *   -x- factor                            * <----- ' <----- ' <----- ' 
+ *   -x- min_scale                         * <----- ' <----- ' <----- ' 
+ *   -x- max_scale                         * <----- ' <----- ' <----- ' 
+ *   def_perspective_contract_id          *|S <---- * <----- ' <----- '
+ *   underlying_id                         S        *        *        *
+ *   -x- future_id                                  * <----- * <----- *
+ *   -x- tick_size                                  *        *        *
+ *   expiration                                     *        *        *
+ *   expiration_id                                           *        *
+ *   expiration_symbol                                       *        *
+ *   timezone_id                                             *        *
+ *   -x- def_exercise_style_id                               *        *
+ *   strike                                                  *        *
+ *   put_call                                                *        *
+ *   -x- root_symbol                                                  *
+ *   -x- timing_id                                                    *
+ *   -x- payout_ccy_id                                                *
+ *   -x- payout_amount                                                *
+ *   -x- barrier_type_id                                              *
+ *   -x- lower_barrier                                                *
+ *   -x- upper_barrier                                                *
+ *   -x- barrier                                                      *
+ *   -x- exotic_instrument_id                                         *
+ *   ---------------------------- -------- -------- -------- -------- -------- 
+ *   KEY:
+ *     *         Non-NULL value 
+ *     S         Uses itself as a value
+ *     <------   Joins through underlying_id for value 
+ *     '         Mirrors underlying_id's value
+ *     -x-       Columns not currently in use 
+ */
+create table 
+    #contracts (
+        contract_id int,
+            /* contracts.contract_id */
+        instrument_id int,
+            /* contracts.instrument_id */
+        symbol varchar(50),
+            /* contracts.symbol */
+        exchange_id int,
+            /* forwards.exchange_id futures.exchange_id, options.exchange_id 
+             * (non-NULL) */
+        quantity int,
+            /* forwards.quantity, futures.quantity, options.quantity 
+             * or 1 (non-NULL) */
+        forward_id int,
+            /* Underlying forward contract id (non-NULL). For options/exotics: 
+             * underlying's forward_id. For futures: forward_id. For forwards: 
+             * contract_id itself (non-NULL) */
+        product_id int,
+            /* forward_id's product_id (non-NULL) */
+        currency_id int,
+            /* forward_id's currency_id (non-NULL) */
+        price_style_id int,
+            /* contract_price_styles.price_style_id or default to 1 == 
+             * 'Standard' (non-NULL) */
+        /* NOT YET USED */ factor float,
+            /* contract_price_styles.factor or price_styles.factor or 1.0 */
+        /* NOT YET USED */ min_scale int,
+            /* contract_price_styles.min_scale or 4 */
+        /* NOT YET USED */ max_scale int,
+            /* contract_price_styles.max_scale or 6 */
+        def_perspective_contract_id int,
+            /* def_perspective_contracts.perspective_contract_id of 
+             * future_contracts, or forwards or this contract else this 
+             * contract (non-NULL) */
+        underlying_id int NULL,
+            /* Underlying contract_id. For futures: futures.forward_id. For 
+             * options/exotics: options.underlying_contract_id, else NULL */
+        /* NOT YET USED */ future_id int NULL,
+            /* Underlying future or NULL. For options/exotics: underlying's 
+             * future_id. For futures: future_id. For forwards: NULL */
+        /* NOT YET USED */ tick_size float NULL,
+            /* futures.tick_size or options.tick_size or NULL */
+        expiration datetime NULL,
+            /* future_contracts.expiration or option_expirations.expiration 
+             * else NULL */
+        expiration_id int NULL,
+            /* option_contracts.expiration_id or 
+             * exotic_contracts.expiration_id or NULL */
+        expiration_symbol varchar(50) NULL,
+            /* option_expirations.expiration_symbol or NULL */
+        /* USED, but JOINABLE - timezone_id int NULL, */
+            /* option_expirations.timezone_id or NULL */
+        /* NOT YET USED */ def_exercise_style_id int NULL,
+            /* options.def_exercise_style_id or NULL */
+        strike float NULL,
+            /* option_contracts.strike or exotic_contracts.strike or NULL */
+        put_call char(2) NULL
+            /* option_contracts.put_call or exotic_contracts.put_call or NULL */
+        
+        /* NOT YET USED */
+        /* root_symbol varchar(50) NULL, futures.root_symbol */
+        /* timing_id int NULL */
+        /* payout_ccy_id int NULL */
+        /* payout_amount float NULL */
+        /* barrier_type_id int NULL */
+        /* lower_barrier float NULL */
+        /* upper_barrier float NULL */
+        /* barrier float NULL */
+        /* exotic_instrument_id int NULL */
+    )
+
+insert into 
+    #contracts
+select
+    contract_id = contract_id,
+    instrument_id = instrument_id,
+    symbol = symbol,
+    exchange_id = exchange_id,
+    quantity = quantity,
+    forward_id = forward_id,
+    product_id = product_id,
+    currency_id = currency_id,
+    price_style_id = price_style_id,
+    /* NOT YET USED */ factor = 1,
+    /* NOT YET USED */ min_scale = 4,
+    /* NOT YET USED */ max_scale = 6,
+    def_perspective_contract_id = def_perspective_contract_id,
+    underlying_id = option_underlying_id,
+    /* NOT YET USED */ future_id = future_id,
+    /* NOT YET USED */ tick_size = option_tick_size,
+    expiration = expiration,
+    expiration_id = NULL,
+    expiration_symbol = option_expiration_symbol,
+    /* JOINABLE - timezone_id = NULL, */
+    /* NOT YET USED */ def_exercise_style_id = option_exercise_style_id,
+    strike = option_strike,
+    put_call = option_put_call
+from
+    contract_details
+where
+    (
+        @include_expired != "Y"
+    or
+        expiration < @as_of_date
+    )
+
+select
+    *
+from
+    #contracts
+
+go
+    
