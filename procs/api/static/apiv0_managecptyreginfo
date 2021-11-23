@@ -1,0 +1,96 @@
+create or replace procedure 
+	apiv0_managecptyreginfo	
+		@login varchar(50),
+		@name varchar(50),
+		@country varchar(50)=NULL,
+	        @branch_location varchar(50)=NULL,
+                @corporate_sector varchar(50)=NULL,
+		@party_region varchar(10)=NULL,
+		@financial_jurisdiction varchar(10)=NULL,
+		@lei_number varchar(50)=NULL,
+		@lei_type varchar(10)
+
+as
+
+declare @user_id int
+declare @counterparty_id int
+declare @reg_info int
+
+select
+	@user_id = account_id
+from
+	tico_accounts 
+where
+	login = @login
+
+if @user_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining user login " + @login
+	return
+end
+
+select
+	@counterparty_id = counterparty_id
+from
+	counterparties	
+where
+	name = @name
+
+if (@counterparty_id = NULL)
+begin
+	select
+		status = "Error",
+		message = "Problem determining counterparty " + @name
+	return
+end
+
+select
+	@reg_info = count(*) 
+from
+	cpty_regulatory_info
+where
+	counterparty_id = @counterparty_id
+
+
+if @reg_info = 0
+begin
+
+	exec
+		apiv0_insertcptyinfo 
+			@user_id=@user_id,
+			@counterparty_id=@counterparty_id,
+ 			@name=@name,
+			@country=@country,
+			@branch_location=@branch_location,
+			@corporate_sector=@corporate_sector,
+			@party_region=@party_region,
+			@financial_jurisdiction=@financial_jurisdiction,
+			@lei_number=@lei_number,
+			@lei_type=@lei_type
+
+			
+end
+else
+begin
+
+	exec
+		apiv0_updatecptyinfo
+			@user_id=@user_id,
+                        @counterparty_id=@counterparty_id,
+			@name=@name,
+			@country=@country,
+			@branch_location=@branch_location,
+                        @corporate_sector=@corporate_sector,
+                        @party_region=@party_region,
+                        @financial_jurisdiction=@financial_jurisdiction,
+			@lei_number=@lei_number,
+			@lei_type=@lei_type
+
+end
+
+return	
+
+go
+
