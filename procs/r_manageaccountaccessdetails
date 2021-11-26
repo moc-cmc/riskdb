@@ -1,11 +1,7 @@
-drop procedure
-	r_manageaccountaccessdetails
-go
 
-create procedure
+create or replace procedure
 	r_manageaccountaccessdetails
 		@account_name varchar(50)
-
 as
 
 
@@ -23,9 +19,9 @@ create table
 insert into
 	#meta
 values(
-	"Column Action",
+	"Column Link",
 	"revoke_access",
-	"r_revokeaccount",
+	"Revoke Account Access to Run",
 	NULL
 )
 
@@ -41,18 +37,18 @@ values(
 insert into
        #meta
 values(
-       "Column Action",
+       "Column Link",
        "revoke_all_runs",
-       "r_revokeallrunsforaccts",
+       "Revoke All Runs For Acct",
        NULL
 )
 
 insert into
        #meta
 values(
-       "Column Action",
+       "Column Link",
        "grant_access",
-       "r_grantaccount",
+       "Grant Run Access To Account",
        NULL
 )
 
@@ -87,17 +83,17 @@ values(
 insert into
         #meta
 values(
-        "Column Action",
+        "Column Link",
         "make_favorite",
-        "cm_makerunfavorite",
+        "Make Run Favorite",
         NULL)
 
 insert into
         #meta
 values(
-        "Column Action",
+        "Column Link",
         "remove_favorite",
-        "cm_rmrunfavorite",
+        "Remove Run Favorite",
         NULL)
 
 select
@@ -260,4 +256,6 @@ order by
 	has_access desc,
 	account_name
 
-go
+
+go 
+
