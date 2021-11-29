@@ -157,7 +157,7 @@ from
     contract_details
 where
     (
-        @include_expired != "Y"
+        @include_expired = "Y"
     or
         expiration < @as_of_date
     )
