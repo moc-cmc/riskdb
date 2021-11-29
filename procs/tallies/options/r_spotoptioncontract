@@ -1,9 +1,4 @@
-if object_id("r_spotoptioncontract") != NULL
-    drop procedure
-        r_spotoptioncontract
-go
-
-create procedure
+create or replace procedure
 	r_spotoptioncontract
 		@underlying_contract varchar(50),
 		@timezone varchar(25),
@@ -27,8 +22,11 @@ declare @instrument_id int
 declare @expiration_time varchar(12)
 declare @timezone_id	int
 declare @tz_sym varchar(12)
+declare @tz_time varchar(12)
+declare @tz_symbol varchar(24)
 declare @strike_float float
 declare @strike_num numeric(30, 8)
+
 
 if @put_call = NULL
 begin
@@ -165,14 +163,30 @@ begin
 			@option_expiration_id output
 
 	select 
-		@tz_sym=symbol
+		@tz_sym=symbol,
+		@tz_time=display_value
 	from
 		timezones
 	where
 		timezone_id=@timezone_id
 
+
+	/* NYC 10AM is so standard that we dont want to append 1000 to the NYC 10am
+	* all other cuts get the time appended
+	*/
+	if @tz_sym = "NYC" and @tz_time = "1000"
+	begin
+		select
+			@tz_symbol = @tz_sym
+	end
+	else
+	begin
+		select
+			@tz_symbol = rtrim(@tz_sym)+" "+rtrim(@tz_time)
+	end
+
 	select
-		@option_exp_symbol = rtrim(@underlying_contract) + " " + rtrim(convert(char(11), @expiration, 1)) + " " + rtrim(@tz_sym)
+		@option_exp_symbol = rtrim(@underlying_contract) + " " + rtrim(convert(char(11), @expiration, 1)) + " " + rtrim(@tz_symbol)
 
 	insert into
 		option_expirations
