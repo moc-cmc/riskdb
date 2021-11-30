@@ -1,0 +1,1347 @@
+
+create or replace procedure
+	fxa_alloctradesbydeal
+		@login varchar(30),
+		@deal_id int=NULL,
+		@run_name varchar(50)=NULL,
+		@trade_date datetime=NULL,
+		@show_processed char(1)=NULL
+as
+
+
+declare @run_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @begin_day_string varchar(25)
+declare @end_day_string varchar(25)
+
+declare @review_status_id int
+declare @committed_status_id int
+declare @inactive_status_id int
+declare @working_status_id int
+
+declare @processed_count int
+declare @pending_count int
+declare @working_count int
+declare @admin varchar(1)
+declare @tico_account_id int
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+
+if @run_name = NULL
+begin
+	select
+        	@admin = "Y"
+	from
+        	access_groups a,
+        	access_group_accounts b
+	where
+        	a.access_group_id = b.access_group_id
+	and
+        	a.name = "Admin"
+	and
+        	b.tico_account_id = @tico_account_id
+	
+	
+	if @admin =  "Y"
+	begin
+        	select
+                	@run_name = name
+        	from
+                	funds
+	end
+	
+	if @admin = NULL
+	begin
+        	select
+                	@run_name = a.symbol
+        	from
+                	external_accounts a,
+                	trades b,
+                	external_account_types c
+        	where
+                	a.external_account_id = b.external_account_id
+        	and
+                	b.deal_id = @deal_id
+        	and
+                	a.external_account_type_id = c.external_account_type_id
+        	and
+                	c.name = "Master"
+	end
+end
+
+
+select
+	@review_status_id = status_id
+from
+	statuses
+where
+	name = "Review"
+if @review_status_id = NULL
+begin
+        select
+                error="Error",
+                msg="Problem finding 'Review' status"
+        return
+end
+
+select
+        @inactive_status_id = status_id
+from
+        statuses
+where
+        name = "Inactive"
+if @inactive_status_id = NULL
+begin
+        select
+                error="Error",
+                msg="Problem finding 'Inactive' status"
+        return
+end
+
+select 
+        @committed_status_id = status_id
+from
+        statuses 
+where
+        name = "Committed"
+if @committed_status_id = NULL
+begin
+	select
+		error="Error",
+		msg="Problem finding 'Committed' status"
+	return
+end
+
+select
+        @working_status_id = status_id
+from
+        statuses
+where
+        name = "Working"
+if @working_status_id = NULL
+begin
+        select
+                error="Error",
+                msg="Problem finding 'Working' status"
+        return
+end
+
+
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1 and @run_name != NULL
+begin
+	select
+		id = -1,
+		error = "Problem finding run with name",
+		run = @run_name
+	return
+end
+
+
+/*
+| DATE determination
+*/
+select
+	@begin_date = @trade_date
+
+if @begin_date = NULL
+	select
+		@begin_date = getdate()
+
+if datepart(hour, @begin_date) >= 17
+	exec
+		r_nextbusinessday
+			@begin_date,
+			@begin_date output
+
+select
+	@begin_day_string = convert(char(2), datepart(month, @begin_date)) + "/" +
+		convert(char(2), datepart(day, @begin_date)) + "/" +
+		convert(char(4), datepart(year, @begin_date))
+select
+	@begin_date = convert(datetime, @begin_day_string)
+exec
+	r_prevbusinessday
+		@begin_date,
+		@begin_date output
+select
+	@begin_date = dateadd(hour, 17, @begin_date)
+	
+exec
+	r_nextbusinessday
+		@begin_date,
+		@end_date output
+
+select
+	@end_day_string = convert(char(2), datepart(month, @end_date)) + "/" +
+			convert(char(2), datepart(day, @end_date)) + "/" +
+			convert(char(4), datepart(year, @end_date)) + " 17:00"
+select
+	@end_date = convert(datetime, @end_day_string)
+
+
+/*
+| Run Filtering
+*/
+
+create table
+        #internal_accounts(
+                internal_account_id int)
+insert into
+        #internal_accounts
+select
+        internal_account_id
+from
+        run_internal_accounts
+where
+        run_id = @run_id
+if @@rowcount = 0
+        insert into
+                #internal_accounts
+        select
+                internal_account_id
+        from
+                internal_accounts
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+
+create table
+	#counterparties(
+		counterparty_id int)
+
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+
+/*
+| META information
+*/
+
+create table
+        #links(
+                meta_type char(200),
+                name char(30),
+                action char(200) NULL,
+                value char(255) NULL)
+
+
+
+insert into
+        #links
+values(
+        "Column Hidden",
+        "display",
+	NULL,
+        NULL)
+insert into
+        #links
+values(
+        "Column Hidden",
+        "sales_code",
+        NULL,
+        NULL)
+
+
+insert into
+        #links
+values(
+        "Column Hidden",
+        "allocation_deal_id",
+        NULL,
+        NULL)
+insert into
+        #links
+values(
+        "Column Hidden",
+        "trade_type",
+        NULL,
+        NULL)
+insert into
+        #links
+values(
+        "Column Hidden",
+        "master_account",
+        NULL,
+        NULL)
+insert into
+        #links
+values(
+        "Column Hidden",
+        "master_account_qty",
+        NULL,
+        NULL)
+insert into
+        #links
+values(
+        "Column Hidden",
+        "client_price",
+        NULL,
+        NULL)
+
+
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"remove_pending",
+	"Remove Release Queue Trade",
+	NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "set_pending",
+        "Set Release Queue Trade as Pending",
+        NULL)
+
+
+insert into
+	#links
+values(
+	"Column Link",
+	"tally_trades",
+	"Tally Alloc Queue Deal",
+	NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "edit_trade",
+        "Edit Alloc Trade",
+        NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "remove_batch",
+	"Set Release Queue Trade as Pending",
+        NULL)
+/*
+insert into
+        #links
+values(
+        "Column Redirect",
+        "select_deal",
+        "fxa_markqueuedallocworking",
+        "runName="+rtrim(@run_name)+"&tradeDate="+convert(varchar(10), @trade_date, 101)+"&showProcessed="+rtrim(@show_processed)
+)
+*/
+
+insert into
+	#links
+values(
+	"Column Link",
+	"select_deal",
+	"Working Allocation Deals",
+	NULL
+)
+
+/*
+insert into
+        #links
+values(
+        "Column Action",
+        "tally_deal",
+        "fxa_tallyqueuedalloctrades",
+        "runName="+rtrim(@run_name)+"&tradeDate="+convert(varchar(10), @trade_date, 101)+"&showProcessed="+rtrim(@show_processed)
+)
+*/
+
+insert into
+        #links
+values(
+        "Column Link",
+        "tally_deal",
+        "Tally Working Allocation",
+        NULL
+)
+
+insert into
+	#links
+values(
+	"Column Hidden",
+	"run_name",
+	NULL,
+	NULL)
+
+insert into
+	#links
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+
+insert into
+	#links
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL) 
+
+insert into
+    #links
+values(
+    "Column Format",
+    "price",
+    "Number",
+    "#,##0.########")
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+
+select #links.meta_type, #links.name, #links.action, #links.value from #links
+
+
+
+create table
+	#queued_alloc_trades
+(
+		t_or_d char(1),
+		trade_id int NULL,
+		deal_id int NULL,
+                trade_type_id varchar(50) NULL,
+		contract_id int NULL,
+		broker_id int NULL,
+		trader_id int NULL,
+		external_account_id int NULL,
+		master_external_account_id int NULL,
+		counterparty_id int NULL,
+		strategy_id int NULL,
+                quantity numeric(30, 4) NULL,
+		orig_deal_qty numeric(30, 4) NULL,
+		x_orig_deal_qty numeric(30, 4) NULL,
+		remaining_qty numeric(30,4) NULL, 
+                price float NULL,
+                value_date datetime NULL,
+		identifier varchar(100) NULL,
+                spot_price float NULL NULL,
+                trade_date datetime NULL,
+		status_id int NULL,
+		status varchar(25) NULL,
+		symbol varchar(50) NULL,
+		broker varchar(50) NULL,
+		trader varchar(50) NULL,
+		external_account varchar(50) NULL,
+		master_external_account varchar(50) NULL,
+		counterparty varchar(50) NULL,
+		strategy varchar(50) NULL,
+		previous char(1) NULL,
+		allocation float NULL,
+		calced_alloc float NULL,
+		acct_type varchar(50) NULL,
+		select_trade varchar(10) NULL,
+		edit_trade varchar(5) NULL,
+		select_deal varchar(10) NULL,
+		allocate varchar(25) NULL,
+		style varchar(50) NULL,
+		tally_deal varchar(20) NULL,
+		allocation_deal_id varchar(50) NULL,
+		trade_type varchar(50) NULL,
+		master_account varchar(50) NULL,
+		master_account_qty varchar(50) NULL,
+		client_price varchar(50) NULL,
+		sales_code varchar(50) NULL,
+		sales_code_id int NULL
+)
+
+
+/*
+| QUERY for DEAL
+*/
+
+if @deal_id != NULL
+begin
+
+insert into
+	#queued_alloc_trades
+(
+		t_or_d,
+        	trade_id,
+		deal_id,
+        	contract_id,
+        	broker_id,
+        	trader_id,
+		external_account_id,
+		master_external_account_id,
+		counterparty_id,
+        	strategy_id,
+        	quantity,
+        	price,
+        	value_date,
+		identifier,
+        	spot_price,
+        	trade_date,
+		status_id,
+		style,
+		edit_trade,
+		sales_code_id
+)
+select
+	't',
+	a.trade_id,
+	a.deal_id,
+	a.contract_id,
+	a.broker_id,
+	a.trader_id,
+	a.external_account_id,
+	a.master_external_account_id,
+	a.counterparty_id,
+	a.strategy_id,
+	a.quantity,
+	a.price,
+	a.value_date,
+	a.identifier,
+	a.spot_reference,
+	a.trade_date,
+	a.status_id,
+	style = "color:gray;background:#FFFFFF",
+	edit_trade="EDIT",
+	a.sales_code_id
+from
+	queued_alloc_trades a,
+	#traders d,
+	#brokers f,
+	#counterparties e,
+	#external_accounts g
+where
+	a.counterparty_id = e.counterparty_id
+and
+	a.external_account_id = g.external_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.broker_id= f.broker_id
+and
+	a.deal_id = @deal_id
+
+end
+
+
+
+
+/*
+|  QUERY release trades if DEAL ID = NULL
+*/
+
+if @deal_id = NULL
+begin
+
+insert into
+	#queued_alloc_trades
+(
+		t_or_d,
+        	trade_id,
+		deal_id,
+        	contract_id,
+        	broker_id,
+        	trader_id,
+		external_account_id,
+		master_external_account_id,
+		counterparty_id,
+        	strategy_id,
+        	quantity,
+        	price,
+        	value_date,
+		identifier,
+        	spot_price,
+        	trade_date,
+		status_id,
+		style,
+		edit_trade,
+		sales_code_id
+)
+select
+	't',
+	a.trade_id,
+	a.deal_id,
+	a.contract_id,
+	a.broker_id,
+	a.trader_id,
+	a.external_account_id,
+	a.master_external_account_id,
+	a.counterparty_id,
+	a.strategy_id,
+	a.quantity,
+	a.price,
+	a.value_date,
+	a.identifier,
+	a.spot_reference,
+	a.trade_date,
+	a.status_id,
+	style = "color:gray;background:#FFFFFF",
+	edit_trade="EDIT",
+	a.sales_code_id
+from
+	queued_alloc_trades a,
+	#traders d,
+	#brokers f,
+	#counterparties e,
+	#external_accounts g,
+	#internal_accounts h
+where
+	a.internal_account_id = h.internal_account_id
+and
+	a.counterparty_id = e.counterparty_id
+and
+	a.external_account_id = g.external_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.broker_id= f.broker_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date <= @end_date
+end
+
+/*
+| Set trading day to EST 17:00-17:00 market standard
+*/
+update
+	#queued_alloc_trades
+set
+	trade_date = case
+		when a.trade_date > convert(char(8), getdate(), 112) +' 17:00' then
+			dateadd(day, 1, convert(char(15), a.trade_date, 112))
+		else
+			convert(char(12), a.trade_date, 112)
+	end
+from
+	#queued_alloc_trades a
+
+
+update
+	#queued_alloc_trades
+set
+	acct_type = c.name
+from
+	#queued_alloc_trades a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+
+update
+	#queued_alloc_trades
+set
+	allocation = b.allocation
+from
+	#queued_alloc_trades a,
+	sub_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+
+
+/* Deal row information */
+insert into
+	#queued_alloc_trades
+(
+		t_or_d,
+		deal_id,
+        	contract_id,
+        	broker_id,
+		counterparty_id,
+		master_external_account_id,
+        	quantity,
+		price,
+		allocation,
+        	value_date,
+        	trade_date,
+		status_id,
+		style,
+		select_deal,
+		allocate,
+		tally_deal,
+		allocation_deal_id,
+		trade_type,
+		master_account_qty,
+		sales_code_id
+)
+select
+	'd',
+	a.deal_id,
+	a.contract_id,
+	a.broker_id,
+	a.counterparty_id,
+	a.master_external_account_id,
+	quantity=sum(a.quantity),
+	a.price,
+	allocation=sum(allocation),
+	a.value_date,
+	a.trade_date,
+	a.status_id,
+	style="background:#CCFFCC",
+	select_deal = "SELECT",
+	allocate = "ALLOCATE",
+	tally_deal = "TALLY DEAL",
+	allocation_deal_id = convert(varchar(50), a.deal_id),
+	trade_type = "Spot",
+	master_account_qty = convert(varchar(50), convert(numeric(30,2), sum(a.quantity))),
+	sales_code_id
+from
+	#queued_alloc_trades a
+group by
+        a.deal_id,
+        a.master_external_account_id,
+        a.contract_id,
+        a.broker_id,
+        a.counterparty_id,
+	a.value_date,
+	a.trade_date,
+	a.status_id,
+	a.price,
+	a.sales_code_id
+
+
+
+update
+	#queued_alloc_trades
+set
+	select_deal = NULL
+where
+	deal_id = @deal_id
+
+	
+
+declare @num_sub_accounts int
+declare @max_input_arg varchar(50)
+
+
+if @deal_id = NULL
+begin
+select
+        @num_sub_accounts = count(*)
+from
+        #queued_alloc_trades a,
+        sub_accounts c,
+        master_allocations d
+where
+	a.master_external_account_id = d.external_account_id
+and
+        d.master_allocation_id = c.master_allocation_id
+and
+	a.status_id = @working_status_id
+and
+	a.t_or_d = 'd'
+end
+
+if @deal_id != NULL
+begin
+	select
+        @num_sub_accounts = count(*)
+from
+        #queued_alloc_trades a,
+        sub_accounts c,
+        master_allocations d
+where
+        a.master_external_account_id = d.external_account_id
+and
+        d.master_allocation_id = c.master_allocation_id
+and
+	a.deal_id = @deal_id
+and
+        a.t_or_d = 'd'
+end
+
+	
+
+
+select
+        @max_input_arg = "maxInputCount=" + rtrim(convert(varchar(10), @num_sub_accounts))
+
+insert into
+        #links
+values(
+        "Column Link",
+        "allocate",
+        "Allocate Client Trades",
+        @max_input_arg)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #links.meta_type, #links.name, #links.action, #links.value from #links
+
+update 
+	#queued_alloc_trades
+set
+	sales_code = a.name
+from
+	sales_codes a,
+	#queued_alloc_trades b
+where
+	a.sales_code_id = b.sales_code_id
+
+update
+	#queued_alloc_trades 
+set
+	client_price = convert(varchar(50), convert(numeric(30,6), price))
+from
+	#queued_alloc_trades
+
+update 
+	#queued_alloc_trades
+set
+	master_account = a.symbol
+from
+	external_accounts a,
+	#queued_alloc_trades b
+where
+	a.external_account_id = master_external_account_id
+	
+
+update
+	#queued_alloc_trades
+set
+	orig_deal_qty = b.qty
+from
+	#queued_alloc_trades a,
+	orig_deal_alloc_qty b
+where
+	a.deal_id = b.deal_id
+and
+	a.t_or_d = 'd'
+		
+update
+        #queued_alloc_trades
+set
+        x_orig_deal_qty = b.qty
+from
+        #queued_alloc_trades a,
+        orig_deal_alloc_qty b
+where
+        a.deal_id = b.deal_id
+
+
+
+/*
+| Set status
+*/
+update
+	#queued_alloc_trades
+set
+	status=b.name
+from
+	#queued_alloc_trades a, 
+	statuses b
+where
+	a.status_id= b.status_id
+
+
+/*
+| Set default strategy from login
+*/
+/* Not supported */
+
+
+/*
+| Query symbols for IDs
+*/
+update 
+	#queued_alloc_trades
+set
+	symbol = b.symbol
+from
+	#queued_alloc_trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#queued_alloc_trades
+set
+	trader = b.symbol
+from
+        #queued_alloc_trades a,
+        traders b
+where
+        a.trader_id = b.trader_id
+
+update
+	#queued_alloc_trades
+set
+	broker = b.symbol
+from
+	#queued_alloc_trades a,
+	brokers b
+where
+	a.broker_id = b.broker_id
+
+update 
+	#queued_alloc_trades
+set
+	strategy = b.name
+from
+	#queued_alloc_trades a,
+	strategies b
+where
+	a.strategy_id = b.strategy_id
+
+update
+        #queued_alloc_trades
+set
+        external_account = b.symbol
+from
+        #queued_alloc_trades a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+
+update
+        #queued_alloc_trades
+set
+        master_external_account = b.symbol
+from
+        #queued_alloc_trades a,
+        external_accounts b
+where
+        a.master_external_account_id = b.external_account_id
+
+
+update
+        #queued_alloc_trades
+set
+        counterparty = b.name
+from
+        #queued_alloc_trades a,
+        counterparties b
+where
+        a.counterparty_id = b.counterparty_id
+
+
+update
+        #queued_alloc_trades
+set
+        remaining_qty = orig_deal_qty - quantity
+where
+        t_or_d = 'd'
+
+
+
+create table
+        #header_output(
+                style varchar(100) NULL,
+                status varchar(50),
+                pending_count int,
+                processed_count int,
+		working_count int,
+                run varchar(50) NULL,
+                begin_date datetime,
+                end_date datetime/*,
+		tally_trades varchar(35) NULL*/)
+
+insert into
+        #header_output
+(
+        status,
+        pending_count,
+        processed_count,
+	working_count,
+        run,
+        begin_date,
+        end_date
+)
+values(
+        "No trades for range",
+        0,
+        0,
+	0,
+        @run_name,
+        @begin_date,
+        @end_date
+)
+
+
+select
+	@pending_count= count(*)
+from
+	#queued_alloc_trades
+where
+	status_id = @review_status_id
+
+select
+	@processed_count = count(*)
+from
+	#queued_alloc_trades
+where
+	status_id in(@committed_status_id, @inactive_status_id)
+
+select
+        @working_count= count(*)
+from
+        #queued_alloc_trades
+where
+        status_id = @working_status_id
+
+
+if @processed_count > 0 and @pending_count = 0
+begin
+	update 
+		#header_output
+	set
+		style = "background:#CCFFCC;",
+		status = "All trades processed - prior to range",
+		processed_count = @processed_count
+end
+if @pending_count > 0
+begin
+        update 
+                #header_output
+        set
+		/*style = "color:#FFFFFF;background:#FF6666;", */
+                status = "Pending trades found",
+		pending_count = @pending_count,
+                processed_count = @processed_count
+end
+if @working_count > 0
+begin
+	update
+		#header_output
+	set
+		style = NULL,
+		status = "Working with batch",
+		working_count = @working_count /*,
+		tally_trades = "TALLY TRADES"*/
+end
+
+
+--Adaptive Server has expanded all '*' elements in the following statement
+select
+	#header_output.style, #header_output.status, #header_output.pending_count, #header_output.processed_count, #header_output.working_count, #header_output.run, #header_output.begin_date, #header_output.end_date
+from
+	#header_output
+
+update
+	#queued_alloc_trades 
+set
+	style = "background:#FFFFFF"
+where
+	status_id in(@working_status_id)
+and
+	t_or_d = 't'
+
+update 
+	#queued_alloc_trades
+set
+	calced_alloc = (quantity / x_orig_deal_qty * 1.00)
+where
+	t_or_d = 't'
+
+update
+	#queued_alloc_trades
+set 
+	style = "background:#FFFF00"
+where
+	status_id in(@committed_status_id, @inactive_status_id)
+and
+	t_or_d = 'd'
+
+update 
+	#queued_alloc_trades
+set
+	 style ="color:gray;background:#FFFFFF;"
+where
+        status_id in(@committed_status_id, @inactive_status_id)
+and
+        t_or_d = 't'
+
+	
+
+
+/*
+update 
+	#queued_alloc_trades
+set
+	style = "background:#CCCC33"
+where
+	calced_alloc != allocation
+and
+	t_or_d = 't'
+*/
+
+
+
+
+select
+        "section"="Working Trades",
+        a.trade_id,
+	deal_id = convert(varchar(50), a.deal_id),
+        a.status,
+        a.symbol,
+	a.orig_deal_qty,
+        a.quantity,
+        a.price,
+	a.allocation,
+	a.external_account,
+	a.master_external_account,
+	a.acct_type,
+        a.trader,
+        value_date=convert(varchar(15), a.value_date, 101),
+        trade_date=convert(varchar(15), a.trade_date, 101),
+        a.broker,
+	a.counterparty,
+        a.strategy,
+	a.sales_code,
+        a.identifier,
+	a.edit_trade,
+	a.allocate,
+	a.tally_deal,
+        run_name=@run_name,
+	a.style,
+	a.trade_type,
+	a.master_account,
+	a.master_account_qty,
+	a.client_price
+from
+        #queued_alloc_trades a
+where
+        a.status_id in(@working_status_id)
+order by
+	a.deal_id,
+	a.allocation DESC,
+	a.trade_id
+
+if @deal_id != NULL
+begin
+select
+	section = "Pending Allocation",
+	a.trade_id,
+	deal_id = convert(varchar(50), a.deal_id),
+	a.status,
+	a.symbol,
+	a.orig_deal_qty,
+	a.quantity,
+	a.price,
+	a.allocation,
+	a.external_account,
+	a.master_external_account,
+	a.acct_type,
+        a.trader,
+	value_date=convert(varchar(15), a.value_date, 101),
+	trade_date=convert(varchar(15), a.trade_date, 101),
+	a.broker,
+	a.counterparty,
+	a.strategy,
+	a.sales_code,
+	a.identifier,
+	a.allocate,
+	a.client_price,
+	a.trade_type,
+	a.master_account_qty,
+	a.master_account,
+	run_name=@run_name,
+	display='y',
+	a.style
+from
+	#queued_alloc_trades a
+where
+	a.status_id = @review_status_id
+order by
+	a.deal_id,
+	a.allocation DESC,
+	a.trade_id
+end
+
+if @deal_id = NULL
+begin 
+select
+        section = "Pending Allocation",
+        a.trade_id,
+        deal_id = convert(varchar(50), a.deal_id),
+        a.status,
+        a.symbol,
+        a.orig_deal_qty,
+        a.quantity,
+	a.remaining_qty,
+        a.price,
+        a.allocation,
+        a.external_account,
+        a.master_external_account,
+        a.acct_type,
+        a.trader,
+        value_date=convert(varchar(15), a.value_date, 101),
+        trade_date=convert(varchar(15), a.trade_date, 101),
+        a.broker,
+        a.counterparty,
+        a.strategy,
+        a.sales_code,
+        a.identifier,
+        a.select_deal,
+        a.client_price,
+        a.trade_type,
+        a.master_account_qty,
+        a.master_account,
+        run_name=@run_name,
+        display='y',
+        a.style
+from
+        #queued_alloc_trades a
+where
+        a.status_id = @review_status_id
+order by
+        a.deal_id,
+        a.allocation DESC,
+        a.trade_id
+end
+
+if lower(@show_processed) = "y" and @deal_id != NULL
+begin
+	select
+        	"section"="Processed Trades",
+		a.style,
+        	a.trade_id,
+		a.deal_id,
+        	a.status,
+        	a.symbol,
+        	a.quantity,
+        	a.price,
+		value_date=convert(varchar(15), a.value_date, 101),
+		trade_date=convert(varchar(15), a.trade_date, 101),
+        	a.broker,
+        	a.trader,
+        	a.strategy,
+		a.external_account,
+		a.counterparty,
+		a.identifier
+	from
+        	#queued_alloc_trades a
+	where
+        	a.status_id in(@committed_status_id, @inactive_status_id)
+	and
+		a.deal_id = @deal_id
+	order by
+		a.deal_id,
+        	a.allocation DESC,
+        	a.trade_id
+
+end
+
+
+go 
+
