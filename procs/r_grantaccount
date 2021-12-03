@@ -48,5 +48,7 @@ values(
 )
 end
 
+exec 
+	r_manageaccountaccessdetails @account_name
 go
 

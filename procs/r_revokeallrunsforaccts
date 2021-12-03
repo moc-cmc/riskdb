@@ -1,0 +1,42 @@
+
+create or replace procedure
+	r_revokeallrunsforaccts
+		@account_name varchar(50)
+as
+
+
+declare @account_id int
+
+select
+	@account_id = account_id
+from	
+	tico_accounts
+where
+	login = @account_name
+if @@rowcount != 1
+begin
+        select
+
+                status = -1,
+                error = "Problem deterimining login"
+        return
+end
+
+
+
+begin tran
+
+delete from
+	user_runs
+where
+	tico_account_id = @account_id
+
+commit tran
+
+exec 
+	r_manageaccountaccessdetails
+			@account_name
+
+
+go 
+

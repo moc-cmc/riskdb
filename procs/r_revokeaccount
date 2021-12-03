@@ -85,6 +85,9 @@ begin tran
 
 commit tran
 
+exec 
+	r_manageaccountaccessdetails @account_name
+
 go
 
 
