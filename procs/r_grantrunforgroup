@@ -1,0 +1,86 @@
+
+create or replace procedure
+	r_grantrunforgroup
+		@run_name varchar(50),
+		@access_group varchar(50)
+as
+
+
+declare @user_name varchar(50)
+
+if not exists(select run_id from runs where name = @run_name)
+begin
+	select
+		error = "Error",
+		msg = "Problem finding run with name "+ rtrim(@run_name)
+	return
+end
+
+if not exists(select access_group_id from access_groups where name = @access_group)
+begin
+       select
+               error = "Error",
+               msg = "Problem finding access group with name "+ rtrim(@access_group)
+       return
+end
+
+
+create table
+	#group_logins
+(
+	access_group_id int,
+	tico_account_id int,
+	login varchar(50)
+)
+
+insert into
+	#group_logins
+select
+	a.access_group_id,
+	c.account_id,
+	c.login
+from
+	access_groups a,
+	access_group_accounts b,
+	tico_accounts c
+where
+	a.access_group_id = b.access_group_id
+and
+	b.tico_account_id = c.account_id
+and
+	a.name = @access_group
+
+declare group_cursor cursor for
+	select
+		login
+	from
+		#group_logins
+	order by 
+		login
+
+open group_cursor
+fetch group_cursor into @user_name
+
+while @@sqlstatus = 0
+begin
+	exec
+		r_grantrun
+			@run_name,
+			@user_name
+
+	fetch group_cursor into @user_name
+end
+
+
+close group_cursor
+deallocate group_cursor
+
+
+select
+	status = "Successfully granted access to run for access group",
+	run = @run_name,
+	access_group = @access_group
+	 
+
+go 
+
