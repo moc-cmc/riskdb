@@ -23,6 +23,10 @@ declare @min_trade_id int
 declare @ruble_conversion varchar(10)
 declare @update_ruble_trades varchar(10)
 
+declare @source_override varchar(50)
+
+select
+	@source_override = "Netlink PB SFTP"
 
 select
 	@usi_lookup = usi_prefix
@@ -48,13 +52,13 @@ select
 from
 	sources
 where
-	name = @source
+	name = @source_override
 if @@rowcount != 1
 begin
 	select
 		id = -1,
 		error = "Source not found",
-		source = @source
+		source = @source_override
 	return
 end
 
