@@ -1,0 +1,72 @@
+create or replace procedure 
+	apiv0_manageuserruns	
+		@login varchar(50),
+		@run_name varchar(200)
+
+as
+
+declare @user_id int
+declare @run_id int
+declare @user_run_count int
+
+select
+	@user_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+
+if @user_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining user login " + @login
+	return
+end
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run_name
+
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding run " + @run_name
+	return
+end
+
+select
+	@user_run_count = count(*)
+from
+	user_runs
+where
+	tico_account_id = @user_id	
+and
+	run_id = @run_id
+	
+if @user_run_count = 0 
+begin
+
+	exec
+		apiv0_insertuserrun 
+			@user_id=@user_id,
+			@run_id=@run_id
+end
+else
+begin
+
+	exec
+		apiv0_deleteuserrun
+			@user_id=@user_id,
+			@run_id=@run_id
+
+end
+
+return	
+
+go
+

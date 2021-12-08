@@ -1,0 +1,73 @@
+create or replace procedure
+	apiv0_queryuserruns	
+		@run_name varchar(200)
+as
+
+declare @run_id int
+
+select
+	@run_id = run_id
+from
+	runs
+where
+	name = @run_name
+if @run_id = NULL
+begin
+	select
+		status="Error",
+		message="Run name does not exist"
+	return
+end
+
+create table
+	#users(
+		user_id int,
+		login char(25) NULL,
+		status char(100) NULL 
+)
+
+insert into
+	#users (user_id)
+select
+	a.account_id
+from
+        tico_accounts a,
+	user_runs b,
+	runs c
+where
+	a.account_id = b.tico_account_id
+and
+	b.run_id = c.run_id
+and
+	c.run_id = @run_id
+
+update 
+	#users
+set
+	login = b.login
+from
+	#users a,
+	tico_accounts b
+where
+	a.user_id = b.account_id
+	
+update
+        #users
+set
+        a.status = c.name
+from
+        #users a,
+        tico_accounts b,
+	statuses c
+where
+        a.user_id = b.account_id
+and
+	b.status_id=c.status_id
+
+select
+        login,
+        status 
+from
+	#users
+	
+go
