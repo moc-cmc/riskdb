@@ -1,0 +1,111 @@
+
+create or replace procedure
+	apiv0_deleteuserrun	
+		@user_id int,
+		@run_id int
+as
+
+declare @user_run_log_id int
+declare @static_action_id int
+declare @user_static_action_id int
+
+select
+	@static_action_id = static_action_id
+from
+	static_actions
+where
+	name="Delete"
+
+if @static_action_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Static Action for does not exist "
+	return
+end
+
+exec 
+	j_nextkey
+		"user_runs_log",
+		@user_run_log_id output
+
+exec
+	j_nextkey
+		"user_static_actions",
+		@user_static_action_id output
+begin tran
+
+	delete from	
+		user_runs
+	where
+		tico_account_id = @user_id
+	and
+		run_id = @run_id
+
+	if @@rowcount !=1 
+	begin
+		select
+			status = "Error",
+			message = "Problem deleting user run"
+
+		rollback tran
+	
+		return
+	end
+
+	insert into
+		user_static_actions (
+			user_static_action_id,
+			user_id,
+			static_action_id,
+			table_name,
+			timestamp)
+	values(
+		@user_static_action_id,
+		@user_id,
+		@static_action_id,
+		"user_runs",
+		getdate())	
+	
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem deleting user static action "
+		
+		rollback tran
+		return
+	end
+
+	insert into 
+		user_runs_log (
+			user_runs_log_id,
+			user_static_action_id,
+			user_id,
+			run_id)
+	values(
+		@user_run_log_id,
+		@user_static_action_id,
+		@user_id,
+		@run_id)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting user run log "  
+	
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status = "Success",
+	message = "User run deleted " 
+
+return
+
+go
+
