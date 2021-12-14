@@ -1,0 +1,26 @@
+
+create or replace procedure
+	r_resendsourcenotification
+		@login varchar(50),
+		@trade_id int,
+		@source varchar(50),
+		@send_as varchar(40),
+		@trade_date datetime=NULL,
+		@view_source varchar(50)=NULL
+as
+
+exec
+	api_resendnotification
+		@login=@login,
+		@trade_id=@trade_id,
+		@source=@source,
+		@send_as=@send_as
+
+exec
+	r_notificationsfordate
+		@login=@login,
+		@source=@view_source,
+		@trade_date=@trade_date
+
+go
+	
