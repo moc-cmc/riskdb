@@ -18,7 +18,7 @@ select
 from
 	tico_accounts
 where
-	login=@login
+	login=@account_name
 
 if @@rowcount != 1
 begin
@@ -71,7 +71,7 @@ begin tran
 commit tran
 
 exec
-        r_manageaccountaccessdetails @login, @account_name
+        r_manageaccountaccessdetails @account_name
 
 return
 

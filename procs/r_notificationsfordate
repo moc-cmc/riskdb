@@ -1,0 +1,138 @@
+create or replace procedure
+	r_notificationsfordate
+		@login varchar(50),
+		@source varchar(50)=NULL,
+		@trade_date datetime=NULL
+
+as
+
+declare @tico_account_id int
+declare @fund_id int
+declare @fund_name varchar(50)
+declare @run_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+			  status="Error",
+			  message="Problem finding account for login"
+	return
+end
+
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values (
+	"Column Link",
+	"resend_as",
+	"Resend Notification for Trade",
+	NULL)
+
+
+select
+	*
+from
+	#meta
+
+
+exec 
+	r_defaultfundforlogin
+		@login=@login,
+		@fund_id = @fund_id output
+
+select
+	@fund_name = name
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	a.name = @fund_name
+and
+	b.tico_account_id = @tico_account_id
+
+if @run_id = NULL
+begin
+	select
+		section = "Insufficient Permissions",
+		message = "This report requires top level run access to view. Please contact your adminstrator for access",
+		style = @style
+	return
+end
+
+
+exec
+	api_notificationsforrange
+		@login= @login,
+		@source= @source,
+		@begin_date = @trade_date
+
+
+go
+
+	
+
+		
+
+
+
+
+
+
+
+
+
+
+

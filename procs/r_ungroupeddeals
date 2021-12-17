@@ -1,0 +1,565 @@
+
+create or replace procedure
+	r_ungroupeddeals
+		@login varchar(50),
+		@trade_date datetime=NULL,
+		@deal_id int=NULL
+as
+
+
+
+declare @end_date datetime
+declare @begin_date datetime
+declare @previous_day datetime
+declare @next_day datetime
+declare @netting_trades_count int
+declare @run_id int
+declare @date datetime
+declare @deal_status varchar(50)
+declare @external_account_id int
+declare @contract_name varchar(50)
+declare @deals_in_group int
+declare @perspective_contract_name varchar(50)
+declare @perspective_contract_id int
+declare @contract_id int
+
+
+
+select
+	@contract_name = b.symbol,
+	@contract_id = b.contract_id
+from
+	trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	a.deal_id = @deal_id
+
+create table
+	#meta (
+		meta_type char(50),
+		name char(50) NULL,
+		action char(100) NULL,
+		value varchar(400) NULL
+)
+
+
+if @trade_date = NULL
+        select
+                @trade_date = getdate()
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+exec
+        r_prevbusinessday
+                @end_date,
+                @previous_day output
+
+exec
+        r_nextbusinessday
+                @end_date,
+                @next_day output
+
+
+
+/*
+ * SHOW header
+ */
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"show_single_legs_for_day",
+	"Ungrouped Deals",
+	"tradeDate=" + convert(varchar(10), @end_date, 101)
+)
+insert into
+	#meta
+values(
+	"Column Link",
+	"pair_matching_trades",
+	"Update All Single Legs",
+	"tradeDate=" + convert(varchar(10), @end_date, 101)
+)
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_remaining_trades_to_deal",
+	"Add Remaining Trades",
+	"tradeDate=" + convert(varchar(10), @end_date, 101) + "&groupDealID=" + convert(varchar(10), @deal_id) + "&contract_name=" + @contract_name + "&action=Add Remaining Currency to Deal"
+)
+--Adaptive Server has expanded all '*' elements in the following statement
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+delete from #meta
+
+if @deal_id != NULL
+	select
+		show_single_legs_for_day = "Show Single Trades For Day " + convert(varchar(10), @end_date, 101) ,
+		pair_matching_trades = "Pair Matching Single Leg Trades ", 
+ 		add_remaining_trades_to_deal = "Add Remaining " + @contract_name + " to Deal"
+
+if @deal_id = NULL
+	select
+       		show_single_legs_for_day = "Show Single Trades For Day " + convert(varchar(10), @end_date, 101) ,
+	        pair_matching_trades = "Pair Matching Single Leg Trades ",
+		add_remaining_trades_to_deal = ""
+
+
+
+create table
+	#singlelegs(
+		trade_id int,
+		deal_count int
+	)
+
+insert into #singlelegs
+select
+	a.trade_id,
+	count(*)
+from
+	trades a,
+	statuses b,
+	strategies c
+where
+        a.trade_date >= @begin_date
+and
+        a.trade_date < @end_date
+and
+	a.status_id = b.status_id
+and
+	a.strategy_id = c.strategy_id 
+and
+	b.name != "Resid"
+and
+	c.name != "Prop"
+and
+	a.quantity != 0
+group by
+	deal_id
+having count(*) = 1
+
+
+
+
+create table
+    #trades (
+        section varchar(25) NULL,
+        deal_id int,
+        trade_id int NULL,
+	trade_date datetime NULL,
+	contract_name varchar(50) NULL,
+        value_date datetime NULL,
+        quantity numeric(30,4) NULL,
+        trade_price float NULL,
+        trader_name varchar(50) NULL,
+        broker_name varchar(50) NULL,
+        external_account_name varchar(50) NULL,
+        counterparty_name varchar(50) NULL,
+        action varchar(25) NULL,
+        style varchar(100) NULL
+)
+    
+
+insert into
+        #trades
+select
+        "Single Leg Trades",
+        a.deal_id,
+        a.trade_id,
+        a.trade_date,
+        b.symbol,
+        a.value_date,
+        a.quantity,
+        a.price,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL
+from
+        trades a,
+        contracts b,
+        #singlelegs c,
+        brokers d
+
+where
+        a.contract_id = b.contract_id
+and
+        a.trade_date >= @begin_date
+and
+        a.trade_date <= @end_date
+and
+        a.trade_id = c.trade_id
+and
+        a.broker_id = d.broker_id
+and
+	d.symbol not in("Ticket Aggregator")
+
+
+insert into
+        #trades
+select
+        "Aggregated Trades",
+        a.deal_id,
+        a.trade_id,
+        a.trade_date,
+        b.symbol,
+        a.value_date,
+        a.quantity,
+        a.price,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL
+from
+        trades a,
+        contracts b,
+        #singlelegs c,
+        brokers d
+
+where
+        a.contract_id = b.contract_id
+and
+        a.trade_date >= @begin_date
+and
+        a.trade_date <= @end_date
+and
+        a.trade_id = c.trade_id
+and
+        a.broker_id = d.broker_id
+and
+	d.symbol in("Ticket Aggregator")
+
+
+
+
+insert into #meta values("Row Style", "style", NULL, NULL)
+insert into #meta values("Column Group", "section", NULL, NULL)
+
+/*
+ * Make sure the deal exists
+ */
+
+if not exists( select * from deals where deal_id = @deal_id )
+    select
+        @deal_id = NULL
+
+if @deal_id != NULL
+begin
+
+        insert into
+                #meta values(
+                        "Column Link",
+                        "action",
+                        "Add Remaining Trades",
+                        "tradeDate=" + convert(varchar(10), @end_date, 101) + "&groupDealID=" + convert(varchar(10), @deal_id))
+	
+        delete from
+                #trades
+        where
+                deal_id = @deal_id
+
+	exec
+		r_findcontractsymbols
+			@contract_id,
+			@contract_name output,
+			@perspective_contract_name output
+	insert into
+        	#trades
+	select
+        	"Group",
+        	a.deal_id,
+        	a.trade_id,
+        	a.trade_date,
+        	c.symbol,
+        	a.value_date,
+        	a.quantity,
+        	a.price,
+        	NULL,
+       		NULL,	
+        	NULL,
+        	NULL,
+        	NULL,
+        	"color:#000;background:#ffdac4"
+	from
+        	trades a,
+        	contracts c
+	where
+		a.deal_id = @deal_id
+	and
+        	a.contract_id = c.contract_id
+
+
+	update
+		#trades
+	set
+		action = "Add to Group"
+	from
+		trades a,
+		contracts b,
+		#trades c
+	where
+		a.deal_id != @deal_id        
+	and
+		a.trade_id = c.trade_id
+	and
+		a.contract_id = b.contract_id
+	and
+		b.symbol in(@contract_name, @perspective_contract_name)
+        
+
+	select
+		@deals_in_group = count(*)
+	from
+		trades
+	where
+		deal_id = @deal_id
+
+       
+	if @deals_in_group = 1
+		begin
+			update
+				#trades
+			set
+				action = "Aggressive Match"
+			where
+				deal_id = @deal_id
+		end
+		
+
+ 
+	/* 
+         * Add an action to remove "Group" trades from the "Group" deal which
+         * have trade_origin_deals, which have not been netted.
+         */
+        update
+            #trades
+        set
+            action = "Remove from Group"
+        from
+            #trades a,
+            trade_origin_deals b
+        where
+            a.trade_id = b.trade_id
+        and
+            a.trade_id != NULL
+        and
+            a.deal_id = @deal_id
+        and
+            a.trade_id not in (
+                /* Other trades in deal that have been netted. */
+                select
+                    c.trade_id
+                from 
+                    trade_origin_deals c,
+                    trade_origin_deals ca,
+                    aggregated_trades cb
+                where
+                    a.trade_id = c.trade_id
+                and
+                    c.deal_id = ca.deal_id
+                and
+                    ca.trade_id = cb.trade_id
+            )
+
+	insert into
+            #trades (
+                action,
+                section,
+                deal_id,
+                trade_id,
+                contract_name,
+                value_date,
+                quantity,
+                trade_price,
+                external_account_name,
+                trader_name,
+                broker_name,
+                counterparty_name,
+		style)
+	
+	select
+            "UNGROUP",
+            "Group",
+            @deal_id,
+            NULL,
+            NULL,
+            NULL,
+            sum(quantity),
+	    NULL,
+            external_account_name,
+            trader_name,
+            broker_name,
+            counterparty_name,
+            "color:#000;background:#c5e9ff"		
+        from
+            #trades
+        where
+            deal_id = @deal_id
+        group by
+            external_account_name,
+            trader_name,
+            broker_name,
+            counterparty_name,
+            contract_name
+        having
+            count(*) > 1
+
+
+end
+
+
+
+/* 
+ * If no deal_id is selected, select a deal to start grouping
+ */
+
+if @deal_id = NULL
+begin
+
+    update
+        #trades
+    set
+        action = "Select"
+/*    where
+	section = "Aggregated Trades" */
+
+    insert into 
+	#meta values(
+		"Column Link", 
+		"action", 
+		"Ungrouped Deals", 
+		"tradeDate=" + convert(varchar(10), @end_date, 101))
+        
+end
+
+
+--Adaptive Server has expanded all '*' elements in the following statement
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+delete from #meta
+
+
+update
+        #trades
+set
+        a.external_account_name = c.symbol
+from
+        #trades a,
+        trades b,
+        external_accounts c
+where
+        a.trade_id = b.trade_id
+and
+        b.external_account_id = c.external_account_id
+
+update
+        #trades
+set
+        a.counterparty_name = c.name
+from
+        #trades a,
+        trades b,
+        counterparties c
+where
+        a.trade_id = b.trade_id
+and
+        b.counterparty_id = c.counterparty_id
+
+update
+        #trades
+set
+        a.trader_name = c.symbol
+from
+        #trades a,
+        trades b,
+        traders c
+where
+        a.trade_id = b.trade_id
+and
+        b.trader_id = c.trader_id
+
+update
+        #trades
+set
+        a.broker_name = c.symbol
+from
+        #trades a,
+        trades b,
+        brokers c
+where
+        a.trade_id = b.trade_id
+and
+        b.broker_id = c.broker_id
+
+
+
+update
+	#trades
+set
+	a.trade_price = 1.0 / a.trade_price
+from
+	#trades a,
+	contract_price_styles b,
+	price_styles c,
+	trades d
+where
+	a.trade_id = d.trade_id
+and
+	d.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+
+
+
+
+select
+	section,
+	deal_id,
+        trade_id,
+	trade_date = convert(char(25), trade_date, 1) + right(convert(char(25), trade_date, 0), 13),
+        "Symbol" = contract_name,
+        quantity,
+        "Price" = trade_price,
+        value_date = convert(char(11), value_date, 1),
+        external_account = external_account_name,
+        trader = trader_name,
+        counterparty = counterparty_name,
+        broker = broker_name,
+	action,
+	style
+
+from
+	#trades
+order by
+    case section
+	when "Group" then '0'
+	when "Aggregated Trades" then '1'
+	when "Single Leg Trades" then '2'
+    end,
+    action,
+    contract_name,
+    trader,
+    broker_name desc,
+    trade_date,
+    deal_id
+
+
+
+
+go 
+

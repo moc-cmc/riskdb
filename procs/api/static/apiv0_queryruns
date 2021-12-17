@@ -1,5 +1,5 @@
 create or replace procedure
-	apiv0_runs	
+	apiv0_queryruns	
 		@login varchar(50)
 as
 

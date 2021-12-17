@@ -1,13 +1,10 @@
-drop procedure
-	r_managerunaccessdetails
-go
 
-create procedure
+create or replace procedure
 	r_managerunaccessdetails
 		@login varchar(50),
 		@run_name varchar(50)
-
 as
+
 
 
 declare @run_id int
@@ -24,9 +21,9 @@ create table
 insert into
 	#meta
 values(
-	"Column Action",
+	"Column Link",
 	"revoke_access",
-	"r_revokerun",
+	"Revoke Run",
 	NULL
 )
 
@@ -34,9 +31,9 @@ values(
 insert into
       #meta
 values(
-      "Column Action",
+      "Column Link",
       "grant_access",
-      "r_grantrun",
+      "Grant Run",
       NULL
 )
 
@@ -97,9 +94,9 @@ values(
 insert into
       #meta
 values(
-      "Column Action",
+      "Column Link",
       "grant_to_admin",
-      "r_grantrunforgroup",
+      "Grant Run For Group",
       NULL
 )
 
@@ -383,4 +380,6 @@ order by
 	access_group DESC,
 	user_name
 
-go
+
+go 
+

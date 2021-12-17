@@ -1,0 +1,608 @@
+
+create or replace procedure
+	xr_assigntrades
+		@login varchar(50),
+		@trade_date datetime = NULL,
+		@symbol varchar(50) = NULL,
+		@value_date varchar(50) = NULL,
+		@deal_id int = NULL,
+		@deal_status varchar(25) = NULL
+as
+
+
+/*
+ *                     Group         Netting
+ * 1. B2B              
+ *    
+ *
+ * 2. Market/Client Forward
+ *   a. 
+ *   b. 
+ *
+ * STP B2B
+ *
+ *   - Find "B2B Forward", "B2B NDF" trades whose trade statuses are "Unaggregated"
+ *     - 
+ *   - Find "B2B Swap", "B2B NDF Swap" trades whose trade statuses are "Unaggregated"
+ *
+ *     Show the 
+ * 
+ * Phone B2B
+ *
+ * 
+ */
+
+declare @previous_day datetime
+declare @next_day datetime
+declare @begin_date datetime
+declare @end_date datetime
+
+create table
+	#meta (
+		meta_type char(50),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL
+    )
+
+/*
+ * CALC @begin_date, @end_date, @previous_day
+ */
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+exec
+	r_prevbusinessday
+		@end_date,
+		@previous_day output
+
+exec
+	r_nextbusinessday
+		@end_date,
+		@next_day output
+
+/*
+ * SHOW header
+ */
+insert into
+	#meta
+select
+	"Column Link",
+	"previous_day",
+	"Assign Trades",
+	"tradeDate=" + convert(varchar(10), @previous_day, 101)
+insert into
+	#meta
+select
+	"Column Link",
+	"next_day",
+	"Assign Trades",
+	"tradeDate=" + convert(varchar(10), @next_day, 101)
+insert into
+	#meta
+select
+	"Column Link",
+	"show_uncommitted",
+	"Assign Trades",
+	"tradeDate=" + convert(varchar(10), @end_date, 101)
+insert into
+	#meta
+select
+	"Column Link",
+	"show_committed",
+	"Assign Trades",
+	"tradeDate=" + convert(varchar(10), @end_date, 101) + "&dealStatus=Committed"
+
+
+--Adaptive Server has expanded all '*' elements in the following statement
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+delete from #meta
+
+select
+	previous_day = "Previous Day",
+	trade_date = convert(char(11), @end_date, 1),
+	next_day = "Next Day",
+    mode = "",
+    show_uncommitted = "Show Uncommitted Deals",
+    show_committed = "Show Committed Deals",
+    show = case 
+        when @deal_id = null then
+            "<b>Select a deal below</b>"
+        else
+            "Showing deal " + convert(varchar(10), @deal_id)
+    end
+
+/*
+ * CALC #trades
+ */
+create table
+    #trades (
+        id int identity,
+        section varchar(25) NULL,
+        deal_id int,
+        deal_type varchar(25) NULL,
+        deal_status varchar(25) NULL,
+        trade_id int NULL,
+        trade_status varchar(25) NULL,
+        external_account varchar(50) NULL,
+        external_account_type varchar(25) NULL,
+        aggregation_style varchar(25) NULL,
+        trader varchar(50) NULL,
+        broker varchar(50) NULL,
+        counterparty varchar(50) NULL,
+        symbol varchar(50) NULL,
+        value_date datetime NULL,
+        quantity numeric(30,4) NULL,
+        price float NULL,
+        identifier varchar(100) NULL,
+        action varchar(25) NULL,
+        style varchar(100) NULL,
+	uncommit varchar(25) NULL
+    )
+    
+insert into
+    #trades
+select
+    "Deals",
+    a.deal_id,
+    deal_type = case when min(aa.name) = max(aa.name) then min(aa.name) else NULL end,
+    deal_status = case when min(ab.name) = max(ab.name) then min(ab.name) else NULL end,
+    NULL,
+    NULL,
+    external_account = case when min(bb.symbol) = max(bb.symbol) then min(bb.symbol) else NULL end,
+    account_type = case when min(bba.name) = max(bba.name) then min(bba.name) else NULL end,
+    aggregation_style = case when min(bbb.name) = max(bbb.name) then min(bbb.name) else NULL end,
+    trader = case when min(bc.symbol) = max(bc.symbol) then min(bc.symbol) else NULL end,
+    broker = case when min(bd.symbol) = max(bd.symbol) then min(bd.symbol) else NULL end,
+    counterparty = case when min(be.name) = max(be.name) then min(be.name) else NULL end,
+    symbol = case when min(bf.symbol) = max(bf.symbol) then min(bf.symbol) else NULL end,
+    value_date = case when min(b.value_date) = max(b.value_date) then min(b.value_date) else NULL end,
+    sum(b.quantity),
+    price = case when min(b.price) = max(b.price) then min(b.price) else NULL end,
+    NULL,
+    NULL,
+    "background:#c7e9fd",
+    NULL
+from
+    deals a,
+    deal_types aa,
+    statuses ab,
+    trades b,
+    statuses ba,
+    external_accounts bb,
+    external_account_types bba,
+    aggregation_styles bbb,
+    traders bc,
+    brokers bd,
+    counterparties be,
+    contracts bf
+where
+    a.deal_type_id = aa.deal_type_id
+and
+    a.status_id = ab.status_id
+and
+    a.deal_id = b.deal_id
+and
+    b.status_id = ba.status_id
+and
+    b.external_account_id = bb.external_account_id
+and
+    bb.external_account_type_id = bba.external_account_type_id
+and
+    bb.aggregation_style_id = bbb.aggregation_style_id
+and
+    b.trader_id = bc.trader_id
+and
+    b.broker_id = bd.broker_id
+and
+    b.counterparty_id = be.counterparty_id
+and
+    b.contract_id = bf.contract_id
+and
+	b.trade_date >= @begin_date
+and
+	b.trade_date < @end_date
+and
+    b.quantity != 0
+and (
+        (@deal_status != "Committed" and ab.name != "Committed")
+    or
+        (@deal_status = "Committed" and ab.name = "Committed")
+    or
+        a.deal_id = @deal_id
+    )
+group by
+    a.deal_id
+order by
+    a.deal_id
+
+insert into
+    #trades
+select
+    "Deals",
+    a.deal_id,
+    deal_type = aa.name,
+    deal_status = ab.name,
+    b.trade_id,
+    trade_status = ba.name,
+    external_account = bb.symbol,
+    account_type = bba.name,
+    aggregation_style = bbb.name,
+    trader = bc.symbol,
+    broker = bd.symbol,
+    counterparty = be.name,
+    symbol = bf.symbol,
+    b.value_date,
+    b.quantity,
+    b.price,
+    b.identifier,
+    NULL,
+    "color:#999;background:#fff",
+    NULL
+from
+    deals a,
+    deal_types aa,
+    statuses ab,
+    trades b,
+    statuses ba,
+    external_accounts bb,
+    external_account_types bba,
+    aggregation_styles bbb,
+    traders bc,
+    brokers bd,
+    counterparties be,
+    contracts bf
+where
+    a.deal_type_id = aa.deal_type_id
+and
+    a.status_id = ab.status_id
+and
+    a.deal_id = b.deal_id
+and
+    b.status_id = ba.status_id
+and
+    b.external_account_id = bb.external_account_id
+and
+    bb.external_account_type_id = bba.external_account_type_id
+and
+    bb.aggregation_style_id = bbb.aggregation_style_id
+and
+    b.trader_id = bc.trader_id
+and
+    b.broker_id = bd.broker_id
+and
+    b.counterparty_id = be.counterparty_id
+and
+    b.contract_id = bf.contract_id
+and
+	b.trade_date >= @begin_date
+and
+	b.trade_date < @end_date
+and
+    b.quantity != 0
+and (
+        (@deal_status != "Committed" and ab.name != "Committed")
+    or
+        (@deal_status = "Committed" and ab.name = "Committed")
+    or
+        a.deal_id = @deal_id
+    )
+order by
+    a.deal_id,
+    b.trade_id
+    
+/* select * from #trades order by id */
+
+/*
+ * SHOW #trades
+ */
+insert into #meta values("Column Hidden", "dealStatus", NULL, NULL)
+insert into #meta values("Column Hidden", "tradeID", NULL, NULL)
+insert into #meta values("Column Hidden", "tradeStatus", NULL, NULL)
+insert into #meta values("Column Hidden", "externalAccountType", NULL, NULL)
+insert into #meta values("Column Hidden", "aggregationStyle", NULL, NULL)
+insert into #meta values("Row Style", "style", NULL, NULL)
+insert into #meta values("Column Format", "value_date", NULL, "MM/dd")
+insert into #meta values("Column Format", "quantity", NULL, "#,###;<span style=""color:red"">-#,###</span>")
+insert into #meta values("Column Group", "section", NULL, NULL)
+
+/*
+ * Make sure the deal exists
+ */
+if not exists( select * from deals where deal_id = @deal_id )
+    select
+        @deal_id = NULL
+
+if @deal_id != NULL
+begin
+    
+    update
+        #trades
+    set
+        style = case when trade_id = NULL then "background:#18a6fc;color:#fff"
+            else "background:#c7e9fd" end
+    where
+        deal_id = @deal_id
+    
+    select
+        @deal_status = b.name
+    from
+        deals a,
+        statuses b
+    where
+        a.status_id = b.status_id
+    and
+        a.deal_id = @deal_id
+
+    /*
+     * Put the @deal_id trades into the "Group" section
+     */
+    update
+        #trades
+    set
+        section = "Group"
+    where
+        deal_id = @deal_id
+    
+    if @deal_status != "Committed"
+    begin
+    
+        insert into #meta values("Column Link", "action", "Manage Group", "tradeDate=" + convert(varchar(10), @end_date, 101) + "&groupDealID=" + convert(varchar(10), @deal_id))
+        
+        /*
+         * Add an action to add non-"Group" deals to the "Group" deal.
+         */
+        update
+            #trades
+        set
+            action = "Add to Group",
+            style = "color:#000;background:#EEF9FF"
+        where
+            trade_id = NULL
+        and
+            deal_id != @deal_id
+        
+        update
+            #trades
+        set
+            style = "color:#000;background:#CCEDFF"
+        where
+            trade_id = NULL
+        and
+            deal_id != @deal_id
+        and
+            symbol = @symbol
+        and
+            value_date = @value_date
+    
+        /* 
+         * Add an action to remove "Group" trades from the "Group" deal which
+         * have trade_origin_deals, which have not been netted.
+         */
+        update
+            #trades
+        set
+            action = "Remove from Group"
+        from
+            #trades a,
+            trade_origin_deals b
+        where
+            a.trade_id = b.trade_id
+        and
+            a.trade_id != NULL
+        and
+            a.deal_id = @deal_id
+        and
+            a.trade_id not in (
+                /* Other trades in deal that have been netted. */
+                select
+                    c.trade_id
+                from 
+                    trade_origin_deals c,
+                    trade_origin_deals ca,
+                    aggregated_trades cb
+                where
+                    a.trade_id = c.trade_id
+                and
+                    c.deal_id = ca.deal_id
+                and
+                    ca.trade_id = cb.trade_id
+            )
+    
+        /* 
+         * Add an action to unnet "Group" trades that have at least one row in
+         * aggregated_trades.
+         */
+        update
+            #trades
+        set
+            action = "Revert Net"
+        from
+            #trades a,
+            aggregated_trades b
+        where
+            a.trade_id = b.aggregate_trade_id
+            
+        /*
+         * ACTION net
+         */
+       insert into
+            #trades (
+                action,
+                section,
+                deal_type,
+                deal_id,
+                trade_id,
+                symbol,
+                value_date,
+                quantity,
+                price,
+                external_account,
+                trader,
+                broker,
+                counterparty
+            )
+        select
+            "NET",
+            "Group",
+            "<b>Net Client Trades</b>",
+            @deal_id,
+            0,
+            symbol,
+            value_date,
+            sum(quantity),
+            sum(price * quantity) / sum(quantity),
+            external_account,
+            trader,
+            broker,
+            counterparty
+        from
+            #trades
+        where
+            deal_id = @deal_id
+        and
+            trade_status = "Unaggregated"
+        and
+            aggregation_style != "None"
+        group by
+            external_account,
+            trader,
+            broker,
+            counterparty,
+            symbol,
+            value_date
+        having
+            count(*) > 1
+        and
+            sum(quantity) != 0
+        
+        /*
+         * ACTION commit
+         */
+        insert into
+            #trades (
+                action,
+                section,
+                deal_type,
+                deal_id,
+                trade_id
+            )
+        select
+            "&nbsp;",
+            "Group",
+            "",
+            @deal_id,
+            0
+            
+        /*
+         * ACTION commit
+         */
+        insert into
+            #trades (
+                action,
+                section,
+                deal_type,
+                deal_id,
+                trade_id
+            )
+        select
+            "COMMIT",
+            "Group",
+            "<b>Commit</b>",
+            @deal_id,
+            0
+            
+    end
+    else
+    begin
+        
+	select msg = "TESTING"
+	select deal_id = @deal_id
+	
+--Adaptive Server has expanded all '*' elements in the following statement
+select #trades.id, #trades.section, #trades.deal_id, #trades.deal_type, #trades.deal_status, #trades.trade_id, #trades.trade_status, #trades.external_account, #trades.external_account_type, #trades.aggregation_style, #trades.trader, #trades.broker, #trades.counterparty, #trades.symbol, #trades.value_date, #trades.quantity, #trades.price, #trades.identifier, #trades.action, #trades.style, #trades.uncommit from #trades where deal_id = @deal_id /* TEST */
+	update
+		#trades
+	set
+		uncommit = "Uncommit"
+	where
+		deal_id = @deal_id
+        /* 
+         * Remove knowledge of any working deal
+         */
+        select
+            @deal_id = NULL
+    
+    end
+    
+end
+
+/* 
+ * If there is no @deal_id, either because none was selected (given as a
+ * parameter) or the @deal_status is "Committed", then allow the user to select
+ * a(nother) deal.
+ */
+if @deal_id = NULL
+begin
+
+    update
+        #trades
+    set
+        action = "Select"
+    where
+        trade_id = NULL
+
+    insert into #meta values("Column Link", "action", "Assign Trades", "tradeDate=" + convert(varchar(10), @end_date, 101))
+        
+end
+
+
+--Adaptive Server has expanded all '*' elements in the following statement
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+delete from #meta
+
+select
+    section,
+    _deal_id = case when a.trade_id != NULL then NULL else a.deal_id end,
+    deal_type = case when a.trade_id != NULL and a.trade_id != 0 then NULL else a.deal_type end,
+    deal_status = case when a.trade_id != NULL then NULL else a.deal_status end,
+    trade_id,
+    trade_status,
+    symbol,
+    value_date = convert(varchar(10), value_date, 101),
+    quantity,
+    price,
+    external_account,
+    external_account_type,
+    aggregation_style,
+    trader,
+    counterparty,
+    broker,
+    identifier = case
+        when a.trade_id != null then
+            '<span title="Trade ID: ' + convert(varchar(10), trade_id) + '">' 
+            + identifier + '</span>'
+        else
+            identifier
+    end,
+    symbol,
+    action,
+    style,
+    uncommit
+from
+    #trades a
+order by
+    a.section desc,
+    a.deal_id,
+    a.id
+
+
+go 
+

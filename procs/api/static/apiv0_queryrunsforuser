@@ -1,0 +1,57 @@
+create or replace procedure
+	apiv0_queryrunsforuser	
+		@login varchar(50)
+as
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+create table
+	#runs(
+		run_id int,
+		name varchar(25) NULL
+)
+
+
+insert into
+	#runs
+		(run_id)
+select
+	a.run_id
+from
+        runs a,
+	user_runs b
+where
+	a.run_id=b.run_id
+and
+	b.tico_account_id = @tico_account_id  
+
+update 
+	#runs
+set
+	name = b.name
+from
+	#runs a,
+	runs b
+where
+	a.run_id = b.run_id
+	
+select
+       	name 
+from
+	#runs
+	
+go

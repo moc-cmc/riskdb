@@ -1,0 +1,114 @@
+
+create or replace procedure
+	apiv0_updatebroker	
+		@user_id int,
+		@broker_id int,
+		@new_broker varchar(25),
+		@source_id int
+as
+
+declare @static_action_id int
+declare @user_static_action_id int
+declare @brokers_log_id int
+
+select
+        @static_action_id = static_action_id
+from
+        static_actions
+where
+        name="Edit"
+
+if @static_action_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Static Action for Edit does not exist "
+        return
+end
+
+exec 
+        j_nextkey
+                "brokers_log",
+                @brokers_log_id output
+
+exec
+        j_nextkey
+                "user_static_actions",
+                @user_static_action_id output
+
+begin tran
+
+	update
+		brokers	
+	set
+		symbol=@new_broker	
+	where
+		broker_id=@broker_id
+
+	if @@rowcount != 1
+	begin
+		select
+			status="Error",
+			message="Problem updating broker for symbol " + @new_broker
+		
+		rollback tran
+		return
+	end
+
+	insert into
+		user_static_actions (
+			user_static_action_id,
+			user_id,
+			static_action_id,
+			table_name,
+			timestamp)
+	values(
+		@user_static_action_id,
+		@user_id,
+		@static_action_id,
+		"brokers",
+		getdate())      
+        
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding user static action "
+                
+		rollback tran
+		return
+	end	
+
+	insert into 
+		brokers_log (
+			brokers_log_id,
+			user_static_action_id,
+			broker_id,
+			symbol,
+			source_id)	
+	values(
+		@brokers_log_id,
+		@user_static_action_id,
+		@broker_id,
+		@new_broker,
+		@source_id)
+
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting brokers log " + @new_broker 
+        
+		rollback tran
+		return
+	end
+
+commit tran
+
+select
+	status = "Success",
+	message = "Broker updated " + @new_broker
+
+return
+
+go	

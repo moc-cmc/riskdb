@@ -1,0 +1,115 @@
+create or replace procedure 
+	apiv0_managebroker	
+		@login varchar(50),
+		@broker varchar(50),
+		@new_broker varchar(50)=NULL
+		/* source varchar(100) */
+as
+
+declare @user_id int
+declare @broker_id int
+declare @source_id int
+
+if len(@broker)  > 25
+begin
+	select
+		status="Error",
+		message="Broker must be less than 25 characters " + @broker
+
+	return
+end
+
+if @broker = NULL
+begin
+	select
+		status="Error",
+		message="broker cannot be NULL"
+	return
+end
+
+/*
+select
+	@source_id=source_id
+from
+	sources
+where
+	name=@source
+
+if @source_id = NULL
+begin
+	select
+		status="Error",
+		message="Source does not exist " + @source
+	return
+end
+*/
+
+select @source_id=100
+
+select
+	@user_id = account_id
+from
+	tico_accounts 
+where
+	login = @login
+
+if @user_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining user login " + @login
+	return
+end
+
+select
+	@broker_id = broker_id
+from
+	brokers	
+where
+	symbol = @broker
+/* and
+	source_id = @source_id
+*/
+
+if @broker_id = NULL
+begin
+
+	exec
+		apiv0_insertbroker 
+			@user_id=@user_id,
+			@broker=@broker,
+			@source_id=@source_id
+end
+else
+begin
+
+	if (@new_broker = NULL)
+	begin
+		select
+			status = "Error",
+			message = "New Broker cannot be NULL"
+
+		return
+	end
+
+	if len(@new_broker) > 25
+        begin
+                select
+                        status = "Error",
+                        message = "Broker must be less than 25 characters " + @broker
+                return
+        end
+
+	exec
+		apiv0_updatebroker
+			@user_id=@user_id,
+			@broker_id=@broker_id,
+			@new_broker=@new_broker,
+			@source_id=@source_id
+
+end
+
+return	
+
+go
+
