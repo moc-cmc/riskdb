@@ -166,6 +166,8 @@ select
     *
 from
     #contracts
+order by 
+    symbol
 
 go
     
