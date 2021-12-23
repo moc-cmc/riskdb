@@ -1,17 +1,16 @@
 
 create or replace procedure
 	ttc_celertechtallymultipbadm
-		@/* Provided by FIX server config.properties & spring.xml */
 		@source varchar(50),
 		@default_login varchar(50),
 		@broker varchar(50),
-		@granularity varchar(15)=NULL, /* Parsed from FIX message and provided by mapping.xml */ /* session variables */
+		@granularity varchar(15)=NULL,
 		@sender_comp varchar(50),
-		@target_comp varchar(50), /* identifiers */
+		@target_comp varchar(50),
 		@execution_id varchar(100)=NULL,
 		@trade_report_id varchar(50),
 		@order_id varchar(50),
-		@cl_order_id varchar(50)=NULL, /*financials*/
+		@cl_order_id varchar(50)=NULL, 
 		@symbol varchar(50)=NULL,
 		@ccy1 varchar(50)=NULL,
 		@ccy2 varchar(50)=NULL,
@@ -22,11 +21,11 @@ create or replace procedure
 		@trade_date datetime,
 		@trade_day datetime,
 		@value_date datetime,
-		@fixing_date datetime=NULL, /*swaps*/
+		@fixing_date datetime=NULL,
 		@far_price float=NULL,
 		@far_qty float=NULL,
 		@far_value_date datetime=NULL,
-		@far_fixing_date datetime=NULL, /*parties*/
+		@far_fixing_date datetime=NULL,
 		@executing_trader varchar(50)=NULL,
 		@executing_firm varchar(50)=NULL,
 		@executing_system varchar(50)=NULL,
