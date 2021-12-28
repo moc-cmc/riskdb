@@ -1,47 +1,40 @@
+
 create or replace procedure
 	tts_celertechtallymultipb
-		/* Provided by FIX server config.properties & spring.xml */
-                @source varchar(50),
-                @default_login varchar(50),
-                @broker varchar(50),
-                @granularity varchar(15)=NULL,
-                /* Parsed from FIX message and provided by mapping.xml */
-                /* session variables */
-                @sender_comp varchar(50),
-                @target_comp varchar(50),
-                /* identifiers */
-                @execution_id varchar(100)=NULL,
-                @trade_report_id varchar(50),
-                @order_id varchar(50),
-                @cl_order_id varchar(50)=NULL,
-                /*financials*/
-                @symbol varchar(50)=NULL,
-                @ccy1 varchar(50)=NULL,
-                @ccy2 varchar(50)=NULL,
-                @qty float,
+		@source varchar(50),
+		@default_login varchar(50),
+		@broker varchar(50),
+		@granularity varchar(15)=NULL,
+		@sender_comp varchar(50),
+		@target_comp varchar(50), 
+		@execution_id varchar(100)=NULL,
+		@trade_report_id varchar(50),
+		@order_id varchar(50),
+		@cl_order_id varchar(50)=NULL,
+		@symbol varchar(50)=NULL,
+		@ccy1 varchar(50)=NULL,
+		@ccy2 varchar(50)=NULL,
+		@qty float,
 		@counter_qty float=NULL,
-                @price float,
-                @side varchar(10),
-                @trade_date datetime,
-                @trade_day datetime,
-                @value_date datetime,
+		@price float,
+		@side varchar(10),
+		@trade_date datetime,
+		@trade_day datetime,
+		@value_date datetime,
 		@fixing_date datetime=NULL,
-                /*swaps*/
-                @far_price float=NULL,
+		@far_price float=NULL,
 		@far_qty float=NULL,
 		@far_value_date datetime=NULL,
-		@far_fixing_date datetime=NULL,
-                /*parties*/
-                @executing_trader varchar(50)=NULL,
-                @executing_firm varchar(50)=NULL,
-                @executing_system varchar(50)=NULL,
-                @contra_firm varchar(50)=NULL,
-                @giveup_clearing_firm varchar(50)=NULL,
-                @clearing_firm varchar(50)=NULL,
-                @sponsoring_firm varchar(50)=NULL
-
-
+		@far_fixing_date datetime=NULL, 
+		@executing_trader varchar(50)=NULL,
+		@executing_firm varchar(50)=NULL,
+		@executing_system varchar(50)=NULL,
+		@contra_firm varchar(50)=NULL,
+		@giveup_clearing_firm varchar(50)=NULL,
+		@clearing_firm varchar(50)=NULL,
+		@sponsoring_firm varchar(50)=NULL
 as
+
 
 declare @client_or_market char(1)
 declare @platform_identifier varchar(100)
@@ -749,4 +742,6 @@ end
 
 
 
+
 go 
+
