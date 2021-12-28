@@ -330,7 +330,7 @@ exec
 select
 	@deal_exec_symbol = rtrim(@execution_id),
 	@c_platform_identifier = rtrim(@execution_id) + convert(char(8), @tradedate, 112) + ".c",
-        @c_trader_lookup = rtrim(@sender_comp),
+        @c_trader_lookup = rtrim(@trade_reporter),
         @c_counterparty_lookup = rtrim(@contra_firm),
         @m_platform_identifier = rtrim(@execution_id) + convert(char(8), @tradedate, 112) + ".m", 
 	@m_trader_lookup = rtrim(@contra_firm) + "-" + rtrim(@sender_comp),
