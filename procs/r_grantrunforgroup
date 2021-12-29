@@ -75,12 +75,12 @@ end
 close group_cursor
 deallocate group_cursor
 
-
 select
 	status = "Successfully granted access to run for access group",
 	run = @run_name,
 	access_group = @access_group
 	 
-
+exec
+        r_managerunaccessdetails @user_name, @access_group
 go 
 
