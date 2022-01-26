@@ -209,6 +209,7 @@ declare @c_tally_status varchar(10)
 declare @c_tally_message varchar(25)
 declare @c_far_tally_status varchar(10)
 declare @c_far_tally_message varchar(25)
+declare @working_trade_date datetime
 
 declare @c_trigger_symbol varchar(50)
 
@@ -247,6 +248,25 @@ from
 	sources
 where
 	name = @source
+
+
+/* STEP: (Custom) Check trade_date vs trade_day and change trade_date
+ * 
+ * Citadel reports @trade_day and @trade_date to us but the reporting time may not
+ * line up with their trade day. ie, if they book a trade at 20220122 5:01 PM they 
+ * will send a trad date of 501 but a trade day of 20220122. The trade day on a 501
+ * trade would normally be 20220123
+ */
+
+select
+	@working_trade_date = dbo.f_botradedate(@trade_date)
+
+if convert(date, @working_trade_date) > convert(date, @trade_day) and @trade_day != NULL
+begin
+	select
+		@trade_date = convert(char(8), @trade_day, 112) + " 16:59:59"
+end
+
 
 
 /* --------------------------------------------------------------------------
