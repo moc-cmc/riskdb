@@ -719,16 +719,6 @@ where
 	fixing_date != NULL
 
 
-update
-        #trades
-set
-        is_ndf = "N"
-where
-        fixing_date = NULL
-and
-	(traded_ccy = "RUB"
-or
-	counter_ccy = "RUB")
 
 
 update
@@ -2114,6 +2104,17 @@ where
 and
     a.broker_id = @manual_tally_broker_id
 
+
+update
+        #trades
+set
+        is_ndf = "N"
+where
+        fixing_date = NULL
+and
+	(traded_ccy = "RUB"
+or
+	counter_ccy = "RUB")
 
 update
         #trades
