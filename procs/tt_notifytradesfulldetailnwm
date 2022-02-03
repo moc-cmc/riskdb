@@ -1219,9 +1219,9 @@ begin
         where
                 fixing_date = NULL
 	and
-		traded_ccy = "RUB"
+		(traded_ccy = "RUB"
 	or
-		counter_ccy = "RUB"
+		counter_ccy = "RUB")
 	if @update_ruble_trades = "Y"
 	begin
 		/* update traded_ccy or counter_ccy to RUR where fixing_date is NULL */
@@ -2113,18 +2113,6 @@ where
     a.user_id = b.account_id
 and
     a.broker_id = @manual_tally_broker_id
-
-
-update
-        #trades
-set
-        is_ndf = "N"
-where
-        fixing_date = NULL
-and
-        traded_ccy = "USD"
-and
-        counter_ccy = "RUB"
 
 
 update
