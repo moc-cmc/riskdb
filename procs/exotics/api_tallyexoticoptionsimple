@@ -559,18 +559,17 @@ begin
 	end
 end	
 
-/*
 if @barrier_subtype = "DIGI"
 begin
-	if @exercise_style = "European" and @window_start != @window_end and @window_start != @trade_date
+	/*if @exercise_style = "European" and @window_start != @window_end and @window_start != @trade_date*/
+	if @exercise_style = "European" and @barrier_type in("DNT")
 	begin
 		select
 			status = "Error",
-			msg = "Must provide option as 'American' for Digital option with barrier with no windows"
+			msg = "Must provide option as 'American' for Digital DNT"
 		return
 	end
 end
-*/
 
 if @source = NULL
 begin
