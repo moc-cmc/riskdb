@@ -1561,7 +1561,7 @@ from
 where
         a.e_bt_id = b.barrier_type_id
 and
-        b.barrier in("OT", "NT")
+        b.barrier in("OT", "NT", "Digital RKO", "Digital RKI")
 
 update
 	#trades
@@ -1793,7 +1793,7 @@ set
 where
 	fixing_date != NULL
 
-
+/* Append a W so we know its a window barrier in outbound converter */
 update
         #trades
 set
