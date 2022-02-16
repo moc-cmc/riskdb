@@ -1,0 +1,29 @@
+
+if object_id("upd_ledger_request_types") != NULL
+    drop trigger
+        upd_ledger_request_types
+go
+
+create trigger
+    upd_ledger_request_types
+on
+    ledger_request_types
+for
+    update
+as
+
+declare @result int
+
+select
+    @result = syb_sendmsg("localhost", 9997,
+        "Notify /topic/Store.Notify." + @@servername + "." + db_name() + ".ledger_request_types: update "
+        + convert(varchar(10), a.ledger_request_type_id) + " "
+        + "'" + str_replace(a.name, "'", "\'") + "' "
+        + convert(varchar(10), a.create_pending_status_id) + " "
+        + convert(varchar(10), a.sweep_pending_status_id) + " "
+        + convert(varchar(10), a.cancel_pending_status_id)
+    )
+from
+    inserted a
+
+go

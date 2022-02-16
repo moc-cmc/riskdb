@@ -1,0 +1,26 @@
+
+if object_id("del_fund_sub_types") != NULL
+    drop trigger
+        del_fund_sub_types
+go
+
+create trigger
+    del_fund_sub_types
+on
+    fund_sub_types
+for
+    delete
+as
+
+declare @result int
+
+select
+    @result = syb_sendmsg("localhost", 9997,
+        "Notify /topic/Store.Notify." + @@servername + "." + db_name() + ".fund_sub_types: delete "
+        + (case when a.fund_id = NULL then "NULL" else convert(varchar(10), a.fund_id) end) + " "
+        + "'" + str_replace(a.name, "'", "\'") + "'"
+    )
+from
+    deleted a
+
+go
