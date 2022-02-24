@@ -1,6 +1,3 @@
-use
-	risk_alumfx_test
-go
 
 drop procedure
         fxa_tallytrade
