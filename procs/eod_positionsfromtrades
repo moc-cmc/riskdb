@@ -1,10 +1,10 @@
 
 drop procedure
-	eod_accountpositionsfromtrades
+	eod_positionsfromtrades
 go
 
 create procedure
-	eod_accountpositionsfromtrades
+	eod_positionsfromtrades
 		@login varchar(50),
 		@run_name varchar(50),
 		@source varchar(50)=NULL,
@@ -960,7 +960,6 @@ order by
         ccy,
 	value_date
 	
-/*
 select
 	as_of_date = convert(char(8), @trade_date, 112),
 	external_account,
@@ -1012,6 +1011,7 @@ order by
 	counter_ccy,
 	value_date
 
+/*
 	
 select
 	as_of_date = convert(char(8), @trade_date, 112),
