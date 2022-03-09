@@ -1,0 +1,97 @@
+
+if object_id("ur_listagreementreqs") != NULL
+  drop proc ur_listagreementreqs
+go
+
+create procedure
+    ur_listagreementreqs
+        @login varchar(100),
+        @error varchar(50) = null out,
+        @user varchar(100),
+        @filter_request_status varchar(100) = null
+as
+/*
+ * Selects out a list of agreement requests required for the user before
+ * continuing. Each agreement here should be sent to the user-facing app.
+ * When the user agrees, the following should be sent: 
+ * 
+ * exec ur_signagreementreq @login=@login, @name=@name, 
+
+-- Create a request
+insert into user_agreement_reqs values(1, 226, getdate(), 1, null, null, null, null)
+exec ur_listagreementreqs @login="qson.etg", @user="qson.etg"
+
+ */
+
+declare @api_user_id int
+declare @user_id int
+declare @active_status_id int
+
+/* LOOKUP: @api_user_id */
+select
+    @api_user_id = account_id
+from
+    tico_accounts a
+where
+    login = @login
+
+/* ERROR: no @login */
+if @api_user_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Not allowed",
+        login = @login
+    return
+end
+
+
+/* LOOKUP: @user_id */
+select
+    @user_id = account_id
+from
+    tico_accounts a
+where
+    login = @user
+
+/* ERROR: no @user */
+if @user_id = NULL
+begin
+    select
+        status = "Error",
+        message = "No such user",
+        'user' = @user
+    return
+end
+
+select
+    a.user_agreement_req_id,
+    b.name,
+    b.title,
+    a.token,
+    type = c.name,
+    source = e.name,
+    a.request_date,
+    request_status = d.name
+from
+    user_agreement_reqs a,
+    user_agreements b,
+    user_agreement_types c,
+    request_statuses d,     -- 1 Requested, 2 Pending, 3 Complete, 4 Failed
+    sources e,
+    activity_statuses f
+where
+    a.user_agreement_id = b.user_agreement_id
+and
+    b.user_agreement_type_id = c.user_agreement_type_id
+and
+    a.request_status_id = d.request_status_id
+        and 
+            d.name in ("Requested", "Pending")
+and
+    b.source_id = e.source_id
+and
+    b.activity_status_id = f.activity_status_id
+        and
+            f.name = "Active"
+go

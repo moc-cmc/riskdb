@@ -1,0 +1,73 @@
+
+
+if object_id("ur_ipaddr") != NULL
+  drop proc ur_ipaddr
+go
+
+create proc
+    ur_ipaddr
+        @ip_addr_id int = null out,
+        @error varchar(50) = null out,
+        @ip_addr varchar(45),
+        @mobile char(1) = null,
+        @proxy char(1) = null,
+        @hosting char(1) = null,
+        @geo_loc_id int = null out
+as
+
+declare @old_mobile char(1)
+declare @old_proxy char(1)
+declare @old_hosting char(1)
+
+-- SET UP 
+set @error = null
+
+-- LOOKUP: @ip_addr_id 
+select
+    @ip_addr_id = ip_addr_id,
+    @geo_loc_id = geo_loc_id
+from
+    ip_addrs
+where
+    name = @ip_addr
+
+if @ip_addr_id = null
+begin
+    -- MISSING: insert the row 
+    insert into
+        ip_addrs (
+            name,
+            mobile,
+            proxy,
+            hosting
+        )
+        values (
+            @ip_addr,
+            @mobile,
+            @proxy,
+            @hosting
+        )
+    if @@rowcount != 1
+    begin
+        set @error = "failed to insert into ip_addrs"
+        return
+    end
+
+    set @ip_addr_id = @@identity
+
+end
+else if @mobile != null or @proxy != null or @hosting != null
+begin
+    -- EXISTS @ip_addr_id, check to see if we need to update
+    update
+        ip_addrs
+    set
+        mobile = case when @mobile != null then @mobile else mobile end,
+        proxy = case when @proxy != null then @proxy else proxy end,
+        hosting = case when @hosting != null then @hosting else hosting end
+    where
+        ip_addr_id = @ip_addr_id
+
+end
+
+go

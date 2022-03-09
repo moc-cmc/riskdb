@@ -1,0 +1,209 @@
+
+if object_id("ur_makeagreementreq") != NULL
+    drop proc 
+        ur_makeagreementreq
+go
+
+create procedure
+    ur_makeagreementreq
+        @login varchar(100),
+        @error varchar(50) = null out,
+        @user_agreement_req_id int = null out,
+        /* params */
+        @user varchar(100),
+        @agreement varchar(75),
+        /* result */
+        @token varchar(25) = null out
+
+as
+/*
+ * Creates a user agreement request.
+ *
+ * Examples:
+
+-- Create a request 
+declare @error varchar(50) exec ur_makeagreementreq @login="qson.etg", @error=@error out, @user="qson.etg", @agreement="Jefferies.MLEAA.2022-01-20"
+
+
+-- View requests
+exec api_listagreementreqs @login="qson.etg", @user="qson.etg"
+
+ */
+
+declare @api_user_id int
+declare @user_id int
+declare @user_agreement_id int
+declare @request_status_id int  -- 1 Requested, 2 Pending, 3 Complete, 4 Failed
+declare @request_date datetime
+declare @other_agreement_req_id int
+declare @other_request_status varchar(25)
+
+set @error = null
+
+begin
+
+-- LOOKUP: @api_user_id 
+    select
+        @api_user_id = account_id
+    from
+        tico_accounts a
+    where
+        login = @login
+    if @api_user_id = NULL
+    begin
+        set @error = "not allowed: " + @login
+        select
+            status = "Error",
+            message = @error,
+            login = @login
+        return
+    end
+
+
+-- LOOKUP: @user_id
+    select
+        @user_id = account_id
+    from
+        tico_accounts a
+    where
+        login = @user
+    if @user_id = NULL
+    begin
+        set @error = "no such user: " + @user
+        select
+            status = "Error",
+            message = @error,
+            'user' = @user
+        return
+    end
+
+-- LOOKUP: @request_status_id 
+    select
+        @request_status_id = request_status_id
+    from
+        request_statuses a
+    where
+        name = "Requested"
+    if @request_status_id = NULL
+    begin
+        set @error = "no such request status: Requested"
+        select
+            status = "Error",
+            message = @error
+        return
+    end
+
+-- LOOKUP @request_date 
+    if @request_date = null
+    begin
+        set @request_date = getdate()
+    end
+
+-- LOOKUP: @user_agreement_id 
+    select
+        @user_agreement_id = user_agreement_id
+    from
+        user_agreements a,
+        activity_statuses b
+    where
+        a.activity_status_id = b.activity_status_id
+    and 
+        a.name = @agreement
+    and
+        b.name = "Active"
+
+    if @user_agreement_id = NULL
+    begin
+        set @error = "no such agreement: " + @agreement
+        select
+            status = "Error",
+            message = @error,
+            user_agreement = @agreement
+        return
+    end
+
+-- LOOKUP: @user_agreement_req_id 
+    select
+        @other_agreement_req_id = a.user_agreement_req_id,
+        @other_request_status = b.name
+    from
+        user_agreement_reqs a,
+        request_statuses b
+    where
+        a.request_status_id = b.request_status_id
+    and
+        a.user_agreement_id = @user_agreement_id
+    and 
+        user_id = @user_id
+
+    if @other_agreement_req_id != null
+    begin
+        set @error = "there's already an agreement for this user: " + convert(varchar(15), @other_agreement_req_id)
+        select
+            status = "Error",
+            message = @error,
+            other_agreement_req_id = @other_agreement_req_id
+        return
+    end
+
+-- GENERATE: @token 
+    exec 
+        r_generatekey 
+            @template = "UAR????????%%%%%%%%%", 
+            @charset = "numericalpha", 
+            @key = @token out
+
+    if @token = null
+    begin
+        set @error = "failed to generate token"
+        select
+            status = "Error",
+            message = @error
+        return
+    end
+    
+end
+
+
+
+-- ACTIONS
+
+begin
+
+--  INSERT user_agreement_reqs
+    insert into
+        user_agreement_reqs (
+            user_agreement_id,
+            user_id,
+            token,
+            request_date,
+            request_status_id
+        )
+        values (
+            @user_agreement_id,
+            @user_id,
+            @token,
+            @request_date,
+            @request_status_id
+        )
+
+    if @@rowcount != 1
+    begin
+        set @error = "failed to create a user_agreement_reqs row"
+        select
+            status = "Error",
+            message = @error,
+            user_agreement_id = @user_agreement_id,
+            user_id = @user_id,
+            token = @token,
+            request_date = @request_date,
+            request_status_id = @request_status_id
+        return
+    end
+
+    set @user_agreement_req_id = @@identity
+
+end
+
+go
+        
