@@ -806,10 +806,10 @@ exec
 			@trade_type = @trade_type,
 			@quantity = @c_quantity,
 			@symbol = @symbol,
-			@value_date = @value_date,
+			@value_date = @valuedate,
 			@fixing_date = @fixing_date,
 			@price = @price,
-			@trade_date = @trade_date,
+			@trade_date = @tradedate,
 			@trade_identifier = @c_platform_identifier,
 			@spot_reference = NULL 
 
