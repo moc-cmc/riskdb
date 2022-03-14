@@ -9,6 +9,7 @@ as
 
 declare @tico_account_id int
 declare @ignore_date datetime
+declare @evaluation_ccy_id int
 
 select
 	@tico_account_id = account_id
@@ -123,6 +124,7 @@ create table
 		traded_ccy varchar(10) NULL,
 		counter_ccy varchar(10) NULL,
 		quantity float NULL,
+		volume float NULL,
 		abs_qty float NULL,
 		abs_counter_qty float NULL,
 		abs_far_counter_qty float NULL,
@@ -744,6 +746,29 @@ or
         )
 
 select
+	@evaluation_ccy_id = evaluation_currency_id
+from
+	funds
+/* no qualifier but could use r_defaultfundforlogin 
+where
+	fund_id = @fund_id
+*/
+
+update 
+	#trades
+set
+	volume = b.volume
+from
+	#trades a,
+	trade_volumes b
+where
+	a.trade_id = b.trade_id
+and
+	b.volume_date >= @begin_date
+and
+	product_id = @evaluation_ccy_id
+
+select
 	* 
 from
 	#meta
@@ -764,6 +789,7 @@ select
 	strike=optcon_strike,
 	put_call=optcon_put_call,
 	quantity,
+	volume,
 	premium=option_premium,
 	premium_ccy = option_premium_ccy,
 	premium_date=rtrim(convert(varchar(10), premium_settle_date, 112)),
