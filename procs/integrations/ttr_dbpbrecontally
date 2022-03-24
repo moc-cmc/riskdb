@@ -75,6 +75,7 @@ declare @remote_trade_symbol_id int
 declare @identifier varchar(100)
 declare @contract varchar(50)
 declare @side varchar(50)
+declare @action varchar(20)
 
 
 
@@ -206,6 +207,17 @@ select
  *
  */
 
+if @reason = "CANCEL"
+begin
+	select
+		@action = "Cancel"
+end
+else
+begin
+	select
+		@action = NULL
+end
+
 exec
         api_addremotetradesymbol
                 @login=@default_login,
@@ -220,6 +232,7 @@ exec
                 @value_date=@tally_value_date,
                 @fixing_date=@tally_fixing_date,
                 @identifier=@identifier,
+		@action=@action,
                 @remote_trade_symbol_id=@remote_trade_symbol_id output
 
 
@@ -239,6 +252,7 @@ end
 select
         status = @tally_status,
         message = @tally_message,
+	reason = @reason,
         remote_trade_symbol_id = @remote_trade_symbol_id,
         login = @default_login,
         source = @source,
