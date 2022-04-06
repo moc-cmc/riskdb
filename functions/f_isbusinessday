@@ -1,0 +1,22 @@
+create or replace function
+	f_isbusinessday(
+		@trade_date datetime
+	)
+returns bit
+
+as
+
+declare @weekday int
+
+select
+	@trade_date = convert(date, @trade_date)
+
+/* if day is saturday or sunday */
+select
+	@weekday = datepart(weekday, @trade_date)
+if @weekday in(1, 7)
+	return 0 /* false, is not business day */
+
+return 1 /* true, is business day */
+
+go
