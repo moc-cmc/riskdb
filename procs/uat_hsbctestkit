@@ -1,0 +1,178 @@
+create or replace procedure
+	uat_hsbctestkit
+		@login varchar(50)
+
+as 
+
+declare @trade_date datetime
+declare @trade_day datetime
+declare @spot_value datetime
+declare @1m_value datetime
+declare @1m_expiry datetime
+declare @3m_value datetime
+declare @3m_fixing datetime
+declare @3m_expiry datetime
+declare @4m_expiry datetime
+declare @4m_opt_fixing datetime
+declare @spot_premdate datetime
+declare @2wk_window_end datetime
+/* window end will be the expiry of the trade being booked unless 2wk*/
+
+/* TEST CASE FROM HSBC Test Pack */
+/*
+Test Case			Product	Trade Status	Test Case
+1	FX Spot			New	Client buy Eur 1m vs USD at 1.21 value spot
+2	FX Forward		New	Client sell Eur 1m vs USD at 1.25 value 1mth
+3	NDF			New	Client buy USD 1m vs BRL at 2.22B value 3mth
+4	Vanilla Option		New	Client buys a USD Put 100m vs CNH call at strike of 6.48 expiry 3mth. European Style. Expiry Tokyo 3pm, Premium USD 15k
+5	NDO			New	Client buys USD Put 120m vs BRL Call at strike of 3.24, expiry 4mth, European Style, Expiry Sao Paulo 1.15pm, Premium USD 1m value spot
+6	Single Barrier		New	Client buys Eur Put 70m vs GBP Call at strike of 0.835, expiry 1mth, Barrier at 0.8225, Down and Out, European style,  Expiry NY 10am, Premium EUR 150k
+7	Double Barrier		New	Client buys GBP Call 100m vs USD Put at strike of 1.35, expiry 3mth, Lower Barrier at 1.31,   Upper Barrier at 1.39, Knock-Out, European style,  Expiry NY 10am, Premium GBP 1.5m
+8	One Touch		New	Client buys a one-touch up, GBP vs USD, barrier at 1.4, payout of GBP 10m, expiry date 3mth, payment at Maturity,  Expiry NY 10am, Premium USD 500k
+9	No Touch		New	Client sells a No Touch down, GBP vs USD, barrier at 1.28, payout of GBP 10m, expiry date 3mth, payment at Maturity,  Expiry NY 10am, Premium USD 500k
+10	European Digi (Vanilla)	New	Client buys a european digital, GBP vs USD, strike at 1.35, payout of GBP 2m, expiry date 3mth,  Expiry NY 10am, Premium USD 1m
+11	Double No Touch		New	Client buys a Double No Touch, AUD vs USD, Lower Barrier at 0.7575,  Upper Barrier at 0.79, payout of USD 1m, expiry date 1mth, payment at maturity.  Expiry NY 10am, Premium USD 500k 
+12	Double OneTouch		New	Client buys a Double One Touch, AUD vs USD, Lower Barrier at 0.7571,  Upper Barrier at 0.767, payout of USD 1m, expiry date 1mth, payment at maturity.  Expiry NY 10am, Premium USD 500k value spot
+13	Single Barrier Digtal	New	Client buys Eur Put 5m vs GBP Call at strike of 0.87, expiry 1mth, Barrier at 0.85, Down and Out, European style,  Expiry NY 10am, Premium EUR 1m
+14	Double Barrier Digitial	New	Client buys GBP Call 1m vs USD Put at strike of 1.35, expiry 3mth, Lower Barrier at 1.31,   Upper Barrier at 1.39, Knock-Out, European style,  Expiry NY 10am, Premium GBP 500k
+15	Window Option		New	Client sells Double Barrier USD Put 50m vs JPY Put at strike of 100 vs Citi expiry 1mth, Lower Barrier at 96,   Upper Barrier at 106, Knock-In European style,  Expiry NY 10am, Premium USD 500k value spot. Window Start Date = Trade Date. Window End Date = 2wks after trade date
+*/
+
+/* anchor the trade date */
+select
+	@trade_date = getdate()
+
+select
+	@trade_day = dbo.f_botradedate(@trade_date)
+
+exec
+	r_nextbusinessday
+		@trade_day,
+		@spot_value output
+
+exec
+	r_nextbusinessday
+		@spot_value,
+		@spot_value output
+
+select
+	@spot_premdate = @spot_value
+
+/* Build forwarsd value date tenors off of spot */
+select
+	@1m_value = dateadd(day, 30,  @spot_value),
+	@1m_expiry = dateadd(day, 30,  @spot_value),
+	@3m_value = dateadd(day, 90,  @spot_value),
+	@3m_expiry = dateadd(day, 90,  @spot_value),
+	@4m_expiry = dateadd(day, 120,  @spot_value),
+	@2wk_window_end = dateadd(day, 14, @trade_day)	
+
+
+/* Adjust for any weekends to dial in tenors by moving forward to next biz day */
+if dbo.f_isbusinessday(@1m_value) = 1
+	exec
+		r_nextbusinessday
+			@1m_value,
+			@1m_value output
+
+if dbo.f_isbusinessday(@1m_expiry) = 1
+	exec
+		r_nextbusinessday
+			@1m_expiry,
+			@1m_expiry output
+
+if dbo.f_isbusinessday(@3m_value) = 1
+	exec
+		r_nextbusinessday
+			@3m_value,
+			@3m_value output
+
+if dbo.f_isbusinessday(@3m_expiry) = 1
+	exec
+		r_nextbusinessday
+			@3m_expiry,
+			@3m_expiry output
+
+if dbo.f_isbusinessday(@4m_expiry) = 1
+	exec
+		r_nextbusinessday
+			@4m_expiry,
+			@4m_expiry output
+
+if dbo.f_isbusinessday(@2wk_window_end) = 1
+	exec
+		r_nextbusinessday
+			@2wk_window_end,
+			@2wk_window_end output
+
+
+
+/* Assign other dates */
+
+exec
+	r_prevbusinessday
+		@3m_value,
+		@3m_fixing output
+exec
+	r_prevbusinessday
+		@3m_fixing,
+		@3m_fixing output
+
+exec
+	r_prevbusinessday
+		@4m_expiry,
+		@4m_opt_fixing output
+exec
+	r_prevbusinessday
+		@4m_opt_fixing,
+		@4m_opt_fixing output
+
+
+select
+	"td" = @trade_day,
+	"sp" = @spot_value,
+        "1m" = @1m_value,
+        "1me" = @1m_expiry,
+        "3m" = @3m_value,
+        "3me" = @3m_expiry,
+	"3mf" = @3m_fixing,
+        "4me" = @4m_expiry,
+	"4mof" = @4m_opt_fixing,
+	"2wkwe" = @2wk_window_end,
+	"sprem" = @spot_premdate
+
+
+
+/* Use this for spot, fwd, ndf */
+/*
+exec
+	fxa_tallyclienttrade
+exec
+	fxa_tallyndfclienttrade
+
+*/	
+/* Use this for swap */
+/*
+exec
+	fxa_tallyclientswap
+	
+*/
+
+/* Use this for spot, fwd, ndf */
+/*
+*/	
+/* Use this for vanilla bookings */
+/*
+exec
+	mc4_tallyclioptionsimple
+*/
+
+/* Use these for exotic bookings 
+exec
+        mc4_tallycliexotickoki
+
+exec
+	mc4_tallycliexoticdigi
+*/
+
+go	
