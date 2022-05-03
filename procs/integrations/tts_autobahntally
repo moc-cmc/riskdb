@@ -1,6 +1,10 @@
 drop procedure tts_autobahntally 
 go
 
+/* This proc is not used in prod. It is a template for autobahn trades that 
+will tally Spots, Forwards, and Swaps */
+
+
 create procedure
 	tts_autobahntally	
 		/* Provided by FIX server config.properties & spring.xml */
