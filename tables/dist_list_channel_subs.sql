@@ -1,9 +1,4 @@
 
-if object_id() != NULL
-    drop table
-        dist_list_channel_subs
-go
-
 create table 
     dist_list_channel_subs (
         dist_list_channel_sub_id int,
