@@ -103,11 +103,11 @@ declare @far_tally_message varchar(25)
 
 /* only tally swaps */
 	
-if @far_price = NULL
+if @far_price = NULL and @last_fwd_pts = NULL
 begin
         select
                 status = "Success",
-                message = "Skipping message since proc only tallies swaps"
+                message = "Skipping message since proc only tallies swaps and forwards"
         return
 end
 
@@ -396,6 +396,9 @@ begin
                 	symbol="NA"
 		return
 	end
+
+	return
+
 end
 
 /* --------------------------------------------------------------------------
