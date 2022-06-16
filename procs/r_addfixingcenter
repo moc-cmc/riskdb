@@ -1,0 +1,49 @@
+
+create or replace procedure
+	r_addfixingcenter
+		@login varchar(25),
+		@fixing_center varchar(50)
+as
+
+declare @fixing_center_id int
+
+if exists (select fixing_center_id from fixing_centers where symbol=@fixing_center)
+begin
+	select
+		status="Error",
+		msg="Fixing Center already exists",
+		fixing_center=@fixing_center
+
+	return
+end
+
+exec
+	j_nextkey "fixing_centers", @fixing_center_id out
+
+insert into
+	fixing_centers(
+	fixing_center_id,
+	symbol)
+values(
+	@fixing_center_id,
+	@fixing_center)
+
+if @@rowcount !=1
+begin
+	select
+		status="Error",
+		msg="Problems adding Fixing Center",
+		fixing_center=@fixing_center
+
+	return
+end
+
+select
+	status="Success",
+	msg="Fixing Center added",
+	fixing_center=@fixing_center
+
+exec r_fixingcenters @login
+
+go
+
