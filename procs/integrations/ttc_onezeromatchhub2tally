@@ -549,7 +549,8 @@ end
  * STEP: Tally the trade
  *
  */
-exec
+
+/*exec
     fxa_tallytrade
         @login = @trader_login,
         @source = @source,
@@ -570,6 +571,22 @@ exec
         @broker = @broker,
         @identifier = @platform_identifier,
         @spot_reference = @last_spot_rate
+*/
+
+api_reportforwarddeal
+                @login varchar(50),
+                @source varchar(50),
+                @account varchar(50),
+                @trade_date datetime=NULL,
+                @trader varchar(30)=NULL,
+                @strategy varchar(50)=NULL,
+                @broker varchar(50)=NULL,
+                @identifier varchar(100)=NULL,
+                @symbol varchar(50),
+                @quantity numeric(30,10),
+                @value_date varchar(50),
+                @fixing_date datetime=NULL,
+                @price numeric(30,10)
 
 if @trade_id = NULL
 begin
