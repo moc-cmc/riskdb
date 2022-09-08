@@ -1,0 +1,52 @@
+drop procedure 
+	r_grantaccount2
+go
+
+create procedure
+	r_grantaccount2
+		@account_name char(50),
+		@run_name char(50)
+
+as
+
+declare @account_id int
+declare @run_id int
+
+select
+	@account_id = account_id
+from	
+	tico_accounts
+where
+	login = @account_name
+if @@rowcount != 1
+begin
+        select
+
+
+                 status = -1,
+                error = "Problem deterimining login",
+		login = @account_name	
+        return
+end
+
+select 
+	@run_id = run_id
+from	
+	runs
+where
+	name = @run_name
+
+
+
+if not exists(select tico_account_id from user_runs where run_id = @run_id and tico_account_id = @account_id)
+begin
+insert into
+	user_runs
+values(
+	@account_id,
+	@run_id
+)
+end
+
+go
+

@@ -68,7 +68,7 @@ fetch run_cursor into @run_name
 while @@sqlstatus = 0
 begin
 	exec
-		r_grantaccount
+		r_grantaccount2
 			@account_name,
 			@run_name
 
@@ -82,11 +82,13 @@ deallocate run_cursor
 
 select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
-
 select
 	account_name = @account_name	,
 	msg = "You have successfully added all runs for account "+ rtrim(@account_name),
 	view_details = "View Details"
+
+exec 
+        r_manageaccountaccessdetails @account_name
 
 go
 
