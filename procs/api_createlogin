@@ -227,7 +227,7 @@ if @login_length > 50
 begin
 	select
 		status = "Error",
-		msg = "please choose a shorter login symbol. Max characters is 25",
+		msg = "please choose a shorter login symbol. Max characters is 50",
                 user_name = @user_name,
 		len_of_username = @login_length,
 		first_name = @first_name,
