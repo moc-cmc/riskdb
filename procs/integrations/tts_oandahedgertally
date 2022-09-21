@@ -22,7 +22,8 @@ create or replace procedure
 		@far_price varchar(50)=NULL,
 		@to_oa_lp varchar(50)=NULL,
 		@to_oa_pb varchar(50)=NULL,
-		@to_oa_account varchar(50)=NULL
+		@to_oa_account varchar(50)=NULL,
+		@method varchar(50)=NULL
 as
 
 
@@ -245,6 +246,15 @@ end
 select
 	@counterparty_lookup = rtrim(@oa_account)+"-"+rtrim(@oa_pb)+"-"+@oa_lp,
         @trader_lookup = rtrim(@oa_username)
+
+if @msg_type = "trade"
+begin
+	if @method = "QUICK"
+	begin
+		select
+			@trader_lookup = "autohedger"
+	end
+end
 
 if @msg_type = "switch"
 begin
