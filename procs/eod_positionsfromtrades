@@ -1,15 +1,11 @@
-
-drop procedure
-	eod_positionsfromtrades
-go
-
-create procedure
+create or replace  procedure
 	eod_positionsfromtrades
 		@login varchar(50),
 		@run_name varchar(50),
 		@source varchar(50)=NULL,
 		@trade_date datetime=NULL,
-		@mark_to_market char(1)=NULL
+		@mark_to_market char(1)=NULL,
+		@include_futures char(1)=NULL
 		
 as
 
@@ -269,7 +265,6 @@ create table
                 vo_rate float NULL
 		)
 
-
 insert into
 	#trades
 (
@@ -283,6 +278,7 @@ insert into
 	contract_id,
 	broker_id,
 	quantity,
+	db_price,
 	counter_quantity,
 	trade_date,
 	value_date,
@@ -301,6 +297,7 @@ select
 	contract_id = a.contract_id,
 	broker_id = a.broker_id,
 	quantity = a.quantity,
+	db_price = a.price,
 	counter_quantity = a.quantity * price * -1,
 	trade_date = a.trade_date,
 	value_date = convert(varchar(12), a.value_date, 112),
@@ -333,6 +330,33 @@ and
 	a.value_date >= @trade_date
 and
 	quantity != 0
+
+if @include_futures in("N", NULL)
+begin
+	/* Remove futures for now until we determine how to integrate */
+	delete
+		#trades
+	from
+		#trades a,
+		future_contracts b
+	where
+		a.contract_id = b.contract_id
+	
+	/* The counter quantity for futures needs lot size */
+	update
+		#trades
+	set
+		counter_quantity =  a.quantity * a.db_price * -1 * c.quantity
+	from
+		#trades a,
+		future_contracts b,
+		futures c
+	where
+		a.contract_id = b.contract_id
+	and
+		b.future_id = c.future_id
+end
+
 
 
 /*
@@ -614,6 +638,31 @@ and
 	b.instrument_id = c.instrument_id
 and
 	c.name in("Option", "Exotic")
+
+
+update
+        #trades
+set
+	std_contract = e.symbol,
+        traded_ccy = e.symbol,
+	counter_ccy = f.symbol
+from
+        #trades a,
+	contracts e,
+	future_contracts b,
+	futures c,
+	forwards d,
+	products f
+where
+        a.contract_id =b.contract_id
+and
+	b.contract_id = e.contract_id
+and
+	b.future_id = c.future_id
+and
+	c.forward_id = d.contract_id
+and
+	d.currency_id = f.product_id
 
 
 update
