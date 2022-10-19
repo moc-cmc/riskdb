@@ -1,0 +1,149 @@
+
+if exists(select * from sysobjects where name = "r_generatekey")
+    drop procedure
+        r_generatekey
+go
+
+create procedure
+    r_generatekey
+        @template varchar(100),
+        @charset varchar(65) = "numeric",
+        @value bigint = NULL,
+        @key varchar(100) = NULL output
+as
+
+declare @index int
+declare @length int
+declare @charset_width int
+declare @char varchar(1)
+declare @ord int
+
+declare @dividend bigint
+declare @value_text varchar(25)
+declare @value_next int
+
+/* If @value is not given, then use a serial date in seconds */
+if @value is NULL or @value <= 0
+    select
+        @value = convert(bigint, datediff(second, "Jan 1, 2001", getdate())) * 1000 + datepart(millisecond, getdate())
+
+if @template = "uuidv4"
+    select
+        @template = "????????-????-4???-8???-????????????",
+        @charset = "0123456789ABCDEF"
+
+else if @charset = "numeric"
+    select
+        @charset = "0123456789"
+
+else if @charset = "upper"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+else if @charset = "lower"
+    select
+        @charset = "abcdefghijklmnopqrstuvwxyz"
+
+else if @charset = "alpha"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+else if @charset = "uppernumeric"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+else if @charset = "lowernumeric"
+    select
+        @charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+else if @charset = "alphanumeric"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+else if @charset = "numericlower"
+    select
+        @charset = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+else if @charset = "numericupper"
+    select
+        @charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+else if @charset = "numericalpha"
+    select
+        @charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+else if @charset = "base64"
+    select
+        @charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+else if @charset = "hex" or @charset = "lowerhex"
+    select
+        @charset = "0123456789abcdef"
+
+else if @charset = "upperhex"
+    select
+        @charset = "0123456789ABCDEF"
+
+else if @charset = "password"
+    select
+        @charset = "abcdefghjkmnpqrstuvwxyz23456789ABCDEFGHJKLMNPQRSTUVWXYZ.-_"
+
+/*
+ * Generate a string based on @value for '@' replacement.
+ */
+select
+    @index = 1,
+    @length = 25,
+    @charset_width = len(@charset),
+    @dividend = @value,
+    @value_next = 1,
+    @key = ""
+
+while @index <= 25
+begin
+    select
+        @ord = @dividend % @charset_width
+    select
+        @dividend = @dividend / @charset_width
+    select
+        @char = substring(@charset, @ord + 1, 1)
+    select
+        @value_text = @value_text + @char,
+        @index = @index + 1
+end
+
+/*
+ * Create the string in reverse for @value_text
+ */
+select
+    @index = @length,
+    @length = len(@template)
+
+while @index > 0
+begin
+
+    select
+        @char = substring(@template, @index, 1)
+
+    if @char = "?"
+    begin
+        select
+            @ord = convert(int, rand() * @charset_width)
+        select
+            @char = substring(@charset, @ord + 1, 1)
+    end
+    else if @char = "%"
+    begin
+        select
+            @char = substring(@value_text, @value_next, 1),
+            @value_next = @value_next + 1
+    end
+
+    select
+        @key = @char + @key,
+        @index = @index - 1
+
+end
+
+go
+
