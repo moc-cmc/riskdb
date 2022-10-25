@@ -22,7 +22,7 @@ create or replace procedure
 		@bar_level_2 varchar(10)=NULL,
 		@bar_type_2 varchar(10)=NULL,
 		@trade_date varchar(20)=NULL,
-		@deal_id varchar(50)=NULL,
+		@deal varchar(50)=NULL,
 		@account varchar(50)=NULL,
 		@broker varchar(50)=NULL
 as
@@ -59,6 +59,17 @@ declare @identifier varchar(100)
 declare @contract varchar(50)
 declare @side varchar(50)
 
+declare @leg_value_date datetime
+declare @swap_far_trade_type_id int
+declare @leg_trade_id int
+declare @near_trade_id int
+declare @far_trade_id int
+declare @trade_id int
+declare @trade_type varchar(25)
+declare @trader varchar(50)
+declare @deal_type varchar(50)
+declare @deal_status varchar(50)
+declare @deal_id int
 
 select @source = "UBS Pos File Import"
 
@@ -77,10 +88,18 @@ begin
 	return
 end
 
+if @instrument != "Swap"
+begin
+	select
+		status = "Error",
+		message = "Instruments must be Swaps",
+		instrument=@instrument
+	return
+end
+
+
 /* STEP: Stub
  *
- */
-
 select
 	status="STUB - Not Loading",
 	source = @source,
@@ -101,12 +120,12 @@ select
 	prem_product=@premium_product,
 	prem_settle_date=@premium_settlement_date,
 	trade_date=@trade_date,
-	deal_id=@deal_id,
+	deal_id=@deal,
 	account=@account,
 	broker=@broker
 
 return
-
+*/
 
 /* --------------------------------------------------------------------------
  * STEP: Map params and convert
@@ -126,20 +145,35 @@ select
 	@tally_fixing_date = convert(datetime, @fixing_date),
 	@ccy1 = @dealt_product,
 	@ccy2 = @contra_product,
-	@identifier = rtrim(@deal_id)
+	@identifier = rtrim(@deal)
 
-if @instrument = "Swap"
+exec
+        tt_resolvedeal
+                @deal_exec_symbol = @identifier,
+                @deal_id = @deal_id output,
+                @deal_type = @deal_type output,
+                @deal_status = @deal_status output
+
+if @deal_id = NULL
 begin
-	if @tally_qty > 0 
-	begin
-		select
-			@identifier = rtrim(@identifier)+"_B"
-	end
-	else
-	begin
-		select
-			@identifier = rtrim(@identifier)+"_S"
-	end
+        exec
+                tt_newdeal
+                        @deal_type = "Market Swap",
+                        @deal_status = "User Review",
+                        @deal_exec_symbol = @identifier,
+                        @deal_id = @deal_id output
+end
+
+
+if @tally_qty > 0 
+begin
+	select
+		@identifier = rtrim(@identifier)+"_B"
+end
+else
+begin
+	select
+		@identifier = rtrim(@identifier)+"_S"
 end
 
 
@@ -201,6 +235,30 @@ begin
         return
 end
 
+select
+	@trader = a.symbol
+from
+        traders a,
+        trader_symbols b,
+        tico_accounts c
+where
+        a.trader_id = b.trader_id
+and
+        b.source_id = @source_id
+and
+        a.tico_account_id = c.account_id
+and
+        b.symbol = @account_lookup
+
+if @trader = NULL
+begin
+	select
+		status="Error",
+                message="No trader mapping for source " + rtrim(@source) + " for mapping value '" + rtrim(@account_lookup) + "'"
+
+	return
+end
+
 /* --------------------------------------------------------------------------
  * STEP: Determine the contract
  *
@@ -235,24 +293,146 @@ select
  *
  */
 
+select
+	@leg_trade_id = trade_id
+from
+	trades
+where
+	deal_id = @deal_id
+if @@rowcount > 1
+	begin
+		select
+			error = "Error",
+			msg = "More than 1 trade in this deal, can not do swap determination"
+			return
+	end
 
-if @remote_trade_symbol_id = NULL
-begin
-        select
-                @tally_status = "Error",
-                @tally_message = "Problem tallying remote trade"
+if @leg_trade_id != NULL
+begin	
+	select
+		@leg_value_date = value_date
+	from
+		trades
+	where
+		trade_id = @leg_trade_id
+	
+	if @tally_value_date > @leg_value_date
+	begin
+		select
+			@trade_type = "Swap Far",
+			@near_trade_id = @leg_trade_id,
+			@far_trade_id = NULL /* will be set to @trade_id */
+	end
+	else
+	begin
+
+		select
+			@trade_type = "Swap Near",
+			@near_trade_id = NULL, /* will be set to @trade_id */
+			@far_trade_id = @leg_trade_id
+		
+		begin tran
+			select
+				@swap_far_trade_type_id = trade_type_id
+			from	
+				trade_types
+			where
+				name="Swap Far"
+
+			if @@rowcount !=1
+			begin
+				select
+					status="Error",
+					message="Could not locate far swap trade type",
+					trade_type="Swap Far"
+				return
+			end
+
+			update
+				trades
+			set
+				trade_type_id = @swap_far_trade_type_id
+			where
+				trade_id = @leg_trade_id
+			
+			if @@rowcount != 1
+			begin
+				select
+					error = "Error",
+					msg = "Problem updating far leg trade type",
+					deal_id = @deal_id,
+					leg_trade_id = @leg_trade_id,
+					leg_value_date = @leg_value_date	
+				rollback
+				return
+			end
+		commit tran
+	end
 end
 else
 begin
-        select
-                @tally_status = "Success",
-                @tally_message = "Tallied remote trade"
+	/* assume first record is near */
+	select
+		@trade_type="Swap Near"
+end
+
+/* --------------------------------------------------------------------------
+ * STEP: Tally the trade
+ *
+ */
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = @source,
+		@trade_id = @trade_id out,
+		@deal_id = @deal_id out,
+		@tally_type = @instrument,
+		@deal_type = "Market Swap",
+		@trade_type = @trade_type,
+		@external_account = @external_account,
+		@counterparty = @counterparty,
+		@quantity = @tally_qty,
+		@symbol = @contract,
+		@value_date = @tally_value_date,
+		@fixing_date = @tally_fixing_date,
+		@price = @tally_price,
+		@trade_date = @tally_trade_date,
+		@trader = @trader,
+		@broker = @broker,
+		@identifier = @identifier
+
+if @trade_id = NULL
+begin
+	select
+		@tally_status = "Error",
+		@tally_message = "Problem tallying trade"
+end
+else
+begin
+	select
+		@tally_status = "Success",
+		@tally_message = "Tallied trade"
+
+	if @far_trade_id = NULL
+	begin
+		select
+			@far_trade_id = @trade_id
+	end
+	if @near_trade_id = NULL
+	begin
+		select
+			@near_trade_id = @trade_id
+	end
+end
+
+if @tally_status = "Error"
+begin
+	return
 end
 
 select
         status = @tally_status,
         message = @tally_message,
-        remote_trade_symbol_id = @remote_trade_symbol_id,
         login = @login,
         source = @source,
         external_account = @external_account,
