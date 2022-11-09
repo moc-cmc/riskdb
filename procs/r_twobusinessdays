@@ -1,0 +1,67 @@
+
+create or replace procedure
+	r_twobusinessdays
+		@date datetime,
+		@two_business_days datetime output
+as
+
+
+declare @weekday int
+
+if @date = NULL
+begin
+        select
+                @date = getdate()
+
+        if datepart(hour, @date) >= 17
+	begin
+                exec
+                        r_nextbusinessday
+                                @date,
+                                @date output
+	end
+
+	select
+		@date = rtrim(convert(varchar(10), @date, 112))
+		
+end
+else
+begin
+	if datepart(hour, @date) >= 17
+        begin
+                exec
+                        r_nextbusinessday
+                                @date,
+                                @date output
+	end
+	
+	select
+                @date = rtrim(convert(varchar(10), @date, 112))
+end
+
+
+select @two_business_days = dateadd(day, 2, @date)
+
+while @two_business_days > @date
+begin
+        select
+                @weekday = datepart(weekday, @two_business_days)
+
+        if @weekday != 1 AND @weekday != 7
+	begin
+                break
+	end
+        else
+	begin
+                select
+                        @two_business_days = dateadd(day, 2, @two_business_days)
+	end
+end
+
+	
+
+return
+
+
+go 
+
