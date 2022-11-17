@@ -152,6 +152,9 @@ declare @fixing_currency_id int
 declare @two_business_days datetime
 declare @four_business_days datetime
 declare @gmt_offset int
+declare @bo_trade_date datetime
+declare @next_business_day datetime
+declare @last_spot_rate_provided float
 
 
 /* --------------------------------------------------------------------------
@@ -534,7 +537,24 @@ select
 /* Safra specific - they require t+2 and under to be SPOT, regardless of ccy pair
 * trade_date >2bizdays and trade_date <=4bizdays and spot rate = all in rate, then its SPOT
 *  t+3 and over and spot rate != all in rate, set to FORWARD 
+* THE ABOVE IS OLD LOGIC AS OF 2022-11-09 - SAFRA CHANGE for WORKORDER REQ10729 Calypso Adapter Adjustment CAD TRY
+* Safra  would like to request 2 changes we have been discussing:
+*     1.       Change logic for FX trades for CAD and TRY – to be  considered as spot for T+1,  and forwards for  T+2 or greater. 
+*              For the rest of the currencies existing  logic you have in the adapter should still hold.
+*
 */
+
+/* The below logic may be overwritten for CAD and TRY trades so there is another section to set these after we do symbol determination */
+
+select
+	@bo_trade_date = dbo.f_botradedate(@trade_date)
+
+exec
+	r_nextbusinessday
+		@bo_trade_date,
+		@next_business_day output
+select
+	@last_spot_rate_provided = @last_spot_rate
 
 exec
 	r_twobusinessdays
@@ -560,7 +580,7 @@ begin
                 @tally_type = "Spot",
                 @last_spot_rate = @price
 end
-else
+else 
 begin
 	select
                 @trade_type = "Forward",
@@ -573,6 +593,7 @@ begin
                 @trade_type = "Forward",
                 @tally_type = "Forward"
 end
+
 
 
 if @far_price != NULL
@@ -595,6 +616,8 @@ begin
 	end
 	*/
 end
+
+
 
 if @strike != NULL
 begin
@@ -701,6 +724,27 @@ begin
 			@contract_id = @contract_id output,
 			@contract = @contract output,
 			@inverted = @inverted output
+
+	/* OVERWRITE TRADE TYPE FOR CAD AND TRY SPOT/FWD, IGNORE SWAP, OPTION */
+
+        if @trade_type in("Spot", "Forward") and @contract in("USDCAD", "CADUSD", "USDTRY", "TRYUSD")
+	begin
+		/* If T+1 for CAD and TRY set to spot, else set to Forward */
+		if @value_date <= @next_business_day
+		begin
+			select
+				@trade_type = "Spot",
+				@tally_type = "Spot",
+				@last_spot_rate = @price
+		end
+		else
+		begin
+			select
+				@trade_type = "Forward",
+				@tally_type = "Forward",
+				@last_spot_rate = @last_spot_rate_provided /* we may have overwritten so using provided */
+		end
+	end
 end
 else
 begin
