@@ -101,7 +101,7 @@ exec
 		@show_perm_denied = "N",
 		@has_permission = @has_permission output
 
-if @login_type = "Elysium" or @has_permission = "Y"
+if @has_permission = "Y"
 begin
 	select 
 		section = "Operations",
