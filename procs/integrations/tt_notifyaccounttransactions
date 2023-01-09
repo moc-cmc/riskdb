@@ -1,0 +1,352 @@
+
+create or replace procedure
+	tt_notifyaccounttransactions
+		@source varchar(50),
+		@queue_notifications char(1)=NULL,
+		@eod char(1)=NULL
+as
+
+
+
+declare @source_id int
+declare @cancelled_count int
+declare @usi_lookup varchar(15)
+
+if @queue_notifications = "Y"
+begin
+	if @eod = "Y"
+        begin
+		exec
+			tt_eodcheckaccttransnotifis
+		
+	end
+	else
+	begin
+		exec
+			tt_checkaccttransnotifications
+	end
+end
+	
+
+select
+	@usi_lookup = usi_prefix
+from
+	usi_lookup
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Source not found",
+		source = @source
+	return
+end
+
+create table
+	#account_transactions(
+		account_transaction_id int,
+		entered_by_id int,
+		entered_by varchar(50) NULL,
+		external_account_id int,
+		external_account varchar(50) NULL,
+		external_account_type_id int NULL,
+		external_account_type varchar(15) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(30) NULL,
+		ext_account_pb varchar(25) NULL,
+		amount float NULL,
+		abs_amount float NULL,
+		debit_credit varchar(10) NULL,
+		transaction_date datetime,
+		transaction_type_id int,
+		transaction_type varchar(50) NULL,
+		account_trans_notification_id int,
+		notification_status_id int,
+		notification_status varchar(25) NULL,
+		notification_source_id int,
+		notification_source varchar(40) NULL,
+		old_qty_if_deleted float NULL,
+                product_id int NULL,
+		product varchar(10) NULL,
+                pd_eq float NULL,
+		note varchar(255) NULL
+		)
+
+
+
+declare @active_status_id int
+declare @edit_status_id int
+declare @cancelled_status_id int
+declare @cancelling_src_status_id int
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+select
+        @edit_status_id = status_id
+from
+        statuses 
+where
+        name = "Edit"
+select
+        @cancelled_status_id = status_id
+from
+        statuses 
+where
+        name = "Cancelled"
+
+
+/*
+| Insert *_ids into #account_transactions that need to be notified 
+*/
+insert into
+	#account_transactions
+(
+	account_transaction_id,
+	entered_by_id,
+	external_account_id,
+	amount,
+	abs_amount,
+	transaction_date,
+	transaction_type_id,
+	account_trans_notification_id,
+	notification_status_id,
+	notification_source_id,
+	notification_source,
+	product_id,
+	note
+)
+select
+	account_transaction_id = a.account_transaction_id,
+	entered_by_id = a.entered_by,
+	external_account_id = a.external_account_id,
+	amount = a.amount,
+	abs_amount = abs(a.amount),
+	transaction_date = a.transaction_date,
+	transaction_type_id = a.transaction_type_id,
+	account_trans_notification_id = b.account_trans_notification_id,
+	notification_status_id = b.status_id,
+	notification_source_id = b.source_id,
+	notification_source = @source,
+	product_id = a.currency_id,
+	note = a.note
+from
+        account_transactions a,
+        account_trans_notifications b,
+        statuses c
+where
+        a.account_transaction_id = b.account_transaction_id
+and
+        b.status_id = c.status_id
+and
+        c.name in("Active", "Edit", "Cancelled")
+and
+        b.source_id = @source_id
+order by
+        a.account_transaction_id
+
+
+/*
+| Query transaction_types
+*/
+update
+	#account_transactions
+set
+	transaction_type = b.name
+from
+	#account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+
+
+/*
+| Query external_accounts
+*/
+
+update 
+        #account_transactions
+set
+        external_account = b.symbol,
+	external_account_type_id = b.external_account_type_id
+from
+        #account_transactions a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+
+update
+	#account_transactions 
+set
+	external_account_type = b.name
+from
+	#account_transactions a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+
+update
+	#account_transactions
+set
+	external_account = b.symbol
+from
+	#account_transactions a,
+	external_account_symbols b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.source_id = @source_id
+
+update
+	#account_transactions
+set
+	ext_account_pb = b.symbol
+from
+	#account_transactions a,
+	client_give_ups b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.source_id = @source_id
+
+update
+	#account_transactions
+set
+	debit_credit = "debit"
+where
+	amount < 0
+
+update
+        #account_transactions
+set
+        debit_credit = "credit"
+where
+        amount > 0
+
+
+
+/*
+| Query statuses
+*/
+
+update
+	#account_transactions
+set
+	notification_status = b.status_symbol
+from
+	#account_transactions a,
+	status_symbols b
+where
+	a.notification_status_id = b.status_id
+
+update
+	#account_transactions
+set
+	prime_broker_id = d.prime_broker_id,
+	prime_broker = c.name
+from
+	#account_transactions a,
+	external_account_prime_brokers b,
+	prime_brokers d,
+	sources c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.prime_broker_id = d.prime_broker_id
+and
+	c.source_id = d.source_id
+
+update
+	#account_transactions
+set
+	prime_broker = b.symbol
+from
+	#account_transactions a,
+	prime_broker_symbols b
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = @source_id
+
+
+/*
+| Set trading day to EST 17:00-17:00 market standard
+*/
+/* may add this later
+update
+	#account_transactions
+set
+	trade_day = case
+		when a.trade_date > convert(char(8), a.trade_date, 112) +' 17:00' then
+			dateadd(day, 1, convert(char(15), a.trade_date, 112))
+		else
+			convert(char(12), a.trade_date, 112)
+	end
+from
+	#account_transactions a
+*/
+
+update
+	#account_transactions
+set
+	product = b.symbol
+from
+	#account_transactions a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+        #account_transactions
+set
+        entered_by = b.login
+from
+        #account_transactions a,
+        tico_accounts b
+where
+        a.entered_by_id = b.account_id
+
+	
+select
+	account_transaction_id,
+	external_account_id,
+	external_account,
+	external_account_type_id,
+	external_account_type,
+	transaction_type_id,
+	transaction_type,
+	product_id,
+	product,
+	prime_broker_id,
+	prime_broker,
+	ext_account_pb,
+	amount,
+	abs_amount,
+	debit_credit,
+	transaction_date,
+	entered_by,
+	account_trans_notification_id,
+	notification_status_id,
+	notification_status,
+	notification_source_id,
+	notification_source,
+	note,
+	trade_notification_id=account_trans_notification_id
+from
+        #account_transactions
+order by
+        account_transaction_id
+
+
+
+go 
+

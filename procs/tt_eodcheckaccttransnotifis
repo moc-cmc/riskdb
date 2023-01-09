@@ -1,0 +1,42 @@
+
+create or replace procedure
+	tt_eodcheckaccttransnotifis
+		@trade_date datetime = NULL
+as
+
+
+
+/* 
+ *  tt_batchinsertaccttrannotis will run 5pm to 5pm 
+ *  tt_eodbatchinsertaccttrannotis will run 12pm tp 12pm so you can call a notify after 5pm est for the previous day
+ */
+declare @hour int
+
+if @trade_date = NULL
+begin
+	select 
+		@trade_date = getdate()
+        select
+		@hour = datepart(hour, @trade_date)
+
+	if @hour < 14 
+	begin
+		select
+			"status" = "Error",
+			"message" = "Must call between 2pm and 11:59:59pm EST if not providing explicit trade date"
+		return
+	end
+	select
+		@trade_date = convert(date, @trade_date)
+
+end
+
+exec
+	tt_checkaccttransnotifications
+		@trade_date = @trade_date
+
+
+
+
+go 
+

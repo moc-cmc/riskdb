@@ -1,0 +1,117 @@
+
+create or replace procedure
+	r_insertaccounttransnotification
+		@account_transaction_id int
+as
+
+
+
+declare @bd datetime
+declare @ed datetime
+declare @debug char(1)
+select 
+	@bd = getdate()
+
+select
+	@debug = "N"
+
+declare @transaction_type_id int
+declare @external_account_id int
+
+/* select into will autocreate temp table */
+select
+    source_id
+into
+    #notifications
+from
+    account_trans_notifications
+where
+    account_transaction_id = @account_transaction_id
+group by
+    source_id
+
+select
+    @external_account_id = external_account_id,
+    @transaction_type_id = transaction_type_id
+from
+    account_transactions
+where
+    account_transaction_id = @account_transaction_id
+if @@rowcount = 0
+begin
+    return
+end
+
+/* select into will autocreate #notifier_exclusions */
+select
+	a.source_id,
+	a.external_account_id,
+	a.transaction_type_id
+into
+	#notifier_exclusions
+from
+	acct_trans_notifier_exclusions a
+where
+    (
+        a.external_account_id = NULL
+    or
+        a.external_account_id = @external_account_id
+    )
+and (
+        a.transaction_type_id = NULL
+    or
+        a.transaction_type_id = @transaction_type_id
+    )
+
+
+/* select into will create #notifiers */
+select
+    a.source_id,
+    a.external_account_id,
+    a.transaction_type_id,
+    a.notification_status_id
+into
+    #notifiers
+from
+    account_trans_notifiers a
+where
+    a.source_id not in(select source_id from #notifier_exclusions)
+and
+    a.source_id not in(select source_id from #notifications)
+and
+    (
+        a.external_account_id = NULL
+    or
+        a.external_account_id = @external_account_id
+    )
+and (
+        a.transaction_type_id = NULL
+    or
+        a.transaction_type_id = @transaction_type_id
+    )
+
+
+insert into
+    account_trans_notifications (
+        source_id,
+        account_transaction_id,
+        status_id,
+        capture_date
+    )
+select
+    a.source_id,
+    @account_transaction_id,
+    min(a.notification_status_id),
+    getdate()
+from
+    #notifiers a
+group by
+    a.source_id
+
+select @ed = getdate()
+if @debug = "Y"
+	select "msg"="datediff", "ss"=datediff(ss, @bd, @ed), "ms"=datediff(ms, @bd, @ed)
+
+
+go 
+

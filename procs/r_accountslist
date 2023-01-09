@@ -6,6 +6,7 @@ as
 
 
 declare @login_type varchar(50)
+declare @has_permission char(1)
 
 create table
 	#meta(
@@ -93,7 +94,14 @@ begin
         return
 end
 
-if @login_type = "Elysium"
+exec
+	r_checkaccessgrouppermission
+		@login=@login,
+		@access_group="Static Data Admin",
+		@show_perm_denied = "N",
+		@has_permission = @has_permission output
+
+if @has_permission = "Y"
 begin
 	select 
 		section = "Operations",
