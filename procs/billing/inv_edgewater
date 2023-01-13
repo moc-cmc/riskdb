@@ -1,0 +1,144 @@
+create or replace procedure
+        inv_edgewater
+                @login varchar(50),
+                @month varchar(20),
+                @year varchar(10)
+
+as
+
+declare @first_of_month datetime
+declare @last_of_month datetime
+declare @first_biz_day datetime
+declare @last_biz_day datetime
+declare @begin_date datetime
+declare @end_date datetime
+
+exec
+        r_firstandlastdayofmonth
+                @month=@month,
+                @year=@year,
+                @first_of_month=@first_of_month output,
+                @last_of_month=@last_of_month output,
+                @first_biz_day=@first_biz_day output,
+                @last_biz_day=@last_biz_day output
+
+
+declare @total_volume numeric(30, 4)
+declare @monthly_min numeric(20, 4)
+declare @minimum_adjustment numeric(20, 4)
+declare @invoice_amount numeric(20, 4)
+declare @per_ticket float
+declare @message varchar(255)
+declare @aggregate_count int
+declare @component_count int
+declare @reg_count int
+declare @aggregated_status_id int
+declare @begin_date_eod datetime
+declare @end_date_eod datetime
+
+
+declare @total_tickets int
+declare @billed_ticket float
+
+declare @tier1 float
+declare @per_ticket_1 float
+declare @band_1_tickets int
+declare @band_1_max int
+
+declare @tier2 float
+declare @per_ticket_2 float
+declare @band_2_tickets int
+declare @band_2_max int
+
+
+select
+        @monthly_min = 0,
+        @per_ticket_1 = 0.00,
+        @band_1_max = 400000,
+        @band_1_tickets = 0,
+        @per_ticket_2 = 0.02,
+        @band_2_max = 0,
+        @band_1_tickets = 0
+
+
+exec
+        r_prevbusinessday
+                @first_biz_day,
+                @begin_date output
+exec
+        r_nextbusinessday
+                @last_biz_day,
+                @end_date output
+select
+        @begin_date_eod = convert(varchar(8), @begin_date, 112)+" 17:00",
+        @end_date_eod = convert(varchar(8), @last_biz_day, 112)+" 17:00"
+
+
+
+select
+        @total_tickets = count(*)
+from
+        trades a
+where
+        a.trade_date >= @begin_date_eod
+and
+        a.trade_date < @end_date_eod
+
+if @total_tickets > @band_1_max
+begin
+        select
+                @band_1_tickets = @band_1_max,
+                @band_2_tickets = @total_tickets - @band_1_max
+end
+else
+begin
+        select
+                @band_1_tickets = @total_tickets,
+                @band_2_tickets = 0
+end
+
+
+select
+        @tier1 = @band_1_tickets * @per_ticket_1,
+        @tier2 = @band_2_tickets * @per_ticket_2
+
+
+select
+        @billed_ticket = @tier1 + @tier2
+
+select
+        @invoice_amount = @monthly_min + @billed_ticket
+
+select
+        @message = '$'+rtrim(convert(varchar(30), @per_ticket_1))+' per ticket for '+rtrim(convert(varchar(30), @band_1_tickets))+' tickets. $'+rtrim(convert(varchar(30), @per_ticket_2))+' per ticket for '+rtrim(convert(varchar(30), @band_2_tickets))+' tickets for '+rtrim(convert(varchar(30), @tier1))+' + '+rtrim(convert(varchar(30), @tier2))+' = '+rtrim(convert(varchar(30), @billed_ticket))
+
+select
+        client = "Edgewater "+rtrim(@month)+" "+rtrim(@year),
+        invoice_amount = @invoice_amount,
+        billed_ticket = @billed_ticket,
+        monthly_min = @monthly_min,
+/*        begin_date_eod = @begin_date_eod,
+	end_date_eod = @end_date_eod,*/
+        message = @message
+
+select
+        client = "Edgewater "+rtrim(@month)+" "+rtrim(@year)+" - EmailBlock3000",
+        tickets = count(*),
+        billable = case when count(*) - 3000 < 0 then 0.0 else -1 end
+from
+        trades a,
+        trade_notifications b,
+        sources c
+where
+        a.trade_id = b.trade_id
+and
+        b.source_id = c.source_id
+and
+        c.name = "Agency Client"
+and
+        a.trade_date >= @begin_date
+and
+        a.trade_date < @end_date
+
+
+go
