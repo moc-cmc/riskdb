@@ -29,10 +29,6 @@ on
     )
 go
 
-if not exists(select * from keys where relation = "ip_addrs")
-	insert into keys values ("ip_addrs", 0)
-go
-
 if not exists(select * from tables where name = "ip_addrs")
 	insert into tables (name, table_type) values ("ip_addrs", "L")
 go

@@ -36,9 +36,6 @@ on
     )
 go
 
-if not exists(select relation from keys where relation = "user_agreement_reqs")
-	insert into keys values("user_agreement_reqs", 0)
-
 if not exists(select name from tables where name = "user_agreement_reqs")
 	insert into tables(name, table_type) values("user_agreement_reqs", "J")
 

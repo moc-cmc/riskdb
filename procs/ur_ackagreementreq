@@ -1,10 +1,5 @@
 
-if object_id("ur_ackagreementreq") != NULL
-    drop proc 
-        ur_ackagreementreq
-go
-
-create procedure
+create or replace procedure
     ur_ackagreementreq
         @login varchar(100),
         @error varchar(50) = null out,
@@ -49,212 +44,206 @@ declare @user_agent_id int
 
 set @error = null
 
+-- LOOKUP: @api_user_id
+select
+    @api_user_id = account_id
+from
+    tico_accounts a
+where
+    login = @login
+
+-- ERROR: no @login
+if @api_user_id = NULL
 begin
-
---  LOOKUP: @api_user_id
+    set @error = "not allowed: " + @login
     select
-        @api_user_id = account_id
-    from
-        tico_accounts a
-    where
+        status = "Error",
+        message = @error,
         login = @login
-
---  ERROR: no @login
-    if @api_user_id = NULL
-    begin
-        set @error = "not allowed: " + @login
-        select
-            status = "Error",
-            message = @error,
-            login = @login
-        return
-    end
-
-
---  LOOKUP: @user_id
-    select
-        @user_id = account_id
-    from
-        tico_accounts a
-    where
-        login = @user
-
---  ERROR: no @user
-    if @user_id = NULL
-    begin
-        set @error = "no such user: " + @user
-        select
-            status = "Error",
-            message = @error,
-            'user' = @user
-        return
-    end
-
---  LOOKUP: @request_status_id
-    if @request_status not in ("Pending", "Complete", "Failed")
-    begin
-        set @error = "request status must be Pending, Complete or Failed: " + @request_status
-        select
-            status = "error",
-            message = @error,
-            request_status = @request_status
-        return
-    end
-
-    select
-        @request_status_id = request_status_id
-    from
-        request_statuses a
-    where
-        name = @request_status
-
---  ERROR: no @request_status
-    if @request_status_id = NULL
-    begin
-        set @error = "no such request status: " + @request_status
-        select
-            status = "Error",
-            message = @error,
-            request_status = @request_status
-        return
-    end
-
-    if @sign_date = null
-    begin
-        set @sign_date = getdate()
-    end
-
---  LOOKUP: @user_agreement_id
-    select
-        @user_agreement_id = user_agreement_id
-    from
-        user_agreements a,
-        activity_statuses b
-    where
-        a.activity_status_id = b.activity_status_id
-    and 
-        a.name = @agreement
-    and
-        b.name = "Active"
-
---  ERROR: no @user
-    if @user_agreement_id = NULL
-    begin
-        set @error = "no such agreement: " + @agreement
-        select
-            status = "Error",
-            message = @error,
-            user_agreement = @agreement
-        return
-    end
-
-
---  LOOKUP: @user_agreement_req_id
-    select
-        @user_agreement_req_id = a.user_agreement_req_id,
-        @old_request_status = b.name
-    from
-        user_agreement_reqs a,
-        request_statuses b
-    where
-        a.request_status_id = b.request_status_id
-    and
-        a.user_agreement_id = @user_agreement_id
-    and 
-        a.user_id = @user_id
-    and
-        a.token = @token
-
---  ERROR: no @user
-    if @user_agreement_req_id = NULL
-    begin
-        set @error = "no agreement request found for user: " + @user + ", and token: " + @token
-        select
-            status = "Error",
-            message = @error,
-            user_agreement = @agreement,
-            'user' = @user,
-            token = @token
-        return
-    end
-
---  VERIFY: request status must be requested or pending
-    if @old_request_status in ("Complete", "Failed")
-    begin
-        set @error = "agreement req already: " + @old_request_status
-        select
-            status = "Error",
-            message = @error,
-            request_status = @old_request_status
-        return
-    end
-
---  LOOKUP: @ip_addr_id
-    if @ip_addr != null
-    begin
-        exec
-            ur_ipaddr
-                @ip_addr_id = @ip_addr_id out,
-                @error = @error out,
-                @ip_addr = @ip_addr
-        
-        if @ip_addr_id = null
-        begin
-            set @error = "couldn't create ip_addr: " + @ip_addr
-            select 
-                status = "error",
-                message = @error,
-                ip_addr = @ip_addr
-            return
-        end
-    end
-
---  LOOKUP: @user_agent_id
-    if @user_agent != null
-    begin
-        exec
-            ur_useragent
-                @user_agent_id = @user_agent_id out,
-                @error = @error out,
-                @user_agent = @user_agent
-        
-        if @user_agent_id = null
-        begin
-            set @error = "couldn't create user_agent: " + @user_agent
-            select 
-                status = "error",
-                message = @error,
-                user_agent = @user_agent
-            return
-        end
-    end
-
+    return
 end
 
 
+-- LOOKUP: @user_id
+select
+    @user_id = account_id
+from
+    tico_accounts a
+where
+    login = @user
+
+-- ERROR: no @user
+if @user_id = NULL
 begin
+    set @error = "no such user: " + @user
+    select
+        status = "Error",
+        message = @error,
+        'user' = @user
+    return
+end
 
---  UPDATE
-    update
-        user_agreement_reqs
-    set
-        request_status_id = @request_status_id,
-        sign_date = @sign_date,
-        ip_addr_id = @ip_addr_id,
-        user_agent_id = @user_agent_id,
-        data = @data
-    where
-        user_agreement_req_id = @user_agreement_req_id
+-- LOOKUP: @request_status_id
+if @request_status not in ("Pending", "Complete", "Failed")
+begin
+    set @error = "request status must be Pending, Complete or Failed: " + @request_status
+    select
+        status = "error",
+        message = @error,
+        request_status = @request_status
+    return
+end
 
-    if @@rowcount != 1
+select
+    @request_status_id = request_status_id
+from
+    request_statuses a
+where
+    name = @request_status
+
+-- ERROR: no @request_status
+if @request_status_id = NULL
+begin
+    set @error = "no such request status: " + @request_status
+    select
+        status = "Error",
+        message = @error,
+        request_status = @request_status
+    return
+end
+
+if @sign_date = null
+begin
+    set @sign_date = getdate()
+end
+
+-- LOOKUP: @user_agreement_id
+select
+    @user_agreement_id = user_agreement_id
+from
+    user_agreements a,
+    activity_statuses b
+where
+    a.activity_status_id = b.activity_status_id
+and 
+    a.name = @agreement
+and
+    b.name = "Active"
+
+-- ERROR: no @user
+if @user_agreement_id = NULL
+begin
+    set @error = "no such agreement: " + @agreement
+    select
+        status = "Error",
+        message = @error,
+        user_agreement = @agreement
+    return
+end
+
+
+-- LOOKUP: @user_agreement_req_id
+select
+    @user_agreement_req_id = a.user_agreement_req_id,
+    @old_request_status = b.name
+from
+    user_agreement_reqs a,
+    request_statuses b
+where
+    a.request_status_id = b.request_status_id
+and
+    a.user_agreement_id = @user_agreement_id
+and 
+    a.user_id = @user_id
+and
+    a.token = @token
+
+-- ERROR: no @user
+if @user_agreement_req_id = NULL
+begin
+    set @error = "no agreement request found for user: " + @user + ", and token: " + @token
+    select
+        status = "Error",
+        message = @error,
+        user_agreement = @agreement,
+        'user' = @user,
+        token = @token
+    return
+end
+
+-- VERIFY: request status must be requested or pending
+if @old_request_status in ("Complete", "Failed")
+begin
+    set @error = "agreement req already: " + @old_request_status
+    select
+        status = "Error",
+        message = @error,
+        request_status = @old_request_status
+    return
+end
+
+-- LOOKUP: @ip_addr_id
+if @ip_addr != null
+begin
+    exec
+        ur_ipaddr
+            @ip_addr_id = @ip_addr_id out,
+            @error = @error out,
+            @ip_addr = @ip_addr
+    
+    if @ip_addr_id = null
     begin
-        select @error = "failed to update user_agreement_reqs"
-        select
+        set @error = "couldn't create ip_addr: " + @ip_addr
+        select 
             status = "error",
             message = @error,
-            user_agreement_req_id = @user_agreement_req_id
+            ip_addr = @ip_addr
         return
     end
+end
+
+-- LOOKUP: @user_agent_id
+if @user_agent != null
+begin
+    exec
+        ur_useragent
+            @user_agent_id = @user_agent_id out,
+            @error = @error out,
+            @user_agent = @user_agent
+    
+    if @user_agent_id = null
+    begin
+        set @error = "couldn't create user_agent: " + @user_agent
+        select 
+            status = "error",
+            message = @error,
+            user_agent = @user_agent
+        return
+    end
+end
+
+/* DML -  */
+
+-- UPDATE
+update
+    user_agreement_reqs
+set
+    request_status_id = @request_status_id,
+    sign_date = @sign_date,
+    ip_addr_id = @ip_addr_id,
+    user_agent_id = @user_agent_id,
+    data = @data
+where
+    user_agreement_req_id = @user_agreement_req_id
+
+if @@rowcount != 1
+begin
+    select @error = "failed to update user_agreement_reqs"
+    select
+        status = "error",
+        message = @error,
+        user_agreement_req_id = @user_agreement_req_id
+    return
 end
 
 go

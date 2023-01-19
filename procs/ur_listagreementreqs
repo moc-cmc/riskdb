@@ -1,9 +1,5 @@
 
-if object_id("ur_listagreementreqs") != NULL
-  drop proc ur_listagreementreqs
-go
-
-create procedure
+create or replace procedure
     ur_listagreementreqs
         @login varchar(100),
         @error varchar(50) = null out,
@@ -44,7 +40,6 @@ begin
         login = @login
     return
 end
-
 
 /* LOOKUP: @user_id */
 select

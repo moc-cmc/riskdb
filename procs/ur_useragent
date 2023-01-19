@@ -1,10 +1,5 @@
 
-if object_id("ur_useragent") != NULL
-    drop proc 
-        ur_useragent
-go
-
-create procedure
+create or replace procedure
     ur_useragent
         @error varchar(75) out,
         @user_agent_id int out,
