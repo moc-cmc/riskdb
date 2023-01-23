@@ -1,0 +1,72 @@
+
+create or replace procedure
+	tt_checkaccttransnotifications
+		@trade_date datetime=NULL
+as
+
+
+
+declare	@begin_date datetime
+declare	@end_date datetime
+declare @acct_trans int
+declare @acct_trans_id int
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+/* select into syntax is optimized over creating the temp table and inserting */
+select
+	account_transaction_id
+into
+	#acct_trans_notifications
+from
+	account_transactions
+where
+	transaction_date >= @begin_date
+and
+	transaction_date < @end_date
+
+select
+	@acct_trans_id = 0
+select
+	@acct_trans = count(*)
+from
+	#acct_trans_notifications
+where
+	account_transaction_id > @acct_trans_id
+
+while @acct_trans > 0
+begin
+	select
+		@acct_trans_id = min(account_transaction_id)
+	from
+		#acct_trans_notifications
+	where
+		account_transaction_id > @acct_trans_id
+
+	exec
+		r_insertaccounttransnotification
+			@account_transaction_id=@acct_trans_id
+
+	select
+		@acct_trans = count(*)
+	from
+		#acct_trans_notifications
+	where
+		account_transaction_id > @acct_trans_id
+end
+
+
+
+
+go 
+

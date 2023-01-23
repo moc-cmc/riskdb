@@ -1,0 +1,60 @@
+
+create or replace procedure
+	r_fixingcenters
+		@login varchar(25)
+
+as
+
+declare @style varchar(250)
+
+select
+        @style = "background:#FFFFFF;border: 1px solid white"
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_center",
+        "Add Fixing Center",
+        NULL)
+
+select * from #meta
+
+select
+	section="Fixing Centers", 
+        style=@style,
+	fixing_center = symbol
+from 
+	fixing_centers
+order by
+	symbol
+
+select
+	add_center="Add"
+
+go
+
+

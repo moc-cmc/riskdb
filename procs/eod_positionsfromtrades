@@ -1,15 +1,12 @@
-
-drop procedure
-	eod_accountpositionsfromtrades
-go
-
-create procedure
-	eod_accountpositionsfromtrades
+create or replace  procedure
+	eod_positionsfromtrades
 		@login varchar(50),
 		@run_name varchar(50),
 		@source varchar(50)=NULL,
 		@trade_date datetime=NULL,
-		@mark_to_market char(1)=NULL
+		@mark_to_market char(1)=NULL,
+		@include_futures char(1)=NULL,
+		@section_output varchar(100)=NULL
 		
 as
 
@@ -269,7 +266,6 @@ create table
                 vo_rate float NULL
 		)
 
-
 insert into
 	#trades
 (
@@ -283,6 +279,7 @@ insert into
 	contract_id,
 	broker_id,
 	quantity,
+	db_price,
 	counter_quantity,
 	trade_date,
 	value_date,
@@ -301,6 +298,7 @@ select
 	contract_id = a.contract_id,
 	broker_id = a.broker_id,
 	quantity = a.quantity,
+	db_price = a.price,
 	counter_quantity = a.quantity * price * -1,
 	trade_date = a.trade_date,
 	value_date = convert(varchar(12), a.value_date, 112),
@@ -333,6 +331,33 @@ and
 	a.value_date >= @trade_date
 and
 	quantity != 0
+
+if @include_futures in("N", NULL)
+begin
+	/* Remove futures for now until we determine how to integrate */
+	delete
+		#trades
+	from
+		#trades a,
+		future_contracts b
+	where
+		a.contract_id = b.contract_id
+	
+	/* The counter quantity for futures needs lot size */
+	update
+		#trades
+	set
+		counter_quantity =  a.quantity * a.db_price * -1 * c.quantity
+	from
+		#trades a,
+		future_contracts b,
+		futures c
+	where
+		a.contract_id = b.contract_id
+	and
+		b.future_id = c.future_id
+end
+
 
 
 /*
@@ -614,6 +639,31 @@ and
 	b.instrument_id = c.instrument_id
 and
 	c.name in("Option", "Exotic")
+
+
+update
+        #trades
+set
+	std_contract = e.symbol,
+        traded_ccy = e.symbol,
+	counter_ccy = f.symbol
+from
+        #trades a,
+	contracts e,
+	future_contracts b,
+	futures c,
+	forwards d,
+	products f
+where
+        a.contract_id =b.contract_id
+and
+	b.contract_id = e.contract_id
+and
+	b.future_id = c.future_id
+and
+	c.forward_id = d.contract_id
+and
+	d.currency_id = f.product_id
 
 
 update
@@ -936,82 +986,91 @@ order by
         ccy
 */
 
-select
-        as_of_date = convert(char(8), @trade_date, 112),
-        external_account,
-        external_account_type,
-        prime_broker,
-        ccy,
-	value_date = convert(char(8), value_date, 112),
-        quantity=convert(numeric(30, 2), round(sum(quantity), 2)),
-        section = "open product positions by account by value date"
-from
-        #product_positions
-group by
-        external_account,
-        external_account_type,
-        prime_broker,
-        ccy,
-	value_date
-order by
-        external_account_type,
-        external_account,
-        prime_broker,
-        ccy,
-	value_date
+if @section_output in(NULL, "open product positions by account by value date")
+begin
+	select
+        	as_of_date = convert(char(8), @trade_date, 112),
+        	external_account,
+        	external_account_type,
+        	prime_broker,
+        	ccy,
+		value_date = convert(char(8), value_date, 112),
+        	quantity=convert(numeric(30, 2), round(sum(quantity), 2)),
+        	section = "open product positions by account by value date"
+	from
+        	#product_positions
+	group by
+        	external_account,
+        	external_account_type,
+        	prime_broker,
+        	ccy,
+		value_date
+	order by
+        	external_account_type,
+        	external_account,
+        	prime_broker,
+        	ccy,
+		value_date
+end
 	
+if @section_output in(NULL, "open biproduct positions by account")
+begin
+	select
+		as_of_date = convert(char(8), @trade_date, 112),
+		external_account,
+		external_account_type,
+		prime_broker,
+		traded_ccy,
+		counter_ccy,
+		quantity=sum(quantity),
+		counter_quantity=sum(counter_quantity),
+		section = "open biproduct positions by account"
+	from
+        	#trades
+	group by
+		external_account,
+		external_account_type,
+		prime_broker,
+		traded_ccy,
+		counter_ccy
+	order by 
+		external_account_type,
+		external_account,
+		traded_ccy,
+		counter_ccy
+end
+
+if @section_output in(NULL, "open biproduct positions by account by value date")
+begin
+	select
+		as_of_date = convert(char(8), @trade_date, 112),
+        	external_account,
+        	external_account_type,
+        	prime_broker,
+		traded_ccy,
+		counter_ccy,
+		value_date = convert(char(8), value_date, 112),
+        	quantity=sum(quantity),
+		counter_quantity=sum(counter_quantity),
+        	section = "open biproduct positions by account by value date"
+	from
+        	#trades
+	group by
+        	external_account,
+        	external_account_type,
+        	prime_broker,
+		traded_ccy,
+		counter_ccy,
+		value_date
+	order by
+        	external_account_type,
+        	external_account,
+		traded_ccy,
+		counter_ccy,
+		value_date
+end
+
 /*
-select
-	as_of_date = convert(char(8), @trade_date, 112),
-	external_account,
-	external_account_type,
-	prime_broker,
-	traded_ccy,
-	counter_ccy,
-	quantity=sum(quantity),
-	counter_quantity=sum(counter_quantity),
-	section = "open biproduct positions by account"
-from
-        #trades
-group by
-	external_account,
-	external_account_type,
-	prime_broker,
-	traded_ccy,
-	counter_ccy
-order by 
-	external_account_type,
-	external_account,
-	traded_ccy,
-	counter_ccy
-
-select
-	as_of_date = convert(char(8), @trade_date, 112),
-        external_account,
-        external_account_type,
-        prime_broker,
-	traded_ccy,
-	counter_ccy,
-	value_date = convert(char(8), value_date, 112),
-        quantity=sum(quantity),
-	counter_quantity=sum(counter_quantity),
-        section = "open biproduct positions by account by value date"
-from
-        #trades
-group by
-        external_account,
-        external_account_type,
-        prime_broker,
-	traded_ccy,
-	counter_ccy,
-	value_date
-order by
-        external_account_type,
-        external_account,
-	traded_ccy,
-	counter_ccy,
-	value_date
-
 	
 select
 	as_of_date = convert(char(8), @trade_date, 112),

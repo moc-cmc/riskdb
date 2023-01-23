@@ -12,6 +12,7 @@ create or replace procedure
 		@value_date datetime,
 		@fixing_date datetime=NULL,
 		@identifier varchar(100),
+		@action varchar(20)=NULL,
 		@remote_trade_symbol_id int=NULL output
 
 as
@@ -84,6 +85,29 @@ and
 	identifier = @identifier
 if @remote_trade_symbol_id != NULL
 begin
+	if @action = "Cancel"
+	begin
+		begin tran
+			delete from
+				remote_trade_symbols
+			where
+				remote_trade_symbol_id = @remote_trade_symbol_id
+			if @@rowcount != 1
+			begin
+				select
+					status = "Error",
+					message = "Problem deleting remote_trade_symbol"
+				rollback tran
+				return
+			end
+			select
+				status = "Success",
+				message = "Deleted remote record for cancel",
+				remote_trade_symbol_id = @remote_trade_symbol_id,
+				identifier = @identifier
+		commit tran	
+		return	
+	end
 	select
 		status = "Dupe",
 		message = "Remote trade reported for source and identifier",

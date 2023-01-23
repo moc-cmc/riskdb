@@ -187,7 +187,8 @@ create table
                 pd1_eq float NULL,
 		pd2_eq float NULL,
 		vo float NULL,
-                vo_rate float NULL
+                vo_rate float NULL,
+		stl_ccy varchar(10) NULL
 		)
 
 
@@ -209,6 +210,23 @@ create nonclustered index
         tn_tid
 on
         #trade_notifications(trade_id)
+
+create table
+	#ndf_ccys(
+		product_id int,
+		symbol varchar(50)
+)
+
+insert into
+	#ndf_ccys
+select
+	a.product_id,
+	a.symbol
+from
+	products a, 
+	nondeliverable_ccys b
+where
+	a.product_id = b.product_id
 
 
 declare @active_status_id int
@@ -1665,6 +1683,18 @@ where
 	fixing_date != NULL
 
 update
+	#trades
+set
+	trm_opt_delivery = "PHYSICAL NDF"
+where
+ 	traded_ccy in(select symbol from #ndf_ccys)
+or
+	counter_ccy in(select symbol from #ndf_ccys)
+	
+
+/* there is another change on trm_opt_delivery much further down */
+
+update
         #trades
 set
         fund_agency_buy_sell = "SELL",
@@ -1949,6 +1979,26 @@ begin
 
 end	
 
+update
+	#trades
+set
+	stl_ccy = std_counter_ccy
+
+update
+	#trades
+set
+	a.stl_ccy = a.std_traded_ccy
+from
+	#trades a,
+	nondeliverable_ccys b,
+	products c
+where
+	b.product_id = c.product_id
+and
+	c.symbol = a.std_counter_ccy
+
+
+
 select
 	trade_id,
 	calypso_trade_id = "ETG_"+convert(varchar(50), trade_id),
@@ -2082,6 +2132,7 @@ select
 	abs_cntr_qty=abs_counter_qty,
         vo=vo,
         vo_rate=vo_rate,
+	stl_ccy,
 	allocation
 from
         #trades

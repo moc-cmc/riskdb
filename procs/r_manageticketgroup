@@ -123,16 +123,19 @@ begin
 	create table
 		#working_trades(
 			trade_id int,
-			deal_id int
+			deal_id int,
+			trade_type_id int
 	)
 	 
 	insert into 
 		#working_trades(
 			trade_id,
-			deal_id)
+			deal_id,
+			trade_type_id)
 	select
 		trade_id,
-		deal_id
+		deal_id,
+		trade_type_id
 	from
 		trades
 	where
@@ -163,7 +166,8 @@ begin
 	from
 		#working_trades a,
 		trade_notifications b,
-		source_edit_settings c
+		source_edit_settings c,
+		trade_types d
 	where
 		a.trade_id = b.trade_id
 	and
@@ -172,6 +176,11 @@ begin
 		b.status_id = @sent_status_id
 	and
 		c.deal_id = "Y"
+	and
+		a.trade_type_id = d.trade_type_id
+	and
+		d.name in("Forward", "Option", "Swap Far", "Swap Near")
+		
 
 	update
 		trades

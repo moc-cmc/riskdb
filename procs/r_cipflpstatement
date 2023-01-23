@@ -65,6 +65,7 @@ declare @style varchar(200)
 declare @selected_style varchar(200)
 declare @subtotal_style varchar(200)
 declare @client_style varchar(200)
+declare @img_style varchar(200)
 
 select
    @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
@@ -72,7 +73,8 @@ select
    @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
    @style = "background:#FFFFFF;border: 1px solid white",
    @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
-   @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+   @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+   @img_style = "background:#FFFFFF;border: 1px solid white;white-space: pre"
 
 create table
    #meta(
@@ -357,8 +359,19 @@ create table
         #fund_header(
                 id int identity,
                 customer varchar(100) NULL,
-                label varchar(50) NULL,
+                label varchar(100) NULL,
                 value varchar(50) NULL)
+
+/* 
+insert into
+	#fund_header(
+		customer,
+		label)
+values(
+	'<img id="cipf-logo-top"  src="/WebObjects/Themes/OandaTheme.themed/Resources/cipf-smaller.png">',
+        '<img id="iiroc-logo-top" src="/WebObjects/Themes/OandaTheme.themed/Resources/iiroc-logo.png">'
+)
+*/
 
 
 insert into
@@ -384,6 +397,10 @@ insert into
 values(
         "Toronto, ON M5V 1J9",
         "Email: frontdesk@oanda.com")
+
+select
+	style = @img_style,
+	'<img id="cipf-logo-top"  src="/WebObjects/Themes/OandaTheme.themed/Resources/cipf-smaller.png">        <img id="iiroc-logo-top" src="/WebObjects/Themes/OandaTheme.themed/Resources/iiroc-logo.png">' 
 
 select
         style = @style,

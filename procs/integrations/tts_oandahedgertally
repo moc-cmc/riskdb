@@ -22,7 +22,8 @@ create or replace procedure
 		@far_price varchar(50)=NULL,
 		@to_oa_lp varchar(50)=NULL,
 		@to_oa_pb varchar(50)=NULL,
-		@to_oa_account varchar(50)=NULL
+		@to_oa_account varchar(50)=NULL,
+		@method varchar(50)=NULL
 as
 
 
@@ -117,6 +118,8 @@ declare @should_tally_eb_to_pb_tfx char(1)
 declare @to_quantity numeric(30, 4)
 declare @switch_trade_id int
 declare @to_trade_id int
+declare @future_lookup varchar(100)
+declare	@provided_value_date datetime
 
 
 
@@ -245,6 +248,15 @@ end
 select
 	@counterparty_lookup = rtrim(@oa_account)+"-"+rtrim(@oa_pb)+"-"+@oa_lp,
         @trader_lookup = rtrim(@oa_username)
+
+if @msg_type = "trade"
+begin
+	if @method = "QUICK"
+	begin
+		select
+			@trader_lookup = "autohedger"
+	end
+end
 
 if @msg_type = "switch"
 begin
@@ -495,6 +507,15 @@ if @tally_far_price != NULL
 		@trade_type = "Swap Near",
 		@far_trade_type = "Swap Far"
 
+if @oa_pb = "UBSF"
+begin
+	select
+		@deal_type = "Market Future",
+		@trade_type = "Future",
+		@tally_type = "Future"
+end
+
+
 
 /* --------------------------------------------------------------------------
  * STEP: Create the deal or get the deal_id for grouping
@@ -530,15 +551,100 @@ end
  *
  */
 
-exec
-	r_validateccypair
-		@login=@default_login,
-		@symbol=@symbol,
-		@ccy1=@ccy1,
-		@ccy2=@ccy2,
-		@contract_id = @contract_id output,
-		@contract = @contract output,
-		@inverted = @inverted output
+if @tally_type != "Future"
+begin
+	exec
+		r_validateccypair
+			@login=@default_login,
+			@symbol=@symbol,
+			@ccy1=@ccy1,
+			@ccy2=@ccy2,
+			@contract_id = @contract_id output,
+			@contract = @contract output,
+			@inverted = @inverted output
+end
+else
+begin
+	
+	select
+		@future_lookup = rtrim(@ccy1)+rtrim(@ccy2)+convert(varchar(8), convert(datetime, @tally_value_date), 112)
+	select
+        	@contract_id = b.contract_id,
+        	@contract = b.symbol
+	from
+        	contract_symbols a,
+        	contracts b
+	where
+        	a.contract_id = b.contract_id 
+	and
+        	a.source_id = @source_id
+	and
+		a.symbol = @future_lookup
+	
+	if @contract_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem finding contract",
+			future_lookup = @future_lookup,
+		 	value_date = @value_date
+		return
+	end
+
+	select
+		@provided_value_date = @value_date
+
+	select
+		@tally_value_date = expiration
+	from
+		future_contracts
+	where
+		contract_id = @contract_id
+end	
+
+/* --------------------------------------------------------------------------
+ * STEP: In process of decomissioning the hedger, swaps will be booked by 
+ * 360T. Metals will remain booked by hedger
+ */
+
+/* Un-Comment this out for release */
+create table
+	#metals(
+		symbol varchar(15)
+)
+insert into
+	#metals
+select
+	symbol = a.symbol
+from
+	products a,
+	metal_ccys b
+where
+	a.product_id = b.product_id
+
+if @tally_type = "Swap"
+begin
+	if @ccy1 not in(select symbol from #metals) and @ccy2 not in(select symbol from #metals)
+	begin
+		select
+			status = "Success",
+			message = "Supressing a non metal swap that should be booked by 360T"
+		return
+	end
+	else
+	begin
+		if @external_account in("OC DB FXPB", "OCAN DB FXPB")
+		begin
+			select
+				status = "Success",
+				message = "Supressing a metal swap that should be booked by DB Autobahn"
+	         	return
+		end
+	end
+	
+end
+
+
 
 
 
@@ -568,7 +674,7 @@ begin
 end
 
 exec
-fxa_tallytrade
+	fxa_tallytrade
                 @login = @trader_login,
                 @source = @source,
                 @trade_id = @trade_id out,

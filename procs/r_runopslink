@@ -82,7 +82,40 @@ begin
 			@login = @login,
 			@trade_date = NULL
 end
-	
+
+
+if @op_task = "Manage ISIN Codes by PB"
+begin
+	exec
+		r_managepbisins
+			@login = @login,
+			@trade_date = NULL
+end
+
+if @op_task = "File Imports"
+begin
+	exec
+		r_fileimportlinks
+			@login = @login
+end
+
+
+if @op_task = "Roll Risk"
+begin
+	exec
+		ag_rollriskhome
+			@login = @login,
+			@trade_date = NULL
+
+end
+
+if @op_task = "Set Haircut Import Date"
+begin
+	exec
+		ag_sethaircutdate
+			@login = @login,
+			@trade_date = NULL
+end
 /* 
 if @op_task = "Align Settles"
 begin

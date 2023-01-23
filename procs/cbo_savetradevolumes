@@ -1,7 +1,4 @@
-drop procedure cbo_savetradevolumes
-go
-
-create procedure
+create or replace procedure
 	cbo_savetradevolumes
 		@login varchar(50),
 		@trade_date datetime,
@@ -101,6 +98,23 @@ and
 	b.option_expiration_id = c.option_expiration_id
 and
 	c.option_id = d.option_id
+
+/* Get the product and currency id for the underlying contract of the exotic option*/
+update
+        #trades
+set
+        opt_underlying_contract_id = d.underlying_contract_id
+from
+        #trades a,
+        exotic_contracts b,
+        option_expirations c,
+        options d
+where
+        a.contract_id = b.contract_id
+and
+        b.option_expiration_id = c.option_expiration_id
+and
+        c.option_id = d.option_id
 
 /* overwrite the contract_id of the trade to the underlying contract id
    because its easier for queries later*/

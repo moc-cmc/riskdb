@@ -355,6 +355,13 @@ values(
         "Active Users",
         NULL)
 
+insert into
+	#meta
+values(
+	"Column Link",
+	"fixing_centers",
+	"Fixing Centers",
+	NULL)
 
 /* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
@@ -400,8 +407,8 @@ begin
                 style=@style,
                 accounts_list="Accounts List",
                 mapping_overview = "Mapping Overview",
-                manage_contracts="Manage Contract Subscriptions"
-
+                manage_contracts="Manage Contract Subscriptions",
+		fixing_centers = "Fixing Centers"
         select
                 section="Login Management",
                 style = @style,
@@ -423,7 +430,8 @@ begin
                 custodial_fees = "Manage Custodial Fees",
 		interest_rates = "Manage Interest Rates",	
 		spread_groups = "Manage Roll Spread Groups",
-		manage_ops_tasks = "Manage Ops Tasks"
+		manage_ops_tasks = "Manage Ops Tasks",
+		fixing_centers = "Fixing Centers"
 	
 	select
 		section="Credit Management",

@@ -99,6 +99,15 @@ values(
 	"Settles",
 	"View settle prices for previous trade dates")
 
+insert into
+	#output
+values(
+	"File Imports", 
+	"File Imports",
+	"File Imports",
+	"View a list of copy-paste file imports")
+
+
 /* insert into
 	#output
 values(
@@ -161,6 +170,36 @@ if exists(select name from enabled_product_features where name = "FSS Recon")
 		"FSS Balance Recon",
 		"FSS Balance Recon",
 		"FSS Balance Recon for reconciliation")
+
+
+if exists(select name from enabled_product_features where name = "ISIN Management")
+        insert into
+                #output
+        values(
+                "ISIN Management",
+                "Manage ISIN Codes by PB",
+                "Manage ISIN Codes by PB",
+                "Set and modify ISINs for trades by Prime Broker")
+
+if exists(select name from enabled_product_features where name = "Roll Risk Management")
+	insert into
+		#output
+	values(
+		"Roll Risk", 
+ 		"Roll Risk",
+		"Roll Risk",
+		"Roll Risk")
+
+if exists(select name from enabled_product_features where name = "Set Haircut Import Date")
+	insert into
+		#output
+	values(
+		"Set Haircut Import Date", 
+		"Set Haircut Import Date", 
+		"Set Haircut Import Date ",
+		"Set Haircut Import Date") 
+
+
 
 
 select
