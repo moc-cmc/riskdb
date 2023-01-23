@@ -1,0 +1,116 @@
+
+create or replace procedure
+    ur_useragent
+        @error varchar(75) out,
+        @user_agent_id int out,
+        /* param */
+        @user_agent varchar(150),
+        @device_type varchar(25) = NULL,
+        @device_platform varchar(50) = NULL
+as
+
+declare @user_device_type_id int
+declare @user_device_platform_id int
+
+set @error = NULL
+
+begin
+
+--  LOOKUP @user_device_type_id */
+    if @user_device_type_id = NULL
+    begin
+        select
+            @user_device_type_id = user_device_type_id
+        from
+            user_device_types
+        where
+            name = @device_type
+        or
+            ( @device_type = NULL and name = 'Unknown' )
+        
+        if @user_device_type_id = NULL
+        begin
+            select @error = 'error-data: device type not found: ' + @device_type
+            return
+        end
+    end
+    
+    /* LOOKUP @user_device_p
+
+	latform_id */
+    if @user_device_platform_id = NULL
+    begin
+        select
+            @user_device_platform_id = user_device_platform_id
+        from
+            user_device_platforms
+        where
+            name = @device_platform
+        or
+            ( @device_platform = NULL and name = 'Unknown' )
+        
+        if @user_device_platform_id = NULL
+        begin
+            select @error = 'error-data: device platform not found: ' + @device_platform
+            return
+        end
+    end
+
+end
+	
+begin
+
+    /* */
+    if @user_agent = NULL
+    begin
+        select @error = 'error-param: name required'
+        return
+    end
+    else
+    begin
+        select
+            @user_agent_id = user_agent_id
+        from
+            user_agents
+        where
+            name = @user_agent
+        
+        if @user_agent_id != NULL
+            return
+    end
+
+    /* INSERT user_agents - from the @name */
+    exec 
+        u_newkey
+            @tname = "user_agents",
+            @next_key = @user_agent_id out
+
+    if @user_agent_id = NULL
+    begin
+        select @error = 'error-impl: unable to allocate user_agent_id'
+        return
+    end
+    
+    insert into
+        user_agents (
+            user_agent_id,
+            name,
+            user_device_type_id,
+            user_device_platform_id
+        )
+        values (
+            @user_agent_id,
+            @user_agent,
+            @user_device_type_id,
+            @user_device_platform_id
+        )
+    
+    if @@rowcount != 1
+    begin
+        select @error = 'error-impl: unable to insert user_agents'
+        return
+    end
+
+end
+
+go
