@@ -1,7 +1,5 @@
-drop procedure tts_luceratally
-go
 
-create procedure
+create or replace procedure
 	tts_luceratally
 		/* Provided by FIX server config.properties & spring.xml */
                 @source varchar(50),
@@ -40,7 +38,8 @@ create procedure
 		@cfs_grouping_id varchar(50)=NULL,
 		@cfs_entity varchar(50)=NULL,
 		@cfs_trade_date varchar(50)=NULL,
-		@cfs_strategy varchar(50)=NULL
+		@cfs_strategy varchar(50)=NULL,
+		@pba_strategy varchar(50)=NULL
 
 
 
@@ -798,7 +797,8 @@ exec
 		@trader = @trader,
 		@broker = @broker,
 		@identifier = @platform_identifier,
-		@spot_reference = @last_spot_rate
+		@spot_reference = @last_spot_rate,
+		@strategy = @pba_strategy
 
 if @trade_id = NULL
 begin
@@ -867,7 +867,8 @@ begin
 			@trader = @trader,
 			@broker = @broker,
 			@identifier = @far_platform_identifier,
-			@spot_reference = @last_spot_rate
+			@spot_reference = @last_spot_rate,
+			@strategy = @pba_strategy
 	
 	if @far_trade_id = NULL
 	begin

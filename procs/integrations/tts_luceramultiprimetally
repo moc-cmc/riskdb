@@ -27,7 +27,7 @@ create procedure
                 @trade_date datetime,
                 @trading_day datetime,
                 @value_date datetime,
-		@fixing_date datetime=NULL,
+		@fixing_date varchar(15)=NULL,
                 /*swaps*/
                 @far_price float=NULL,
 		@far_value_date datetime=NULL,
@@ -41,7 +41,8 @@ create procedure
 		@cfs_entity varchar(50)=NULL,
 		@cfs_trade_date varchar(50)=NULL,
 		@cfs_strategy varchar(50)=NULL,
-		@prime_broker varchar(50)=NULL
+		@prime_broker varchar(50)=NULL,
+		@pba_strategy varchar(50)=NULL
 
 
 as
@@ -111,6 +112,10 @@ declare @inter_platform_candidate varchar(1)
 declare @group_deal_id int
 
 declare @suppressed_alias varchar(1)
+declare @fixing_datetime datetime
+
+if (@fixing_date != NULL)
+	select @fixing_datetime = convert(datetime, @fixing_date)
 
 /* --------------------------------------------------------------------------
  * STEP: Initial MAP proc parameters to common tally params
@@ -766,7 +771,7 @@ begin
                         @quantity = @quantity,
                         @symbol = @contract,
                         @value_date = @value_date,
-                        @fixing_date = @fixing_date,
+                        @fixing_date = @fixing_datetime,
                         @price = @price,
                         @trade_date = @trade_date,
                         @trader = @trader,
@@ -808,13 +813,14 @@ exec
 		@quantity = @quantity,
 		@symbol = @contract,
 		@value_date = @value_date,
-		@fixing_date = @fixing_date,
+		@fixing_date = @fixing_datetime,
 		@price = @price,
 		@trade_date = @trade_date,
 		@trader = @trader,
 		@broker = @broker,
 		@identifier = @platform_identifier,
-		@spot_reference = @last_spot_rate
+		@spot_reference = @last_spot_rate,
+		@strategy = @pba_strategy
 
 if @trade_id = NULL
 begin
@@ -844,7 +850,7 @@ select
 	quantity = @quantity,
 	symbol = @contract,
 	value_date = @value_date,
-	fixing_date = @fixing_date,
+	fixing_date = @fixing_datetime,
 	price = @price,
 	trade_date = @trade_date,
 	trader = @trader,
@@ -883,7 +889,8 @@ begin
 			@trader = @trader,
 			@broker = @broker,
 			@identifier = @far_platform_identifier,
-			@spot_reference = @last_spot_rate
+			@spot_reference = @last_spot_rate,
+                        @strategy = @pba_strategy
 	
 	if @far_trade_id = NULL
 	begin
@@ -953,7 +960,7 @@ begin
                         @quantity = @quantity,
                         @symbol = @contract,
                         @value_date = @value_date,
-                        @fixing_date = @fixing_date,
+                        @fixing_date = @fixing_datetime,
                         @price = @price,
                         @trade_date = @trade_date,
                         @broker = @broker,
