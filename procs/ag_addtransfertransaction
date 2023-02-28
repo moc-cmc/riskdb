@@ -10,7 +10,8 @@ create procedure
 		@transaction_type varchar(50),
 		@product varchar(50),
 		@amount numeric(30,4),
-		@note varchar(250)=NULL
+		@note varchar(250)=NULL,
+		@transaction_date datetime=NULL
 as
 
 declare @tico_account_id int
@@ -104,9 +105,16 @@ select
 	@credit_amount = abs(@amount),
 	@debit_amount = abs(@amount) * -1.0
 
-
-select
-	@timestamp = convert(date, getdate())
+if @transaction_date = NULL
+begin
+	select
+		@timestamp = convert(date, getdate())
+end
+else
+begin
+	select
+		@timestamp = @transaction_date
+end
 
 exec
 	j_nextkey
