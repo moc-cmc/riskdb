@@ -54,8 +54,8 @@ declare @deal_id int
 declare @fund_agency_lookup varchar(30)
 declare @is_fund_agency char(1)
 
-declare @quantity numeric(30, 2)
-declare @far_quantity numeric(30, 2)
+declare @quantity numeric(30, 10)
+declare @far_quantity numeric(30, 10)
 declare @contract varchar(20)
 
 declare @prime_broker_lookup varchar(50)
@@ -110,8 +110,8 @@ declare @m_deal_id int
 declare @m_fund_agency_lookup varchar(30)
 declare @m_is_fund_agency char(1)
 
-declare @m_quantity numeric(30, 2)
-declare @m_far_quantity numeric(30, 2)
+declare @m_quantity numeric(30, 10)
+declare @m_far_quantity numeric(30, 10)
 declare @m_contract varchar(20)
 
 declare @m_prime_broker_lookup varchar(50)
@@ -166,8 +166,8 @@ declare @c_deal_id int
 declare @c_fund_agency_lookup varchar(30)
 declare @c_is_fund_agency char(1)
 
-declare @c_quantity numeric(30, 2)
-declare @c_far_quantity numeric(30, 2)
+declare @c_quantity numeric(30, 10)
+declare @c_far_quantity numeric(30, 10)
 declare @c_contract varchar(20)
 
 declare @c_prime_broker_lookup varchar(50)
@@ -210,7 +210,6 @@ declare @c_far_tally_message varchar(25)
 
 declare @c_trigger_symbol varchar(50)
 
-/* required for custom VSJEFF-1 workflow */
 declare @deal_alias varchar(100)
 declare @existing_alias varchar(100)
 declare @netlink_pb_source_id int
