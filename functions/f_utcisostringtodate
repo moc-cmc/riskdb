@@ -1,0 +1,13 @@
+create or replace function
+        f_utcisostringtodate(
+		@utc_string varchar(25)
+	)
+returns datetime
+
+as
+
+
+return convert(datetime, str_replace(str_replace(@utc_string, "T", " "), "Z", NULL))
+
+
+go
