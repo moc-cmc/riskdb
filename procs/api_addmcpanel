@@ -1,0 +1,47 @@
+create or replace procedure
+	api_addmcpanel
+		@login varchar(50),
+		@name varchar(50)
+
+
+as
+
+declare @mc_panel_id int
+
+
+select
+	@mc_panel_id = mc_panel_id
+from
+	mc_panels
+where
+	name = @name
+if @mc_panel_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Desk
+ top name already exists"
+	return
+end
+
+
+exec
+	j_nextkey
+		"mc_panels",
+		@mc_panel_id output
+
+insert into
+	mc_panels(
+		mc_panel_id,
+		name)
+values(
+	@mc_panel_id,
+	@name)
+
+
+select
+	status = "Success",
+	message = "Added mc panel",
+	panel = @name
+
+go

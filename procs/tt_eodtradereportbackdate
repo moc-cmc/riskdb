@@ -770,6 +770,18 @@ and
 and
 	a.reval_date = @end_date
 
+/* Remove futures */
+if @query_futures != "Y"
+begin
+	delete	
+		#trades
+	from
+		#trades a,
+		future_contracts b
+	where
+		a.contract_id = b.contract_id
+end
+
 update
 	#trades
 set
