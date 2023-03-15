@@ -662,9 +662,10 @@ begin
 		@tally_type = "Spot"
 end
 
-if @product_type = "FX-FWD" or @product_type = "FX_NDF"
+if @product_type = "FX-FWD" or @product_type = "FX-NDF"
 begin
 	select
+		@deal_type = "B2B Forward",
 		@trade_type = "Forward",
 		@tally_type = "Forward"
 end
@@ -672,6 +673,7 @@ end
 if @product_type = "FX-OPTION"
 begin
 	select
+		@deal_type = "B2B Option",
 		@trade_type = "Option",
 		@tally_type = "Option"
 end
@@ -911,6 +913,20 @@ begin
                 	spot_reference = @last_spot_rate
 	end
 end
+
+/* --------------------------------------------------------------------------
+ * STEP: Add client and market trade_ids to trade_bookings
+ *
+ */
+
+if @c_trade_id != NULL and @m_trade_id != NULL
+begin
+        exec
+                 tt_addtradebookings
+                             @c_trade_id = @c_trade_id,
+                             @m_trade_id = @m_trade_id
+end
+
 end
 
 if @product_type = "FX-OPTION"
@@ -1030,6 +1046,19 @@ begin
                         tally_message = "Tallied market trade"
 	end
 
+/* --------------------------------------------------------------------------
+ * STEP: Add client and market trade_ids to trade_bookings
+ *
+ */
+
+if @c_trade_id != NULL and @m_trade_id != NULL
+begin
+        exec
+                 tt_addtradebookings
+                             @c_trade_id = @c_trade_id,
+                             @m_trade_id = @m_trade_id
+end
+
 end
 
 if @product_type = "FX-SWAP"
@@ -1138,7 +1167,7 @@ begin
                         @near_trade_id=@c_near_trade_id,
                         @far_trade_id=@c_far_trade_id,
                         @client_or_market="C"
-
+       
 	select
 		@trade_type = "Swap Near"
 
@@ -1235,6 +1264,7 @@ begin
 			@near_trade_id=@m_near_trade_id,
 			@far_trade_id=@m_far_trade_id,
 			@client_or_market="M"
+
 end
 
 /* --------------------------------------------------------------------------
@@ -1311,9 +1341,32 @@ end
 	
 if (@product_type = "FX-SWAP")
 begin
+
+        /* --------------------------------------------------------------------------
+         * STEP: Add client and market trade_ids to trade_bookings
+         *
+         */
+       
+        if @c_near_trade_id != NULL and @m_near_trade_id != NULL
+        begin
+              exec
+                tt_addtradebookings
+                        @c_trade_id = @c_near_trade_id,
+                        @m_trade_id = @m_near_trade_id
+        end
+
+
+        if @c_far_trade_id != NULL and @m_far_trade_id != NULL
+        begin
+              exec
+                tt_addtradebookings
+                        @c_trade_id = @c_far_trade_id,
+                        @m_trade_id = @m_far_trade_id
+        end
+
 	exec
 		r_inserttradenotification
-			@trade_id = c_near_trade_id
+			@trade_id = @c_near_trade_id
 
 	exec
 		r_inserttradenotification
