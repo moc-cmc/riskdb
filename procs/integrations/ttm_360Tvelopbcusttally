@@ -335,7 +335,7 @@ end
 else
 begin
 	select
-		@c_trader_lookup = rtrim(@executing_firm+'-'+@executing_trader)
+		@c_trader_lookup = rtrim(@executing_firm)
 end
 
 select
