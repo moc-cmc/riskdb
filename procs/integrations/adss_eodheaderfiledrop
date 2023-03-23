@@ -1,0 +1,126 @@
+
+create or replace procedure
+	adss_eodheaderfiledrop
+		@login varchar(25),
+		@source varchar(50),
+		@transaction_date datetime=NULL
+as
+
+declare @batch_id varchar(12)
+
+if @transaction_date = NULL
+        /* runs on a 12pm-12pm schedule */
+        select
+                @transaction_date = convert(date, getdate())
+
+select
+	@batch_id = convert(varchar(12), getdate(), 112) + "01"
+
+create table
+	#headerfile (
+		transaction_number int,
+		transaction_date varchar(12),
+                value_date datetime)
+
+
+insert into
+	#headerfile (
+		transaction_number,
+		transaction_date,
+		value_date )
+	select
+		account_transaction_id,
+		convert(varchar(12), transaction_date, 112),
+		convert(varchar(12), @transaction_date)
+        from
+		account_transactions
+        where
+                convert(varchar(12), transaction_date, 112) = convert(varchar(12), @transaction_date, 112)
+ 	
+select
+	TRANSACTION_NUMBER=transaction_number,
+        EVENT_TYPE_CODE="OREX",
+        LEDGER_NAME="ADS Securities Ledger",
+        TRANSACTION_DATE=transaction_date,
+        TRANSACTION_REVERSAL_FLAG="N",
+        Character1="",
+        Character2="",
+        Character3="",
+        Character4='',
+        Character5='',
+        Character6='',
+        Character7='',
+        Character8='',
+        Character9='',
+        Character10='',
+        Character11='',
+        Character12='',
+        Character13='',
+        Character14='',
+        Character15='',
+        Character16='',
+        Character17='',
+        Character18='',
+        Character19='',
+        Character20='',
+        Character21='',
+        Character22='',
+        Character23='',
+        Character24='',
+        Character25='',
+        Character26='',
+        Character27='',
+        Character28='',
+        Character29='',
+        Character30='',
+        Character31='',
+        Character32='',
+        Character33='',
+        Character34='',
+        Character35='',
+        Character36='',
+        Character37='',
+        Character38='',
+        Character39='',
+        Character40='',
+        Character41='',
+        Character42='',
+        Character43='',
+        Character44='',
+        Character45='',
+        Character46='',
+        Character47='',
+        Character48='',
+        Character49='',
+        Character50='',
+        BATCH_ID='',
+        Number2='',
+        Number3='',
+        Number4='',
+        Number5='',
+        Number6='',
+        Number7='',
+        Number8='',
+        Number9='',
+        Number10='',
+        VALUE_DATE=@batch_id,
+        Date2='',
+        Date3='',
+        Date4='',
+        Date5='',
+        Date6='',
+        Date7='',
+        Date8='',
+        Date9='',
+        Date10='',
+        "Long Character1"='',
+        "Long Character2"='',
+        "Long Character3"='',
+        "Long Character4"='',
+        "Long Character5"=''
+from
+	#headerfile
+
+
+go
+

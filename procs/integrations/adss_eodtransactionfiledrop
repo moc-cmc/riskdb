@@ -1,0 +1,234 @@
+
+create or replace procedure
+	adss_eodtransactionfiledrop	
+		@login varchar(25),
+		@source varchar(25),
+		@transaction_date datetime=NULL
+as
+
+if @transaction_date = NULL
+        /* runs on a 12pm-12pm schedule */
+	select
+		@transaction_date = convert(date, getdate())
+
+create table
+	#transaction_table (
+		transaction_number int,
+		line_number numeric(5,0) identity,
+		default_currency varchar(20) NULL,
+		account_category varchar(20) NULL,
+		account_name varchar(50) NULL,
+                account_type varchar(30) NULL,
+   		debit_credit varchar(3) NULL,
+		default_amount float NULL,
+		note varchar(255) NULL )
+		
+
+insert into
+	#transaction_table (
+	 	transaction_number,
+		default_currency,
+		account_category,
+		account_name,
+		account_type,
+		debit_credit,
+		default_amount,
+		note )
+select
+	a.account_transaction_id,
+	b.symbol,
+	c.name,
+	d.name,
+        e.name,
+	"C",
+	a.amount,
+	a.note
+from
+	account_transactions a,
+	products b,
+	transaction_types c,
+	external_accounts d,
+        external_account_types e
+where
+	a.currency_id=b.product_id
+and
+	a.transaction_type_id=c.transaction_type_id
+and
+	a.external_account_id=d.external_account_id
+and
+	d.external_account_type_id = e.external_account_type_id
+and
+	convert(varchar(12), a.transaction_date, 112) = convert(varchar(12), @transaction_date, 112)
+
+update
+	#transaction_table
+set
+	debit_credit="D"
+where
+	default_amount < 0
+
+update 
+	#transaction_table
+set
+	default_amount = abs(default_amount)
+
+/*
+select * from #transaction_table order by line_number
+*/
+
+select
+	TRANSACTION_NUMBER = transaction_number,
+        LINE_NUMBER = line_number,
+        DEFAULT_CURRENCY = default_currency,
+        ACCOUNT_CATEGORY = account_category,
+        ACCOUNT_NAME = account_name,
+        ACCOUNT_TYPE = account_type,
+        CONVERSION_RATE_TYPE = 'ADS UAE Central Bank',
+        DEBIT_CREDIT = debit_credit,
+        SUB_ACCOUNT = '',
+        SUB_ACCOUNT_NAME = '',
+        Character9 = '',
+        Character10='',
+        Character11='',
+        Character12='',
+        Character13='',
+        Character14='',
+        Character15='',
+        Character16='',
+        Character17='',
+        Character18='',
+        Character19='',
+        Character20='',
+        Character21='',
+        Character22='',
+        Character23='',
+        Character24='',
+        Character25='',
+        Character26='',
+        Character27='',
+        Character28='',
+        Character29='',
+        Character30='',
+        Character31='',
+        Character32='',
+        Character33='',
+        Character34='',
+        Character35='',
+        Character36='',
+        Character37='',
+        Character38='',
+        Character39='',
+        Character40='',
+        Character41='',
+        Character42='',
+        Character43='',
+        Character44='',
+        Character45='',
+        Character46='',
+        Character47='',
+        Character48='',
+        Character49='',
+        Character50='',
+        Character51='',
+        Character52='',
+        Character53='',
+        Character54='',
+        Character55='',
+        Character56='',
+        Character57='',
+        Character58='',
+        Character59='',
+        Character60='',
+        Character61='',
+        Character62='',
+        Character63='',
+        Character64='',
+        Character65='',
+        Character66='',
+        Character67='',
+        Character68='',
+        Character69='',
+        Character70='',
+        Character71='',
+        Character72='',
+        Character73='',
+        Character74='',
+        Character75='',
+        Character76='',
+        Character77='',
+        Character78='',
+        Character79='',
+        Character80='',
+        Character81='',
+        Character82='',
+        Character83='',
+        Character84='',
+        Character85='',
+        Character86='',
+        Character87='',
+        Character88='',
+        Character89='',
+        Character90='',
+        Character91='',
+        Character92='',
+        Character93='',
+        Character94='',
+        Character95='',
+        Character96='',
+        Character97='',
+        Character98='',
+        Character99='',
+        Character100='',
+        DEFAULT_AMOUNT = default_amount,
+        ACCOUNT_NUMBER = account_name,
+        OPERATION_CODE='',
+        REF_LINE_NUMBER = transaction_number,
+        Number5='',
+        Number6='',
+        Number7='',
+        Number8='',
+        Number9='',
+        Number10='',
+        Number11='',
+        Number12='',
+        Number13='',
+        Number14='',
+        Number15='',
+        Number16='',
+        Number17='',
+        Number18='',
+        Number19='',
+        Number20='',
+        Number21='',
+        Number22='',
+        Number23='',
+        Number24='',
+        Number25='',
+        Number26='',
+        Number27='',
+        Number28='',
+        Number29='',
+        Number30='',
+        Date1='',
+        Date2='',
+        Date3='',
+        Date4='',
+        Date5='',
+        Date6='',
+        Date7='',
+        Date8='',
+        Date9='',
+        Date10='',
+        REF_TRAN_DESC = note,
+        "Long Character2"='',
+        "Long Character3"='',
+        "Long Character4"='',
+        "Long Character5"=''
+
+from
+	#transaction_table
+
+order by
+	line_number
+go
+
