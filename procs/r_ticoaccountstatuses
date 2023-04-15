@@ -12,7 +12,7 @@ select
 from
 	login_types	
 where
-	name != "Elysium"
+	name not in("Elysium", "Disabled")
 order by
 	name
 
