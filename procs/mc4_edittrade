@@ -38,7 +38,7 @@ declare @orig_trade_type_id int
 declare @orig_contract_id int
 declare @orig_value_date datetime
 declare @orig_fixing_date datetime
-declare @orig_quantity numeric(30,4)
+declare @orig_quantity numeric(30,10)
 declare @orig_price float
 declare @orig_internal_account_id int
 declare @orig_external_account_id int
