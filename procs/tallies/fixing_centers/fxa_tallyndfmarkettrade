@@ -1,0 +1,55 @@
+
+create or replace procedure
+	fxa_tallyndfmarkettrade
+		@login varchar(25),
+		@tally_type varchar(25),
+		@buy_sell varchar(5),
+		@dealt_currency varchar(10),
+		@counter_currency varchar(10),
+		@counterparty_account varchar(25),
+		@quantity numeric(30,2),
+		@price float,
+		@value_date datetime = NULL,
+		@fixing_date datetime = NULL,
+		@trade_note varchar(255)=NULL,
+		@strategy varchar(50)=NULL,
+		@trade_date datetime=NULL,
+		@fixing_center varchar(50)=NULL
+as
+
+
+declare @trade_id int
+declare @deal_id int
+
+
+exec
+	api_tallymarkettrade
+		@login=@login,
+		@tally_type=@tally_type,
+		@buy_sell=@buy_sell,
+		@dealt_currency=@dealt_currency,
+		@counter_currency=@counter_currency,
+		@counterparty_account=@counterparty_account,
+		@quantity=@quantity,
+		@price=@price,
+		@value_date=@value_date,
+		@deal_id=@deal_id output,
+		@trade_id=@trade_id output,
+		@fixing_date=@fixing_date,
+		@strategy=@strategy,
+		@trade_note = @trade_note,
+		@trade_date = @trade_date,
+		@fixing_center = @fixing_center
+
+
+exec 
+	r_inserttradenotification @trade_id
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+go 
+

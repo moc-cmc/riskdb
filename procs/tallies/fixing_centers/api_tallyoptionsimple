@@ -1,0 +1,546 @@
+
+create or replace procedure
+	api_tallyoptionsimple
+		@login varchar(50)=NULL,
+		@buy_sell varchar(1)=NULL,
+		@dealt_ccy varchar(10)=NULL,
+		@counter_ccy varchar(10)=NULL,
+		@strike varchar(20)=NULL,
+		@call_put varchar(5)=NULL,
+		@timezone varchar(50)=NULL,
+		@expiration datetime=NULL,
+		@option_settle datetime=NULL,
+		@quantity varchar(20)=NULL,
+		@premium_ccy varchar(10)=NULL,
+		@premium_amount varchar(20)=NULL,
+		@premium_settle datetime=NULL,
+		@cl_or_lp char(2)=NULL,
+		@counterparty varchar(50)=NULL,
+		@trader varchar(50)=NULL,
+		@vol float=NULL,
+		@spot_reference float=NULL,
+		@conversion_rate float=NULL,
+		@strategy varchar(50)=NULL,
+		@trade_note varchar(255)=NULL,
+		@trade_date datetime=NULL,
+		@deal_type varchar(50)=NULL,
+		@fixing_date datetime=NULL,
+		@source varchar(25)=NULL,
+		@broker varchar(50)=NULL,
+		@pct_price float=NULL,
+		@identifier varchar(100)=NULL,
+		@deal_id int=NULL output,
+		@trade_id int=NULL output,
+		@fixing_center varchar(50)=NULL
+as
+
+
+if @login in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for login",
+		provided = @login
+	return
+end
+if @buy_sell not in("B", "S")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for buy_sell as 'B' or 'S'",
+		provided = @buy_sell
+	return
+end
+if @cl_or_lp not in("LP", "CL")
+begin
+	select
+		status = "Error",
+		msg = "Must provie value for cl_or_lp as 'CL' or 'LP'",
+		provided = @cl_or_lp
+	return
+end
+if @cl_or_lp = "LP" and @counterparty in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for counterparty for LP trade",
+		provided = @counterparty
+	return
+end
+if @cl_or_lp = "CL" and @trader in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for trader for CL trade",
+		provided = @trader
+	return
+end
+if @strike in("", NULL)
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for strike",
+		provided = @strike
+	return
+end
+if @call_put not in("C", "P")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for call_put as 'C' or 'P'",
+		provided = @call_put
+	return
+end
+if @timezone in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for timezone",
+		provided = @timezone
+	return
+end
+if @expiration in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for expiration",
+		provided = @expiration
+	return
+end
+if @option_settle in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for option_settle. This is the expiration of the exercise if the option is ITM",
+		provided = @option_settle
+	return
+end
+if @quantity in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for quantity",
+		provided = @quantity
+	return
+end
+if @premium_ccy in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for premium_ccy",
+		provided = @premium_ccy
+	return
+end
+if @premium_amount in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for premium_amount",
+		provided = @premium_amount
+	return
+end
+if @premium_settle in(NULL, "")
+begin
+	select
+		status = "Error",
+		msg = "Must provide value for premium_settle",
+		provided = @premium_settle
+	return
+end
+
+if not exists(select timezone_id from timezones where timezone = @timezone)
+begin
+        select
+                status = "Error",
+                msg = "Must provide valid timezone",
+                provided = @timezone
+        return
+end
+
+
+if not exists(select product_id from products where symbol = @dealt_ccy)
+begin
+	select
+		status = "Error",
+		msg = "Must provide valid dealt currency",
+		provided = @dealt_ccy
+	return
+end
+if not exists(select product_id from products where symbol = @counter_ccy)
+begin
+	select
+		status = "Error",
+		msg = "Must provide valid counter currency",
+		provided = @counter_ccy
+	return
+end
+if not exists(select deal_type_id from deal_types where name = @deal_type)
+begin
+	select
+		status = "Error",
+		msg = "Must provide valid deal type",
+		provided = @deal_type
+	return
+end
+
+
+if @trade_date= NULL
+select
+        @trade_date = getdate()
+
+if convert(date,  @premium_settle) < convert(date, @trade_date)
+begin
+	select
+		status = "Error",
+		msg = "Premium settle date can not be less than the trade date",
+		provided = "trade date: "+rtrim(convert(varchar(8), convert(date, @trade_date), 112))+" premium date: "+rtrim(convert(varchar(8), convert(date, @premium_settle), 112))
+	return
+end
+if convert(date,  @expiration) < convert(date, @trade_date)
+begin
+	select
+		status = "Error",
+		msg = "Expiration can not be less than the trade date",
+		provided = "trade date: "+rtrim(convert(varchar(8), convert(date, @trade_date), 112))+" expiration date: "+rtrim(convert(varchar(8), convert(date, @expiration), 112))
+	return
+end
+if(@fixing_date not in("", NULL) and convert(date,  @fixing_date) < convert(date, @trade_date))
+begin
+        select
+                status = "Error",
+                msg = "Fixing date can not be less than the trade date",
+                provided = "trade date: "+rtrim(convert(varchar(8), convert(date, @trade_date), 112))+" fixing date: "+rtrim(convert(varchar(8), convert(date, @fixing_date), 112))
+        return
+end
+if convert(date, @option_settle) < convert(date, @expiration)
+begin
+	select
+		status = "Error",
+		msg = "Option settle date can not be less than expiration. This is the expiration of an exercise if the option is ITM",
+		provided = "Expiration: "+rtrim(convert(varchar(8), convert(date, @expiration), 112))+" option settle date: "+rtrim(convert(varchar(8), convert(date, @option_settle), 112))
+	return
+end
+
+
+declare @external_account varchar(50)
+declare @contract_id int
+declare @source_id int
+declare @symbol varchar(100)
+declare @tally_type varchar(20)
+declare @sales_code varchar(50)
+declare @biproduct varchar(50)
+declare @quantity_num numeric(30, 4)
+declare @premium_amount_num numeric(30, 4)
+declare @underlying_contract_id int
+declare @pips_price float
+
+
+select
+	@quantity_num = convert(numeric(30, 4), @quantity),
+	@premium_amount_num = convert(numeric(30, 4), @premium_amount)
+
+select
+	@tally_type = "Option"
+
+if @source = NULL
+begin
+	select
+		@source = "MPT Manual Tally"
+end
+else
+begin
+	select
+		@source_id = a.source_id
+	from
+		sources a,
+		source_types b
+	where
+		a.source_type_id = b.source_type_id
+	and
+		b.name = "Inbound"
+	and
+		a.name = @source
+	if @source_id = NULL
+	begin
+        	select
+                	status = "Error",
+                	msg = "Cannot determine inbound source name",
+                	provided = @source
+        	return
+	end
+end
+
+
+
+if @trade_date= NULL
+select
+        @trade_date = getdate()
+
+if @cl_or_lp = "LP"
+begin
+	select
+        	@external_account = a.symbol
+	from
+        	external_accounts a,
+        	counterparties b
+	where
+        	a.external_account_id = b.external_account_id
+	and
+        	b.name = @counterparty
+	if @@rowcount != 1
+	begin
+        	select
+                	status = "Error",
+                	msg = "Cannot determine default external account for counterparty",
+                	provided = @counterparty
+        	return
+	end
+	
+	select 
+		@trader = NULL
+end
+if @cl_or_lp = "CL"
+begin
+	select
+		@external_account = a.symbol
+	from
+		external_accounts a,
+		traders b
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.symbol = @trader
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			msg = "Cannot determine external account for trader",
+			provided = @trader
+		return
+	end
+	select
+		@counterparty = NULL
+end
+
+if @cl_or_lp = "LP"
+begin
+	if @buy_sell = "B"
+	begin
+        	select
+                	@quantity_num = abs(@quantity_num)
+	end
+	if @buy_sell = "S"
+	begin
+        	select
+                	@quantity_num = abs(@quantity_num) * -1.0
+	end
+end
+else if @cl_or_lp = "CL"
+begin
+	/* buy sell is client perspective, so if client buy, agency sell */
+	if @buy_sell = "B"
+	begin
+        	select
+                	@quantity_num = abs(@quantity_num) * -1.0
+	end
+	if @buy_sell = "S"
+	begin
+        	select
+                	@quantity_num = abs(@quantity_num) 
+	end
+end
+
+
+select
+	@biproduct = rtrim(@dealt_ccy)+rtrim(@counter_ccy)
+
+select
+	@underlying_contract_id = contract_id
+from
+	contracts
+where
+	symbol = @biproduct
+if @underlying_contract_id= NULL
+begin
+	select
+		status = "Error",
+		msg = "Could not find biproduct from dealt and counter ccy",
+		provided = "biproduct: "+ rtrim(@biproduct)+" dealt_ccy: "+rtrim(@dealt_ccy)+" counter_ccy: "+rtrim(@counter_ccy)
+	return
+end
+
+if @vol = NULL
+begin
+	select
+		@vol = volatility
+	from
+		default_option_vols
+	where
+		underlying_contract_id = @underlying_contract_id
+	if @vol = NULL
+	begin
+		/* Not right, but just insert a vol of .0011 so we have one */
+		select 
+			@vol = .0011 
+
+                insert into
+			default_option_vols(
+				underlying_contract_id,
+				volatility,
+				last_updated)
+		values(
+			@underlying_contract_id,
+			@vol,
+			getdate()
+		)
+	end
+end
+else
+begin
+	update
+		default_option_vols
+	set
+		volatility = @vol,
+		last_updated = getdate()
+	where
+		underlying_contract_id = @underlying_contract_id
+	if @@rowcount != 1
+	begin
+               	insert into 
+                       	default_option_vols(
+                               	underlying_contract_id,
+                               	volatility,
+                               	last_updated)
+               	values(
+                       	@underlying_contract_id,
+			@vol,
+                       	getdate()
+               	)
+	end
+end
+
+if @pips_price = NULL
+begin
+	/* debug 
+	select
+                        dealt_ccy=@dealt_ccy,
+                        counter_ccy=@counter_ccy,
+                        dealt_amount=@quantity_num,
+                        premium_ccy=@premium_ccy,
+                        premium_amount=@premium_amount_num,
+                        spot_reference=NULL,
+                        conversion_rate=NULL,
+                        pips_price=@pips_price
+	*/
+
+	exec 
+		r_pipspriceforoption
+			@dealt_ccy=@dealt_ccy,
+			@counter_ccy=@counter_ccy,
+			@dealt_amount=@quantity_num,
+			@premium_ccy=@premium_ccy,
+			@premium_amount=@premium_amount_num,
+			@spot_reference=@spot_reference,
+			@conversion_rate=@conversion_rate,
+			@pips_price=@pips_price output
+end
+
+exec
+        r_spotoptioncontract
+                @underlying_contract=@biproduct,
+                @timezone=@timezone,
+                @expiration=@expiration,
+                @put_call=@call_put,
+                @strike=@strike,
+                @option_settledate=@option_settle,
+                @contract_id=@contract_id output
+
+select
+        @symbol = symbol
+from
+        contracts
+where
+        contract_id = @contract_id
+if @symbol = NULL
+begin
+        select
+                status = "Error",
+                msg = "Problem finding contract after creation. Report this error to support@elysiumtechgroup.com",
+                contract_id = @contract_id,
+                biproduct = @biproduct,
+                timezone = @timezone,
+                expiration = @expiration,
+                call_put = @call_put, 
+                strike = @strike,
+                option_settle = @option_settle
+        return
+end
+
+exec
+	r_initializeoptcontract
+		@symbol,
+		@vol
+
+
+/* Debug 
+select
+	"fxa_tallytrade",
+	login = @login,
+	source = "MPT Manual Tally",
+	trade_id = @trade_id,
+	deal_id = @deal_id,
+	tally_type = @tally_type,
+	deal_type = @deal_type,
+	trade_type = "Option",
+	external_account = @external_account,
+	counterparty = @counterparty,
+	quantity = @quantity_num,
+	symbol = @symbol,
+	value_date = @option_settle,
+	price = @pips_price,
+	sales_code = @sales_code,
+	premium = @premium_amount_num,
+	premium_currency = @premium_ccy,
+	prem_settle_date = @premium_settle,
+	pct_price = @pct_price,
+	spot_reference = @spot_reference,
+	strategy = @strategy,
+	trade_note = @trade_note,
+	trade_date = @trade_date
+*/
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = @source,
+		@broker = @broker,
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = @deal_type,
+		@trade_type = "Option",
+		@external_account = @external_account,
+		@counterparty = @counterparty,
+		@trader = @trader,
+		@quantity = @quantity_num,
+		@symbol = @symbol,
+		@value_date = @option_settle,
+		@price = @pips_price,
+		@sales_code = @sales_code,
+		@premium = @premium_amount_num,
+		@premium_currency = @premium_ccy,
+		@prem_settle_date = @premium_settle,
+		@pct_price = @pct_price,
+		@spot_reference = @spot_reference,
+		@strategy = @strategy,
+		@trade_note = @trade_note,
+		@trade_date = @trade_date,
+		@fixing_date = @fixing_date,
+		@identifier = @identifier,
+		@fixing_center = @fixing_center
+
+exec r_inserttradenotification @trade_id
+
+
+go 
+
