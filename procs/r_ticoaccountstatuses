@@ -12,7 +12,9 @@ select
 from
 	login_types	
 where
-	name in("Standard", "Client")
+	name not in("Elysium", "Disabled")
+order by
+	name
 
 go
 

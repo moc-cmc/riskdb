@@ -1,0 +1,185 @@
+create or replace procedure
+        inv_geneva
+                @login varchar(50),
+                @month varchar(20),
+                @year varchar(10)
+
+as
+
+declare @first_of_month datetime
+declare @last_of_month datetime
+declare @first_biz_day datetime
+declare @last_biz_day datetime
+declare @begin_date datetime
+declare @end_date datetime
+
+exec
+        r_firstandlastdayofmonth
+                @month=@month,
+                @year=@year,
+                @first_of_month=@first_of_month output,
+                @last_of_month=@last_of_month output,
+                @first_biz_day=@first_biz_day output,
+                @last_biz_day=@last_biz_day output
+
+
+declare @total_volume numeric(30, 4)
+declare @monthly_min numeric(20, 4)
+declare @minimum_adjustment numeric(20, 4)
+declare @invoice_amount numeric(20, 4)
+declare @per_ticket float
+declare @message varchar(255)
+declare @aggregate_count int
+declare @component_count int
+declare @reg_count int
+declare @aggregated_status_id int
+declare @begin_date_eod datetime
+declare @end_date_eod datetime
+
+
+declare @total_tickets int
+declare @billed_ticket float
+
+declare @tier1 float
+declare @per_ticket_1 numeric(30, 6)
+declare @band_1_tickets int
+declare @band_1_max int
+
+declare @tier2 float
+declare @per_ticket_2 numeric(30, 6)
+declare @band_2_tickets int
+declare @band_2_max int
+
+declare @tier3 float
+declare @per_ticket_3 numeric(30, 6)
+declare @band_3_tickets int
+declare @band_3_max int
+
+declare @tier4 float
+declare @per_ticket_4 numeric(30, 6)
+declare @band_4_tickets int
+declare @band_4_max int
+
+select
+        @band_1_tickets = 0,
+        @band_2_tickets = 0,
+        @band_3_tickets = 0,
+        @band_4_tickets = 0
+
+select
+        @monthly_min = 0,
+        @per_ticket_1 = 0.05,
+        @per_ticket_2 = 0.025,
+        @per_ticket_3 = 0.01,
+        @per_ticket_4 = 0.0005,
+        @band_1_max = 10000,
+        @band_2_max = 40000,
+        @band_3_max = 500000,
+        @band_4_max = 0
+
+
+
+exec
+        r_prevbusinessday
+                @first_biz_day,
+                @begin_date output
+exec
+        r_nextbusinessday
+                @last_biz_day,
+                @end_date output
+select
+        @begin_date_eod = convert(varchar(8), @begin_date, 112)+" 17:00",
+        @end_date_eod = convert(varchar(8), @last_biz_day, 112)+" 17:00"
+
+
+
+select
+        @total_tickets = count(*)
+from
+        trades a
+where
+        a.trade_date >= @begin_date_eod
+and
+        a.trade_date < @end_date_eod
+
+
+if @total_tickets > @band_1_max
+begin
+
+       if @total_tickets > @band_3_max
+        begin
+                /* BAND - Here we are in band 4 */
+                select
+                        @band_1_tickets = @band_1_max,
+                        @band_2_tickets = @band_2_max,
+                        @band_3_tickets = @band_3_max,
+                        @band_4_tickets = @total_tickets - @band_3_max
+
+        end
+	else if @total_tickets > @band_2_max
+	begin
+	 	/* BAND - Here we are in band 3 */
+		select
+			@band_1_tickets = @band_1_max,
+			@band_2_tickets = @band_2_max,
+			@band_3_tickets = @total_tickets - @band_2_max,
+			@band_4_tickets = 0
+	
+	end
+	else
+	begin
+		/* BAND - Here we are in band 2 */
+        	select
+                	@band_1_tickets = @band_1_max,
+                	@band_2_tickets = @total_tickets - @band_1_max,
+			@band_3_tickets = 0,
+			@band_4_tickets = 0
+	end
+end
+else
+begin
+	/* BAND - Here we are in band 1 */
+        select
+                @band_1_tickets = @total_tickets,
+                @band_2_tickets = 0,
+		@band_3_tickets = 0,
+		@band_4_tickets = 0
+end
+
+
+select
+        @tier1 = @band_1_tickets * @per_ticket_1,
+        @tier2 = @band_2_tickets * @per_ticket_2,
+        @tier3 = @band_3_tickets * @per_ticket_3,
+        @tier4 = @band_4_tickets * @per_ticket_4
+
+
+select
+        @billed_ticket = @tier1 + @tier2 + @tier3 + @tier4
+
+select
+        @invoice_amount = @monthly_min + @billed_ticket
+
+select
+        @message = '$'+rtrim(convert(varchar(10), @per_ticket_1))+' /ticket -> '+rtrim(convert(varchar(30), @band_1_tickets))+' tickets.'+
+                   '$'+rtrim(convert(varchar(10), @per_ticket_2))+' /ticket -> '+rtrim(convert(varchar(30), @band_2_tickets))+' tickets.'+
+                   '$'+rtrim(convert(varchar(10), @per_ticket_3))+' /ticket -> '+rtrim(convert(varchar(30), @band_3_tickets))+' tickets.'+
+                   '$'+rtrim(convert(varchar(10), @per_ticket_4))+' /ticket -> '+rtrim(convert(varchar(30), @band_4_tickets))+' tickets.'+
+                   'for '+rtrim(convert(varchar(30), @tier1))+' + '+
+                   rtrim(convert(varchar(30), @tier2))+' + '+
+                   rtrim(convert(varchar(30), @tier3))+' + '+
+                   rtrim(convert(varchar(30), @tier4))+' = '+
+                   rtrim(convert(varchar(30), @billed_ticket))
+
+select
+        client = "Geneva Como "+rtrim(@month)+" "+rtrim(@year),
+        invoice_amount = @invoice_amount,
+        billed_ticket = @billed_ticket,
+        monthly_min = @monthly_min,
+/*        begin_date_eod = @begin_date_eod,
+	end_date_eod = @end_date_eod,*/
+        message = @message
+
+
+
+go
