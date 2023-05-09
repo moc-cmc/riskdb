@@ -1,0 +1,90 @@
+
+create or replace procedure
+	tt_markstatusmatched
+		@login varchar(25),
+		@trade_id int,
+		@matching_engine_id int=NULL
+
+as
+
+declare @match_status_id int
+
+select
+	@match_status_id=match_status_id
+from
+	match_statuses
+where
+	name="matched"
+
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Match Status not found",
+		match_status="matched"
+
+	return
+end
+
+if @matching_engine_id = NULL
+begin
+	/* Traiana currently the default */
+
+	select
+		@matching_engine_id=matching_engine_id
+	from
+		matching_engines
+	where
+		name="Traiana"
+
+	if @@rowcount !=1
+	begin
+		select
+			status="Error",
+			msg="Matching Engine not found",
+			matching_engine="Traiana"
+		
+		return
+	end
+
+end
+
+begin tran
+	
+	update
+		trade_matches
+	set
+		match_status_id=@match_status_id
+	where
+		trade_id=@trade_id
+	and
+		matching_engine_id=@matching_engine_id
+
+	if @@rowcount !=1
+	begin
+		select
+			status="Error",
+			msg="Match status could not be updated",
+			trade_id=@trade_id,
+			matching_engine_id=@matching_engine_id
+
+		rollback tran
+		
+		return
+
+	end
+
+commit tran
+
+select
+	status="Success",
+	msg="Trade Status updated to Matched",
+	trade_id=@trade_id
+
+
+return
+
+go
+
+	
