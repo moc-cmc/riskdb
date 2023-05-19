@@ -24,3 +24,6 @@ on
                 trade_id,
                 trade_date)
 go
+
+insert into tables values("trade_mtms", "J")
+go
