@@ -1,0 +1,82 @@
+
+create or replace procedure
+	r_importspectrummtm
+		@source varchar(50),
+		@date varchar(50),
+		@trade_number varchar(100),
+		@sub_number varchar(100),
+		@market_value varchar(50)
+as
+
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @source_id int
+declare @pdate datetime
+declare @identifier varchar(200)
+declare @mtm float
+declare @start_time datetime
+declare @end_time datetime
+
+select
+    @start_time = getdate()
+
+select
+	@pdate = convert(datetime, substring(@date, 7,4) + substring(@date, 4,2) + substring(@date, 1,2)),
+	@mtm = convert(float, @market_value),
+	@identifier = rtrim(@trade_number)+"-"+rtrim(@sub_number)
+
+exec
+        r_daterangefordate
+                @pdate,
+                @begin_date output,
+                @end_date output
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+if @@rowcount != 1
+begin
+	select
+		error = "source not found",
+		source = "Spectrum In"
+	return
+end
+
+
+insert into
+	trade_mtms(
+		identifier,
+		source_id,
+		trade_date,
+		mtm)
+values(
+	@identifier + ".c",
+	@source_id,
+	@end_date,
+	@mtm)
+
+select
+        identifier = @identifier,
+        source_id = @source_id,
+        trade_date = @end_date,
+        mtm = @mtm
+
+select
+    @end_time = getdate()
+
+exec
+    sp_dogstatsdtimer
+        @metric_name="ase.proc.r_importspectrummtm",
+        @start_time=@start_time,
+        @end_time=@end_time,
+        @tags=NULL,
+        @sample_rate="1.0"
+
+
+
+go 
+

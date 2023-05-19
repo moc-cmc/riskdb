@@ -1,0 +1,85 @@
+
+create or replace procedure
+	ag_processtrademtms
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @tico_account_id int
+declare @trades_begin datetime
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+if @trade_date = NULL
+begin
+        select
+                @trade_date = getdate()
+        select
+                @trade_date = convert(date, @trade_date)
+end
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+select
+        @trades_begin = min(trade_date)
+from
+        trades
+where
+        value_date >= @end_date
+
+create table
+	#trades(
+		trade_id int,
+		identifier varchar(100))
+
+insert into
+	#trades(
+		trade_id,
+		identifier)
+select
+	trade_id,
+	identifier
+from
+	trades
+where
+        trade_date >= @trades_begin
+and
+        trade_date <= @end_date
+and
+        value_date >= @end_date
+
+update
+	trade_mtms
+set
+	trade_id = b.trade_id
+from
+	trade_mtms a,
+	#trades b
+where
+	a.identifier = b.identifier
+and
+	a.trade_date = @end_date
+
+
+
+go 
+
