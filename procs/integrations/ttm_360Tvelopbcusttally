@@ -17,6 +17,7 @@ create or replace procedure
                 @cl_order_id varchar(50)=NULL,
                 @product_type varchar(25),
 		@account varchar(50)=NULL,
+                @secondary_order_id varchar(100)=NULL,
                 /*financials*/
                 @symbol varchar(50)=NULL,
                 @ccy1 varchar(5)=NULL,
@@ -316,11 +317,63 @@ end
  *
  */
 
+declare @flow varchar(10)
+declare @cover_price float
+declare @cover_trade_id int
 
+if @contra_firm = "WEDBUSHSEC"
+begin
+	select
+		@flow = "ITEX",
+		@client_or_market = "C",
+		@m_suppress_trade = "Y"
+
+	select
+		@cover_trade_id = trade_id
+	from
+		trades
+	where
+		broker_id = broker_id
+	and
+		identifier = rtrim(@secondary_order_id)+convert(char(8), @trade_date, 112)+".m"
+	select
+		@cover_price = price
+	from
+		trades
+	where
+		trade_id = @cover_trade_id
+	select
+		@deal_exec_symbol = @secondary_order_id
+end
+
+if @executing_firm = "WEDBUSHSEC"
+begin
+	if @executing_trader = "WEDBUSHSEC.AutoDealer"
+	begin
+        	select
+                	@flow = "ITEX",
+                	@client_or_market = "M",
+                	@c_suppress_trade = "Y"
+	end
+	else
+	begin
+		select
+			@flow = "TEX",
+			@client_or_market = "P" /* PB Cust */
+	end
+end
+
+select
+	flow = @flow,
+	cover_trade_id = @cover_trade_id,
+	identifier = rtrim(@secondary_order_id)+convert(char(8), @trade_date, 112)+".c",
+	cover_price = @cover_price,
+	client_or_market = @client_or_market
 
 /* Set non-perspective parameters */
-select
-	@deal_exec_symbol = @order_id
+if @deal_exec_symbol = NULL
+	select
+		@deal_exec_symbol = @order_id
 
 /* Begin client parameters */
 
@@ -531,6 +584,18 @@ begin
         return
 end
 
+if @flow = "ITEX" and @cover_price = NULL and @client_or_market = "C"
+begin
+	select
+		status = "Error",
+		message = "Problem determining cover price for ITEX flow",
+		identifier = rtrim(@secondary_order_id)+convert(char(8), @trade_date, 112)+".c",
+		cover_trade_id = @cover_trade_id,
+		cover_price = @cover_price
+	return
+end
+
+
 /* --------------------------------------------------------------------------
  * STEP: Lookup external account from the trader or counterparty, 
  *
@@ -610,23 +675,29 @@ and
  * STEP: Check for suppression 
  *
  */
-select
-	@c_suppress_trade = "Y"
-from
-	suppression_symbols
-where
-	source_id = @source_id
-and
-	symbol = @c_suppression_lookup
+if @c_suppress_trade = NULL
+begin
+	select
+		@c_suppress_trade = "Y"
+	from
+		suppression_symbols
+	where
+		source_id = @source_id
+	and
+		symbol = @c_suppression_lookup
+end
 
-select
-        @m_suppress_trade = "Y"
-from
-        suppression_symbols
-where
-        source_id = @source_id
-and
-        symbol = @c_suppression_lookup
+if @m_suppress_trade = NULL
+begin
+	select
+        	@m_suppress_trade = "Y"
+	from
+        	suppression_symbols
+	where
+        	source_id = @source_id
+	and
+        	symbol = @c_suppression_lookup
+end
 
 if @c_suppress_trade = "Y" and @m_suppress_trade = "Y"
 begin
@@ -790,6 +861,12 @@ begin
  */
 if @c_suppress_trade != "Y"
 begin
+	if @flow = "TEX"
+	begin
+		select
+			@cover_price = NULL
+	end
+
         exec
                 fxa_tallytrade
                         @login = @c_trader_login,
@@ -810,7 +887,8 @@ begin
                         @trader = @c_trader,
                         @broker = @broker,
                         @identifier = @c_platform_identifier,
-                        @spot_reference = @last_spot_rate
+                        @spot_reference = @last_spot_rate,
+			@mid_mark = @cover_price
 
         if @c_trade_id = NULL
         begin
