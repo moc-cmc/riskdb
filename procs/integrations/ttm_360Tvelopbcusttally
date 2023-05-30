@@ -749,6 +749,10 @@ begin
 		@tally_type = "Option"
 end
 
+declare @cover_far_trade_identifier varchar(100)
+declare @cover_price_far float
+declare @cover_far_trade_id float
+
 if @product_type = "FX-SWAP"
 begin
         select
@@ -756,6 +760,34 @@ begin
                 @tally_type = "Swap",
 		@c_far_platform_identifier=@c_platform_identifier + ".f",
 		@m_far_platform_identifier=@m_platform_identifier + ".f"
+
+	select
+		@cover_far_trade_identifier = rtrim(@secondary_order_id)+convert(char(8), @trade_date, 112)+".m.f"
+
+	if @flow = "ITEX"
+	begin
+        	select
+                	@cover_far_trade_id = trade_id,
+			@cover_price_far = price
+        	from
+                	trades
+        	where
+                	broker_id = broker_id
+        	and
+                	identifier = @cover_far_trade_identifier
+	end
+
+	if @flow = "ITEX" and @cover_price_far = NULL and @client_or_market = "C"
+	begin
+        	select
+                	status = "Error",
+                	message = "Problem determining cover price for far leg of ITEX flow",
+                	identifier = @cover_far_trade_identifier,
+                	cover_far_trade_id = @cover_far_trade_id,
+                	cover_price = @cover_price,
+                	cover_price_far = @cover_price_far
+        	return
+	end
 end
 
 
@@ -863,8 +895,10 @@ if @c_suppress_trade != "Y"
 begin
 	if @flow = "TEX"
 	begin
+		/* ITEX flow has a cover but TEX "cover price" can be the actual trade price */
 		select
-			@cover_price = NULL
+			@cover_price = @price,
+			@cover_price_far = @price
 	end
 
         exec
@@ -1168,181 +1202,198 @@ begin
 		@deal_type = "B2B Swap",
 		@tally_type = "Swap",
 		@trade_type = "Swap Near"
-	
-	exec
-        	fxa_tallytrade
-                	@login = @c_trader_login,
-                	@source = @source,
-                	@trade_id = @c_near_trade_id out,
-                	@deal_id = @deal_id out,
-                	@tally_type = @tally_type,
-                	@deal_type = "Client Swap",
-                	@trade_type = @trade_type,
-                	@external_account = @c_external_account,
-                	@counterparty = @c_counterparty,
-                	@quantity = @c_quantity,
-                	@symbol = @contract,
-                	@value_date = @value_date,
-                	@fixing_date = @fixing_date,
-                	@price = @price,
-                	@trade_date = @trade_date,
-                	@trader = @c_trader,
-                	@broker = @broker,
-                	@identifier = @c_platform_identifier
 
-		if @c_near_trade_id = NULL
-		begin
-			select
-                       		client_near_tally_status = "Error",
-                        	client_near_tally_message = "Problem tallying Client near trade"
-		end
-		else
-		begin
-                        select
-                                client_near_tally_status = "Success",
-                                client_near_tally_message = "Tallied Client near trade"
-                end
-
-	select
-		@trade_type = "Swap Far"
-
-	exec
-		fxa_tallytrade
-                        @login = @c_trader_login,
-                        @source = @source,
-                        @trade_id = @c_far_trade_id out,
-                        @deal_id = @deal_id out,
-                        @tally_type = @tally_type,
-                        @deal_type = "Client Swap",
-                        @trade_type = @trade_type,
-                        @external_account = @external_account,
-                        @counterparty = @counterparty,
-                        @quantity = @c_far_qty,
-                        @symbol = @contract,
-                        @value_date = @far_value_date,
-                        @fixing_date = @far_fixing_date,
-                        @price = @far_price,
-                        @trade_date = @trade_date,
-                        @trader = @c_trader,
-                        @broker = @broker,
-                        @identifier = @c_far_platform_identifier
-
-                if @c_far_trade_id = NULL
-                begin
-                	select
-                                client_far_tally_status = "Error",
-                                client_far_tally_message = "Problem tallying Client far trade"
-		end
-		begin
-                        select
-                                client_far_tally_status = "Success",
-                                client_far_tally_message = "Tallied Client far trade"
-                end
-
-	exec
-                tt_resolveswapsymbol
-                        @deal_id=@deal_id,
-                        @near_trade_id=@c_near_trade_id,
-                        @far_trade_id=@c_far_trade_id,
-                        @client_or_market="C"
-       
-	select
-		@trade_type = "Swap Near"
-
-	select
-		@m_quantity = @m_quantity * -1
-
-	if (@m_quantity > 0)
+        if @flow = "TEX"
         begin
-                select 
-			@m_far_qty = @far_qty * -1
-        end
-        else
-        begin           
                 select
-                        @m_far_qty = @far_qty
+                        @cover_price = @price,
+                        @cover_price_far = @far_price
         end
-
-	exec
-                fxa_tallytrade
-                        @login = @m_trader_login,
-                        @source = @source,
-                        @trade_id = @m_near_trade_id out,
-                        @deal_id = @deal_id out,
-                        @tally_type = @tally_type,
-                        @deal_type = "Market Swap",
-                        @trade_type = @trade_type,
-                        @external_account = @m_external_account,
-                        @counterparty = @m_counterparty,
-                        @quantity = @m_quantity,
-                        @symbol = @contract,
-                        @value_date = @value_date,
-                        @fixing_date = @fixing_date,
-                        @price = @price,
-                        @trade_date = @trade_date,
-                        @trader = @m_trader,
-                        @broker = @broker,
-                        @identifier = @m_platform_identifier
-
-                if @m_near_trade_id = NULL
-                begin
-               		select
-                                market_near_tally_status = "Error",
-                                market_near_tally_message = "Problem tallying Market near trade" 
-
-		end
-		else
-		begin
-                        select
-                                market_near_tally_status = "Success",
-                                market_near_tally_message = "Tallied Market near trade"
-                end
-		
+	if @c_suppress_trade != "Y"
+	begin
+	
+		exec
+        		fxa_tallytrade
+                		@login = @c_trader_login,
+                		@source = @source,
+                		@trade_id = @c_near_trade_id out,
+                		@deal_id = @deal_id out,
+                		@tally_type = @tally_type,
+                		@deal_type = "Client Swap",
+                		@trade_type = @trade_type,
+                		@external_account = @c_external_account,
+                		@counterparty = @c_counterparty,
+                		@quantity = @c_quantity,
+                		@symbol = @contract,
+                		@value_date = @value_date,
+                		@fixing_date = @fixing_date,
+                		@price = @price,
+                		@trade_date = @trade_date,
+                		@trader = @c_trader,
+                		@broker = @broker,
+                		@identifier = @c_platform_identifier,
+				@mid_mark = @cover_price
+	
+			if @c_near_trade_id = NULL
+			begin
+				select
+                       			client_near_tally_status = "Error",
+                        		client_near_tally_message = "Problem tallying Client near trade"
+			end
+			else
+			begin
+                        	select
+                                	client_near_tally_status = "Success",
+                                	client_near_tally_message = "Tallied Client near trade"
+                	end
+	
 		select
 			@trade_type = "Swap Far"
+	
+		exec
+			fxa_tallytrade
+                        	@login = @c_trader_login,
+                        	@source = @source,
+                        	@trade_id = @c_far_trade_id out,
+                        	@deal_id = @deal_id out,
+                        	@tally_type = @tally_type,
+                        	@deal_type = "Client Swap",
+                        	@trade_type = @trade_type,
+                        	@external_account = @c_external_account,
+                        	@counterparty = @c_counterparty,
+                        	@quantity = @c_far_qty,
+                        	@symbol = @contract,
+                        	@value_date = @far_value_date,
+                        	@fixing_date = @far_fixing_date,
+                        	@price = @far_price,
+                        	@trade_date = @trade_date,
+                        	@trader = @c_trader,
+                        	@broker = @broker,
+                        	@identifier = @c_far_platform_identifier,
+				@mid_mark = @cover_price_far
+	
+                	if @c_far_trade_id = NULL
+                	begin
+                		select
+                                	client_far_tally_status = "Error",
+                                	client_far_tally_message = "Problem tallying Client far trade"
+			end
+			begin
+                        	select
+                                	client_far_tally_status = "Success",
+                                	client_far_tally_message = "Tallied Client far trade"
+                	end
+	
+		exec
+                	tt_resolveswapsymbol
+                        	@deal_id=@deal_id,
+                        	@near_trade_id=@c_near_trade_id,
+                        	@far_trade_id=@c_far_trade_id,
+                        	@client_or_market="C"
+	end
 
-        exec
-                fxa_tallytrade
-                        @login = @m_trader_login,
-                        @source = @source,
-                        @trade_id = @m_far_trade_id out,
-                        @deal_id = @deal_id out,
-                        @tally_type = @tally_type,
-                        @deal_type = "Client Swap",
-                        @trade_type = @trade_type,
-                        @external_account = @m_external_account,
-                        @counterparty = @m_counterparty,
-                        @quantity = @m_far_qty,
-                        @symbol = @contract,
-                        @value_date = @far_value_date,
-                        @fixing_date = @far_fixing_date,
-                        @price = @far_price,
-                        @trade_date = @trade_date,
-                        @trader = @m_trader,
-                        @broker = @broker,
-                        @identifier = @m_far_platform_identifier
 
-                if @m_far_trade_id = NULL
-                begin
+        if @m_suppress_trade != "Y"
+        begin
+
+       	
+		select
+			@trade_type = "Swap Near"
+
+		select
+			@m_quantity = @m_quantity * -1
+	
+		if (@m_quantity > 0)
+        	begin
+                	select 
+				@m_far_qty = @far_qty * -1
+        	end
+        	else
+        	begin           
                 	select
-                                market_far_tally_status = "Error",
-                                market_far_tally_message = "Problem tallying Market far trade"
-
-		end
-		else
-		begin
+                        	@m_far_qty = @far_qty
+        	end
+	
+		exec
+                	fxa_tallytrade
+                        	@login = @m_trader_login,
+                        	@source = @source,
+                        	@trade_id = @m_near_trade_id out,
+                        	@deal_id = @deal_id out,
+                        	@tally_type = @tally_type,
+                        	@deal_type = "Market Swap",
+                        	@trade_type = @trade_type,
+                        	@external_account = @m_external_account,
+                        	@counterparty = @m_counterparty,
+                        	@quantity = @m_quantity,
+                        	@symbol = @contract,
+                        	@value_date = @value_date,
+                        	@fixing_date = @fixing_date,
+                        	@price = @price,
+                        	@trade_date = @trade_date,
+                        	@trader = @m_trader,
+                        	@broker = @broker,
+                        	@identifier = @m_platform_identifier
+	
+                	if @m_near_trade_id = NULL
+                	begin
+               			select
+                                	market_near_tally_status = "Error",
+                                	market_near_tally_message = "Problem tallying Market near trade" 
+	
+			end
+			else
+			begin
+                        	select
+                                	market_near_tally_status = "Success",
+                                	market_near_tally_message = "Tallied Market near trade"
+                	end
+			
 			select
-				market_far_tally_status = "Success",
-				market_far_tally_message = "Tallied Market far trade"
-		end
-
-	exec
-		tt_resolveswapsymbol
-			@deal_id=@deal_id,
-			@near_trade_id=@m_near_trade_id,
-			@far_trade_id=@m_far_trade_id,
-			@client_or_market="M"
-
+				@trade_type = "Swap Far"
+	
+        	exec
+                	fxa_tallytrade
+                        	@login = @m_trader_login,
+                        	@source = @source,
+                        	@trade_id = @m_far_trade_id out,
+                        	@deal_id = @deal_id out,
+                        	@tally_type = @tally_type,
+                        	@deal_type = "Client Swap",
+                        	@trade_type = @trade_type,
+                        	@external_account = @m_external_account,
+                        	@counterparty = @m_counterparty,
+                        	@quantity = @m_far_qty,
+                        	@symbol = @contract,
+                        	@value_date = @far_value_date,
+                        	@fixing_date = @far_fixing_date,
+                        	@price = @far_price,
+                        	@trade_date = @trade_date,
+                        	@trader = @m_trader,
+                        	@broker = @broker,
+                        	@identifier = @m_far_platform_identifier
+	
+                	if @m_far_trade_id = NULL
+                	begin
+                		select
+                                	market_far_tally_status = "Error",
+                                	market_far_tally_message = "Problem tallying Market far trade"
+	
+			end
+			else
+			begin
+				select
+					market_far_tally_status = "Success",
+					market_far_tally_message = "Tallied Market far trade"
+			end
+	
+		exec
+			tt_resolveswapsymbol
+				@deal_id=@deal_id,
+				@near_trade_id=@m_near_trade_id,
+				@far_trade_id=@m_far_trade_id,
+				@client_or_market="M"
+	end	
 end
 
 /* --------------------------------------------------------------------------
