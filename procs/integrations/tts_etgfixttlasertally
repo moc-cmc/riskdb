@@ -35,10 +35,10 @@ create or replace procedure
 		@contra_firm varchar(50)=NULL,
 		@clearing_firm varchar(50)=NULL,
 		@giveup_clearing_firm varchar(50)=NULL,
+		@entering_trader varchar(50)=NULL,
 		@venue varchar(50)=NULL,
 		@symbol_suffix varchar(10)=NULL
 as
-
 
 
 declare @client_or_market char(1)
@@ -298,11 +298,18 @@ select
 
 /* Begin market parameters */
 
+
 select
         @m_platform_identifier = rtrim(@venue)+"_"+rtrim(@execution_id)+"_"+convert(char(8), @trade_date, 112)+".m"
 select
         @m_counterparty_lookup = rtrim(@venue)+"-"+rtrim(@contra_firm),
-        @m_trader_lookup = rtrim(@executing_trader)
+	@m_trader_lookup = rtrim(@entering_trader)
+
+if @entering_trader = NULL
+begin
+	select
+        	@m_trader_lookup = rtrim(@executing_trader)
+end
 
 
 /* Set suppression and trigger_symbol variables */
