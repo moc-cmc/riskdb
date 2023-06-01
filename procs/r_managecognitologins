@@ -1,0 +1,393 @@
+
+create or replace procedure
+	r_managecognitologins 
+		@login varchar(50),
+		@user_login varchar(50)=NULL
+as
+
+declare @tico_account_id int
+declare @has_permission  char(1)
+declare @login_name varchar(25)
+declare @standard_login int
+declare @client_login int
+declare @disabled_login int
+declare @elysium_login_id int
+declare @login_status varchar(20)
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"Reset Password",
+	"Reset MFA Password",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"Change Login Status",
+	"Change Login Status",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"Disable Login",
+	"Disable Login",
+	NULL)
+
+insert into 
+	#meta
+values(
+	"Column Link",
+	"Client Access",
+	"Client Access",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "Add Auth",
+        "Add MFA Auth",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "user_login",
+        NULL,
+        NULL)
+
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_login",
+        "Add New MFA Login",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_elysium_login",
+        "Add New Elysium MFA Login",
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "active_users",
+        "Active Users",
+        NULL)
+
+select * from #meta
+
+select
+	@has_permission = "N"
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+
+select
+	@has_permission = "Y"
+FROm
+	access_groups a,
+	access_group_accounts b
+where
+	a.access_group_id = b.access_group_id
+and
+	a.name = "Login Admin"
+and
+	b.tico_account_id = @tico_account_id
+	
+if @has_permission != "Y"
+begin
+	select
+		status = "Error",
+		message = "<b>Permission Denied</b>" + " - User must be configured as 'Login Admin' to view and manage logins",
+		login = @login
+	return
+end
+
+select 
+	@standard_login = login_type_id
+from
+	login_types
+where
+	name="Standard"
+
+if @@rowcount < 1
+begin
+	select
+		status="Error",
+		message= "Standard login type does not exist."
+	return
+end
+
+select
+	@client_login = login_type_id
+from
+	login_types
+where
+	name="Client"
+
+if @@rowcount < 1
+begin
+	select
+		status="Error",
+		message="Client login type does not exist."
+	return
+end
+
+select
+	@disabled_login = login_type_id
+from
+	login_types
+where
+	name="Disabled"
+
+if @@rowcount < 1
+begin
+	select
+		status="Error",
+		message="Disabled login type does not exist."
+	return
+end
+
+select
+        @elysium_login_id = a.login_type_id
+from
+        login_types a,
+	tico_account_types b
+where
+        a.name="Elysium"
+and
+	a.login_type_id = b.login_type_id
+and
+	b.tico_account_id = @tico_account_id
+	
+
+select
+	add_login = "Add New Login",
+	manage_api_keys = "Manage API Keys",
+	add_elysium_login= case when @elysium_login_id = NULL then "" else "Add New Elysium Login" end
+
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+
+select
+        @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+        @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+        @subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+        @style = "background:#FFFFFF;border: 1px solid white",
+        @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+        @selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+create table
+	#login_types(
+		login_type_id int
+	)
+
+insert into 
+	#login_types(
+		login_type_id
+	)
+select
+	login_type_id
+from
+	login_types
+/*where
+	name not in("Elysium")*/
+	
+	
+create table
+	#output(
+		tico_account_id int,
+		login_name  varchar(50),
+		reset_password  varchar(15),
+		login_status varchar(20),
+		disable_login varchar(20) NULL,
+		change_login_status varchar(20),
+		user_login varchar(50) NULL,
+		style varchar(100) NULL,
+		email varchar(50) NULL,
+		mfa_number varchar(50) NULL,
+		auth_identifier varchar(50) NULL,
+		auth_status varchar(50) NULL,
+		create_date datetime NULL,
+		add_auth_settings varchar(20) NULL,
+		tico_id int NULL
+		)
+insert into
+	#output(
+		tico_account_id,
+		login_name,
+		reset_password,
+		login_status,
+		disable_login,
+		change_login_status,
+		user_login,
+		style,
+		add_auth_settings)
+select
+	a.account_id,
+	a.login,
+	"Reset Password",
+	c.name,
+	case when c.name = "Disabled" then NULL else "Disable Login" end,
+	"Change Login Status",
+	a.login,
+	@style,
+	"Add Auth"
+from
+	tico_accounts a,
+	tico_account_types b,
+	login_types c,
+	#login_types d
+where
+	a.account_id=b.tico_account_id
+and
+	b.login_type_id=c.login_type_id
+and
+	c.login_type_id = d.login_type_id
+
+
+update
+	#output
+set
+	email = a.email
+from
+	emails a,
+	user_emails b,
+	#output c
+where
+	c.tico_account_id = b.tico_account_id
+and
+	b.email_id = a.email_id
+
+
+update
+	#output
+set
+	mfa_number = b.phone_number,
+	auth_identifier = b.cognito_sub,
+	auth_status = c.name,
+	create_date = b.create_date,
+	add_auth_settings = NULL
+from
+	#output a,
+	cognito_users b,
+	cognito_user_statuses c
+where
+        a.tico_account_id = b.tico_account_id
+and
+	b.cognito_user_status_id = c.cognito_user_status_id
+
+	
+
+if @user_login != NULL
+begin
+	update
+		#output
+	set
+		style = @selected_style
+	where
+		login_name = @user_login
+end
+
+select 
+	section = "Manage Users",
+	login_name,
+	login_status,
+	email,
+	phone = mfa_number,
+	auth_status,
+	auth_id = auth_identifier,
+	create_date = create_date,
+	mptracker = case when tico_id != NULL then "Yes" else "No" end,
+	change_login_status,
+	disable_login,
+	add_auth = add_auth_settings,
+	user_login,
+	style
+from
+	#output
+where
+	login_status not in("Elysium")
+order by
+	login_status,
+	login_name
+
+
+select
+	section = "Addional Login Tools",
+	client_access="Client Access",
+	active_users="Active Users for Range"
+
+if @elysium_login_id != NULL
+begin
+
+	select
+        	section = "Manage Elysium Users",
+        	login_name,
+        	login_status,
+        	email,
+        	phone = mfa_number,
+        	auth_status,
+        	auth_id = auth_identifier,
+        	create_date = create_date,
+        	mptracker = case when tico_id != NULL then "Yes" else "No" end,
+        	change_login_status,
+        	disable_login,
+        	add_auth = add_auth_settings,
+        	user_login,
+        	style
+	from
+        	#output
+	where
+		login_status = "Elysium"
+	order by
+        	login_status,
+        	login_name
+end
+	
+go
