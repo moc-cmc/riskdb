@@ -831,8 +831,22 @@ exec
 		@contract = @contract output,
 		@inverted = @inverted output
 
-
-
+/* the cover price that we are looking up is pulled from the trades table which will have an inverted price
+ * so we need to flip
+ */
+if @inverted = "Y"
+begin
+	if @cover_price not in(NULL, 0)
+	begin
+		select
+			@cover_price = 1/@cover_price
+	end
+	if @cover_price_far not in(NULL, 0)
+	begin
+		select
+			@cover_price_far = 1/@cover_price_far
+	end
+end
 /* --------------------------------------------------------------------------
  * STEP: Adjust the perspective of the trade and set the quantity
  *
