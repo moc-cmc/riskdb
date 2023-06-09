@@ -37,7 +37,7 @@ create or replace procedure
 		@giveup_clearing_firm varchar(50)=NULL,
 		@entering_trader varchar(50)=NULL,
 		@venue varchar(50)=NULL,
-		@symbol_suffix varchar(10)=NULL
+		@symbol_suffix varchar(20)=NULL
 as
 
 
@@ -214,6 +214,8 @@ declare @deal_alias varchar(100)
 declare @existing_alias varchar(100)
 declare @netlink_pb_source_id int
 
+declare @future_id int
+declare @contract_size float
 
 select
 	@ack_required = "Y"
@@ -550,7 +552,12 @@ if @symbol_suffix in("FO", "FORWARD")
 		@trade_type = "Forward",
 		@tally_type = "Forward"
 
-if @fixing_date != NULL
+if @symbol_suffix in("PRP", "PERPETUAL_FUTURE")
+	select
+		@trade_type = "Perpetual",
+		@tally_type = "Spot"
+
+if @fixing_date != NULL 
 	select
 		@trade_type = "Forward",
 		@tally_type = "Forward"
@@ -598,17 +605,115 @@ end
  *
  */
 
-exec
-	r_validateccypair
-		@login=@default_login,
-		@symbol=@symbol,
-		@ccy1=@ccy1,
-		@ccy2=@ccy2,
-		@contract_id = @contract_id output,
-		@contract = @contract output,
-		@inverted = @inverted output
+if @trade_type not in("Perpetual")
+begin
+	select 
+		step = "Looking up ccy pair for non-perpetual contract",
+		trade_type = @trade_type,
+		symbol_suffix = @symbol_suffix
+	exec
+		r_validateccypair
+			@login=@default_login,
+			@symbol=@symbol,
+			@ccy1=@ccy1,
+			@ccy2=@ccy2,
+			@contract_id = @contract_id output,
+			@contract = @contract output,
+			@inverted = @inverted output
+end
+else
+begin
+	select 
+		step = "Looking up ccy pair for perpetual contract",
+		trade_type = @trade_type,
+		symbol_suffix = @symbol_suffix
+	/* lookup contract_symbols */
+	select
+		@contract_id = a.contract_id,
+		@contract = a.symbol,
+		@future_id = c.future_id,
+		@inverted = "N"
+	from
+		contracts a,
+		contract_symbols b,
+		future_contracts c
+	where
+	 	a.contract_id = b.contract_id
+	and
+		a.contract_id = c.contract_id
+	and
+		c.expiration = NULL
+	and
+		b.symbol = @symbol
+	and
+		b.source_id = @source_id
+	if @contract_id = NULL
+	begin
+		/* if not found look up in in contracts */
+		select
+			@contract_id = a.contract_id,
+			@contract = a.symbol,
+		        @future_id = b.future_id
+		from
+			contracts a,
+			future_contracts b
+		where
+			a.contract_id = b.contract_id
+		and
+			a.symbol = @symbol
+		and
+			b.expiration = NULL
+		if @contract_id = NULL
+		begin
+			/* if not found try and find the future name */
+			select
+				@contract_id  = a.contract_id,
+				@contract = a.symbol,
+				@future_id = c.future_id
+			from
+				contracts a,
+				future_contracts b,
+				futures c
+			where
+				a.contract_id = b.contract_id
+			and
+				b.future_id = c.future_id
+			and
+				c.root_symbol = @symbol
+			and
+				b.expiration = NULL
+			if @contract = NULL
+			begin
+				select
+					status = "Error",
+					message = "Contract symbol not found"
+				return
+			end
+		end
+	end
 
+end
 
+if @future_id != NULL
+begin
+	select
+		@contract_size = quantity
+	from
+		futures
+	where
+		future_id = @future_id
+	
+	if @contract_size not in(NULL, 0)
+	begin
+		select 
+			action = "Converting quantity provided as asset value to contracts via the contract_size",
+			pre_qty = @qty,
+			contract_size = @contract_size,
+			future_id = @future_id
+		select
+			@qty = @qty / @contract_size
+	end	
+end
 
 /* --------------------------------------------------------------------------
  * STEP: Adjust the perspective of the trade and set the quantity
@@ -618,6 +723,7 @@ exec
  * messages vs market messages. We tally trades in perspective of the fund 
  * or agency so set the direction accordingly
  */
+
 
 if @side = "BUY"
 begin
@@ -648,7 +754,7 @@ begin
                        		@source = @source,
                        		@trade_id = @m_trade_id out,
                        		@deal_id = @deal_id out,
-                       		@tally_type = @trade_type,
+                       		@tally_type = @tally_type,
                        		@deal_type = @deal_type,
                        		@trade_type = @trade_type,
                        		@external_account = @m_external_account,
@@ -716,7 +822,7 @@ begin
                 	deal_id = @deal_id,
                 	login = @m_trader_login,
                 	source = @source,
-                	tally_type = @trade_type,
+                	tally_type = @tally_type,
                 	deal_type = @deal_type,
                 	trade_type = @trade_type,
                 	external_account = @m_external_account,

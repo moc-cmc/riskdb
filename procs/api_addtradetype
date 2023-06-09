@@ -1,0 +1,44 @@
+create or replace procedure	
+	api_addtradetype
+		@name varchar(50),
+		@trade_type_id int=NULL output
+
+as
+
+select
+	@trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = @name
+if @trade_type_id != NULL
+begin
+	return
+end
+
+
+if @trade_type_id = NULL
+begin
+exec
+	j_nextkey
+		"trade_types",
+		@trade_type_id output
+end
+else
+begin
+	select
+		trade_type = "Error",
+		message = "Can not provide trade_type_id to be added"
+	return
+end
+
+insert into
+	trade_types(
+		trade_type_id,
+		name)
+values(
+	@trade_type_id,
+	@name
+)
+
+go

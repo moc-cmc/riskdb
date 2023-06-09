@@ -1,0 +1,41 @@
+
+create or replace procedure
+	fxa_tallymarketperpfuture
+		@login varchar(50),
+		@buy_sell varchar(5),
+		@symbol varchar(50),
+		@quantity numeric(30,10),
+		@price float,
+		@account varchar(50),
+		@trade_date datetime=NULL
+		
+	
+as
+
+declare @trade_id int
+declare @deal_id int
+
+exec
+	api_tallymarketperpfuture
+		@login = @login,
+		@buy_sell = @buy_sell,
+		@symbol = @symbol,
+		@quantity = @quantity,
+		@price = @price,
+		@account = @account,
+		@trade_date = @trade_date,
+		@deal_id = @deal_id output,
+		@trade_id = @trade_id output
+
+
+exec 
+	r_inserttradenotification @trade_id
+
+exec
+	r_inspectdealtrades
+		@login,
+		@deal_id
+
+
+go
+

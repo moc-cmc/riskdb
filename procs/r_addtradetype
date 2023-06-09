@@ -1,0 +1,21 @@
+create or replace procedure	
+	r_addtradetype
+		@name varchar(50)
+
+as
+
+declare @trade_type_id int
+exec
+	api_addtradetype
+		@name = @name,
+		@trade_type_id = @trade_type_id output
+
+if @trade_type_id != NULL
+begin
+	select
+		status = "Success",
+		message = "Trade type has been added or already existed",
+		name = @name
+end
+
+go

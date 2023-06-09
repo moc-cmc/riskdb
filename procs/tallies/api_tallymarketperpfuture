@@ -1,0 +1,139 @@
+create or replace procedure
+	api_tallymarketperpfuture
+		@login varchar(50),
+		@buy_sell varchar(5),
+		@symbol varchar(50),
+		@quantity numeric(30,10),
+		@price float,
+		@account varchar(50),
+		@trade_date datetime=NULL,
+		@deal_id int output,
+		@trade_id int output
+as
+
+declare @debug char(1)
+select @debug = "N"
+
+declare @sales_code varchar(50)
+declare @trade_type varchar(25)
+declare @contract_id int
+declare @value_date datetime
+declare @contract_symbol varchar(50)
+declare @future_id int
+declare @counterparty varchar(50)
+
+if @buy_sell = "Sell"
+begin
+	select
+		@quantity = abs(@quantity) * -1.0
+end
+if @buy_sell = "Buy"
+begin
+	select
+		@quantity = abs(@quantity)
+end
+
+
+select
+	@sales_code = "None"
+
+if @trade_date = NULL
+	select
+		@trade_date = getdate()
+
+select
+	@future_id = future_id
+from
+	futures
+where
+	root_symbol = @symbol
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Future not found",
+		symbol = @symbol
+	return
+end
+
+select
+	@value_date = dbo.f_botradedate(@trade_date)
+
+select
+	@contract_id = b.contract_id,
+	@contract_symbol = b.symbol
+from
+	future_contracts a,
+	contracts b,
+	futures c
+where
+	a.contract_id = b.contract_id
+and
+	a.future_id = c.future_id
+and
+	c.root_symbol = @symbol
+and
+	a.expiration = NULL  /* Null expiration for perpetual futures */
+
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Future contract not found",
+		symbol = @symbol,
+		value_date = @value_date
+	return
+end
+
+select
+	@trade_type = "Perpetual"
+
+select
+	@counterparty = a.name
+from
+	counterparties a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.symbol = @account
+
+
+if @debug = "Y"
+begin
+	select
+                login = @login,
+                source = "MPT Manual Tally",
+                tally_type = "Future",
+                deal_type = "Market Perpetual",
+                trade_type = @trade_type,
+                quantity = @quantity,
+                symbol = @contract_symbol,
+		account = @account,
+		counterparty = @counterparty,
+                value_date = @value_date,
+                price = @price,
+                trade_date = @trade_date,
+                sales_code = @sales_code
+end
+
+exec
+	fxa_tallytrade
+		@login = @login,
+		@source = "MPT Manual Tally",
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = "Future",
+		@deal_type = "Market Perpetual",
+		@trade_type = @trade_type,
+		@quantity = @quantity,
+		@symbol = @contract_symbol,
+		@value_date = @value_date,
+		@price = @price,
+		@external_account = @account,
+		@counterparty = @counterparty,
+		@trade_date = @trade_date,
+		@sales_code = @sales_code
+
+
+go
