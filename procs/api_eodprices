@@ -1,0 +1,239 @@
+
+create or replace procedure
+	api_eodprices
+		@login varchar(50),
+		@source varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+declare @source_id int
+declare @product_id int
+declare @id int
+declare @ids int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Source not found",
+		source = @source
+	return
+end
+
+
+if @trade_date = NULL
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+select
+	@trade_date =  convert(char(8), @trade_date, 112) +' 17:00' 
+
+create table
+	#products(
+		id int identity,
+		product_id int,
+		symbol varchar(50))
+insert into
+	#products(
+		product_id,
+		symbol)
+select
+	a.product_id,
+	a.symbol
+from
+	products a,
+	product_symbols b
+where
+	a.product_id = b.product_id
+and
+	b.source_id = @source_id
+order by
+	a.symbol
+
+create table
+	#output(
+		id int identity,
+		contract_id int NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		symbol varchar(50) NULL,
+		price float NULL,
+		inverted_price float NULL)
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#products
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#products
+	where
+		id > @id
+
+	select
+		@product_id = product_id
+	from
+		#products
+	where
+		id = @id
+
+	insert into
+		#output(
+			contract_id,
+			product_id,
+			currency_id)
+	select
+		contract_id,
+		product_id,
+		currency_id
+	from
+		forwards
+	where
+		product_id = @product_id
+	and
+		contract_id not in(
+			select
+				contract_id
+			from
+				#output)
+
+	/* insert into
+		#output(
+			contract_id,
+			product_id,
+			currency_id)
+	select
+		contract_id,
+		product_id,
+		currency_id
+	from
+		forwards
+	where
+		currency_id = @product_id
+	and
+		contract_id not in(
+			select
+				contract_id
+			from
+				#output) */
+
+
+	select
+		@ids = count(*)
+	from
+		#products
+	where
+		id > @id
+end
+
+
+update
+	#output
+set
+	a.symbol = b.symbol
+from
+	#output a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#output
+set
+	a.product = b.symbol
+from
+	#output a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#output
+set
+	a.currency = b.symbol
+from
+	#output a,
+	products b
+where
+	a.currency_id = b.product_id
+
+
+update
+	#output
+set
+	a.price = b.price
+from
+	#output a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, b.price_date) = convert(date, @trade_date)
+
+update
+	#output
+set
+	a.price = 1.0 / c.price
+from
+	#output a,
+	forwards b,
+	prices c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @trade_date)
+and
+	a.price = NULL
+
+update
+	#output
+set
+	inverted_price = 1.0 / price
+where
+	price != 0.0
+
+
+delete
+
+from
+	#output
+where
+	price = NULL
+
+select
+	/*trade_date = convert(varchar(8), @trade_date, 112),*/
+	trade_date = @trade_date,
+	ccy_1 = product,
+	ccy_2 = currency,
+	ccy1_ccy2_price = price,
+	ccy2_ccy1_price = inverted_price
+from
+	#output
+order by
+	id
+
+
+
+go 
+

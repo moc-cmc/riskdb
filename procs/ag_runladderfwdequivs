@@ -1,7 +1,7 @@
  create or replace procedure
 	ag_runladderfwdequivs
 		@login varchar(50),
-		@run_name varchar(100),
+		@run_name varchar(100)=NULL,
 		@trade_date datetime=NULL
 as
 
@@ -241,6 +241,13 @@ exec
 		@begin_date output,
 		@end_date output
 
+if @run_name = NULL
+begin
+	select
+		@run_name = name
+	from
+		funds
+end
 
 select
 	@run_id = a.run_id

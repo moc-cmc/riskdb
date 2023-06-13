@@ -1,0 +1,19 @@
+
+create or replace procedure
+	ag_tradedateprices
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+
+exec
+	api_eodprices
+		@login = @login,
+		@source = "GP CONVERSIONS",
+		@trade_date = @trade_date
+
+
+
+go 
+
