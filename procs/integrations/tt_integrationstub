@@ -1,0 +1,15 @@
+
+drop procedure
+	tt_integrationstub
+go
+
+create procedure
+	tt_integrationstub
+		@login varchar(50)
+as
+
+		
+select
+	status = "Success"
+
+go
