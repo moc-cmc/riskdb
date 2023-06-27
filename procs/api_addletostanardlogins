@@ -1,9 +1,10 @@
+
 create or replace procedure
 	api_addletostanardlogins
 		@login varchar(50),
 		@legal_entity varchar(150)
-
 as
+
 
 
 
@@ -146,8 +147,6 @@ and
 	b.login_type_id = c.login_type_id
 and
 	c.name = "Standard"
-and
-	a.login not in("jmaranis.sjm", "jwyman.sjmdemo")
 
 insert into
         #users
@@ -269,4 +268,6 @@ from
 
 	
 
-go
+
+go 
+
