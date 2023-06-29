@@ -846,7 +846,11 @@ begin
 		select
 			@cover_price_far = 1/@cover_price_far
 	end
+
+        select
+                @price = 1/@price
 end
+
 /* --------------------------------------------------------------------------
  * STEP: Adjust the perspective of the trade and set the quantity
  *
