@@ -1196,11 +1196,11 @@ begin
 
 	declare @c_near_trade_id int
 	declare @c_far_trade_id int
-	declare @c_far_qty int
+	declare @c_far_qty numeric(30,2) 
 
 	declare @m_near_trade_id int
 	declare @m_far_trade_id int
-	declare @m_far_qty int
+	declare @m_far_qty numeric(30,2) 
 
 	select
 		@c_quantity = @c_quantity * -1
