@@ -1,0 +1,692 @@
+
+create or replace procedure
+	tt_tallydeltix
+		@login varchar(50),
+		@account varchar(100)=NULL,
+		@execution_id varchar(100) = NULL,
+		@corr_client_order_id varchar(100) = NULL,
+		@executing_broker varchar(50),
+		@trade_date datetime,
+		@symbol varchar(50) = NULL,
+		@side varchar(10),
+		@last_price varchar(50) = NULL,
+		@last_qty varchar(50) = NULL,
+		@order_status varchar(50) = NULL,
+		@exec_type varchar(51) = NULL,
+		@exec_text varchar(100) = NULL,
+		@user_data varchar(100) = NULL,
+		@commission float= NULL,
+		@commission_type varchar(50)=NULL,
+		@commission_ccy varchar(50)=NULL,
+		@aggressor_indicator varchar(5)=NULL,
+		@deal_id int output,
+		@trade_id int output
+as
+
+
+
+
+
+
+declare @tico_account_id int
+declare @source_id int
+declare @trade_identifier varchar(100)
+declare @deal_identifier varchar(100)
+declare @tally_type_id int
+declare @eb_id int
+declare @value_date datetime
+declare @deals int
+declare @deal_type_id int
+declare @status_id int
+declare @trade_type_id int
+declare @sales_code_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @counterparty_id int
+declare @contract_id int
+declare @fixing_date datetime
+declare @trader_id int
+declare @pos int
+declare @strategy varchar(100)
+declare @strategy_id int
+declare @broker_id int
+declare @price float
+declare @quantity numeric(30,10)
+declare @account_transaction_id int
+declare @transaction_type_id int
+declare @currency_id int
+
+if @last_price is NULL or @last_qty is NULL 
+begin
+
+	if @last_price is not NULL
+	begin
+		select msg = "@last_qty is not NULL and @last_priceis NULL"
+	end
+
+	if @last_qty is not NULL
+	begin
+		select msg = "@last_price is not NULL and @last_qty is NULL"
+	end
+
+	if @exec_type = "TRADE"
+	begin
+		select msg = "@exec_type is a 'TRADE' but doesn't have both @last_price and @last_qty"
+	end
+
+	select msg = "Not a trade"
+
+	return
+
+end
+
+/*
+if @order_status != "FILLED" and @order_status != 'PARTIALLY_FILLED' 
+begin
+	select msg = "Not a trade"
+	return
+end
+*/
+
+select
+	@price = convert(float, @last_price),
+	@quantity = convert(numeric(30,10), @last_qty)
+
+
+/* select @trade_date = dateadd(day, 1, @trade_date) /* MARKR */ */
+
+if lower(left(@side, 1)) = "s"
+	select
+		@quantity = @quantity * -1.0
+
+if @login = NULL
+begin
+	select
+		@login = "system@geneva"
+end
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@trade_identifier = rtrim(@corr_client_order_id) + " - " + rtrim(@execution_id),
+	@deal_identifier = rtrim(@corr_client_order_id)
+
+select
+	@sales_code_id = sales_code_id
+from
+	sales_codes
+where
+	name = "None"
+if @sales_code_id = NULL
+begin
+	select
+		status = "Error",
+		message = "None sales code not found"
+	return
+end
+
+select
+	@trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = "Spot"
+if @trade_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Spot trade type not found"
+	return
+end
+
+
+select
+	@status_id = status_id
+from
+	statuses
+where
+	name = "New"
+if @status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "New status not found"
+	return
+end
+
+select
+	@deal_type_id = deal_type_id
+from
+	deal_types
+where
+	name = "Market Forward"
+if @deal_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Market Forward deal type not found"
+	return
+ 
+end
+
+select
+	@broker_id = broker_id
+from
+	brokers
+where
+	symbol = "Deltix"
+if @broker_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Deltix broker not found"
+	return
+end
+
+
+select
+	@trade_id = trade_id
+from
+	trades
+where
+	broker_id = @broker_id
+and
+	identifier = @trade_identifier
+if @trade_id != NULL
+begin
+	select
+		status = "Dupe",
+		message = "Trade already tallied",
+		symbol = @symbol,
+		price = @last_price,
+		identifier = @trade_identifier
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "Deltix"
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Deltix source not found"
+	return
+end
+
+select
+	@counterparty_id = counterparty_id
+from
+	counterparty_symbols
+where
+	source_id = @source_id
+and
+	symbol =@executing_broker
+if @counterparty_id = NULL
+begin
+	select
+		@counterparty_id = counterparty_id
+	from
+		counterparties
+	where
+		name = @executing_broker
+	if @counterparty_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Counterparty not found",
+			counterparty = @executing_broker
+		return
+	end
+end
+
+
+select
+	@external_account_id = external_account_id
+from
+	counterparties
+where
+	counterparty_id = @counterparty_id
+
+
+select
+	@eb_id = a.eb_id
+from
+	eb_symbols a,
+	ebs b
+where
+	a.eb_id = b.eb_id
+and
+	a.source_id = @source_id
+and
+	a.symbol = @executing_broker
+if @eb_id = NULL
+begin
+	select
+		@eb_id = eb_id
+	from
+		ebs
+	where
+		name = @executing_broker
+	if @eb_id = NULL
+	begin
+		exec
+			j_nextkey
+				"ebs",
+				@eb_id output
+
+		insert into
+			ebs(
+				eb_id,
+				name)
+		values(
+			@eb_id,
+			@executing_broker)
+	end
+end
+
+
+
+select
+	@deal_id = deal_id
+from
+	deal_aliases
+where
+	alias = @deal_identifier
+and
+	source_id = @source_id
+
+select
+	@tally_type_id = tally_type_id
+from
+	tally_types
+where
+	name = "Spot"
+if @tally_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Spot tally type not found"
+	return
+end
+
+
+select
+	@contract_id = contract_id
+from
+	contract_symbols
+where
+	source_id = @source_id
+and
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		@contract_id = contract_id
+	from
+		contracts
+	where
+		symbol = @symbol
+	if @contract_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Contract not found",
+			symbol = @symbol
+		return
+	end
+end
+
+
+select
+	@internal_account_id = internal_account_id,
+	@trader_id = trader_id
+from
+	default_tally_accounts
+where
+	tico_account_id = @tico_account_id
+and
+	tally_type_id = @tally_type_id
+
+
+if @internal_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "No tally defaults found for login"
+	return
+end
+
+/* 
+ * Parse the strategy from @corr_client_order_id, 
+ * Parse: CorrelationClOrdD(9717), e.g. "TRIARB:1673549340342709", which
+ * has the format: "<STRATEGY>:<unix-epoch-nanoseconds>"
+ */
+if @corr_client_order_id != NULL
+begin
+	select
+		@pos = charindex(':', @corr_client_order_id)
+
+	if @pos > 0
+		select
+			@strategy = substring(@corr_client_order_id, 1, @pos - 1)
+	
+	select 
+		@strategy_id = a.strategy_id
+	from
+		strategies a,
+		strategy_symbols b
+	where
+		a.strategy_id = b.strategy_id
+	and
+		b.source_id = @source_id
+	and
+		b.symbol = @strategy
+	
+	if @strategy_id = NULL
+	begin
+		select
+			@strategy_id = strategy_id
+		from
+			strategies
+		where
+			name = @strategy
+	end
+end
+else
+begin
+	select
+		status = "Error",
+		message = "Strategy needsto be provided via the corr_client_order_id",
+		corr_client_order_id = @corr_client_order_id
+	return
+end
+
+if @strategy_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Strategy not created or mapped",
+		strategy = @strategy,
+		source_id = @source_id
+	return
+end
+
+
+
+select
+	@value_date = convert(datetime, convert(date, @trade_date))
+
+if datepart(hour, @trade_date) >= 17
+	select
+		@value_date = dateadd(day, 1, @value_date)
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Execution Fee"
+if @transaction_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"transaction_types",
+			@transaction_type_id output
+
+	insert into
+		transaction_types(
+			transaction_type_id,
+			name,
+			direction)
+	values(
+		@transaction_type_id,
+		"Execution fee",
+		1)
+end
+
+
+if @deal_id = NULL
+begin
+	select
+		@deals = 0
+	exec
+		j_nextkey
+			"deals",
+			@deal_id output
+end
+
+exec
+	j_nextkey
+		"trades",
+		@trade_id output
+
+if @commission != NULL
+begin
+	exec
+		j_nextkey
+			"account_transactions",
+			@account_transaction_id output
+
+	if lower(@aggressor_indicator) = "y"
+		select
+			@commission = abs(@commission) * -1.0
+	if lower(@aggressor_indicator) = "n"
+		select
+			@commission = abs(@commission)
+			
+	select
+		@currency_id = currency_id
+	from
+		forwards
+	where
+		contract_id = @contract_id
+	if @currency_id = NULL
+	begin
+		select
+			@currency_id = product_id
+		from
+			products
+		where
+			symbol = @commission_ccy
+		if @currency_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "Unable to determine contract currency for commission",
+				symbol = @symbol
+			return
+		end
+	end
+end
+
+begin tran
+	if @deals = 0
+	begin
+		insert into
+			deals(
+				deal_id,
+				deal_type_id,
+				timestamp,
+				status_id)
+		values(
+			@deal_id,
+			@deal_type_id,
+			getdate(),
+			@status_id)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to tally deal",
+				symbol = @symbol,
+				price = @last_price,
+				identifier = @deal_identifier
+			rollback tran
+			return
+		end
+		
+		insert into
+			deal_aliases(
+				deal_id,
+				source_id,
+				alias)
+		values(
+			@deal_id,
+			@source_id,
+			@deal_identifier)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to add deal alias",
+				symbol = @symbol,
+				price = @last_price,
+				deal_identifier = @deal_identifier
+			rollback tran
+			return
+		end
+	end
+
+	insert into
+		trades(
+			trade_id,
+			deal_id,
+			user_id,
+			trade_type_id,
+			internal_account_id,
+			external_account_id,
+			counterparty_id,
+			quantity,
+			contract_id,
+			value_date,
+			fixing_date,
+			price,
+			trade_date,
+			trader_id,
+			strategy_id,
+			status_id,
+			broker_id,
+			sales_code_id,
+			identifier,
+			eb_id)
+	values(
+		@trade_id,
+		@deal_id,
+		@tico_account_id,
+		@trade_type_id,
+		@internal_account_id,
+		@external_account_id,
+		@counterparty_id,
+		@quantity,
+		@contract_id,
+		@value_date,
+		@fixing_date,
+		@price,
+		@trade_date,
+		@trader_id,
+		@strategy_id,
+		@status_id,
+		@broker_id,
+		@sales_code_id,
+		@trade_identifier,
+		@eb_id)
+	if @@rowcount = 0
+	begin
+		select
+			status = "Error",
+			message = "Unable to tally trade",
+			symbol = @symbol,
+			price = @last_price,
+			trade_identifier = @trade_identifier
+		rollback tran
+		return
+	end
+
+	if @commission != NULL
+	begin
+		insert into
+			account_transactions(
+				account_transaction_id,
+				entered_by,
+				external_account_id,
+				transaction_type_id,
+				transaction_date,
+				currency_id,
+				amount,
+				deal_id)
+		values(
+			@account_transaction_id,
+			@tico_account_id,
+			@external_account_id,
+			@transaction_type_id,
+			@trade_date,
+			@currency_id,
+			@commission,
+			@deal_id)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to add commission. Trade not tallied",
+				symbol = @symbol,
+				price = @price,
+				trade_identifier = @trade_identifier
+			rollback tran
+			return
+		end
+
+		insert into
+			account_transaction_trades(
+				account_transaction_id,
+				trade_id,
+				conversion_rate)
+		values(
+			@account_transaction_id,
+			@trade_id,
+			1.0)
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to add fee trade link",
+				symbol = @symbol,
+				price = @price,
+				trade_identifier = @trade_identifier
+			rollback tran
+			return
+		end
+	end
+
+commit tran
+
+exec
+	r_inserttradenotification
+		@trade_id = @trade_id
+
+
+select
+	status = "Tallied",
+	trade_id = @trade_id,
+	deal_id = @deal_id,
+	identifier = @trade_identifier
+
+
+
+go 
+
