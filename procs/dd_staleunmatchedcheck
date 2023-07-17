@@ -63,9 +63,9 @@ select
 select
     @unmatched_deals = convert(varchar(10), count(*))
 from
-    trades
+    deal_matches
 where
-    matched_deal_id = NULL
+    match_status_id = @unmatched_status_id
 and
     entry_date > @begin_date
 and
@@ -81,13 +81,18 @@ select
     @unmatched_trades = convert(varchar(10), count(*))
 from
     trade_matches a,
-    trades b
+    deal_matches b,
+    trades c
 where
-    a.trade_id = b.trade_id
+    a.trade_id = c.trade_id
 and
-    b.trade_date > @begin_date
+    c.trade_date > @begin_date
 and
-    b.matched_deal_id != NULL
+    b.entry_date > @begin_date
+and
+    (c.deal_id = b.long_deal_id or c.deal_id = b.short_deal_id)
+and
+    b.match_status_id = @matched_status_id
 and
     a.match_status_id = @unmatched_status_id
 
