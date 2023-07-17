@@ -67,7 +67,7 @@ from
 where
     matched_deal_id = NULL
 and
-    entry_date > @begin_date
+    trade_date > @begin_date
 and
     datediff(ss, entry_date, getdate()) > @threshold_seconds
 
