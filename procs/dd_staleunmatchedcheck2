@@ -69,7 +69,7 @@ where
 and
     trade_date > @begin_date
 and
-    datediff(ss, entry_date, getdate()) > @threshold_seconds
+    datediff(ss, trade_date, getdate()) > @threshold_seconds
 
 exec
     sp_dogstatsdguage
