@@ -1,130 +1,122 @@
 create or replace procedure
-	dd_staleunmatchedcheck
+    dd_staleunmatchedcheck
 as
 
-
 declare @start_time datetime
+declare @now datetime
+
 select
-	@start_time=getdate()
+    @start_time = getdate(),
+    @now = getdate()
 
 declare @end_time datetime
-declare @now datetime
 declare @begin_date datetime
 declare @end_date datetime
 declare @tags varchar(100)
-
-
 declare @threshold_seconds int
 declare @unmatched_trades varchar(10)
 declare @unmatched_deals varchar(10)
 declare @matched_status_id int
 declare @unmatched_status_id int
 
-select
-	@now = getdate()
-
 exec
-	r_daterangefordate
-		@now,
-		@begin_date output,
-		@end_date output
+    r_daterangefordate
+        @now,
+        @begin_date output,
+        @end_date output
 
 select
-	@matched_status_id = match_status_id
+    @matched_status_id = match_status_id
 from
-	match_statuses
+    match_statuses
 where
-	name = "Matched"
+    name = "Matched"
 
 if @@rowcount != 1
 begin
-	select
-		status="error",
-		message="Matched status missing"
+    select
+        status="error",
+        message="Matched status missing"
 
-	return
+    return
 end
 
 select
-	@unmatched_status_id = match_status_id
+    @unmatched_status_id = match_status_id
 from
-	match_statuses
+    match_statuses
 where
-	name = "Unmatched"
+    name = "Unmatched"
 
 if @@rowcount != 1
 begin
-	select
-		status="error",
-		message="Mismatched status missing"
+    select
+        status="error",
+        message="Mismatched status missing"
 
-	return
+    return
 end
 
 select
-	@threshold_seconds = 480
+    @threshold_seconds = 480
 
 select
-	@unmatched_deals = convert(varchar(10), count(*))
+    @unmatched_deals = convert(varchar(10), count(*))
 from
-	deal_matches
+    deal_matches
 where
-	match_status_id = @unmatched_status_id
+    match_status_id = @unmatched_status_id
 and
-	entry_date > @begin_date
+    entry_date > @begin_date
 and
-	datediff(ss, entry_date, getdate()) > @threshold_seconds
-
+    datediff(ss, entry_date, getdate()) > @threshold_seconds
 
 exec
-	sp_dogstatsdguage
-		@metric_name = "mxhub.dl.unmatched.stale",
-		@value = @unmatched_deals,
-		@tags = @tags
+    sp_dogstatsdguage
+        @metric_name = "mxhub.dl.unmatched.stale",
+        @value = @unmatched_deals,
+        @tags = @tags
 
 select
-	@unmatched_trades = convert(varchar(10), count(*))
+    @unmatched_trades = convert(varchar(10), count(*))
 from
-	trade_matches a,
-	deal_matches b,
-	trades c
+    trade_matches a,
+    deal_matches b,
+    trades c
 where
-	a.trade_id = c.trade_id
+    a.trade_id = c.trade_id
 and
-	c.trade_date > @begin_date
+    c.trade_date > @begin_date
 and
-	b.entry_date > @begin_date
+    b.entry_date > @begin_date
 and
-	(c.deal_id = b.long_deal_id or c.deal_id = b.short_deal_id)
+    (c.deal_id = b.long_deal_id or c.deal_id = b.short_deal_id)
 and
-	b.match_status_id = @matched_status_id
+    b.match_status_id = @matched_status_id
 and
-	a.match_status_id = @unmatched_status_id
+    a.match_status_id = @unmatched_status_id
 
 exec
-        sp_dogstatsdguage
-                @metric_name = "mxhub.tr.unmatched.stale",
-                @value = @unmatched_trades,
-                @tags = @tags
-
+    sp_dogstatsdguage
+        @metric_name = "mxhub.tr.unmatched.stale",
+        @value = @unmatched_trades,
+        @tags = @tags
 
 select
-	@end_time = getdate()
+    @end_time = getdate()
 
 exec
-	sp_dogstatsdtimer
-		@metric_name="ase.proc.dd_staleunmatchedcheck",
-		@start_time=@start_time,
-		@end_time=@end_time,
-		@tags="",
- 		@sample_rate="1.0"
+    sp_dogstatsdtimer
+        @metric_name="ase.proc.dd_staleunmatchedcheck",
+        @start_time=@start_time,
+        @end_time=@end_time,
+        @tags="",
+        @sample_rate="1.0"
 
 select
-	status = "OK",
-	message = "Outbound matchhub unmatched check complete",
-	ms=convert(varchar(20), datediff(ms, @start_time, @end_time))
-
-
+    status = "OK",
+    message = "Outbound matchhub unmatched check complete",
+    ms = convert(varchar(20), datediff(ms, @start_time, @end_time))
 
 go
 
