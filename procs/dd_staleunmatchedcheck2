@@ -6,7 +6,7 @@ declare @start_time datetime
 declare @now datetime
 
 select
-    @start_time=getdate(),
+    @start_time = getdate(),
     @now = getdate()
 
 declare @end_time datetime
