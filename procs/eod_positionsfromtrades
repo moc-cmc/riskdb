@@ -6,13 +6,13 @@ create or replace  procedure
 		@trade_date datetime=NULL,
 		@mark_to_market char(1)=NULL,
 		@include_futures char(1)=NULL,
-		@section_output varchar(100)=NULL
+		@section_output varchar(100)=NULL,
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL
 		
 as
 
 declare @source_id int
-declare @begin_date datetime
-declare @end_date datetime
 declare @run_id int
 declare @fund_id int
 declare @evaluation_currency_id int
@@ -206,12 +206,24 @@ end
 select
 	@trade_date = convert(date, @trade_date)
 
-exec
-	r_daterangefordate 
-		@trade_date,
-		@begin_date output,
-		@end_date output
+if @begin_date = NULL or @end_date = NULL
+begin
+        select
+                id = -1,
+                error = "Both begin_date and end_date must be provided as a pair.",
+                begin_date = @begin_date,
+                end_date = @end_date
+        return
+end
 
+if @begin_date = NULL and @end_date = NULL
+begin
+	exec
+		r_daterangefordate 
+			@trade_date,
+			@begin_date output,
+			@end_date output
+end
 
 create table
 	#trades(
