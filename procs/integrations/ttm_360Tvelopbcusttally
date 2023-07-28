@@ -220,6 +220,7 @@ declare @c_tally_status varchar(10)
 declare @c_tally_message varchar(25)
 declare @c_far_tally_status varchar(10)
 declare @c_far_tally_message varchar(25)
+declare @symbol_provided_as_inverted char(1)
 
 declare @c_trigger_symbol varchar(50)
 
@@ -831,10 +832,22 @@ exec
 		@contract = @contract output,
 		@inverted = @inverted output
 
-/* the cover price that we are looking up is pulled from the trades table which will have an inverted price
- * so we need to flip
- */
-if @inverted = "Y"
+select
+        @symbol_provided_as_inverted = "Y"
+from
+        contracts a,
+        contract_price_styles b,
+        price_styles c
+where
+        a.contract_id = b.contract_id
+and
+        b.price_style_id = c.price_style_id
+and
+        a.symbol = @symbol
+and
+        c.name = "Inverted"
+
+if @symbol_provided_as_inverted = "Y"
 begin
 	if @cover_price not in(NULL, 0)
 	begin
@@ -849,6 +862,12 @@ begin
 
         select
                 @price = 1/@price
+
+	if @far_price != NULL
+        begin
+                select
+                        @far_price = 1/@far_price
+        end
 end
 
 /* --------------------------------------------------------------------------
@@ -862,24 +881,53 @@ end
 
 if @side = "BUY"
 begin
-	select
+	
+	if @ccy1 = substring(@symbol, 1, 3)
+        begin
+             select
+                 @c_quantity = @qty *-1,
+                 @m_quantity = @qty 
+        end
+	else
+	begin
+		select
+			@c_quantity = @qty,
+                        @m_quantity = @qty *-1
+	end
+	
+	/* select
 		@c_quantity = @qty *-1,
-		@m_quantity = @qty
+		@m_quantity = @qty */
 end
 else
 begin
-	select
+	
+	if @ccy1 = substring(@symbol, 1, 3)
+        begin
+	     select
+                 @c_quantity = @qty,
+                 @m_quantity = @qty *-1
+        end
+        else
+        begin
+             select
+                 @c_quantity = @qty *-1,
+                 @m_quantity = @qty
+        end
+
+	/* select
                 @c_quantity = @qty,
-                @m_quantity = @qty  * -1
+                @m_quantity = @qty  * -1 */
 end
 
-/* 360T send us inverted tickets with the BUY/SELL on the standard pair. We need to flip direciton on inverted tickets */
+/* 360T send us inverted tickets with the BUY/SELL on the standard pair. We need to flip direciton on inverted tickets 
 if @inverted = "Y"
 begin
 	select
 		@c_quantity = @c_quantity * -1,
 		@m_quantity = @m_quantity * -1
 end
+*/
 
 /*
 if @client_or_market = "C"
