@@ -1,16 +1,13 @@
-drop procedure
-	cl_verticaltradeconfirm
-go
 
-create procedure
+create or replace procedure
 	cl_verticaltradeconfirm
 		@login varchar(30),
-                @run_name varchar(50),
-                @begin_date datetime=NULL,
-                @end_date datetime=NULL,
-                @trade_id int=NULL
-		
+		@run_name varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL,
+		@trade_id int=NULL
 as
+
 
 
 declare @cancelled_count int
@@ -376,6 +373,20 @@ from
 where
         name = "Cancelled"
 
+create table
+	#trade_types(
+		trade_type_id int,	
+		name varchar(15))
+
+insert into
+	#trade_types
+select
+	trade_type_id,
+	name
+from
+	trade_types
+where
+	name in("Spot", "Forward", "Option")
 
 /*
 | Insert into #trade_notifications anything with status_id "Active", "Edit", "Cancelled"
@@ -466,7 +477,8 @@ begin
 		#traders d,
 		#strategies e,
 		#brokers f,
-        	#trade_notifications h
+        	#trade_notifications h,
+		#trade_types i
 	where
 		a.external_account_id = b.external_account_id
 	and
@@ -483,6 +495,8 @@ begin
 		a.trade_date >= @begin_date
 	and
 		a.trade_date < @end_date
+	and
+		a.trade_type_id = i.trade_type_id
 end
 else   /* Identical to above query with @trade_id qualifier*/
 begin
@@ -552,7 +566,8 @@ begin
 		#traders d,
 		#strategies e,
 		#brokers f,
-        	#trade_notifications h
+        	#trade_notifications h,
+		#trade_types i
 	where
 		a.external_account_id = b.external_account_id
 	and
@@ -567,6 +582,8 @@ begin
 		a.trade_id = h.trade_id
 	and
 		a.trade_id = @trade_id
+	and
+		a.trade_type_id = i.trade_type_id
 end
 
 
@@ -2150,4 +2167,6 @@ order by
         trade_id
 
 */
-go
+
+go 
+
