@@ -25,6 +25,7 @@ declare @trade_id_int int
 declare @leg char(3)
 declare @swap_symbol_id int
 declare @other_leg_id int
+declare  @trade_bookings  char(1)
 
 
 if @trade_id like "%.f"
@@ -94,6 +95,8 @@ from
 where
         trade_id = @trade_id_int
 
+
+
 /* Trade bookings support marking pb client flow in the risk db
  * when only one side of the trade is sent to the match hub
  *
@@ -105,12 +108,19 @@ where
  * target_account_id as well.
  */
 select
+	@trade_bookings = "Y"
+from
+	enabled_product_features
+where
+	name = "Trade Bookings"
+
+select
         @booking_id = booking_id
 from
         trade_bookings
 where
         trade_id = @trade_id_int
-if @booking_id = NULL and @target_account_id = NULL
+if @booking_id = NULL and @target_account_id = NULL and  @trade_bookings = "Y"
 begin
 	select
 		status = "Error",
@@ -119,7 +129,7 @@ begin
 	return
 end	
 
-if @booking_id != NULL
+if @booking_id != NULL and  @trade_bookings = "Y"
 begin
 	select
         	@client_trade_id = trade_id
