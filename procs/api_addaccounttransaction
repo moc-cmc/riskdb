@@ -1,0 +1,213 @@
+
+create or replace procedure
+	api_addaccounttransaction
+		@login varchar(50),
+		@account varchar(100),
+		@transaction_type varchar(100),
+		@amount float,
+                @product varchar(50), 
+		@date datetime=NULL,
+		@note varchar(255)=NULL,
+		@identifier varchar(100)=NULL,
+		@source varchar(100)=NULL,
+		@account_transaction_id int=NULL output
+
+as
+
+declare @account_id int
+declare @account_transaction_type_id int
+declare @external_account_id int
+declare @currency_id int
+declare @fund_id int
+declare @source_id int
+
+
+if @date = NULL
+begin
+	select
+		@date = getdate()
+end
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+if @source != NULL
+begin
+	select
+		@source_id = source_id
+	from
+		sources
+	where
+		name = @source
+	if @source_id = NULL
+	begin
+		select
+			id = -1,
+			error = "Could not find source provided",
+			source = @source
+		return
+	end
+end
+		
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @product
+
+if @currency_id = NULL
+begin
+	select
+		id = -1,
+		error = "Could not find currency provided",
+		product = @product
+	return
+end
+	
+select
+	@account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem determining current user"
+	return
+end
+
+
+select
+	@account_transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = @transaction_type
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Could not find the account transaction transaction_type",
+		transaction_type = @transaction_type
+	return
+end
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding account",
+		account = @account
+	return
+end
+
+select
+        @account_transaction_id = account_transaction_id
+from
+        account_transaction_identifiers
+where
+        source_id = @source_id
+and
+        identifier = @identifier
+if @account_transaction_id != NULL
+begin
+        select
+                status = "Dupe",
+                message = "Transaction already tallied",
+                account_transaction_id = @account_transaction_id,
+                source = @source,
+                identifer = @identifier
+        return
+end
+
+exec
+	j_nextkey
+		"account_transactions",
+		@account_transaction_id output
+if @account_transaction_id = NULL
+begin
+	select
+		id = -1,
+		error = "Unable to allocate ID for transaction",
+		transaction_id = @account_transaction_id
+	return
+end
+
+begin tran
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note
+	)
+	values(
+		@account_transaction_id,
+		@account_id,
+		@external_account_id,
+		@account_transaction_type_id,
+		@date,
+		@currency_id,
+		@amount,
+		@note)
+	if @@rowcount != 1
+	begin
+		select
+			id = -1,
+			error = "Problem adding transaction",
+			account = @account,
+			transaction_type = @transaction_type,
+			date = @date,
+			amount = @amount
+		rollback tran
+		return
+	end
+	if @source_id != NULL and @identifier != NULL
+	begin
+		insert into
+			account_transaction_identifiers(
+				account_transaction_id, 
+				source_id,
+				identifier)
+		values(
+			@account_transaction_id,
+			@source_id,
+			@identifier)
+		if @@rowcount != 1
+		begin
+                select
+                        	id = -1,
+				error = "Problem adding transaction identifier",
+                        	source_id = @source_id,
+				identifier = @identifier,
+				account_transaction_id = @account_transaction_id
+                	rollback tran
+                	return
+		end
+	end
+commit tran
+
+select
+	id = 0, 
+	msg = "Successfully added transaction",
+	account = @account,
+	date = @date,
+	transaction_type = @transaction_type,
+	amount = @amount
+
+go
