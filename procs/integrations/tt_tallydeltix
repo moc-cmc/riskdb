@@ -255,7 +255,8 @@ where
 and
 	a.source_id = @source_id
 and
-	a.symbol = @executing_broker
+	/* a.symbol = @executing_broker */
+	a.symbol = @exec_destination
 if @eb_id = NULL
 begin
 	select
@@ -263,7 +264,8 @@ begin
 	from
 		ebs
 	where
-		name = @executing_broker
+		/* name = @executing_broker */
+		name = @exec_destination
 	if @eb_id = NULL
 	begin
 		exec
@@ -277,7 +279,8 @@ begin
 				name)
 		values(
 			@eb_id,
-			@executing_broker)
+			/* @executing_broker */
+			@exec_destination)
 	end
 end
 
