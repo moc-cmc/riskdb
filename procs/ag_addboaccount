@@ -4,6 +4,7 @@ create or replace procedure
 		@legal_entity varchar(50),
 		@symbol varchar(50),
 		@name varchar(150)=NULL,
+		@account_type varchar(50),
 		@prime_broker varchar(50),
 		@evaluation_ccy varchar(10)=NULL
 
@@ -11,12 +12,7 @@ create or replace procedure
 
 as
 
-declare @account_type varchar(50)
 declare @external_account_id int
-
-select
-	@account_type = "Client"
-
 
 select
 	@external_account_id = external_account_id
