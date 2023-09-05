@@ -6,9 +6,11 @@ create procedure
 	r_editextaccount
 		@login varchar(50),
 		@external_account varchar(50),
-		@aggregation_style varchar(50),
+		@account_name varchar(50),
+		/*@aggregation_style varchar(50),*/
 		@new_symbol varchar(50)=NULL,
-		@new_aggregation_style varchar(50)=NULL
+		@new_name varchar(50)=NULL
+		/*@new_aggregation_style varchar(50)=NULL*/
 
 as
 
@@ -23,52 +25,112 @@ from
 where
 	symbol = @external_account
 
+if @new_symbol = NULL 
+begin
+	select
+		@new_symbol = @external_account
+end
+
+if @new_name = NULL
+begin
+	select
+		@new_name = @account_name
+end
+
 if @new_symbol != NULL
 begin
+	if @new_name != NULL
+	begin
+		select
+			@account_name = @new_name
+	end
 	
-	update 
-		external_accounts 
-	set
-		symbol = @new_symbol,
-		name = @new_symbol
-	where
-		name = @external_account
-	
-	update
-		traders
-	set
-		symbol = @new_symbol
-	where
-		symbol = @external_account
-	
-	update
-		internal_accounts
-	set	
-		symbol = @new_symbol,
-        	name = @new_symbol
-	where
-        	name = @external_account
-	
-	update
-		runs
-	set
-		name = @new_symbol
-	where
-		name = @external_account
-	
-	update
-		portfolios
-	set
-		name = @new_symbol
-	where
-		name = @external_account
-	
+	begin tran
+		update 
+			external_accounts 
+		set
+			symbol = @new_symbol,
+			name = @account_name
+		where
+			symbol = @external_account
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem finding account"
+			rollback tran
+			return
+		end
+		
+		update
+			traders
+		set
+			symbol = @new_symbol
+		where
+			symbol = @external_account
+		if @@rowcount > 1
+		begin
+			select
+				status = "Error",
+				message = "More than one trader found"
+			rollback tran
+			return
+		end
+		
+		update
+			internal_accounts
+		set	
+			symbol = @new_symbol,
+        		name = @new_symbol
+		where
+        		name = @external_account
+		if @@rowcount > 1
+		begin
+			select
+				status = "Error",
+				message = "More than one internal account found"
+			rollback tran
+			return
+		end
+		
+		update
+			runs
+		set
+			name = @new_symbol
+		where
+			name = @external_account
+		if @@rowcount > 1
+		begin
+			select
+				status = "Error",
+				message = "More than one run found with name"
+			rollback tran
+			return
+		end
+		
+		update
+			portfolios
+		set
+			name = @new_symbol
+		where
+			name = @external_account
+		if @@rowcount > 1
+		begin
+			select
+				status = "Error",
+				message = "More than one portfolio found with name"
+			rollback tran
+			return
+		end
+	commit tran
 
 	select
 		msg = "Successfully edited " + @external_account + " to " + @new_symbol
-
 end
 
+
+
+/* Aggregation styles are considered for deprecation at this point to removing 
 if @new_aggregation_style != NULL
 begin
 
@@ -90,6 +152,7 @@ begin
 	select
                 msg = "Successfully edited " + @aggregation_style + " to " + @new_aggregation_style
 end
+*/
 
 	
 
