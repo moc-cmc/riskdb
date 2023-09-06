@@ -1,0 +1,112 @@
+drop procedure
+	ag_pointfactors
+go
+
+create procedure
+	ag_pointfactors
+		@login varchar(50)
+as
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"clearing_entity",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_factor",
+	"Edit Point Factor",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_factor",
+	"Edit Point Factor",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "forward_price",
+        "Number",
+        "#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv",
+	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+
+select
+	style = @style,
+	add_factor = "Add Point Factor"
+
+select
+	style = @style,
+	a.symbol,
+	b.point_factor,
+	edit_factor = "Edit Point Factor"
+from
+	contracts a,
+	point_factors b
+where
+	a.contract_id = b.contract_id
+order by
+	a.symbol
+
+
+go

@@ -1,0 +1,90 @@
+drop procedure
+	ag_tallyprbs
+go
+
+create procedure
+	ag_tallyprbs
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @id int 
+declare @ids int
+declare @prb_id int
+declare @deal_id int
+
+create table
+	#prbs(
+		id int identity,
+		prb_id int)
+insert into
+	#prbs(
+		prb_id)
+select
+	a.prb_id
+from
+	proposed_roll_batches a,
+	batch_transactions b
+where
+	a.batch_transaction_id = b.batch_transaction_id
+and
+	a.risk_book_deal_id = NULL
+and
+	a.closing_price != NULL
+and
+	a.roll_price != NULL
+and
+	b.confirmation_date != NULL
+and
+	b.trade_date = @trade_date
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#prbs
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#prbs
+	where
+		id > @id
+
+	select
+		@prb_id = NULL,
+		@deal_id = NULL
+
+	select
+		@prb_id = prb_id
+	from
+		#prbs
+	where
+		id = @id
+
+	exec
+		api_tallyprbspreadroll
+			@login = @login,
+			@prb_id = @prb_id,
+			@deal_id = @deal_id output
+
+	select
+		@ids = count(*)
+	from
+		#prbs
+	where
+		id > @id
+end
+
+exec
+	ag_clientrollsdash
+		@login = @login,
+		@trade_date = @trade_date
+
+go

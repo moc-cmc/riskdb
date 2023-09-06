@@ -1,0 +1,52 @@
+drop procedure
+	ag_editpointfactor
+go
+
+create procedure
+	ag_editpointfactor
+		@login varchar(50),
+		@symbol varchar(50),
+		@point_factor numeric(30,8)
+as
+
+
+declare @contract_id int
+
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+update
+	point_factors
+set
+	point_factor = @point_factor
+where
+	contract_id = @contract_id
+if @@rowcount = 0
+begin
+	insert into
+		point_factors(
+			contract_id,
+			point_factor)
+	values(
+		@contract_id,
+		@point_factor)
+end
+
+exec
+	ag_pointfactors
+		@login = @login
+
+go
