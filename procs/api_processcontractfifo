@@ -1,0 +1,250 @@
+drop procedure
+	api_processcontractfifo
+go
+
+create procedure
+	api_processcontractfifo
+		@login varchar(50),
+		@external_account varchar(50),
+		@trade_date datetime,
+		@symbol varchar(50),
+		@value_date datetime
+as
+
+declare @tico_account_id int
+declare @trade_id int
+declare @quantity numeric(30,4)
+declare @continue varchar(2) 
+declare @remainder numeric(30,4)
+declare @contract_id int
+declare @external_account_id int
+
+declare @id int
+declare @ids int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @external_account
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+select
+	@trade_date = dateadd(hour, 17, @trade_date)
+
+create table
+	#trades(
+		id int identity,
+		trade_id int,
+		trade_type_id int,
+		trade_date datetime NULL)
+insert into
+	#trades(
+		trade_id,
+		trade_type_id,
+		trade_date )
+select
+	trade_id,
+	trade_type_id,
+	trade_date
+from
+	trades
+where
+	contract_id = @contract_id
+and
+	external_account_id = @external_account_id
+and
+	convert(date, value_date) = convert(date, @value_date)
+order by
+	trade_date,
+	trade_id
+
+delete
+
+from
+	round_turns
+where
+	convert(date, trade_date) = convert(date, @trade_date)
+and
+	contract_id = @contract_id
+and
+	external_account_id = @external_account_id
+
+delete
+
+from
+	open_trades
+where
+	convert(date, trade_date) = convert(date, @trade_date)
+and
+	contract_id = @contract_id
+and
+	external_account_id = @external_account_id
+
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#trades
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#trades
+	where
+		id > @id
+
+	select
+		@trade_id = trade_id
+	from
+		#trades
+	where
+		id = @id
+
+	select
+		@quantity = quantity
+	from
+		trades
+	where
+		trade_id = @trade_id
+
+	select
+		@continue = "Y"
+
+	while @continue != "N"
+	begin
+		select
+			@remainder = NULL
+		exec
+	        	ag_processfifotrade
+                		@login,
+				@trade_date,
+                		@trade_id,
+				@quantity,
+				@remainder output,
+                		@continue output
+
+		select
+			@quantity = @remainder
+
+	end
+
+	select
+		@ids = count(*)
+	from
+		#trades
+	where
+		id > @id
+end
+
+
+update
+	open_trades
+set
+	a.currency_id = d.currency_id
+from
+	open_trades a,
+	future_contracts b,
+	futures c,
+	forwards d
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+and
+	c.forward_id = d.contract_id
+and
+	convert(date, a.trade_date) = convert(date, @trade_date)
+
+update
+	round_turns
+set
+	a.currency_id = d.currency_id
+from
+	round_turns a,
+	future_contracts b,
+	futures c,
+	forwards d
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+and
+	c.forward_id = d.contract_id
+and
+	convert(date, a.trade_date) = convert(date, @trade_date)
+
+update
+	open_trades
+set
+	a.current_price = b.price
+from
+	open_trades a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, b.price_date) = convert(date, @trade_date)
+
+
+update
+	open_trades
+set
+	a.unrealized_pl = (a.current_price - a.price) * a.open_amount * c.quantity
+from
+	open_trades a,
+	future_contracts b,
+	futures c
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+
+
+update
+	round_turns
+set
+	a.realized_pl = (a.exit_price - a.entry_price) * a.entry_quantity * c.quantity
+from
+	round_turns a,
+	future_contracts b,
+	futures c
+where
+	a.contract_id = b.contract_id
+and
+	b.future_id = c.future_id
+	
+
+go
+
+

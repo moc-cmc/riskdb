@@ -1,0 +1,88 @@
+drop procedure
+	cbo_wipefutrealized
+go
+
+create procedure
+	cbo_wipefutrealized
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @transaction_date datetime
+declare @transaction_type_id int
+declare @tico_account_id int
+declare @account varchar(50)
+declare @product varchar(50)
+declare @contract varchar(50)
+declare @account_transaction_id int
+declare @note varchar(100)
+declare @identifier varchar(100)
+declare @amount float
+
+declare @id int
+declare @ids int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@transaction_date = convert(datetime, convert(date, @end_date))
+
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Realized P&L"
+
+
+delete
+	deals
+from
+	deals a,
+	account_transactions b
+where
+	a.deal_id = b.deal_id
+and
+	b.transaction_type_id = @transaction_type_id
+and
+	convert(date, b.transaction_date) = convert(date, @trade_date)
+
+
+delete
+
+from
+	account_transactions
+where
+	transaction_type_id = @transaction_type_id
+and
+	convert(date, transaction_date) = convert(date, @trade_date)
+
+
+
+
+go

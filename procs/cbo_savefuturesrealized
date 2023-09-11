@@ -1,0 +1,166 @@
+drop procedure
+	cbo_savefuturesrealized
+go
+
+create procedure
+	cbo_savefuturesrealized
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @transaction_date datetime
+declare @tico_account_id int
+declare @account varchar(50)
+declare @symbol varchar(50)
+declare @value_date datetime
+
+declare @id int
+declare @ids int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@transaction_date = convert(datetime, convert(date, @end_date))
+
+
+create table
+	#futures(
+		id int identity,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		contract_id int NULL,
+		contract varchar(50) NULL,
+		value_date datetime NULL,
+		tickets int NULL)
+insert into
+	#futures(
+		external_account_id,
+		contract_id,
+		value_date,
+		tickets)
+select
+	a.external_account_id,
+	a.contract_id,
+	a.value_date,
+	count(a.trade_id)
+from
+	trades a,
+	future_contracts b
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+group by
+	a.external_account_id,
+	a.contract_id,
+	a.value_date
+
+update
+	#futures
+set
+	a.account = b.symbol
+from
+	#futures a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#futures
+set
+	contract = b.symbol
+from
+	#futures a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#futures
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#futures
+	where
+		id > @id
+
+	select
+		@account = NULL,
+		@symbol = NULL,
+		@value_date = NULL
+
+	select
+		@account = account,
+		@symbol = contract,
+		@value_date = value_date
+	from
+		#futures
+	where
+		id = @id
+
+	select
+		account = @account,
+		symbol = @symbol,
+		value_date = @value_date
+	
+	exec
+		api_processcontractfifo
+			@login = @login,
+			@external_account = @account,
+			@trade_date = @trade_date,
+			@symbol = @symbol,
+			@value_date = @value_date
+
+
+	select
+		@ids = count(*)
+	from
+		#futures
+	where
+		id > @id
+end
+
+exec
+	cbo_savefutrealized
+		@login = @login,
+		@trade_date = @trade_date
+
+
+
+
+go
