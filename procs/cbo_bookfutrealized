@@ -1,9 +1,9 @@
 drop procedure
-	cbo_savefutrealized
+	cbo_bookfutrealized
 go
 
 create procedure
-	cbo_savefutrealized
+	cbo_bookfutrealized
 		@login varchar(50),
 		@trade_date datetime=NULL
 as

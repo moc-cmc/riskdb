@@ -156,7 +156,7 @@ begin
 end
 
 exec
-	cbo_savefutrealized
+	cbo_bookfutrealized
 		@login = @login,
 		@trade_date = @trade_date
 
