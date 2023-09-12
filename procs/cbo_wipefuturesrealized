@@ -1,0 +1,56 @@
+drop procedure
+	cbo_wipefuturesrealized
+go
+
+create procedure
+	cbo_wipefuturesrealized
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @transaction_date datetime
+declare @tico_account_id int
+declare @account varchar(50)
+declare @symbol varchar(50)
+declare @value_date datetime
+
+declare @id int
+declare @ids int
+
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@transaction_date = convert(datetime, convert(date, @end_date))
+
+
+exec
+	cbo_wipefutrealized
+		@login = @login,
+		@trade_date = @trade_date
+
+
+go

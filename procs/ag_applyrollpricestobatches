@@ -1,0 +1,77 @@
+drop procedure
+	ag_applyrollpricestobatches
+go
+
+create procedure
+	ag_applyrollpricestobatches
+		@login varchar(50),
+		@trade_date datetime
+as
+
+
+update
+	proposed_roll_batches
+set
+	a.closing_price = b.near_price,
+	a.roll_price = b.sell_roll_price,
+	a.points = b.sell_roll_price - b.near_price
+from
+	proposed_roll_batches a,
+	roll_prices b,
+	batch_transactions c
+where
+	a.contract_id = b.contract_id
+and
+	a.closing_date = b.closing_date
+and
+	a.roll_date = b.roll_date
+and
+	a.batch_transaction_id = c.batch_transaction_id
+and
+	c.trade_date = @trade_date
+and
+	(a.closing_price = NULL
+or
+	a.roll_price = NULL)
+and
+	c.confirm_user_id != NULL
+and
+	a.position < 0.0
+
+
+update
+	proposed_roll_batches
+set
+	a.closing_price = b.near_price,
+	a.roll_price = b.buy_roll_price,
+	a.points = b.buy_roll_price - b.near_price
+from
+	proposed_roll_batches a,
+	roll_prices b,
+	batch_transactions c
+where
+	a.contract_id = b.contract_id
+and
+	a.closing_date = b.closing_date
+and
+	a.roll_date = b.roll_date
+and
+	a.batch_transaction_id = c.batch_transaction_id
+and
+	c.trade_date = @trade_date
+and
+	(a.closing_price = NULL
+or
+	a.roll_price = NULL)
+and
+	c.confirm_user_id != NULL
+and
+	a.position > 0.0
+
+exec
+	ag_clientrollsdash
+		@login = @login,
+		@trade_date = @trade_date
+
+
+go

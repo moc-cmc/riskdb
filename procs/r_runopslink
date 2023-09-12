@@ -83,7 +83,7 @@ begin
 			@trade_date = NULL
 end
 
-
+/*
 if @op_task = "Manage ISIN Codes by PB"
 begin
 	exec
@@ -91,6 +91,7 @@ begin
 			@login = @login,
 			@trade_date = NULL
 end
+*/
 
 if @op_task = "File Imports"
 begin
@@ -109,6 +110,7 @@ begin
 
 end
 
+/* 
 if @op_task = "Set Haircut Import Date"
 begin
 	exec
@@ -116,7 +118,6 @@ begin
 			@login = @login,
 			@trade_date = NULL
 end
-/* 
 if @op_task = "Align Settles"
 begin
 	exec
@@ -125,6 +126,13 @@ begin
 			@login
 end
 */
+
+if @op_task = "Realized Perps Preview"
+begin
+	exec
+		ag_accountsrealized
+			@login
+end
 
 
 go

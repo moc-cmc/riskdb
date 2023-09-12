@@ -46,17 +46,27 @@ select
 select
 	@bo_trade_date = convert(datetime, convert(date, @trade_date))
 
+
 select
 	@contract_id = contract_id,
 	@external_account_id = external_account_id,
 	@price = price,
-	@value_date = value_date,
 	@entry_date = trade_date
 from
 	trades
 where
 	trade_id = @trade_id
 
+
+select
+	@value_date = expiration
+from
+	future_contracts
+where
+	contract_id = @contract_id
+if @value_date = NULL
+	select
+		@value_date = @bo_trade_date
 
 select
 	@open_id = min(id)
@@ -66,8 +76,6 @@ where
 	contract_id = @contract_id
 and
 	external_account_id = @external_account_id
-and
-	value_date = @value_date
 
 
 if @open_id = NULL /* It's a new position */

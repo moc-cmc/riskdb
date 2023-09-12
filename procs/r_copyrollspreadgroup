@@ -1,4 +1,5 @@
-drop procedure r_copyrollspreadgroup
+drop procedure
+	r_copyrollspreadgroup
 go
 
 create procedure

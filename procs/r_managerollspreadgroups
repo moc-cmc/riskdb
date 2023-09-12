@@ -1,4 +1,5 @@
-drop procedure r_managerollspreadgroups
+drop procedure
+	r_managerollspreadgroups
 go
 
 create procedure
@@ -120,9 +121,11 @@ values(
         "change_spread_group",
         "Edit Spread Group For Account",
         NULL)
+--Adaptive Server has expanded all '*' elements in the following statement
 
 
-select * from #meta
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
 create table
 	#account_roll_spread_groups
@@ -360,12 +363,4 @@ from
 order by
 	external_account
 	
-	
-	
-	
 go	
-
-	
-		
-
-	

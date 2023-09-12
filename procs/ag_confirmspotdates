@@ -1,0 +1,77 @@
+drop procedure
+	ag_confirmspotdates
+go
+
+create procedure
+	ag_confirmspotdates
+		@login varchar(50),
+		@trade_date datetime
+as
+
+declare @tico_account_id int
+declare @timestamp datetime
+declare @user varchar(50)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@timestamp = a.timestamp,
+	@user = b.login
+from
+	roll_trade_dates a,
+	tico_accounts b
+where
+	a.trade_date = @trade_date
+and
+	a.validated_by = b.account_id
+if @timestamp != NULL
+begin
+	select
+		status = "Error",
+		message = "Trade date already validated",
+		login= @user,
+		timestamp = @timestamp
+	return
+end
+
+update
+	roll_trade_dates
+set
+	validated_by = @tico_account_id,
+	timestamp = getdate()
+where
+	trade_date = @trade_date
+and
+	validated_by = NULL
+if @@rowcount = 0
+begin
+	insert into
+		roll_trade_dates(
+			trade_date,
+			validated_by,
+			timestamp)
+	values(
+		@trade_date,
+		@tico_account_id,
+		getdate())
+end
+
+
+exec
+	ag_spotvaldatesfordate
+		@login = @login,
+		@trade_date = @trade_date
+
+go

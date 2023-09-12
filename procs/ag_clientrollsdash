@@ -1,0 +1,936 @@
+drop procedure
+	ag_clientrollsdash
+go
+
+create procedure
+	ag_clientrollsdash
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @tico_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @id int
+declare @ids int
+declare @external_account_id int
+declare @account varchar(50)
+declare @batch_transaction_id int
+declare @status varchar(50)
+declare @contract_id int
+declare @contracts int
+declare @inverted_contract_id int
+declare @roll_price_id int
+declare @closing_date datetime
+declare @roll_date datetime
+declare @confirmation_date datetime
+declare @confirm_user_id int
+declare @confirmed_by varchar(50)
+
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"clearing_entity",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"client_buys_sells",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_points",
+	"Edit Roll Price Points",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_batch",
+	"Confirm Batch Account Balances",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"queue_rolls",
+	"Tally Match Hub Rolls",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_roll",
+	"Edit Proposed Roll Prices",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"apply_to_batches",
+	"Apply Scanned Roll Prices",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"scan_for_mkt",
+	"Scan For Market Roll Fills",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_prices",
+	"Set Trade Date Roll Prices",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"back_to_risk",
+	"Roll Risk Home",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"confirm_transactions",
+	"Confirm Batch Transactions",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"days",
+	"Number",
+	"#,##0")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"sell_buy",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"points",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"buy_sell",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"roll_price",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closing_price",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"near_price",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"sell_roll_price",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"buy_roll_price",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closing_rate_short",
+	"Number",
+	"#,##0.00000000")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv",
+	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"end_trades",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"rolls_client",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"begin_trades",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"confirmed",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"share",
+	"Number",
+	"#,##0%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"rate_ccy2",
+	"Number",
+	"#,##0.0000%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"rate_ccy1",
+	"Number",
+	"#,##0.0000%")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"pending",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_batched",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"queued",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"position",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+exec
+	r_defaultfundforlogin
+		@login = @login,
+		@fund_id = @fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = max(trade_date)
+	from
+		spot_value_dates
+	if @trade_date = NULL
+		select
+			@trade_date = convert(datetime, convert(date, getdate()))
+end
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#external_accounts(
+		id int identity,
+		external_account_id int NULL,
+		symbol varchar(50) NULL)
+insert into
+	#external_accounts(
+		symbol)
+select
+	a.symbol
+from
+	external_accounts a,
+	settlement_methods b
+where
+	a.settlement_method_id = b.settlement_method_id
+and
+	b.name in("Roll To Eval Currency", "Roll By Pair")
+
+update
+	#external_accounts
+set
+	a.external_account_id = b.external_account_id
+from
+	#external_accounts a,
+	external_accounts b
+where
+	a.symbol = b.symbol
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		batch_transaction_id int NULL,
+		account varchar(50) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		position numeric(30,4) NULL,
+		closing_date datetime NULL,
+		roll_date datetime NULL,
+		closing_price float NULL,
+		roll_price float NULL,
+		points float NULL,
+		risk_book_deal_id int NULL,
+		edit_roll varchar(25) NULL,
+		timestamp datetime NULL,
+		confirmation_date datetime NULL,
+		confirmed_by varchar(50) NULL,
+		confirm_batch varchar(25) NULL)
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#external_accounts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#external_accounts
+	where
+		id > @id
+
+	select
+		@external_account_id = NULL,
+		@account = NULL,
+		@batch_transaction_id = NULL,
+		@confirmation_date = NULL,
+		@confirmed_by = NULL
+
+	select
+		@external_account_id = external_account_id,
+		@account = symbol
+	from
+		#external_accounts
+	where
+		id = @id
+
+
+	select
+		@batch_transaction_id = batch_transaction_id,
+		@confirmation_date = confirmation_date,
+		@confirm_user_id = confirm_user_id
+	from
+		batch_transactions
+	where
+		external_account_id = @external_account_id
+	and
+		trade_date = @trade_date
+
+	select
+		@confirmed_by = login
+	from
+		tico_accounts
+	where
+		account_id = @confirm_user_id
+
+	insert into
+		#output(
+			style,
+			batch_transaction_id,
+			account,
+			confirmation_date,
+			confirmed_by)
+	values(
+		@client_style,
+		@batch_transaction_id,
+		@account,
+		@confirmation_date,
+		@confirmed_by)
+
+	insert into
+		#output(
+			style,
+			account,
+			contract_id,
+			symbol,
+			position,
+			closing_date,
+			roll_date,
+			closing_price,
+			roll_price,
+			points,
+			risk_book_deal_id,
+			timestamp)
+	select
+		style = @style,
+		account = b.symbol,
+		c.contract_id,
+		d.symbol,
+		c.position,
+		c.closing_date,
+		c.roll_date,
+		c.closing_price,
+		c.roll_price,
+		c.points,
+		c.risk_book_deal_id,
+		c.timestamp
+	from
+		batch_transactions a,
+		external_accounts b,
+		proposed_roll_batches c,
+		contracts d
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.batch_transaction_id = c.batch_transaction_id
+	and
+		c.contract_id = d.contract_id
+	and
+		a.batch_transaction_id = @batch_transaction_id
+	order by
+		b.symbol,
+		d.symbol
+
+	select
+		@ids = count(*)
+	from
+		#external_accounts
+	where
+		id > @id
+end
+
+update
+	#output
+set
+	a.closing_price = convert(float, 1.0 / a.closing_price),
+	a.roll_price = convert(float, 1.0 / a.roll_price),
+	a.points = convert(float, (1.0 / a.roll_price)) - convert(float, (1.0 / a.closing_price))
+from
+	#output a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+
+update
+	#output
+set
+	a.points = a.points * b.point_factor
+from
+	#output a,
+	point_factors b
+where
+	a.contract_id = b.contract_id
+
+update
+	#output
+set
+	a.points = a.points * d.point_factor
+from
+	#output a,
+	forwards b,
+	forwards c,
+	point_factors d
+where
+	a.contract_id= b.contract_id
+and
+	b.product_id = c.currency_id
+and
+	b.currency_id = c.product_id
+and
+	c.contract_id = d.contract_id
+
+
+create table
+	#contracts(
+		contract_id int)
+insert into
+	#contracts(
+		contract_id)
+select
+	distinct(a.contract_id)
+from
+	proposed_roll_batches a,
+	batch_transactions b
+where
+	a.batch_transaction_id = b.batch_transaction_id
+and
+	b.trade_date = b.trade_date
+
+delete
+	#contracts
+from
+	#contracts a,
+	roll_prices b
+where
+	a.contract_id = b.contract_id
+and
+	b.trade_date = @trade_date
+
+
+select
+	@contract_id = 0
+select
+	@contracts = count(*)
+from
+	#contracts
+where
+	contract_id > @contract_id
+
+while @contracts > 0
+begin
+	select
+		@contract_id = min(contract_id)
+	from
+		#contracts
+	where
+		contract_id > @contract_id
+
+	select
+		@roll_price_id = NULL,
+		@closing_date = NULL,
+		@roll_date = NULL,
+		@inverted_contract_id = NULL
+
+	select
+		@closing_date = closing_date,
+		@roll_date = spot_date
+	from
+		spot_value_dates
+	where
+		contract_id = @contract_id
+	and
+		trade_date = @trade_date
+
+	if @closing_date = NULL
+	begin
+		exec
+			r_invertedcontract
+				@contract_id,
+				@inverted_contract_id output
+
+
+		select
+			@closing_date = closing_date,
+			@roll_date = spot_date
+		from
+			spot_value_dates
+		where
+			contract_id = @inverted_contract_id
+		and
+			trade_date = @trade_date
+	end
+
+
+
+	if @closing_date = NULL
+	begin
+		select
+			status = "Unable to determine closing date for contract"
+			return
+	end
+	exec
+		j_nextkey
+			"roll_prices",
+			@roll_price_id output
+
+	insert into
+		roll_prices(
+			roll_price_id,
+			trade_date,
+			contract_id,
+			closing_date,
+			roll_date,
+			timestamp)
+	values(
+		@roll_price_id,
+		@trade_date,
+		@contract_id,
+		@closing_date,
+		@roll_date,
+		getdate())
+
+	select
+		@contracts = count(*)
+	from
+		#contracts
+	where
+		contract_id > @contract_id
+end
+
+update
+	#output
+set
+	confirm_batch = "Confirm Balances"
+where
+	batch_transaction_id != NULL
+and
+	confirmation_date = NULL
+
+update
+	#output
+set
+	edit_roll = "Edit"
+where
+	risk_book_deal_id = NULL
+and
+	symbol != NULL
+
+select
+	style = @style,
+	back_to_risk = "Back To Risk Home",
+	confirm_transactions = "Confirm All Balances",
+	scan_for_mkt = "Scan For Market Roll Prices",
+	apply_to_batches = "Apply Defined Prices",
+	queue_rolls = "Queue Rolls",
+	trade_date = @trade_date,
+	clearing_entity = "Citibank"
+
+create table
+	#roll_prices(
+		id int identity,
+		section varchar(100) NULL,
+		style varchar(250) NULL,
+		price_style varchar(50) NULL,
+		price_style_id int NULL,
+		contract_id int NULL,
+		symbol varchar(10) NULL,
+		trade_date datetime NULL,
+		closing_date varchar(11) NULL,
+		roll_date varchar(11) NULL,
+		near_price float NULL,
+		sell_roll_price float NULL,
+		buy_roll_price float NULL,
+		rolling_shorts float NULL,
+		days int NULL,
+		rolling_longs float NULL,
+		edit_prices varchar(15) NULL,
+		edit_points varchar(15) NULL)
+insert into
+	#roll_prices(
+		section,
+		style,
+		contract_id,
+		symbol,
+		trade_date,
+		closing_date,
+		roll_date,
+		near_price,
+		sell_roll_price,
+		buy_roll_price,
+		/* rolling_shorts, */
+		days,
+		/* rolling_longs, */
+		edit_prices,
+		edit_points)
+select
+	section = "Defined Roll Prices",
+	style = @style,
+	b.contract_id,
+	b.symbol,
+	a.trade_date,
+	closing_date = convert(varchar(11), a.closing_date),
+	roll_date = convert(varchar(11), a.roll_date),
+	a.near_price,
+	a.sell_roll_price,
+	a.buy_roll_price,
+	days = datediff(day, a.closing_date, a.roll_date),
+	edit_prices = "Edit Prices",
+	edit_points = "Edit Points"
+from
+	roll_prices a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_date = @trade_date
+order by
+	b.symbol
+
+update
+	#roll_prices
+set
+	a.price_style_id = b.price_style_id,
+	a.price_style = c.name
+from
+	#roll_prices a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+
+
+update
+	#roll_prices
+set
+	near_price = convert(float, 1.0 / near_price),
+	sell_roll_price = convert(float, 1.0 / sell_roll_price),
+	buy_roll_price = convert(float, 1.0 / buy_roll_price)
+where
+	price_style = "Inverted"
+
+update
+	#roll_prices
+set
+	rolling_shorts = convert(float, (sell_roll_price - near_price)),
+	rolling_longs = convert(float, (buy_roll_price - near_price))
+
+update
+	#roll_prices
+set
+	a.rolling_shorts = a.rolling_shorts * b.point_factor,
+	a.rolling_longs = a.rolling_longs * b.point_factor
+from
+	#roll_prices a,
+	point_factors b
+where
+	a.contract_id = b.contract_id
+
+
+update
+	#roll_prices
+set
+	a.rolling_shorts = a.rolling_shorts * d.point_factor,
+	a.rolling_longs = a.rolling_longs * d.point_factor
+from
+	#roll_prices a,
+	forwards b,
+	forwards c,
+	point_factors d
+where
+	a.contract_id = b.contract_id
+and
+	b.product_id = c.currency_id
+and
+	b.currency_id = c.product_id
+and
+	c.contract_id = d.contract_id
+
+delete
+
+from
+	#roll_prices 
+where
+	symbol not in(
+		select
+			distinct(symbol)
+		from
+			#output
+		where
+			symbol != NULL)
+
+select
+	section,
+	style,
+	symbol,
+	trade_date,
+	closing_date,
+	roll_date,
+	near_price,
+	sell_roll_price,
+	buy_sell = convert(numeric(30,8), rolling_shorts),
+	days,
+	sell_buy = convert(numeric(30,8) , rolling_longs),
+	buy_roll_price,
+	edit_prices,
+	edit_points
+from
+	#roll_prices
+order by
+	id
+
+
+select
+	style,
+	trade_date = @trade_date,
+	account,
+	symbol,
+	position,
+	closing_price = convert(numeric(30,8), closing_price),
+	closing_date = convert(varchar(11), closing_date),
+	roll_price = convert(numeric(30,8), roll_price),
+	roll_date = convert(varchar(11), roll_date),
+	points = convert(numeric(30,8), points),
+	deal_id = risk_book_deal_id,
+	edit_roll,
+	batch_id = batch_transaction_id,
+	conf_date = convert(varchar(11), confirmation_date),
+	confirmed_by,
+	confirm_batch
+from
+	#output
+order by
+	id
+
+
+go

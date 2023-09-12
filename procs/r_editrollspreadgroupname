@@ -1,4 +1,5 @@
-drop procedure r_editrollspreadgroupname
+drop procedure
+	r_editrollspreadgroupname
 go
 
 create procedure

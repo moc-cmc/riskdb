@@ -1,4 +1,5 @@
-drop procedure r_setrollspread
+drop procedure
+	r_setrollspread
 go
 
 create procedure
