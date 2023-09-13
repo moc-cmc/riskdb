@@ -1,0 +1,89 @@
+drop procedure
+	ag_editproposedrollprices
+go
+
+create procedure
+	ag_editproposedrollprices
+		@login varchar(50),
+		@account varchar(50),
+		@trade_date datetime,
+		@symbol varchar(50),
+		@closing_date datetime,
+		@closing_price numeric(30,8),
+		@roll_date datetime,
+		@roll_price numeric(30,8)
+as
+
+declare @contract_id int
+declare @inverted_contract_id int
+declare @price_style varchar(50)
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	b.contract_id = @contract_id
+if @price_style = "Inverted"
+begin
+	select
+		@closing_price = convert(numeric(30,8), 1.0 / @closing_price),
+		@roll_price = convert(numeric(30,8), 1.0 / @roll_price)
+end
+
+
+
+update
+	proposed_roll_batches
+set
+	a.closing_price = @closing_price,
+	a.roll_price = @roll_price
+from
+	proposed_roll_batches a,
+	batch_transactions b,
+	external_accounts c,
+	contracts d
+where
+	a.batch_transaction_id = b.batch_transaction_id
+and
+	b.external_account_id = c.external_account_id
+and
+	a.contract_id = d.contract_id
+and
+	b.trade_date = @trade_date
+and
+	c.symbol = @account
+and
+	d.symbol = @symbol
+and
+	a.closing_date = @closing_date
+and
+	a.roll_date = @roll_date
+and
+	a.risk_book_deal_id = NULL
+
+exec
+	ag_clientrollsdash
+		@login = @login,
+		@trade_date = @trade_date
+
+
+go

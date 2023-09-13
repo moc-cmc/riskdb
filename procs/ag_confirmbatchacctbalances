@@ -1,0 +1,86 @@
+drop procedure
+	ag_confirmbatchacctbalances
+go
+
+create procedure
+	ag_confirmbatchacctbalances
+		@login varchar(50),
+		@account varchar(50),
+		@trade_date datetime
+as
+
+
+declare @tico_account_id int
+declare @external_account_id int
+declare @confirmation_date datetime
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+select
+	@confirmation_date = confirmation_date
+from
+	batch_transactions
+where
+	external_account_id = @external_account_id
+and
+	trade_date = @trade_date
+
+if @confirmation_date != NULL
+begin
+	select
+		status = "Error",
+		message = "Batch is already confirmed",
+		confirmation_date = @confirmation_date
+	return
+end
+
+
+update
+	batch_transactions
+set
+	confirmation_date = getdate(),
+	confirm_user_id = @tico_account_id
+from
+	batch_transactions
+where
+	external_account_id = @external_account_id
+and
+	trade_date = @trade_date
+
+
+
+exec
+	ag_clientrollsdash
+		@login = @login,
+		@trade_date = @trade_date
+
+
+
+go
