@@ -28,3 +28,16 @@ on
 		external_account_id,
 		trade_date)
 go	
+
+delete
+
+from
+        keys
+where
+        relation = "batch_transactions"
+
+insert into
+        keys
+values(
+        "batch_transactions",
+        0)
