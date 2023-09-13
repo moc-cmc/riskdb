@@ -1,0 +1,90 @@
+drop procedure
+	ag_editdefrollprices
+go
+
+create procedure
+	ag_editdefrollprices
+		@login varchar(50),
+		@trade_date datetime,
+		@symbol varchar(50),
+		@closing_date datetime,
+		@roll_date datetime,
+		@near_price float=NULL,
+		@sell_roll_price float=NULL,
+		@buy_roll_price float=NULL
+as
+
+declare @contract_id int
+declare @price_style varchar(50)
+
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	b.contract_id = @contract_id
+
+
+if @price_style = "Inverted"
+begin
+	select
+		@near_price = 1.0 / @near_price,
+		@sell_roll_price = 1.0 / @sell_roll_price,
+		@buy_roll_price = 1.0 / @buy_roll_price
+
+end
+
+update
+	roll_prices
+set
+	near_price = @near_price,
+	sell_roll_price = @sell_roll_price,
+	buy_roll_price = @buy_roll_price
+where
+	contract_id = @contract_id
+and
+	trade_date = @trade_date
+and
+	closing_date = @closing_date
+and
+	roll_date = @roll_date
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Update failed",
+		symbol = @symbol,
+		near_price = @near_price,
+		sell_roll_price = @sell_roll_price,
+		buy_roll_price = @buy_roll_price,
+		trade_date = @trade_date
+	return
+end
+
+
+exec
+	ag_clientrollsdash
+		@login = @login,
+		@trade_date = @trade_date
+
+
+go
