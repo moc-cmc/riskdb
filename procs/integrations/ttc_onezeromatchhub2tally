@@ -1,21 +1,16 @@
 
 create or replace procedure
    ttc_onezeromatchhub2tally 
-        /* Provided by FIX server config.properties & spring.xml */
         @source varchar(50),
         @default_login varchar(50),
         @broker varchar(50),
         @granularity varchar(15)=NULL,
-        /* Parsed from FIX message and provided by mapping.xml */
-        /* session variables */
         @sender_comp varchar(50),
         @target_comp varchar(50),
-        /* identifiers */
         @execution_id varchar(100)=NULL,
         @trade_report_id varchar(50),
         @order_id varchar(50),
         @cl_order_id varchar(50)=NULL,
-        /*financials*/
         @symbol varchar(50)=NULL,
         @ccy1 varchar(50)=NULL,
         @ccy2 varchar(50)=NULL,
@@ -27,11 +22,9 @@ create or replace procedure
         @trade_day datetime,
         @value_date datetime,
         @fixing_date datetime=NULL,
-        /*swaps*/
         @far_price float=NULL,
         @far_value_date datetime=NULL,
         @far_fixing_date datetime=NULL,
-        /*parties*/
         @executing_trader varchar(50)=NULL,
         @executing_firm varchar(50)=NULL,
         @executing_system varchar(50)=NULL,
@@ -47,6 +40,10 @@ declare @client_or_market char(1)
 declare @platform_identifier varchar(100)
 declare @far_platform_identifier varchar(100)
 declare @deal_exec_symbol varchar(100)
+declare @val_date varchar(50)
+
+select
+	@val_date = convert(varchar(8), @value_date, 112)
 
 declare @broker_id int
 declare @source_id int
@@ -101,9 +98,14 @@ declare @far_tally_message varchar(25)
 declare @trigger_symbol varchar(50)
 
 select
-   @tally_status = "Success",
-   @tally_message = "Tallied trade"
+   @tally_status = "Testing Booking",
+   @tally_message = "Provided values"
 
+select
+	@broker = "OneZero NY4",
+	@source = "OneZero NY4",
+	@default_login = "onezero.etg"
+	
 select
     status = @tally_status,
     message = @tally_message,
@@ -127,7 +129,6 @@ select
     identifier = @platform_identifier,
     spot_reference = @last_spot_rate
 
-return
 
 /* --------------------------------------------------------------------------
  * STEP: Initial MAP proc parameters to common tally params
@@ -175,20 +176,6 @@ where
  *
  */ 
 
-/* If this connection is determining client or market based of data value, then use this block */
-/*exec
-    tt_isfundagency
-        @source_id=@source_id,
-        @mapping=@fund_agency_lookup,
-        @is_fund_agency=@is_fund_agency output
-select
-    @client_or_market = "M"
-
-if @is_fund_agency = "Y"
-    select
-        @client_or_market = "C"
-*/
-
 /**
  * Client messages ALWAYS come with the tag client_id whereas the LP messages ALWAYS come with executing_firm.
  */
@@ -203,6 +190,43 @@ begin
     select
         @client_or_market = "M"
 end
+
+if @client_or_market != "M"
+begin
+    select
+        status = "Suppressing non market trade",
+        platform_identifier = @execution_id,
+        source = @source
+
+    if @ack_required = "Y"
+    begin
+            select
+                    trade_report_id=@trade_report_id,
+                    symbol="NA"
+    end
+
+
+	return
+end
+
+if @clearing_firm in("OANDA_CFD", "OANDA_TMS_CFD")
+begin
+    select
+        status = "Suppressing CFD Trade",
+        platform_identifier = @execution_id,
+        source = @source
+
+    if @ack_required = "Y"
+    begin
+            select
+                    trade_report_id=@trade_report_id,
+                    symbol="NA"
+    end
+
+
+        return
+end
+
 
 /* --------------------------------------------------------------------------
  * STEP: Map proc parameters to common tally variable name
@@ -219,8 +243,8 @@ begin
          * Ask chris about uniqueness of value for @plat_id before the `.c` or `.m`
          * Client Order ID might work but we need a handful of trades to check values.  Seeing '2' as one...
          */
-        @platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".c",
-        @deal_exec_symbol = @order_id
+        @platform_identifier = rtrim(@execution_id)+"-"+convert(char(8), @trade_date, 112)+".c",
+        @deal_exec_symbol = rtrim(@execution_id)+"-"+convert(char(8), @trade_date, 112)
 
     select
         @counterparty_lookup = rtrim(@sender_comp),
@@ -238,11 +262,11 @@ begin
          * Ask chris about uniqueness of value for @plat_id before the `.c` or `.m`
          * Client Order ID might work but we need a handful of trades to check values.  Seeing '2' as one...
          */
-        @platform_identifier = rtrim(@execution_id)+convert(char(8), @trade_date, 112)+".m",
-        @deal_exec_symbol = @order_id
+        @platform_identifier = rtrim(@execution_id)+"-"+convert(char(8), @trade_date, 112)+".m",
+        @deal_exec_symbol = rtrim(@execution_id)+"-"+convert(char(8), @trade_date, 112)
 
     select
-        @counterparty_lookup = rtrim(@clearing_firm),
+        @counterparty_lookup = rtrim(@account)+"-"+rtrim(@clearing_firm),
         @trader_lookup = rtrim(@target_comp)
 
     /* Set suppression and trigger_symbol variables */
@@ -282,9 +306,12 @@ exec
         @identifier=@platform_identifier,
         @trade_id=@trade_id output
 
+select trade_id = @trade_id
+
 if @trade_id != NULL
 begin
     /* tt_isdupe would throw error message, just return */
+	select trade_id = @trade_id
     return
 end
 
@@ -304,7 +331,7 @@ exec
             @broker_id = @broker_id,
             @identifier = @platform_identifier,
             @trader_mapping_error_id = @trader_mapping_error_id output,
-        @cpty_mapping_error_id = @cpty_mapping_error_id output
+            @cpty_mapping_error_id = @cpty_mapping_error_id output
 
 exec
     tt_resolvetradermapping
@@ -328,10 +355,37 @@ exec
                 @broker_id=@broker_id,
                 @identifier=@platform_identifier,
                 @mapping_error_id=@cpty_mapping_error_id,
-        @mapping = @counterparty_lookup,
-        @counterparty_id=@counterparty_id output,
-        @counterparty=@counterparty output,
-        @cpty_external_account_id=@cpty_external_account_id output
+                @mapping = @counterparty_lookup,
+        	@counterparty_id=@counterparty_id output,
+        	@counterparty=@counterparty output,
+        	@cpty_external_account_id=@cpty_external_account_id output
+
+declare @eb_id int
+declare @eb varchar(50)
+declare @eb_lookup varchar(50)
+
+select
+	@eb_lookup = @clearing_firm
+
+select
+	@eb_id = a.eb_id,
+	@eb = a.name
+from
+	ebs a,
+	eb_symbols b
+where
+	a.eb_id = b.eb_id
+and
+	b.symbol = @eb_lookup
+if @eb = NULL
+begin
+	select
+		status = "Error",
+		error = "Error",
+		message = "Problem finding eb from eb lookup",
+		eb_lookup = @eb_lookup
+	return
+end
 
 if @trader_id = NULL
 begin
@@ -481,7 +535,7 @@ end
  */
 
 
-
+/* Let deal createion get handled in the api version
 exec
     tt_resolvedeal
         @deal_exec_symbol = @deal_exec_symbol,
@@ -497,6 +551,7 @@ begin
             @deal_exec_symbol = @deal_exec_symbol,
             @deal_id = @deal_id output
 end
+*/
 
 
 /* --------------------------------------------------------------------------
@@ -538,10 +593,10 @@ else /* if @client_or_market = "M" */
 begin
     if @side = "SELL"
         select
-            @quantity = @qty * -1
+            @quantity = @qty
     if @side = "BUY"
         select
-            @quantity = @qty
+            @quantity = @qty * -1
 
 end
 
@@ -572,21 +627,25 @@ end
         @identifier = @platform_identifier,
         @spot_reference = @last_spot_rate
 */
+exec 
+	api_reportforwarddeal
+                @login=@default_login,
+                @source=@source,
+                @account=@external_account,
+                @trade_date = @trade_date,
+                @trader=@trader,
+                @strategy="None",
+                @broker=@broker,
+		@eb=@eb,
+                @identifier=@platform_identifier,
+                @symbol=@contract,
+                @quantity=@quantity,
+                @value_date=@value_date,
+                @fixing_date=@fixing_date,
+                @price=@price,
+        	@trade_id = @trade_id out,
+        	@deal_id = @deal_id out
 
-api_reportforwarddeal
-                @login varchar(50),
-                @source varchar(50),
-                @account varchar(50),
-                @trade_date datetime=NULL,
-                @trader varchar(30)=NULL,
-                @strategy varchar(50)=NULL,
-                @broker varchar(50)=NULL,
-                @identifier varchar(100)=NULL,
-                @symbol varchar(50),
-                @quantity numeric(30,10),
-                @value_date varchar(50),
-                @fixing_date datetime=NULL,
-                @price numeric(30,10)
 
 if @trade_id = NULL
 begin
@@ -613,9 +672,10 @@ select
     trade_type = @trade_type,
     external_account = @external_account,
     counterparty = @counterparty,
+    eb = @eb,
     quantity = @quantity,
     symbol = @contract,
-    value_date = @value_date,
+    value_date = @val_date,
     fixing_date = @fixing_date,
     price = @price,
     trade_date = @trade_date,
@@ -629,109 +689,6 @@ begin
     return
 end
 
-
-if @far_price != NULL
-begin
-    select
-        @far_quantity = @quantity * -1.0
-    
-    exec
-        fxa_tallytrade
-            @login = @trader_login,
-            @source = @source,
-            @trade_id = @far_trade_id out,
-            @deal_id = @deal_id out,
-            @tally_type = @tally_type,
-                        @deal_type = @deal_type,
-                        @trade_type = @far_trade_type,
-            @external_account = @external_account,
-            @counterparty = @counterparty,
-            @quantity = @far_quantity,
-            @symbol = @contract,
-            @value_date = @far_value_date,
-            @fixing_date = @far_fixing_date,
-            @price = @far_price,
-            @trade_date = @trade_date,
-            @trader = @trader,
-            @broker = @broker,
-            @identifier = @far_platform_identifier,
-            @spot_reference = @last_spot_rate
-    
-    if @far_trade_id = NULL
-    begin
-        select
-            @far_tally_status = "Error",
-            @far_tally_message = "Problem tallying far trade"
-    end
-    else
-    begin
-        select
-            @far_tally_status = "Success",
-            @far_tally_message = "Tallied trade"
-    end
-
-    select 
-        status = @far_tally_status,
-        message = @far_tally_message,
-        trade_id = @far_trade_id,
-        login = @trader_login,
-        source = @source,
-        deal_id = @deal_id,
-        tally_type = @tally_type,
-        deal_type = @deal_type,
-        trade_type = @far_trade_type,
-        external_account = @external_account,
-        counterparty = @counterparty,
-        quantity = @far_quantity,
-        symbol = @contract,
-        value_date = @value_date,
-        fixing_date = @far_fixing_date,
-        price = @far_price, 
-        trade_date = @trade_date,
-        trader = @trader,
-        broker = @broker,
-        identifier = @far_platform_identifier,
-        spot_reference = @last_spot_rate 
-
-    if @far_tally_status = "Error"
-    begin
-        return  
-    end
-
-    exec
-        tt_resolveswapsymbol
-            @deal_id=@deal_id,
-            @near_trade_id=@trade_id,
-            @far_trade_id=@far_trade_id,
-            @client_or_market=@client_or_market
-end
-
-/* --------------------------------------------------------------------------
- * STEP: Book internal tickets if needed using @trigger_symbol
- *
- */
-if @trade_id != NULL
-begin
-        exec
-                r_ticketcreationvalues
-                        @trigger_symbol = @trigger_symbol,
-                        @login = @trader_login,
-                        @source = @source,
-                        @deal_id = @deal_id,
-                        @deal_exec_symbol = @deal_exec_symbol,
-                        @tally_type = @tally_type,
-                        @deal_type = @deal_type,
-                        @trade_type = @trade_type,
-                        @quantity = @quantity,
-                        @symbol = @contract,
-                        @value_date = @value_date,
-                        @fixing_date = @fixing_date,
-                        @price = @price,
-                        @trade_date = @trade_date,
-                        @broker = @broker,
-                        @trade_identifier = @platform_identifier,
-                        @spot_reference = @last_spot_rate
-end
 
 /* --------------------------------------------------------------------------
  * STEP: Send trade notifications 
