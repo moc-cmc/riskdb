@@ -314,11 +314,24 @@ begin
 		symbol = @symbol
 	if @contract_id = NULL
 	begin
+		/* Last check for future contracts that requires the counterparty symbol */
 		select
-			status = "Error",
-			message = "Contract not found",
-			symbol = @symbol
-		return
+			@contract_id = contract_id
+		from
+			contract_symbols
+		where
+			source_id = @source_id
+		and
+			symbol = @symbol+"-"+@counterparty_lookup
+		if @contract_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "Contract not found",
+				symbol = @symbol,
+				counterparty_lookup = @counterparty_lookup
+			return
+		end
 	end
 end
 
