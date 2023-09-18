@@ -58,6 +58,14 @@ values(
         NULL)
 
 insert into
+	#meta
+values(
+	"Column Link",
+	"edit_connection",
+	"Edit Integration",
+	NULL)
+
+insert into
         #meta
 values(
         "Column Hidden",
@@ -237,7 +245,8 @@ end
 select
 	section = "Integration Connections",
         connection_id,
-        name,
+        integration_id,
+	name,
         ops_name,
         source_name,
         source_type,
