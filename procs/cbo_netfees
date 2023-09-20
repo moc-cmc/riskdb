@@ -20,6 +20,7 @@ declare @exchange_fee float
 declare @trade_settlement_fee float
 declare @pending_transactions int
 declare @netted_transactions int
+declare @previously_net_count int
 
 select
         @tico_account_id = account_id
@@ -61,6 +62,26 @@ from
 	transaction_types
 where
 	name in("HRP ERS Fee", "HRP CIP Fee")
+
+select
+	@previously_net_count = count(*)
+from
+        aggregated_transactions a,
+        #net_fee_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+and
+        a.transaction_date >= @begin_date
+and
+        a.transaction_date <= @end_date
+
+if @previously_net_count > 0
+begin
+	select
+        	status = "Error",
+        	message = "Fees have previously been netted"
+	return
+end
 
 create table
 	#pending_transactions(
