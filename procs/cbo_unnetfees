@@ -1,0 +1,225 @@
+create or replace procedure
+	cbo_unnetfees
+		@login varchar(100),
+		@trade_date datetime
+
+as
+
+declare @tico_account_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @count_aggregated int
+declare @count_transactions int
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+if @tico_account_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Unable to resolve login"
+        return
+end
+
+create table 
+	#net_fee_types(
+		transaction_type_id int)
+
+insert into 
+	#net_fee_types
+select
+	transaction_type_id
+from
+	transaction_types
+where
+	name in ("HRP ERS Fee", "HRP CIP Fee")
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+	select
+		@trade_date = convert(date, @trade_date)
+end
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+create table
+	#aggregated_transactions(
+			account_transaction_id int,
+			entered_by int,
+			external_account_id int,
+			transaction_type_id int,
+			transaction_date datetime,
+			currency_id int,
+			amount float,
+			note varchar(255) NULL,
+			aggregated_at datetime NULL,
+			aggregated_by int NULL)
+
+insert into
+	#aggregated_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		note,
+		aggregated_at,
+		aggregated_by)
+select
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	a.amount,
+	a.note,
+	a.aggregated_at,
+	a.aggregated_by
+from
+	aggregated_transactions a,
+	#net_fee_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+and
+        a.transaction_date >= @begin_date
+and
+        a.transaction_date <= @end_date
+
+create table
+	#account_transactions(
+    		account_transaction_id int,
+    		entered_by int,
+    		external_account_id int,
+    		transaction_type_id int,
+    		transaction_date datetime,
+    		currency_id int,
+        	amount float,
+    		note char(255) NULL)
+
+insert into
+	#account_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		note)
+select
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	a.amount,
+	a.note
+from
+	account_transactions a,
+	#net_fee_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+and
+        a.transaction_date >= @begin_date
+and
+        a.transaction_date <= @end_date
+	
+
+select
+        @count_aggregated = count(*)
+from
+        #aggregated_transactions
+
+select
+	@count_transactions = count(*)
+from
+	#account_transactions
+
+
+
+begin tran
+
+	delete from 
+		account_transactions
+	from
+		account_transactions a,
+		#account_transactions b
+	where
+		a.account_transaction_id = b.account_transaction_id
+
+	if @@rowcount != @count_transactions
+        begin
+                select
+                        status = "Error",
+			message = "Mismatch in number of deleted rows between #account_transactions and account_transactions"
+                rollback tran
+                return
+        end
+	
+	
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			note)
+	select
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		note
+	from
+		#aggregated_transactions 
+	if @@rowcount != @count_aggregated	
+	begin
+		select
+			status = "Error",
+			message = "Mismatch in number of rows between #aggregated_transactions and account_transactions"
+		rollback tran
+		return
+	end
+	
+	delete from
+		aggregated_transactions
+	from
+		aggregated_transactions a,
+		#aggregated_transactions b
+	where
+		a.account_transaction_id = b.account_transaction_id
+        if @@rowcount != @count_aggregated      
+        begin
+                select
+                        status = "Error",
+                        message = "Mismatch in number of deleted rows between #aggregated_transactions and aggregated_transactions"
+                rollback tran
+                return
+        end
+		
+
+commit tran
+
+
+go
+
