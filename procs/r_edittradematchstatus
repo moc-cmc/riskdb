@@ -1,0 +1,223 @@
+create or replace procedure
+	r_edittradematchstatus
+		@login varchar(50),
+		@trade_id varchar(50),
+		@matching_engine varchar(50),
+		@match_status varchar(100)
+
+as
+
+declare @tico_account_id int
+declare @match_status_id int
+declare @matching_engine_id int
+
+declare @trade_match_id int
+declare @client_trade_match_id int
+declare @allege_matching_engine_id int
+declare @c2c_matching_engine_id int
+declare @recon_matching_engine_id int
+declare @cpty_matching_engine_id int
+
+declare @client_trade_id int
+declare @booking_id int
+declare @target_account_id int
+declare @trade_id_int int
+declare @leg char(3)
+declare @swap_symbol_id int
+declare @other_leg_id int
+
+
+select
+	@trade_id_int = convert(int, @trade_id)
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+
+select
+	@matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = @matching_engine
+if @matching_engine_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Matching engine not found",
+		matching_engine = @matching_engine
+	return
+end
+
+declare @second_matching_engine_id int
+
+select
+       	@second_matching_engine_id = matching_engine_id
+from
+       	matching_engines
+where
+       	name = "MatchHub Digital Recon"
+if @matching_engine_id = NULL
+begin
+	select
+               	status = "Error",
+               	message = "Matching engine not found on second attempt",
+               	matching_engine =  "MatchHub Digital Recon"
+       	return
+end
+
+
+declare @third_matching_engine_id int
+
+select
+        @third_matching_engine_id = matching_engine_id
+from
+        matching_engines
+where
+        name = "MatchHub LDBAF"
+if @third_matching_engine_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Matching engine not found on third attempt",
+                matching_engine =  "MatchHub LDBAF"
+        return
+end
+
+select
+	@match_status_id = match_status_id
+from
+	match_statuses
+where
+	name = @match_status
+if @match_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Match status not found",
+		match_status = @match_status
+	return
+end
+
+select
+	@trade_match_id = trade_match_id
+from
+	trade_matches
+where
+        trade_id = @trade_id_int
+and
+        matching_engine_id = @matching_engine_id
+if @trade_match_id = NULL
+begin
+	select
+        	@trade_match_id = trade_match_id
+	from
+        	trade_matches
+	where
+        	trade_id = @trade_id_int
+	and
+        	matching_engine_id = @second_matching_engine_id
+	if @trade_match_id = NULL
+	begin
+        	select
+                	@trade_match_id = trade_match_id
+        	from
+                	trade_matches
+        	where
+                	trade_id = @trade_id_int
+        	and
+                	matching_engine_id = @third_matching_engine_id
+		if @trade_match_id = NULL
+		begin
+			select
+				status = "Error",
+				msg = "Could not find trade_match_id",
+				trade_id = @trade_id_int,
+				matching_engine_id = @matching_engine_id,
+				second_matching_engine_id = @second_matching_engine_id,
+				third_matching_engine_id = @third_matching_engine_id
+			return
+		end
+	end
+end
+
+
+begin tran
+	insert into
+		trade_matches_log(
+			trade_match_id,
+			trade_id,
+			matching_engine_id,
+			match_status_id,
+			edited_by,
+			timestamp)
+	select
+		trade_match_id,
+		trade_id,
+		matching_engine_id,
+		match_status_id,
+		edited_by = @tico_account_id,
+		timestamp = getdate()
+	from
+		trade_matches
+	where
+		trade_match_id = @trade_match_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to archive existing trade match",
+			trade_match_id = @trade_match_id,
+			trade_id = @trade_id_int,
+			matching_engine = @matching_engine,
+			match_status = @match_status
+		rollback tran
+		return
+	end
+
+	update
+		trade_matches
+	set
+		match_status_id = @match_status_id
+	where
+		trade_match_id = @trade_match_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Update of trade match status failed",
+			trade_id = @trade_id_int,
+			matching_engine = @matching_engine,
+			match_status = @match_status
+		rollback tran
+		return
+	end
+
+commit tran
+
+exec
+        r_insertmatchnotification
+                @trade_match_id = @trade_match_id
+
+
+select
+	status = "Success",
+	message = "Trade match status updated successfully",
+	trade_id = @trade_id_int,
+	matching_engine = @matching_engine,
+	match_status = @match_status,
+	trade_match_id = @trade_match_id
+
+go
+
