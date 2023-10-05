@@ -187,7 +187,7 @@ exec
                 @counterparty = 'CFH-CFH',
                 @quantity = @quantity,
                 @symbol = @contract_symbol,
-                @trade_date = @tdate,
+                @trade_date = @execution_time,
                 @value_date = @vdate,
                 @price = @price,
 		@identifier = @identifier
