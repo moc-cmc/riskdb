@@ -24,6 +24,8 @@ declare @amount float
 declare @id int
 declare @ids int
 
+declare @total int
+
 
 select
 	@tico_account_id = account_id
@@ -61,6 +63,21 @@ where
 
 
 delete
+
+from
+	round_turns
+where
+	convert(date, trade_date) = convert(date, @trade_date)
+
+delete
+
+from
+	eod_open_trades
+where
+	convert(date, eod_date) = convert(date, @trade_date)
+
+
+delete
 	deals
 from
 	deals a,
@@ -72,6 +89,17 @@ and
 and
 	convert(date, b.transaction_date) = convert(date, @trade_date)
 
+delete
+	account_transaction_identifiers
+from
+	account_transaction_identifiers a,
+	account_transactions b
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+        b.transaction_type_id = @transaction_type_id
+and
+        convert(date, b.transaction_date) = convert(date, @trade_date)
 
 delete
 
@@ -81,8 +109,6 @@ where
 	transaction_type_id = @transaction_type_id
 and
 	convert(date, transaction_date) = convert(date, @trade_date)
-
-
 
 
 go
