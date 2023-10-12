@@ -59,6 +59,9 @@ declare @transaction_type_id int
 declare @currency_id int
 declare @counterparty_lookup varchar(50)
 
+declare @f_value_date datetime
+declare @contract_symbol varchar(50)
+
 if @last_price is NULL or @last_qty is NULL 
 begin
 
@@ -487,6 +490,26 @@ select
 if datepart(hour, @trade_date) >= 17
 	select
 		@value_date = dateadd(day, 1, @value_date)
+
+select
+        @contract_symbol = symbol
+from
+        contracts
+where
+        contract_id = @contract_id
+
+exec
+        r_getfutvaldate
+                @contract_symbol,
+                "Regular",
+                @f_value_date output
+
+if @f_value_date != NULL
+begin
+        /* Update our @value_date if this is a Regular future with an expiration date */
+        select
+                @value_date = @f_value_date
+end
 
 select
 	@transaction_type_id = transaction_type_id
