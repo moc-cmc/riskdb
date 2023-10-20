@@ -45,7 +45,7 @@ declare @fund_agency_lookup varchar(30)
 declare @is_fund_agency char(1)
 
 declare @far_quantity numeric(30, 2)
-declare @contract varchar(20)
+declare @contract varchar(50)
 
 declare @prime_broker_lookup varchar(50)
 declare @trader_lookup varchar(50)
@@ -577,8 +577,10 @@ begin
                 b.symbol = @symbol
         and
                 b.source_id = @source_id
+
         if @contract_id = NULL
         begin
+
                 /* if not found look up in in contracts */
                 select
                         @contract_id = a.contract_id,
@@ -608,7 +610,7 @@ begin
                                 b.future_id = c.future_id
                         and
                                 c.root_symbol = @symbol
-                        if @contract = NULL
+                        if @contract_id = NULL
                         begin
                                 select
                                         status = "Error",
