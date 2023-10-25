@@ -4,8 +4,8 @@ create or replace procedure
 		@login varchar(50),
 		@source varchar(50),
 		@trade_date datetime=NULL
-
 as
+
 
 declare @tico_account_id int
 declare @source_id int
@@ -123,7 +123,6 @@ begin
                 message = "Problem determining 'Algo Invert' recon method"
         return
 end
-
 
 select
         @date_recon_method_id = recon_method_id
@@ -325,7 +324,9 @@ end
 update
 	#remote_trades
 set
-	counter_quantity = convert(numeric(30, 2), a.quantity * (1/a.price)) * -1
+	counter_quantity = convert(numeric(30, 2), a.quantity * convert(numeric(30, 10), (1/convert(numeric(30, 10), a.price))) * -1)
+	/* old - counter_quantity = convert(numeric(30, 2), a.quantity * (1/a.price)) * -1 */
+        /* trades does convert(numeric(30, 2), (a.quantity * convert(numeric(30, 10), a.price) * -1)) */
 from
 	#remote_trades a,
 	contracts b,
@@ -339,6 +340,9 @@ and
 	c.price_style_id = d.price_style_id
 and
 	d.name = "Inverted"
+
+if @debug = "Y"
+	/* Adaptive Server has expanded all '*' elements in the following statement */ select debug="#remote_trades", #remote_trades.remote_trade_symbol_id, #remote_trades.source_id, #remote_trades.trade_id, #remote_trades.recon_status_id, #remote_trades.internal_account_id, #remote_trades.external_account_id, #remote_trades.counterparty_id, #remote_trades.quantity, #remote_trades.price, #remote_trades.contract_id, #remote_trades.trade_date, #remote_trades.value_date, #remote_trades.fixing_date, #remote_trades.identifier, #remote_trades.multi_match_id, #remote_trades.recon_method_id, #remote_trades.product_id, #remote_trades.currency_id, #remote_trades.counter_quantity, #remote_trades.prev_date, #remote_trades.bo_trade_date from #remote_trades
 
 select
 	@new_count = count(*)
@@ -381,7 +385,8 @@ create table
 		product_id int NULL,
 		currency_id int NULL,
 		counter_quantity numeric(30, 8) NULL,
-		post_eod char(1) NULL
+		post_eod char(1) NULL,
+		identifier varchar(100) NULL
 )
 
 insert into
@@ -398,7 +403,8 @@ insert into
 		product_id,
 		currency_id,
 		counter_quantity,
-		post_eod)
+		post_eod,
+		identifier)
 select
 	a.trade_id,
 	a.internal_account_id,
@@ -412,7 +418,8 @@ select
 	c.product_id,
 	c.currency_id,
 	convert(numeric(30, 2), (a.quantity * convert(numeric(30, 10), a.price) * -1)),
-	post_eod = "N"
+	post_eod = "N",
+	a.identifier
 from
 	trades a,
 	contracts b,
@@ -473,6 +480,10 @@ from
 where
 	a.trade_id = b.trade_id
 
+if @debug = "Y"
+	/* Adaptive Server has expanded all '*' elements in the following statement */ select
+		debug="#trades", #trades.trade_id, #trades.internal_account_id, #trades.external_account_id, #trades.counterparty_id, #trades.quantity, #trades.price, #trades.contract_id, #trades.value_date, #trades.trade_date, #trades.remote_trade_id, #trades.multi_match_id, #trades.product_id, #trades.currency_id, #trades.counter_quantity, #trades.post_eod, #trades.identifier from #trades
+
 update
 	#remote_trades
 set
@@ -519,6 +530,144 @@ where
 	a.trade_id = b.trade_id
 and
 	b.remote_trade_id = NULL
+
+
+update
+        #remote_trades
+set
+        recon_status_id = b.status_id,
+        trade_id = c.trade_id,
+        recon_method_id = @algo_recon_method_id
+from
+        #remote_trades a,
+        #statuses b,
+        #trades c
+where
+        b.name = "Matched"
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.counterparty_id = c.counterparty_id
+and
+        a.contract_id = c.contract_id
+and
+        a.quantity = c.quantity
+and
+        a.counter_quantity = c.counter_quantity /* counters vs price */
+and
+        a.value_date = c.value_date
+and
+        a.trade_id = NULL
+and
+        c.remote_trade_id = NULL
+and
+        a.prev_date = "N"
+select
+        @matched_count = @@rowcount
+
+update
+        #trades
+set
+        b.remote_trade_id = a.remote_trade_symbol_id
+from
+        #remote_trades a,
+        #trades b
+where
+        a.trade_id = b.trade_id
+and
+        b.remote_trade_id = NULL
+
+
+/* identifier + relaxed counters */
+update
+        #remote_trades
+set
+        recon_status_id = b.status_id,
+        trade_id = c.trade_id,
+        recon_method_id = @algo_recon_method_id
+from
+        #remote_trades a,
+        #statuses b,
+        #trades c
+where
+        b.name = "Matched"
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.counterparty_id = c.counterparty_id
+and
+        a.contract_id = c.contract_id
+and
+        a.quantity = c.quantity
+and
+        convert(int, a.counter_quantity) = convert(int, c.counter_quantity) /* relaxed counters vs price  + identifiers*/
+and
+	a.identifier = c.identifier
+and
+        a.value_date = c.value_date
+and
+        a.trade_id = NULL
+and
+        c.remote_trade_id = NULL
+and
+        a.prev_date = "N"
+select
+        @matched_count = @@rowcount
+
+/* identifier + relaxed price */
+update
+        #remote_trades
+set
+        recon_status_id = b.status_id,
+        trade_id = c.trade_id,
+        recon_method_id = @algo_recon_method_id
+from
+        #remote_trades a,
+        #statuses b,
+        #trades c
+where
+        b.name = "Matched"
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.counterparty_id = c.counterparty_id
+and
+        a.contract_id = c.contract_id
+and
+        a.quantity = c.quantity
+and
+        convert(numeric(30, 8), c.price) = convert(numeric(30, 8), 1/a.price) /* relaxed inv price  + identifiers*/
+and
+        a.identifier = c.identifier
+and
+        a.value_date = c.value_date
+and
+        a.trade_id = NULL
+and
+        c.remote_trade_id = NULL
+and
+        a.prev_date = "N"
+select
+        @matched_count = @@rowcount
+
+
+update
+        #trades
+set
+        b.remote_trade_id = a.remote_trade_symbol_id
+from
+        #remote_trades a,
+        #trades b
+where
+        a.trade_id = b.trade_id
+and
+        b.remote_trade_id = NULL
 	
 
 update
@@ -1149,9 +1298,9 @@ having
 
 if @debug = "Y"
 begin
-	select
+	/* Adaptive Server has expanded all '*' elements in the following statement */ select
 		section = "extra matches",
-		a.*,
+		a.trade_id, a.recon_status_id, a.match_count, a.max_remote_trade_id,
 		b.name
 	from
 		#extra_matches a,
@@ -1159,7 +1308,7 @@ begin
 	where
 		a.recon_status_id = b.status_id	
 	
-	select * from #remote_trades
+	/* Adaptive Server has expanded all '*' elements in the following statement */ select #remote_trades.remote_trade_symbol_id, #remote_trades.source_id, #remote_trades.trade_id, #remote_trades.recon_status_id, #remote_trades.internal_account_id, #remote_trades.external_account_id, #remote_trades.counterparty_id, #remote_trades.quantity, #remote_trades.price, #remote_trades.contract_id, #remote_trades.trade_date, #remote_trades.value_date, #remote_trades.fixing_date, #remote_trades.identifier, #remote_trades.multi_match_id, #remote_trades.recon_method_id, #remote_trades.product_id, #remote_trades.currency_id, #remote_trades.counter_quantity, #remote_trades.prev_date, #remote_trades.bo_trade_date from #remote_trades
 end
 	
 update
@@ -1180,7 +1329,7 @@ and
 
 if @debug = "Y"
 begin
-	select * from #remote_trades
+	/* Adaptive Server has expanded all '*' elements in the following statement */ select #remote_trades.remote_trade_symbol_id, #remote_trades.source_id, #remote_trades.trade_id, #remote_trades.recon_status_id, #remote_trades.internal_account_id, #remote_trades.external_account_id, #remote_trades.counterparty_id, #remote_trades.quantity, #remote_trades.price, #remote_trades.contract_id, #remote_trades.trade_date, #remote_trades.value_date, #remote_trades.fixing_date, #remote_trades.identifier, #remote_trades.multi_match_id, #remote_trades.recon_method_id, #remote_trades.product_id, #remote_trades.currency_id, #remote_trades.counter_quantity, #remote_trades.prev_date, #remote_trades.bo_trade_date from #remote_trades
 end
 
 update
@@ -1225,5 +1374,6 @@ select
 	date_mismatched = @date_mismatched_count,
 	unmatched = @unmatched_count
 
-go
-	
+
+go 
+
