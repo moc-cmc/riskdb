@@ -1,3 +1,8 @@
+use
+	risk_julia
+go
+
+
 drop procedure
 	ag_processfifotrade
 go
@@ -71,7 +76,7 @@ if @value_date = NULL
 select
 	@open_id = min(id)
 from
-	open_trades
+	eod_open_trades
 where
 	contract_id = @contract_id
 and
@@ -82,11 +87,11 @@ if @open_id = NULL /* It's a new position */
 begin
 	exec
 		j_nextkey
-			"open_trades",
+			"eod_open_trades",
 			@open_id output
 
 	insert into
-		open_trades(
+		eod_open_trades(
 			id,
 			trade_date,
 			trade_id,
@@ -117,7 +122,7 @@ begin
 		@open_amount = open_amount,
 		@open_trade_price = price
 	from
-		open_trades
+		eod_open_trades
 	where
 		id = @open_id
 
@@ -132,10 +137,10 @@ begin
 	begin
 		exec
 			j_nextkey
-				"open_trades",
+				"eod_open_trades",
 				@added_open_id output
 		insert into
-			open_trades(
+			eod_open_trades(
 				id,
 				trade_date,
 				trade_id,
@@ -199,7 +204,7 @@ begin
 			delete
 
 			from
-				open_trades
+				eod_open_trades
 			where
 				id = @open_id
 
@@ -245,7 +250,7 @@ begin
 				@price)
 
 			update
-				open_trades
+				eod_open_trades
 			set
 				open_amount = open_amount + @quantity
 			where
@@ -293,7 +298,7 @@ begin
 			delete
 
 			from
-				open_trades
+				eod_open_trades
 			where
 				id = @open_id
 
