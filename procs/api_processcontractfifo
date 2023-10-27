@@ -1,3 +1,4 @@
+
 drop procedure
 	api_processcontractfifo
 go
@@ -97,7 +98,7 @@ and
 delete
 
 from
-	open_trades
+	eod_open_trades
 where
 	convert(date, trade_date) = convert(date, @trade_date)
 and
@@ -169,11 +170,11 @@ end
 
 
 update
-	open_trades
+	eod_open_trades
 set
 	a.currency_id = d.currency_id
 from
-	open_trades a,
+	eod_open_trades a,
 	future_contracts b,
 	futures c,
 	forwards d
@@ -205,11 +206,11 @@ and
 	convert(date, a.trade_date) = convert(date, @trade_date)
 
 update
-	open_trades
+	eod_open_trades
 set
 	a.current_price = b.price
 from
-	open_trades a,
+	eod_open_trades a,
 	prices b
 where
 	a.contract_id = b.contract_id
@@ -218,11 +219,11 @@ and
 
 
 update
-	open_trades
+	eod_open_trades
 set
 	a.unrealized_pl = (a.current_price - a.price) * a.open_amount * c.quantity
 from
-	open_trades a,
+	eod_open_trades a,
 	future_contracts b,
 	futures c
 where
