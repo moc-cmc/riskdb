@@ -1,7 +1,3 @@
-use
-	risk_julia
-go
-
 
 drop procedure
 	ag_processfifotrade
