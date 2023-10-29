@@ -5,7 +5,7 @@ if object_id("api_conversionrates") != NULL
 go
 
 create procedure
-	api_conversionrates
+	api_conversionrates2
 		@login varchar(50),
 		@product varchar(50),
 		@as_of_date datetime=NULL
@@ -70,9 +70,18 @@ and
 and
 	b.contract_id = c.contract_id
 and
-	convert(date, c.price_date) = convert(date, @as_of_date)
-and 
 	a.rate = NULL
+and
+    c.price_date = (
+        select
+            max(d.price_date)
+        from
+            prices d
+        where
+            d.contract_id = c.contract_id
+        and
+            convert(date, d.price_date) <= convert(date, @as_of_date)
+    )
 
 update
 	#conversion_rates
@@ -89,9 +98,18 @@ and
 and
 	b.contract_id = c.contract_id
 and
-	convert(date, c.price_date) = convert(date, @as_of_date)
-and
 	a.rate = NULL
+and
+    c.price_date = (
+        select
+            max(d.price_date)
+        from
+            prices d
+        where
+            d.contract_id = c.contract_id
+        and
+            convert(date, d.price_date) <= convert(date, @as_of_date)
+    )
 
 update
 	#conversion_rates
@@ -134,5 +152,5 @@ select
 	rate
 from
 	#conversion_rates
-                                                                                                                          
+
 go
