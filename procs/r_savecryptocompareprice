@@ -18,6 +18,7 @@ as
 declare @contract_id int
 declare @contract_symbol varchar(50)
 declare @value_date datetime
+declare @price_date datetime
 declare @price float
 declare @close_char varchar(50)
 
@@ -100,7 +101,8 @@ select
 	@price = convert(float, @close_char)
 
 select
-        @value_date = convert(datetime, @date)
+	@price_date = convert(datetime, @date + ' 17:00:00'),
+	@value_date = convert(datetime, @date)
 
 select
 	@contract_id = a.contract_id,
@@ -117,6 +119,7 @@ and
 
 if @contract_id = NULL
 begin
+	/*
 	select
 		@contract_id = contract_id,
 		@contract_symbol = symbol
@@ -127,15 +130,16 @@ begin
 
 	if @contract_id = NULL
 	begin
-		select
-			error = "Error",
-			message = "Could not find contract",
-			ld_venue_symbol = @ld_venue_symbol,
-			instrument = @instrument
-		return
-	end
+	*/
 
+	select
+		error = "Error",
+		message = "Could not find contract",
+		ld_venue_symbol = @ld_venue_symbol,
+		instrument = @instrument
+	return
 end
+
 		
 
 select
@@ -145,7 +149,7 @@ from
 where
 	contract_id = @contract_id
 and
-	price_date = @value_date
+	price_date = @price_date
 and
 	price_type_id = @price_type_id
 
@@ -169,7 +173,7 @@ begin
                 	@price_id,
                 	@status_id,
                 	@contract_id,
-                	@value_date,
+                	@price_date,
                 	@price_type_id,
                 	@price)
 end
@@ -189,7 +193,7 @@ select
 from
         bo_spot_settles
 where
-        price_date = @value_date
+        price_date = @price_date
 and
         contract_id = @contract_id
 
@@ -205,7 +209,7 @@ begin
                 values(
                         @contract_id,
                         @mpt_source_id,
-                        @value_date,
+                        @price_date,
                         @price)
 end
 else
@@ -227,9 +231,9 @@ where
 and
         source_id = @mpt_source_id
 and
-        value_date = @value_date
+        value_date = @price_date
 and
-        price_date = @value_date
+        price_date = @price_date
 
 if @bo_price_id = NULL
 begin
@@ -251,7 +255,7 @@ begin
                 @bo_price_id,
                 3,
                 @contract_id,
-                @value_date,
+                @price_date,
                 @value_date,
                 @mpt_source_id,
                 @price)
@@ -273,9 +277,10 @@ exec
                 @price = @price
 
 select
-        msg = "price successfully updated",
-	symbol = @contract_symbol,
-        price_date = @value_date,
+        msg = "price successfully saved",
+	contract_symbol = @contract_symbol,
+	mapping_symbol = @ld_venue_symbol,
+        price_date = @price_date,
 	price = @price
 	
 
@@ -285,7 +290,7 @@ select
 	@login,
 	@source,
 	@timestamp_et,
-	@value_date,
+	@price_date,
 	@ld_venue_symbol,
 	@instrument,
 	@price
