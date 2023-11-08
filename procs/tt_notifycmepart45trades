@@ -21,7 +21,7 @@ declare @traiana_id_prefix varchar(15)
 declare @netlink_broker_id int
 declare @boa_pb_id int
 declare @manual_tally_broker_id int
-declare @usi_lookup varchar(20)
+declare @usi_lookup varchar(25)
 declare @min_trade_id int
 
 declare @ruble_conversion varchar(10)
@@ -255,8 +255,8 @@ create table
 		old_qty_if_deleted float NULL,
                 client_prime_broker varchar(20) NULL,
 		trm_msg varchar(7) NULL,
-		tr_usi varchar(25) NULL,
-		far_tr_usi varchar(25) NULL,
+		tr_usi varchar(40) NULL,
+		far_tr_usi varchar(40) NULL,
                 is_ndf char(1) NULL,
 		is_inverted_contract char(1) NULL,
 		fc varchar(20) NULL,
@@ -585,7 +585,7 @@ begin
 			far_fixing_date datetime NULL,
 			trade_notification_id int NULL,
 			near_trade_id int NULL,
-			far_tr_usi varchar(25) NULL,
+			far_tr_usi varchar(40) NULL,
 			external_account_id int,
 			far_db_price float)
 	insert into
