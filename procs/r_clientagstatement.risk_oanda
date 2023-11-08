@@ -1,0 +1,686 @@
+
+create or replace procedure
+	r_clientagstatement
+		@login varchar(50),
+		@run_name varchar(50)=NULL,
+		@trade_date datetime=NULL
+as
+
+
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @evaluation_currency varchar(50)
+declare @run_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @fx_transaction_type_id int
+declare @option_premium_type_id int
+declare @source_id int
+declare @external_account_id int
+declare @account_symbol varchar(50)
+declare @name varchar(200)
+declare @phone varchar(20)
+declare @email varchar(20)
+declare @address_line1 varchar(100)
+declare @address_line2 varchar(100)
+declare @additional1 varchar(100)
+declare @additional2 varchar(100)
+declare @additional3 varchar(100)
+declare @cfd_transaction_type_id int
+declare @cfd_roll_type_id int
+declare @equiv float
+
+declare @begin_equiv float
+declare @begin_end_equiv float 
+declare @activity_equiv float
+declare @end_equiv float
+declare @fwd_open_equiv float
+declare @opt_open_equiv float
+declare @start_time datetime
+declare @end_time datetime
+declare @tag_run_name varchar(50)
+declare @proc_start_time datetime
+declare @proc_end_time datetime
+declare @activate_timer int
+
+select @activate_timer = 1
+
+select @proc_start_time = getdate()
+
+if (@activate_timer = 1)
+begin
+	select @start_time = getdate()
+end
+
+if @run_name = NULL
+	return
+
+select @tag_run_name = "run:" + lower(STR_REPLACE(@run_name, " ", "_"))
+
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+   @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+   @subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+   @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+   @style = "background:#FFFFFF;border: 1px solid white",
+   @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+   @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+   #meta(
+           meta_type char(200),
+           name char(50) NULL,
+           action char(100) NULL,
+           value char(200) NULL)
+insert into
+   #meta
+values(
+   "Row Style",
+   "style",
+   NULL,
+   NULL)
+
+insert into
+   #meta
+values (
+   "Column Group",
+   "section",
+   NULL,
+   NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">-#,##0.00</span>")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "units",
+        "Number",
+        "#,##0.00;<span style=""color:red"">-#,##0.00</span>")
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = max(a.commit_date)
+	from
+		daily_commits a,
+		commit_statuses b
+	where
+		a.commit_status_id = b.commit_status_id
+	and
+		b.name = "Commit Complete"
+end
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+if @run_name = NULL
+begin
+	select
+		@run_name = name
+	from
+		funds
+	where
+		fund_id = @fund_id
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id 
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+
+
+select
+	@external_account_id = external_account_id,
+	@account_symbol = symbol
+from
+	external_accounts
+where
+	symbol = @run_name
+select
+	@name = name,
+	@phone = phone,
+	@email = email,
+	@address_line1 = address_line1,
+	@address_line2 = address_line2,
+	@additional1 = additional1,
+	@additional2 = additional2,
+	@additional3 = additional3
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+
+create table
+	#header(
+		id int identity,
+		customer varchar(100) NULL,
+		label varchar(50) NULL,
+		value varchar(50) NULL)
+if @run_name = "LP OCAN DEUTSCHEBANK"
+begin
+
+	select
+		@name = "Deutsche Bank Aktiengesellschaft",
+		@address_line1 = "Floor 19, 6-8 Bishopgate",
+		@address_line2 = "London, EC2N 4DA",
+		@evaluation_currency = "USD"
+
+end
+insert into
+	#header(
+		customer,
+		label,
+		value)
+values(
+	@name,
+	"<b>Statement Period</b>",
+	"<b>"+convert(varchar(11), @end_date)+"</b>")
+
+insert into
+	#header(
+		customer,
+		label,
+		value)
+values(
+	@address_line1,
+	"",
+	"")
+
+insert into
+	#header(
+		customer,
+		label,
+		value)
+values(
+	@address_line2,
+	"",
+	"")
+
+insert into
+	#header(
+		customer,
+		label,
+		value)
+values(
+	NULL,
+	"Account Currency:",
+	@evaluation_currency)
+
+select
+	section = "Statement",
+	style = @style,
+	"liquidity provider"=customer,
+	" "=label,
+	"  "=value
+from
+	#header
+order by
+	id
+
+create table
+	#summary(
+		id int identity,
+		name varchar(50) NULL,
+		value varchar(50) NULL
+)
+
+insert into #summary values("Opening Balance", "$0.00")
+insert into #summary values("Opening Unrealized P/L", "$0.00")
+insert into #summary values("Opening NAV", "$0.00")
+insert into #summary values(NULL, NULL)
+insert into #summary values("Realized Profit", "$0.00")
+insert into #summary values("Realized Loss", "$0.00")
+insert into #summary values("Net Realized P/L", "$0.00")
+insert into #summary values(NULL, NULL)
+insert into #summary values("Withdrawals", "$0.00")
+insert into #summary values("Deposits", "$0.00")
+insert into #summary values("Financing", "$0.00")
+insert into #summary values("Commission", "$0.00")
+insert into #summary values("Adjustments", "$0.00")
+insert into #summary values(NULL, NULL)
+insert into #summary values("Closing Balance", "$0.00")
+insert into #summary values("Closing Unrealized P/L", "$0.00")
+insert into #summary values("Closing NAV", "$0.00")
+select
+	section = "Account Summary",
+	style = @style,
+	" " = name,
+	"  " = value
+from
+	#summary
+
+	
+select
+	section = "**Important Notice**",
+	style = @style,
+	"OANDA and its liquidity providers do not maintain deposits and/or positions with each other. No activity takes place directly between OANDA and its liquidity provider beyond the agreement to terms of a trade. All 'Transactions' listed below do not occur with the liquidity provider. The agreement to trade is given up to the prime broker for clearance, execution, position, and balance maintenance.<br><br>Where the 'Transaction Type' is listed as 'Give-up to PB' this indicates the trade terms agreed to between OANDA and the liquidity provider in which the prime broker takes both the buy and sell position to the transaction. Where the 'Transation Type' is listed 'Give-up - Balance Entry' this is an entry to balance the statement to show there are no open positions or outstanding balances. These 'Transactions' do not actually occur as part of any trade activity."
+	
+/* Fetch all the trades */
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		trade_type_id int,
+		trade_date datetime,
+		external_account_id int,
+		prime_broker_id int NULL,
+		margin_multiplier float NULL,
+		quantity float,
+		contract_id int,
+		symbol varchar(50) NULL,
+		product_id int,
+		currency_id int,
+		price float,
+		value_date datetime,
+		fixing_date datetime NULL,
+		counterparty_id int, 
+ 		lp_transparency varchar(5) NULL,
+		counterparty varchar(50) NULL,
+		margin float NULL,
+		product_qty float NULL,
+		product_equiv float NULL,
+		currency_qty float NULL,
+		currency_equiv float NULL,
+		buy_sell varchar(5) NULL, 
+ 		display_price float NULL,
+		reval_counter_qty float NULL,
+		reval_price_db float NULL,
+		reval_price_std float NULL,
+		discount_factor float NULL,
+		mtm float NULL,
+		entry_type char(1) NULL /* G for giveup, O for offset*/
+		)
+insert into
+	#trades(
+		trade_id,
+		deal_id, 
+ 		trade_type_id,
+		trade_date,
+		external_account_id,
+		quantity,
+		contract_id,
+		product_id,
+		currency_id,
+		price,
+		value_date,
+		fixing_date,
+		counterparty_id,
+		display_price,
+		entry_type)
+select
+	a.trade_id,
+	a.deal_id,
+	a.trade_type_id,
+	a.trade_date,
+	a.external_account_id,
+	a.quantity,
+	a.contract_id,
+	b.product_id,
+	b.currency_id,
+	a.price,
+	a.value_date,
+	a.fixing_date,
+	a.counterparty_id, 
+	a.price,
+        "G"
+from
+	trades a,
+	forwards b,
+	#external_accounts c,
+	#internal_accounts d,
+	#traders e,
+	#strategies f,
+	#brokers g,
+	#counterparties h
+where
+	a.external_account_id = c.external_account_id
+and
+	a.internal_account_id = d.internal_account_id
+and
+	a.trader_id = e.trader_id
+and
+	a.strategy_id = f.strategy_id
+and
+	a.broker_id = g.broker_id
+and
+	a.counterparty_id = h.counterparty_id
+and
+	a.contract_id = b.contract_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+insert into
+        #trades(
+                trade_id,
+                deal_id,
+                trade_type_id,
+                trade_date,
+                external_account_id,
+                quantity,
+                contract_id,
+                product_id,
+                currency_id,
+                price,
+                value_date,
+                fixing_date,
+                counterparty_id,
+                display_price,
+                entry_type)
+select
+        a.trade_id,
+        a.deal_id,
+        a.trade_type_id,
+        a.trade_date,
+        a.external_account_id,
+        a.quantity * -1,
+        a.contract_id,
+        b.product_id,
+        b.currency_id,
+        a.price,
+        a.value_date,
+        a.fixing_date,
+        a.counterparty_id,
+        a.price,
+        "O"
+from
+	trades a,
+	forwards b,
+        #external_accounts c,
+        #internal_accounts d,
+        #traders e,
+        #strategies f,
+        #brokers g,
+        #counterparties h
+where
+        a.external_account_id = c.external_account_id
+and
+        a.internal_account_id = d.internal_account_id
+and
+        a.trader_id = e.trader_id
+and
+        a.strategy_id = f.strategy_id
+and     
+        a.broker_id = g.broker_id
+and
+        a.counterparty_id = h.counterparty_id
+and
+        a.contract_id = b.contract_id
+and
+        a.value_date >= @begin_date
+and
+        a.trade_date >= @begin_date
+and
+        a.trade_date < @end_date
+
+
+update
+	#trades
+set
+	a.display_price = 1.0 / a.display_price
+from
+	#trades a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+and
+	a.display_price != 0.0
+
+update
+	#trades
+set
+	product_qty = a.quantity,
+	currency_qty = a.quantity * a.price * -1.0 * b.quantity
+from
+	#trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	a.symbol = b.symbol
+from
+	#trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+
+/* End Trade Fetch */
+
+
+select
+	section = "Transactions",
+	style = "background:#fff",
+	trade_date = convert(varchar(19), a.trade_date, 23),
+	value_date = str_replace(convert(varchar(11), a.value_date, 111), '/', '-'),
+ 	transaction_type = case when
+		entry_type = "G"
+			then "Give-up to PB"
+		else
+			"Give-up - Balance Entry"
+	end,
+	instrument = a.symbol,
+	price = a.price,
+	units = product_qty,
+	amount  = currency_qty
+from
+	#trades a
+order by
+	a.trade_date,
+	a.trade_id,
+	a.entry_type
+
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	_ = '<img id="cipf-logo" src="/WebObjects/Themes/ETGTheme.themed/Resources/cipf_logo.png">',
+	disclaimer = '<b>Member - Canadian Investor Protection Fund.</b><br>
+Customers??? accounts are protected by the Canadian Investor Protection Fund within specified limits. A brochure describing the nature and limits of coverage is available upon request. A copy of our most recent Financial Statement and a list of Directors and Senior Officers is available for your personal inspection at our offices. Our clients in British Columbia are entities, upon request, to certain additional information about us, including information about our registration status and any administrative proceedings that may relate to the firm or our staff. <br><br>
+
+Forex transactions are disclosed to the Canada Revenue Agency and Revenue Quebec (residents of Quebec only) on a yearly basis. These transactions are to be reported on your annual return of income. <br><br>
+
+For a details itemization of each transactions in this reporting month, please access the Full Transaction History (/account/transaction-history)<br><br>
+
+Order execution only<br><br>
+
+Any free credit balances represent funds layabout on demand which, although properly recorded in our books, are not segregated and may be used in the conduct of our business. <br><br>
+
+This statement provides unrealized profit/loss information for positions that remain open as at the end of the statement period and realized profit/loss information for positions closed during the statement period. It does not provide a roll-forward of the change in account market value that occurred during the statement period<br><br>
+
+<p style="font-size:80%;">[1] Markup is calculated based on the difference between your trade execution price and the price our pricing engine determines we may be able to immediately offset your trade at. Since OANDA typically only offsets its aggregate client exposure, the markup paid does not necessarily reflect the revenue earned by OANDA<p>'
+
+	
+
+
+select
+	@proc_end_time = getdate()
+
+exec
+	sp_dogstatsdtimer
+		@metric_name="ase.proc.r_cipfdailylpstatement",
+		@start_time=@proc_start_time,
+		@end_time=@proc_end_time,
+		@tags=@tag_run_name,
+		@sample_rate="1.0"
+
+
+go 
+
