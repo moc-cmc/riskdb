@@ -1,0 +1,156 @@
+
+if object_id("api_conversionrates") != NULL
+    drop procedure
+        api_conversionrates 
+go
+
+create procedure
+	api_conversionrates2
+		@login varchar(50),
+		@product varchar(50),
+		@as_of_date datetime=NULL
+as
+
+declare @evaluation_currency_id int
+declare @begin_date datetime
+declare @end_date datetime
+
+
+if @as_of_date = NULL
+	select
+		@as_of_date = getdate()
+select
+	@as_of_date = convert(datetime, convert(date, @as_of_date))
+
+exec
+	r_daterangefordate
+		@as_of_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@evaluation_currency_id = product_id
+from
+	products
+where
+	symbol = @product
+
+
+create table
+	#conversion_rates(
+		product_id int,
+		rate float NULL)
+insert into
+	#conversion_rates(
+		product_id)
+select
+	product_id
+from
+	products
+
+update
+	#conversion_rates
+set
+	rate = 1.0
+where 
+	product_id = @evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = a.product_id
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+and
+    c.price_date = (
+        select
+            max(d.price_date)
+        from
+            prices d
+        where
+            d.contract_id = c.contract_id
+        and
+            convert(date, d.price_date) <= convert(date, @as_of_date)
+    )
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+and
+    c.price_date = (
+        select
+            max(d.price_date)
+        from
+            prices d
+        where
+            d.contract_id = c.contract_id
+        and
+            convert(date, d.price_date) <= convert(date, @as_of_date)
+    )
+
+update
+	#conversion_rates
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	current_prices c
+where
+	b.product_id = a.product_id 
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	current_prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+/* select * from #conversion_rates  MARKR */
+
+select
+	product_id,
+	rate
+from
+	#conversion_rates
+
+go
