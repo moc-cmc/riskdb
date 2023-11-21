@@ -1,0 +1,73 @@
+
+create or replace procedure
+	fxa_importmarexfuttrades
+		@login varchar(25),
+		@latest_run_date varchar(25),
+		@entry_date varchar(25),
+		@trade_date varchar(25),
+		@ledger_code varchar(25), 
+		@ledger_name varchar(50),
+		@trade_status varchar(25),
+		@delivery_prompt_date varchar(25),
+		@market_code varchar(25),
+		@instrument_code varchar(25), 
+		@instrument_long_name varchar(50),
+		@currency_code varchar(25),
+		@option_type varchar(25),
+		@trade_type varchar(25),
+		@buy_sell varchar(25),
+		@transaction_volume varchar(25),
+		@price varchar(25),
+		@strike varchar(25),
+		@trade_strategy varchar(25),
+		@identifier varchar(25),
+		@charge_currency varchar(25),
+		@net_charges varchar(25),
+		@row_index int,
+		@row_count int
+as
+
+declare @quantity numeric(30,2) 
+declare @trade_price numeric(30,2) 
+declare @trade_id int
+declare @deal_id int
+declare @symbol varchar(100)
+declare @contract_symbol varchar(100)
+
+select 
+	@quantity = convert(float, rtrim(@transaction_volume)),
+	@trade_price = convert(float, rtrim(@price)),
+	@contract_symbol = rtrim(@instrument_code) + "_" + rtrim(@delivery_prompt_date)	
+
+select
+	@symbol = symbol
+from
+	contract_symbols
+where
+	@symbol = @contract_symbol
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Cannot determine contract for symbol",
+		symbol=@contract_symbol
+
+	return
+end
+
+return
+
+exec
+	api_tallymarketfuture
+                @login,
+                @buy_sell,
+                @symbol,
+                @quantity,
+                @price,
+                @deal_id output,
+                @trade_id output
+
+go
+
+		
