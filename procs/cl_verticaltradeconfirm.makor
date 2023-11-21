@@ -2004,6 +2004,7 @@ begin
         insert into #output select "quantity", convert(varchar, cast(abs(quantity) AS money), 1) from #trades
 	insert into #output select "price", @display_rate
         insert into #output select "value date", convert(varchar(11), cast(value_date as datetime)) from #trades
+        insert into #output select "fixing date", convert(varchar(11), cast(fixing_date as datetime)) from #trades
 	insert into #output select "trade id", convert(varchar(50), trade_id) from #trades
 
 	/*   Going to leave this entire section for now, i think what is in their REQ is wrong and we will come back to this 

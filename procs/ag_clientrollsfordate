@@ -1,0 +1,1252 @@
+drop procedure
+	ag_clientrollsfordate
+go
+
+create procedure
+	ag_clientrollsfordate
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+ 
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+
+declare @id int
+declare @ids int
+declare @external_account_id int
+ 
+declare @account varchar(50)
+declare @evaluation_currency_id int
+declare @evaluation_currency varchar(50)
+declare @settlement_method varchar(50)
+declare @account_roll_config varchar(250)
+
+declare @batch_transaction_id int
+declare @timestamp datetime
+declare @queued_status_id int
+declare @confirmed_status_id int
+declare @status_id int
+declare @status varchar(50)
+declare @validated_by int
+declare @validation datetime
+declare @prb_id int
+declare @max_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"account",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"back_to_home",
+	"Roll Risk Home",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"recalc",
+	"Clear Client Rolls Batch",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"status",
+	"Batch Transactions Edit Log",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"release",
+	"Release Roll Balances",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"reject",
+	"Reject Client Request",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"next_action",
+	"Approve Next Request Action",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"enable_user",
+	"Enable Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"disable_user",
+	"Disable Approval User",
+	NULL) 
+
+insert into
+	#meta 
+values(
+	"Column Link",
+	"add_admin_user",
+	"Add Approval User",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"position",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+
+select
+	@validated_by = validated_by,
+	@validation = timestamp
+from
+	roll_trade_dates
+where
+	trade_date = @trade_date
+if @validation = NULL
+begin
+	select
+		status = "Error",
+		message = "Dates not validated for trade date",	
+		trade_date = @trade_date,
+		date = @trade_date
+	return
+end
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+if @trade_date > getdate()
+begin
+	select
+		message = "Balances cannot be queued for a trade date in the future"
+	return
+end
+
+begin tran
+	delete
+		proposed_roll_batches
+	from
+		proposed_roll_batches a,
+		batch_transactions b
+	where
+		a.batch_transaction_id = b.batch_transaction_id
+	and
+		b.trade_date = @trade_date
+	and
+		b.confirmation_date = NULL
+
+	delete
+		batch_transactions
+	from
+		batch_transactions
+	where
+		trade_date = @trade_date
+	and
+		confirmation_date = NULL
+commit tran
+
+
+
+create table
+	#spot_value_dates(
+		contract_id int,
+		product_id int NULL,
+		currency_id int NULL,
+		symbol varchar(50) NULL,
+		trade_date datetime,
+		closing_date datetime,
+		spot_date datetime,
+		includes_holiday varchar(1))
+insert into
+	#spot_value_dates(
+		contract_id,
+		trade_date,
+		closing_date,
+		spot_date,
+		includes_holiday)
+select
+	contract_id,
+	trade_date,
+	closing_date,
+	spot_date,
+	includes_holiday
+from
+	spot_value_dates
+where
+	convert(date, trade_date) = convert(date, @trade_date)
+
+/*
+delete
+	#spot_value_dates
+from
+	#spot_value_dates a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+and
+	b.symbol in("XAGUSD", "USDXAG", "XAUUSD", "USDXAU") */
+
+create table
+	#inverted_contracts(
+		contract_id int,
+		product_id int, 
+		currency_id int,
+		inverted_contract_id int NULL)
+insert into
+	#inverted_contracts(
+		contract_id,
+		product_id,
+		currency_id)
+select
+	a.contract_id,
+	b.product_id,
+	b.currency_id
+from
+	#spot_value_dates a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#inverted_contracts
+set
+	a.inverted_contract_id = b.contract_id
+from
+	#inverted_contracts a,
+	forwards b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+
+delete
+
+from
+	#inverted_contracts
+where
+	inverted_contract_id = NULL
+
+insert into
+	#spot_value_dates(
+		contract_id,
+		trade_date,
+		closing_date,
+		spot_date,
+		includes_holiday)
+select
+	a.inverted_contract_id,
+	b.trade_date,
+	b.closing_date,
+	b.spot_date,
+	b.includes_holiday
+from
+	#inverted_contracts a,
+	#spot_value_dates b
+where
+	a.contract_id = b.contract_id
+
+update
+	#spot_value_dates
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#spot_value_dates a,
+
+ 	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#spot_value_dates
+set
+	a.symbol = b.symbol
+from
+	#spot_value_dates a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+create table
+	#external_accounts(
+		id int identity,
+		external_account_id int,
+		symbol varchar(50),
+		batch_transaction_id int NULL)
+insert into
+	#external_accounts(
+		external_account_id,
+		symbol)
+select
+	a.external_account_id,
+	a.symbol
+from
+	external_accounts a,
+	settlement_methods b
+where
+	a.settlement_method_id = b.settlement_method_id
+and
+	b.name in("Roll To Eval Currency", "Roll By Pair")
+order by
+	a.symbol
+
+update
+	#external_accounts
+set
+	a.batch_transaction_id = b.batch_transaction_id
+from
+	#external_accounts a,
+	batch_transactions b
+where
+	a.external_account_id = b.external_account_id
+and
+	convert(date, b.trade_date) = convert(date, @trade_date)
+
+
+create table
+	#pair_positions(
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,4), 
+ 		closing_date datetime NULL,
+		roll_date datetime NULL)
+
+create table
+	#positions(
+		product_id int,
+		value_date datetime,
+		quantity numeric(30,4))
+create table
+	#balances(
+		product_id int,
+		value_date datetime,
+		quantity numeric(30,4),
+		currency_id int NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		closing_date datetime NULL,
+		roll_date datetime NULL)
+
+create table
+	#calculated_output(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		account_roll_config varchar(250) NULL,
+		trade_date datetime NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		product_id int NULL,
+		evaluation_currency_id int NULL,
+		position numeric(30,4) NULL,
+		closing_date datetime NULL,
+		roll_to_date datetime NULL,
+		batch_transaction_id int NULL,
+		release varchar(20) NULL)
+		
+	
+create table
+	#closing_trades(
+		trade_id int,
+		external_account_id int,
+		contract_id int,
+		product_id int NULL,
+		currency_id int NULL,
+		product_quantity float,
+		currency_quantity float,
+		price float,
+		value_date datetime)
+insert into
+	#closing_trades(
+		trade_id,
+		external_account_id,
+		contract_id,
+		product_quantity,
+		currency_quantity,
+		price,
+		value_date)
+select
+	a.trade_id,
+	a.external_account_id,
+	a.contract_id,
+	a.quantity,
+	a.quantity * a.price * -1.0,
+	a.price,
+	a.value_date
+from
+	trades a,
+	#spot_value_dates b,
+	trade_types c
+where
+	a.contract_id = b.contract_id
+and
+	a.value_date = b.closing_date
+and
+	a.trade_type_id = c.trade_type_id
+and
+	c.name = "Swap Near"
+
+update
+	#closing_trades
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#closing_trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+create table
+	#closing_positions(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#closing_positions(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	external_account_id,
+	product_id,
+	value_date,
+	sum(product_quantity)
+from
+	#closing_trades
+group by
+	external_account_id,
+	product_id,
+	value_date
+
+insert into
+	#closing_positions(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	external_account_id,
+	currency_id,
+	value_date,
+	sum(currency_quantity)
+from
+	#closing_trades
+group by
+	external_account_id,
+	currency_id,
+	value_date
+
+create table
+	#closing_balances(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#closing_balances(
+		external_account_id,
+		product_id,
+		value_date,
+		balance)
+select
+	external_account_id,
+	product_id,
+	value_date,
+	sum(balance)
+from
+	#closing_positions
+group by
+	external_account_id,
+	product_id,
+	value_date
+
+
+create table
+	#closing_pair_positions(
+		external_account_id int,
+		contract_id int,
+		value_date datetime,
+		quantity float)
+insert into
+	#closing_pair_positions(
+		external_account_id,
+		contract_id,
+		value_date,
+		quantity)
+select
+	a.external_account_id,
+	a.contract_id,
+	a.value_date,
+	sum(a.quantity)
+from
+	trades a,
+	#spot_value_dates b,
+	trade_types c
+where
+	a.contract_id = b.contract_id
+and
+	a.value_date = b.closing_date
+and
+	a.trade_type_id = c.trade_type_id
+and
+	c.name = "Swap Near"
+group by
+	a.external_account_id,
+	a.contract_id,
+	a.value_date
+
+
+create table
+	#resid_trades(
+		trade_id int,
+		external_account_id int,
+		contract_id int,
+		product_id int NULL,
+		currency_id int NULL,
+		product_quantity float,
+		currency_quantity float,
+		price float,
+		value_date datetime)
+insert into
+	#resid_trades(
+		trade_id,
+		external_account_id,
+		contract_id,
+		product_quantity,
+		currency_quantity,
+		price,
+		value_date)
+select
+	a.trade_id,
+	a.external_account_id,
+	a.contract_id,
+	a.quantity,
+	a.quantity * a.price * -1.0,
+	a.price,
+	a.value_date
+from
+	trades a,
+	#spot_value_dates b,
+	trade_types c,
+	#external_accounts d
+where
+/* RESID SECTION */
+	a.contract_id = b.contract_id
+and
+	a.external_account_id = d.external_account_id
+and
+	a.value_date < b.spot_date
+and
+	a.trade_type_id = c.trade_type_id
+and
+	c.name = "Spot"
+and
+	convert(date, a.trade_date) = convert(date, @trade_date)
+
+update
+	#resid_trades
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#resid_trades a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+
+create table
+	#resid_positions(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		quantity float)
+insert into
+	#resid_positions(
+		external_account_id,
+		product_id,
+		value_date,
+		quantity)
+select
+	external_account_id,
+	product_id,
+	value_date,
+	product_quantity
+from
+	#resid_trades
+group by
+	external_account_id,
+	product_id,
+	value_date
+
+insert into
+	#resid_positions(
+		external_account_id,
+		product_id,
+		value_date,
+		quantity)
+select
+	external_account_id,
+	currency_id,
+	value_date,
+	currency_quantity
+from
+	#resid_trades
+group by
+	external_account_id,
+	currency_id,
+	value_date
+
+create table
+	#resid_balances(
+		external_account_id int,
+		product_id int,
+		value_date datetime,
+		quantity float)
+insert into
+	#resid_balances(
+		external_account_id,
+		product_id,
+		value_date,
+		quantity)
+select
+	external_account_id,
+	product_id,
+	value_date,
+	sum(quantity)
+from
+	#resid_positions
+group by
+	external_account_id,
+	product_id,
+	value_date
+
+create table
+	#resid_pair_positions(
+		external_account_id int,
+		contract_id int,
+		value_date datetime,
+		quantity float)
+insert into
+	#resid_pair_positions(
+		external_account_id,
+		contract_id,
+		value_date,
+		quantity)
+select
+	external_account_id,
+	contract_id,
+	value_date,
+	sum(product_quantity)
+from
+	#resid_trades
+group by
+	external_account_id,
+	contract_id,
+	value_date
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#external_accounts
+where
+	batch_transaction_id = NULL
+and
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#external_accounts
+	where
+		batch_transaction_id = NULL
+	and
+		id > @id
+
+	select
+		@external_account_id = NULL,
+		@batch_transaction_id = NULL,
+		@account = NULL,
+		@account_roll_config = NULL,
+		@settlement_method = NULL,
+		@evaluation_currency_id = NULL,
+		@evaluation_currency = NULL
+
+	select
+		@external_account_id = external_account_id,
+		@account = symbol
+	from
+		#external_accounts
+	where
+		id = @id
+
+	select
+		@evaluation_currency_id = a.evaluation_currency_id,
+		@evaluation_currency = b.symbol,
+		@settlement_method = c.name
+	from
+		external_accounts a,
+		products b,
+		settlement_methods c
+	where
+		a.settlement_method_id = c.settlement_method_id
+	and
+		a.evaluation_currency_id = b.product_id
+	and
+		a.external_account_id = @external_account_id
+
+	if @settlement_method = "Roll To Eval Currency"
+	begin
+		insert into
+			#calculated_output(
+				style,
+				external_account_id,
+				account,
+				account_roll_config,
+				trade_date)
+		values(
+			@client_style,
+			@external_account_id,
+			@account,
+			"Roll balances to " + rtrim(@evaluation_currency),
+			@trade_date)
+
+		truncate table
+			#positions
+		truncate table
+			#balances
+
+		insert into
+			#positions(
+				product_id,
+				value_date,
+				quantity)
+		select
+			b.product_id,
+			a.value_date,
+			sum(a.quantity * -1.0) /* reverse sign to match client perspective */
+		from
+			trades a,
+			#spot_value_dates b
+		where
+			a.contract_id = b.contract_id
+		and
+			a.external_account_id = @external_account_id
+		and
+			a.value_date >= @trade_date
+		group by
+			b.product_id, 
+ 			a.value_date
+
+		insert into
+			#positions(
+				product_id,
+				value_date,
+				quantity)
+		select
+			b.currency_id,
+			a.value_date,
+			sum(a.quantity * a.price) /* reverse sign to match client perspective */
+		from
+			trades a,
+			#spot_value_dates b
+		where
+			a.contract_id = b.contract_id 
+ 		and
+			a.external_account_id = @external_account_id
+		and
+			a.value_date >= @trade_date
+		group by
+			b.currency_id,
+			a.value_date
+
+		insert into
+			#balances(
+				product_id,
+				value_date,
+				quantity)
+		select
+			product_id,
+			value_date,
+			sum(quantity)
+		from
+			#positions
+		group by
+			product_id,
+			value_date
+
+
+		/* MARKR */
+		/* This was for parallel testing to match positions. Remove when in production 
+		update
+			#balances
+		set
+			a.quantity = a.quantity + b.balance
+		from
+			#balances a,
+			#closing_balances b
+		where
+			b.external_account_id = @external_account_id
+		and
+			a.product_id = b.product_id
+		and
+			a.value_date = b.value_date
+
+		update
+			#balances
+		set
+			a.quantity = a.quantity + b.quantity
+		from
+			#balances a,
+			#resid_balances b
+		where
+			b.external_account_id = @external_account_id
+		and
+			a.product_id = b.product_id
+		and
+			a.value_date = b.value_date MARKR */
+		
+		delete
+
+		from
+			#balances
+		where
+			quantity = 0.0
+
+		update
+			#balances
+		set
+			currency_id = @evaluation_currency_id
+
+		update
+			#balances
+		set
+			a.contract_id = b.contract_id
+		from
+			#balances a,
+			forwards b
+		where
+			a.product_id = b.product_id
+		and
+			a.currency_id = b.currency_id
+
+
+		update
+			#balances
+		set
+			a.symbol = b.symbol
+		from
+			#balances a,
+			contracts b
+		where
+			a.contract_id = b.contract_id
+
+	
+ 		update
+			#balances
+		set
+			a.closing_date = b.closing_date,
+			a.roll_date = b.spot_date
+		from
+			#balances a,
+			#spot_value_dates b
+		where
+			a.contract_id = b.contract_id
+		and
+			convert(date, b.trade_date) = @trade_date
+		and
+			convert(date, a.value_date) = convert(date, b.closing_date)
+		insert into
+			#calculated_output(
+				style,
+				external_account_id,
+				account,
+				trade_date,
+				contract_id,
+				symbol,
+				product_id,
+				evaluation_currency_id,
+				position,
+				closing_date, 
+ 				roll_to_date)
+		select
+			style = @style,
+			external_account_id = @external_account_id,
+			account = @account,
+			trade_date = @trade_date,
+			contract_id,
+			symbol,
+			product_id,
+			currency_id,
+			quantity,
+			closing_date,
+			roll_date
+		from
+			#balances
+		where
+			closing_date != NULL
+		and
+			product_id != @evaluation_currency_id
+		order by
+			symbol
+			
+	end
+
+	if @settlement_method = "Roll By Pair"
+	begin
+		insert into
+			#calculated_output(
+				style,
+				external_account_id,
+				account,
+				account_roll_config,
+				trade_date)
+		values(
+			@client_style,
+			@external_account_id,
+			@account,
+			"Roll pair positions",
+			@trade_date)
+
+		truncate table
+			#pair_positions
+
+		insert into
+			#pair_positions(
+				contract_id,
+				value_date,
+				quantity)
+		select
+			a.contract_id,
+			a.value_date,
+			sum(a.quantity * -1.0) /* reverse perspective to clients*/
+		from
+			trades a,
+			#spot_value_dates b
+		where
+			a.external_account_id = @external_account_id
+		and
+			a.contract_id = b.contract_id
+		and
+			convert(date, a.value_date) >= convert(date, @trade_date)
+		and
+			convert(date, a.value_date) = convert(date, b.closing_date)
+		group by
+			a.contract_id,
+			a.value_date
+
+		/* MARKR */
+		/* Comment this out now that they're live. this code was to prevent roll and resid trades from being included so we could match balances while they were in parallel 
+		update
+			#pair_positions
+		set
+			a.quantity = a.quantity + b.quantity
+		from
+			#pair_positions a,
+			#closing_pair_positions b
+		where
+			b.external_account_id = @external_account_id
+		and
+			a.contract_id = b.contract_id
+		and
+			a.value_date = b.value_date
+
+		update
+			#pair_positions
+		set
+			a.quantity = a.quantity + b.quantity
+		from
+			#pair_positions a,
+			#resid_pair_positions b
+		where
+			b.external_account_id = @external_account_id
+		and
+			a.contract_id = b.contract_id
+		and
+			a.value_date = b.value_date */
+
+
+		delete
+
+		from
+			#pair_positions
+		where
+			quantity = 0.0
+
+
+		insert into
+			#calculated_output(
+				style,
+				external_account_id,
+				account,
+				trade_date,
+				contract_id,
+				symbol,
+				product_id,
+				position,
+				closing_date,
+				roll_to_date)
+		select
+			style = @style,
+			external_account_id = @external_account_id,
+			account = @account,
+			trade_date = @trade_date,
+			a.contract_id,
+			b.symbol,
+			b.product_id,
+			a.quantity,
+			b.closing_date,
+			b.spot_date
+		from
+			#pair_positions a,
+			#spot_value_dates b
+		where
+			a.contract_id = b.contract_id
+		and
+			abs(a.quantity) >= 1.0
+		order by
+			b.symbol
+
+	end
+
+	exec
+		j_nextkey
+			"batch_transactions",
+			@batch_transaction_id output
+
+	select
+		@prb_id = NULL
+	exec
+		j_nextkey
+			"proposed_roll_batches",
+			@prb_id output
+	begin tran
+		insert into
+			batch_transactions(
+				batch_transaction_id,
+				batched_by,
+				trade_date,
+				external_account_id,
+				batched_date)
+		values(
+			@batch_transaction_id,
+			@tico_account_id,
+			@trade_date,
+			@external_account_id,
+			getdate())
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Unable to create batch transactions"
+				rollback tran
+				return
+		end
+
+		insert into
+			proposed_roll_batches(
+				prb_id,
+				batch_transaction_id,
+				contract_id,
+				position,
+				closing_date,
+				roll_date,
+				timestamp)
+		select
+			prb_id = id + @prb_id,
+			batch_transaction_id = @batch_transaction_id,
+			contract_id,
+			convert(numeric(30,2), position), 
+ 			closing_date,
+			roll_to_date,
+			timestamp = getdate()
+		from
+			#calculated_output
+		where
+			external_account_id = @external_account_id 
+		and
+			contract_id != NULL
+		and
+			abs(position) >= 1.0
+		if @@rowcount = 0
+		begin
+			delete
+
+			from
+				batch_transactions
+			where
+				batch_transaction_id = @batch_transaction_id
+
+			delete
+
+			from
+				#calculated_output
+			where
+				external_account_id = @external_account_id
+		end
+
+		update
+			proposed_roll_batches
+		set
+			a.position = convert(numeric(30,0), a.position)
+		from
+			proposed_roll_batches a,
+			contracts b
+		where
+			a.contract_id = b.contract_id
+		and
+			b.symbol = "JPYUSD"
+		
+		select
+			@prb_id = max(prb_id)
+		from
+			proposed_roll_batches
+
+		update
+			keys
+		set
+			last_id = @prb_id
+		where
+			relation = "proposed_roll_batches"
+
+	commit tran
+
+	update
+		#calculated_output
+	set
+		batch_transaction_id = @batch_transaction_id
+	where
+		external_account_id = @external_account_id
+	and
+		account_roll_config != NULL
+
+	select
+		@ids = count(*)
+	from
+		#external_accounts
+	where
+		batch_transaction_id = NULL
+	and
+		id > @id
+end
+
+update
+	#calculated_output
+set
+	a.batch_transaction_id = b.batch_transaction_id
+from
+	#calculated_output a,
+	batch_transactions b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.trade_date = @trade_date
+and
+	a.style = @client_style
+
+
+exec
+	ag_clientrollsdash
+		@login = @login,
+		@trade_date = @trade_date
+
+go

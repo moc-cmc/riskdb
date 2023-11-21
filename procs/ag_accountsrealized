@@ -1,0 +1,75 @@
+create or replace procedure
+	ag_accountsrealized
+		@login varchar(50)
+as
+
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"tico_hidden",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"account",
+	"Perpetuals FIFO",
+	NULL)
+
+insert into
+	#meta
+ values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+
+select
+	account = symbol
+from
+	external_accounts
+order by
+	symbol
+
+
+go

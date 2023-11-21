@@ -949,5 +949,4 @@ from
 order by
         trade_id
 
-
-go 
+go

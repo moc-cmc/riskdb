@@ -9,7 +9,7 @@ create procedure
 		@credit_to varchar(50),
 		@transaction_type varchar(50),
 		@product varchar(50),
-		@amount numeric(30,4),
+		@amount float,
 		@note varchar(250)=NULL,
 		@transaction_date datetime=NULL
 as
@@ -19,8 +19,8 @@ declare @debit_account_id int
 declare @credit_account_id int
 declare @transaction_type_id int
 declare @product_id int
-declare @credit_amount numeric(30,4)
-declare @debit_amount numeric(30,4)
+declare @credit_amount numeric(30,10)
+declare @debit_amount numeric(30,10)
 declare @credit_transaction_id int
 declare @debit_transaction_id int
 declare @timestamp datetime

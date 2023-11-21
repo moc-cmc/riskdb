@@ -6,13 +6,13 @@ go
 
 create procedure
 	s_addaccounttransaction
-		@login char(25),
-		@account char(25),
-		@category char(100),
+		@login varchar(50),
+		@account varchar(50),
+		@category varchar(100),
 		@date datetime,
 		@amount float,
                 @product varchar(50)=NULL, 
-		@note char(255)=NULL
+		@note varchar(255)=NULL
 as
 
 declare @account_transaction_id int

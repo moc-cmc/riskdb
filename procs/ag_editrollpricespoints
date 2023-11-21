@@ -1,0 +1,147 @@
+drop procedure
+	ag_editrollpricespoints
+go
+
+create procedure
+	ag_editrollpricespoints
+		@login varchar(50),
+		@trade_date datetime,
+		@closing_date datetime,
+		@roll_date datetime,
+		@symbol varchar(50),
+		@near_price float,
+		@buy_sell float,
+		@sell_buy float
+as
+
+declare @contract_id int
+declare @roll_price_id int
+declare @buy_roll_price float
+declare @sell_roll_price float
+declare @price_style varchar(50)
+declare @inverted_contract_id int
+declare @point_factor float
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+select
+	@point_factor = point_factor
+from
+	point_factors
+where
+	contract_id = @contract_id
+if @point_factor = NULL
+begin
+	exec
+		r_invertedcontract
+			@contract_id,
+			@inverted_contract_id output
+
+	select
+		@point_factor = point_factor
+	from
+		point_factors
+	where
+		contract_id = @inverted_contract_id
+
+	if @point_factor = NULL
+	begin
+		select
+			status = "Error",
+			message = "No point factor found for contract",
+			symbol = @symbol
+		return
+	end
+end
+
+
+select
+	@buy_sell = @buy_sell / @point_factor,
+	@sell_buy = @sell_buy / @point_factor
+
+select
+	@buy_roll_price = @near_price + @sell_buy,
+	@sell_roll_price = @near_price + @buy_sell
+
+
+select
+	@price_style = a.name
+from
+	price_styles a,
+	contract_price_styles b
+where
+	a.price_style_id = b.price_style_id
+and
+	b.contract_id = @contract_id
+if @price_style = "Inverted"
+begin
+	select
+		@sell_roll_price = convert(float, 1.0 / @sell_roll_price),
+		@buy_roll_price = convert(float, 1.0 / @buy_roll_price),
+		@near_price = convert(float, 1.0 / @near_price)
+end
+	
+
+
+update
+	roll_prices
+set
+	sell_roll_price = @sell_roll_price,
+	buy_roll_price = @buy_roll_price,
+	near_price = @near_price
+where
+	contract_id = @contract_id
+and
+	trade_date = @trade_date
+if @@rowcount = 0
+begin
+	exec
+		j_nextkey
+			"roll_prices",
+			@roll_price_id output
+
+	insert into
+		roll_prices(
+			roll_price_id,
+			trade_date,
+			contract_id,
+			closing_date,
+			roll_date,
+			near_price,
+			sell_roll_price,
+			buy_roll_price,
+			timestamp)
+	values(
+		@roll_price_id,
+		@trade_date,
+		@contract_id,
+		@closing_date,
+		@roll_date,
+		@near_price,
+		@near_price + @buy_sell,
+		@near_price + @sell_buy,
+		getdate())
+
+end
+
+exec
+	ag_clientrollsdash
+		@login = @login,
+		@trade_date = @trade_date
+
+
+	
+go

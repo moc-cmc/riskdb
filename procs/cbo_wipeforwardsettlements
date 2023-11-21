@@ -1,0 +1,87 @@
+drop procedure
+	cbo_wipeforwardsettlements
+go
+
+create procedure
+	cbo_wipeforwardsettlements
+		@login varchar(50),
+		@trade_date datetime
+as
+
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @settlement_type_id int
+
+declare @account_transaction_id int
+declare @entered_by int
+declare @external_account_id int
+declare @transaction_date datetime
+declare @currency_id int
+declare @amount float
+declare @deal_id int
+declare @id int
+declare @ids int
+
+select
+	@entered_by = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @entered_by = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@transaction_date = convert(datetime, convert(date, @end_date))
+
+select
+	@settlement_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Trades Settlement"
+if @settlement_type_id = NULL
+begin
+	exec
+		j_nextkey
+			"transaction_types",
+			@settlement_type_id output
+
+	insert into
+		transaction_types(
+			transaction_type_id,
+			name,
+			direction)
+	values(
+		@settlement_type_id,
+		"Trades Settlement",
+		1)
+end
+
+
+delete
+
+from
+	account_transactions
+where
+	convert(date, transaction_date) = convert(date, @end_date)
+and
+	transaction_type_id = @settlement_type_id
+		
+
+go

@@ -5,21 +5,21 @@ if object_id("r_manageticketgroup") != NULL
 go
 
 create procedure
-	r_manageticketgroup
-		@login varchar(50),
-        	@trade_date datetime,
-        	@action varchar(50),
-        	@group_deal_id int,
-        	@deal_id int = NULL,
-        	@trade_id int = NULL,
-        	@symbol varchar(50) = NULL,
-        	@value_date datetime = NULL,
-        	@quantity numeric(30,4) = NULL,
-        	@price float = NULL,
-        	@external_account varchar(50) = NULL,
-        	@trader varchar(50) = NULL,
-        	@broker varchar(50) = NULL,
-        	@counterparty varchar(50) = NULL
+    r_manageticketgroup
+        @login varchar(50),
+            @trade_date datetime,
+            @action varchar(50),
+            @group_deal_id int,
+            @deal_id int = NULL,
+            @trade_id int = NULL,
+            @symbol varchar(50) = NULL,
+            @value_date datetime = NULL,
+            @quantity numeric(30,4) = NULL,
+            @price float = NULL,
+            @external_account varchar(50) = NULL,
+            @trader varchar(50) = NULL,
+            @broker varchar(50) = NULL,
+            @counterparty varchar(50) = NULL
 as
 
 declare @begin_date datetime
@@ -36,17 +36,17 @@ declare @edit_status_id int
 declare @sent_status_id int
 
 select
-    	@account_status_id = status_id
+        @account_status_id = status_id
 from
-    	tico_accounts
+        tico_accounts
 where
-    	login = @login
+        login = @login
 if @@rowcount = 0begin
-    	select
-        	status = "Error",
-        	error = "Login not found",
-        	login = @login
-    	return
+        select
+            status = "Error",
+            error = "Login not found",
+            login = @login
+        return
 end
 select
         @readonly_status_id = status_id
@@ -65,31 +65,31 @@ end
 
 
 select
-	@edit_status_id = status_id
+    @edit_status_id = status_id
 from
-	statuses
+    statuses
 where
-	name = "Edit"
+    name = "Edit"
 if @edit_status_id = NULL
 begin
-	select
-		status = "Error",
-		message = "Can not find 'Edit' status"
-	return
+    select
+        status = "Error",
+        message = "Can not find 'Edit' status"
+    return
 end
 
 select
-	@sent_status_id = status_id
+    @sent_status_id = status_id
 from
-	statuses
+    statuses
 where
-	name = "Sent"
+    name = "Sent"
 if @sent_status_id = NULL
 begin
-	select
-		status = "Error",
-		message = "Can not find 'Sent' status"
-	return
+    select
+        status = "Error",
+        message = "Can not find 'Sent' status"
+    return
 end
 
 
@@ -97,10 +97,10 @@ select
     @now_date = getdate()
 
 exec
-	r_daterangefordate
-		@trade_date,
-		@begin_date output,
-		@end_date output
+    r_daterangefordate
+        @trade_date,
+        @begin_date output,
+        @end_date output
 
 
 if @action = "Add to Group" or @action = "Link"
@@ -120,28 +120,29 @@ begin
         return
     end
  
-	create table
-		#working_trades(
-			trade_id int,
-			deal_id int,
-			trade_type_id int
-	)
-	 
-	insert into 
-		#working_trades(
-			trade_id,
-			deal_id,
-			trade_type_id)
-	select
-		trade_id,
-		deal_id,
-		trade_type_id
-	from
-		trades
-	where
-		deal_id = @deal_id
-		
+    create table
+        #working_trades(
+            trade_id int,
+            deal_id int,
+            trade_type_id int
+        )
+    
+    insert into 
+        #working_trades(
+            trade_id,
+            deal_id,
+            trade_type_id)
+    select
+        trade_id,
+        deal_id,
+        trade_type_id
+    from
+        trades
+    where
+        deal_id = @deal_id
+    
     begin tran
+
         insert into
             trade_origin_deals
         select
@@ -158,39 +159,39 @@ begin
                 from
                     trade_origin_deals b
             )
-        
-	update
-		trade_notifications
-	set
-		status_id = @edit_status_id
-	from
-		#working_trades a,
-		trade_notifications b,
-		source_edit_settings c,
-		trade_types d
-	where
-		a.trade_id = b.trade_id
-	and
-		b.source_id = c.source_id
-	and
-		b.status_id = @sent_status_id
-	and
-		c.deal_id = "Y"
-	and
-		a.trade_type_id = d.trade_type_id
-	and
-		d.name in("Forward", "Option", "Swap Far", "Swap Near")
-		
+    
+        update
+            trade_notifications
+        set
+            status_id = @edit_status_id
+        from
+            #working_trades a,
+            trade_notifications b,
+            source_edit_settings c,
+            trade_types d
+        where
+            a.trade_id = b.trade_id
+        and
+            b.source_id = c.source_id
+        and
+            b.status_id = @sent_status_id
+        and
+            c.deal_id = "Y"
+        and
+            a.trade_type_id = d.trade_type_id
+        and
+            d.name in("Forward", "Option", "Swap Far", "Swap Near")
+            
 
-	update
-		trades
-	set
-		deal_id = @group_deal_id
-	from
-		trades a,
-		#working_trades b
-	where
-		a.trade_id = b.trade_id
+        update
+            trades
+        set
+            deal_id = @group_deal_id
+        from
+            trades a,
+            #working_trades b
+        where
+            a.trade_id = b.trade_id
 
     commit
     

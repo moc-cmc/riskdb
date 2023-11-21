@@ -1,0 +1,48 @@
+drop procedure
+	ag_confirmbatchtransactions
+go
+
+create procedure
+	ag_confirmbatchtransactions
+		@login varchar(50),
+		@trade_date datetime
+as
+
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@trade_date = convert(datetime, convert(date, @trade_date))
+
+update
+	batch_transactions
+set
+	confirmation_date = getdate(),
+	confirm_user_id = @tico_account_id
+where
+	trade_date = @trade_date
+and
+	confirmation_date = NULL
+
+
+
+exec
+	ag_clientrollsdash
+		@login = @login,
+		@trade_date = @trade_date
+
+go

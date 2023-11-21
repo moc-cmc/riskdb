@@ -23,7 +23,7 @@ select
         + convert(varchar(10), trade_type_id) + " "
         + convert(varchar(10), internal_account_id) + " "
         + convert(varchar(10), external_account_id) + " "
-        + convert(varchar(10), counterparty_id) + " "
+    + convert(varchar(10), counterparty_id) + " "
         + convert(varchar(50), quantity) + " "
         + convert(varchar(10), contract_id) + " "
         + "'" + convert(varchar(26), dateadd(mi, datediff(mi, getdate(), getutcdate()), value_date), 9) + "' "

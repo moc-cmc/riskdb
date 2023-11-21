@@ -1,0 +1,318 @@
+drop procedure
+	ag_rollriskhome
+go
+
+create procedure
+	ag_rollriskhome
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+declare @tico_account_id int
+declare @admin_level int
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+declare @days int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"clearing_entity",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"spread_groups",
+	"Manage Roll Spread Groups",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"point_factors",
+	"Point Factors Home",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"import_spreads",
+	"Import Roll Spread Schedule",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"clearing_entity_balances",
+	"Clearing Entity Roll Balances",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"fwd_balances",
+	"Forward Ladder Balances Runs",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"clearing_rolls",
+	"Clearing Entity Roll Positions",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"rolls_price_alignment",
+	"Rolls Price Alignment",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"client_rolls_dashboard",
+	"Client Rolls Dashboard",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"balances_for_date",
+	"Client Rolls For Date",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"view_date",
+	"Spot Value Dates For Trade Date",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"back_to_home",
+	"Roll Risk Home",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "forward_price",
+        "Number",
+        "#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv",
+	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"share",
+	"Number",
+	"#,##0%")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+	if datename(weekday, @trade_date) = "Saturday"
+		select
+			@trade_date = dateadd(day, 2, @trade_date)
+	if datename(weekday, @trade_date) = "Sunday"
+		select
+			@trade_date = dateadd(day, 1, @trade_date)
+end
+
+create table
+	#dates(
+		id int identity,
+		style varchar(250) NULL,
+		trade_date datetime,
+		validated_by int NULL,
+		login varchar(50) NULL,
+		timestamp datetime NULL,
+		view_date varchar(20) NULL,
+		client_rolls_dashboard varchar(50) NULL)
+
+insert into
+	#dates(
+		style,
+		trade_date)
+values(
+	@style,
+	@trade_date)
+
+select
+	@days = 0
+
+while @days <= 10
+begin
+	exec
+		r_prevbusinessday
+			@trade_date,
+			@trade_date output
+	insert into
+		#dates(
+			style,
+			trade_date)
+	values(
+		@style,
+		@trade_date)
+
+	select
+		@days = @days + 1
+end
+
+update
+	#dates
+set
+	view_date = "View Date Schedule"
+
+update
+	#dates
+set
+	a.validated_by = b.validated_by,
+	a.timestamp = b.timestamp
+from
+	#dates a,
+	roll_trade_dates b
+where
+	a.trade_date = b.trade_date
+
+
+update
+	#dates
+set
+	a.login = b.login,
+	client_rolls_dashboard = "Dashboard"
+from
+	#dates a,
+	tico_accounts b
+where
+	a.validated_by = b.account_id
+
+select
+	style = @style,
+	trade_date = convert(varchar(11), trade_date),
+	login,
+	timestamp,
+	view_date,
+	client_rolls_dashboard
+from
+	#dates 
+order by
+	id
+		
+
+select
+	@trade_date = convert(datetime, convert(date, getdate()))
+select
+	style = @style,
+	clearing_rolls = "Clearing Entity Roll Risk",
+	clearing_entity_balances = "Clearing Entity Balances",
+	import_spreads = "Import Spread Schedule",
+	point_factors = "Point Factors",
+	spread_groups = "Manage Spread Groups",
+	trade_date = @trade_date,
+	clearing_entity = "Jefferies PB"
+
+
+/* select
+	style = @style,
+	confirm_value_dates = "Set Roll Dates for Trade Date",
+	trade_date = @trade_date
+
+select
+	style = @style,
+	balances_for_date = "Generate Queued Balances",
+	trade_date = @trade_date
+
+select
+	style = @style,
+	client_rolls_dashboard = "Client Rolls Dashboard",
+	trade_date = @trade_date
+
+select
+	style = @style,
+	rolls_price_alignment = "Rolls Price Alignment",
+	trade_date = @trade_date
+
+select
+	style = @style,
+	clearing_rolls = "Clearing Entity Roll Risk",
+	trade_date = @trade_date,
+	clearing_entity = "Jefferies PB"
+
+select
+	style = @style,
+	fwd_balances = "Forward Ladder Balances",
+	trade_date = @trade_date */
+
+
+go

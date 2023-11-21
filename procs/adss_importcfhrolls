@@ -1,0 +1,214 @@
+create or replace procedure
+	adss_importcfhrolls
+		@login varchar(50),
+		@cfh_trade_id varchar(50)=NULL,
+		@trade_id_bo varchar(50)=NULL,
+                @order_id varchar(50)=NULL,
+		@cl_order_id varchar(50)=NULL,
+		@execution_time varchar(50)=NULL,
+		@trade_date varchar(50)=NULL,
+		@value_date varchar(50)=NULL,
+		@b_s varchar(50)=NULL,
+		@cfh_trade_type varchar(50)=NULL,
+		@track varchar(50)=NULL,
+		@ccy1_amount varchar(50)=NULL,
+		@ccy1 varchar(50)=NULL,
+		@rate varchar(50)=NULL,
+		@fee varchar(50)=NULL,
+		@fee_ccy varchar(50)=NULL,
+		@ccy2_amount varchar(50)=NULL,
+		@ccy2 varchar(50)=NULL,
+		@indicative_pl varchar(50)=NULL,
+		@pl_ccy varchar(50)=NULL,
+		@account varchar(50)=NULL,
+		@application varchar(50)=NULL,
+		@row_index int,
+		@row_count int
+
+as
+
+declare @quantity_char varchar(50)
+declare @price_char varchar(50)
+declare @fee_quantity_char varchar(50)
+declare @pl_char varchar(50)
+
+declare @quantity numeric(30,4)
+declare @price float
+declare @fee_quantity numeric(30,4)
+declare @pl numeric(30,4)
+
+declare @tdate datetime
+declare @vdate datetime
+
+declare @source_id int
+declare @source varchar(50)
+declare @contract_id int
+declare @contract_symbol varchar(50)
+
+declare @deal_id int
+declare @trade_id int
+declare @tally_type varchar(50)
+declare @deal_exec_symbol varchar(50)
+declare @identifier varchar(50)
+declare @trade_type varchar(50)
+declare @deal_status_id int
+declare @deal_type varchar(50)
+declare @deal_type_id int
+
+
+/* convert varchar fields */
+exec
+	u_stripcommas
+		@ccy1_amount,
+		@quantity_char output
+exec
+        u_stripcommas
+                @rate,
+                @price_char output
+exec
+        u_stripcommas
+                @fee,
+                @fee_quantity_char output
+
+exec
+        u_stripcommas
+                @indicative_pl,
+                @pl_char output
+
+select
+	@quantity = convert(numeric(30,4), @quantity_char),
+	@price = convert(float, @price_char)
+
+select
+        @tdate = convert(datetime, @trade_date),
+        @vdate = convert(datetime, @value_date)
+
+select
+	@source = 'ADSS CFH Rolls',
+	@tally_type = 'Swap',
+	@deal_type = "Market Swap"
+
+select
+	@deal_type_id = deal_type_id
+from
+	deal_types
+where
+	name = @deal_type
+
+select
+	@deal_status_id = status_id
+from
+	statuses
+where
+	name = "User Review"
+
+select
+	@contract_id = contract_id,
+	@contract_symbol = symbol
+from
+	contracts
+where
+	symbol = @ccy1+@ccy2
+if @contract_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find contract",
+		ccy1 = @ccy1,
+		ccy2 = @ccy2
+	return
+end
+
+select
+	@deal_exec_symbol = @execution_time+"-"+@contract_symbol+"-"+convert(varchar(50), abs(@quantity))
+
+select
+	@deal_id = deal_id
+from
+	deal_exec_symbols
+where
+	symbol = @deal_exec_symbol
+
+if @deal_id = NULL
+begin
+	exec
+		j_nextkey
+			"deals",
+			@deal_id output
+
+	insert into
+		deals(
+        		deal_id,
+            		deal_type_id,
+            		timestamp,
+       			status_id)
+	values(
+        	@deal_id,
+		@deal_type_id,
+		getdate(),
+        	@deal_status_id)
+    
+
+	insert into
+		deal_exec_symbols(
+			deal_id,
+			symbol)
+	select
+		@deal_id,
+		@deal_exec_symbol
+
+end
+
+if @cfh_trade_type = 'Close rollover'
+begin
+	select
+		@trade_type = 'Swap Near',
+                @identifier = @execution_time+"-"+@contract_symbol+"-"+@value_date+'.n'
+end
+
+if @cfh_trade_type = 'Open rollover'
+begin
+	select
+		@trade_type = 'Swap Far',
+		@identifier = @execution_time+"-"+@contract_symbol+"-"+@value_date+'.f'
+end
+	
+
+exec
+        fxa_tallytrade
+                @login = @login,
+                @source = @source,
+                @trade_id = @trade_id output,
+                @deal_id = @deal_id output,
+                @tally_type = @tally_type,
+                @deal_type = @deal_type,
+                @trade_type = @trade_type,
+                @external_account = 'CFH Direct',
+                @counterparty = 'CFH-CFH',
+                @quantity = @quantity,
+                @symbol = @contract_symbol,
+                @trade_date = @execution_time,
+                @value_date = @vdate,
+                @price = @price,
+		@identifier = @identifier
+
+
+
+select
+	source = @source,
+	trade_id = @trade_id,
+	deal_id = @deal_id,
+	trade_date = @execution_time,
+	value_date = @vdate,
+	buy_sell = @b_s,
+	ccy_pair = @contract_symbol,
+	quantity = @quantity,
+	price = @price,
+	fee_qty = @fee,
+	fee_ccy = @fee_ccy,
+	pl = @indicative_pl,
+	pl_ccy = @pl_ccy
+	
+	
+
+go

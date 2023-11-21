@@ -1,0 +1,165 @@
+create or replace procedure
+	tt_updateubstradematchstatus
+		/* Provided by FIX server config.properties & spring.xml */
+		@login varchar(50),
+		@source varchar(50),
+		@broker varchar(50),
+		@matching_engine varchar(50),
+                /* session variables */
+                @sender_comp varchar(50),
+                @target_comp varchar(50),
+                /* identifiers */
+                @execution_id varchar(100)=NULL,
+                @trade_report_id varchar(50)=NULL,
+                @order_id varchar(50)=NULL,
+                @cl_order_id varchar(50)=NULL,
+                /*financials*/
+                @symbol varchar(50)=NULL,
+                @ccy1 varchar(50)=NULL,
+                @qty float=NULL,
+                @price float=NULL,
+                @side varchar(10)=NULL,
+                @trade_date datetime=NULL,
+                @value_date datetime=NULL,
+                /*parties*/
+                @account varchar(50)=NULL,
+		/* matching */
+		@previously_reported varchar(10)=NULL,
+		@trade_input_source varchar(50)=NULL,
+		@reg_trade_id varchar(50)=NULL,
+		@reg_trade_id_source varchar(50)=NULL,
+		@status varchar(50)=NULL
+		
+		
+as
+
+declare @source_id int
+declare @trade_id_str varchar(50)
+declare @trade_id int
+declare @matching_engine_id int
+declare @match_status_id int
+declare @match_status varchar(50)
+declare @ack_required varchar(1)
+
+/*
+select
+	debug = "DEBUG",
+	login = @login,
+	source = @source,
+	matching_engine = @matching_engine,
+	trml_version = @trml_version,
+	message_type = @messsage_type,
+	id = @id,
+	action = @action,
+	trade_reporter = @trade_reporter,
+	ticket_num = @ticket_num,
+	counterparty = @counterparty,
+	cpty_ticket_number = @cpty_ticket_number,
+	prime_broker = @prime_broker,
+	trade_date = @trade_date,
+	origin_system = @origin_system,
+	system_trade_id = @system_trade_id,
+	client_noe = @client_noe,
+	lf_status = @lifecycle_status,
+	recon_status = @recon_status
+*/
+
+select
+	@ack_required = "Y"
+
+if @status = "MATCHING"
+begin
+	select
+		@match_status = 'Matched'
+end
+
+if @match_status not in("Matched")
+begin
+	select
+		status = "Warn",
+		message = "Only processing Matched or Unmatched statuses"
+	return
+end
+
+select
+	@matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = @matching_engine
+if @matching_engine_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining matching engine from provided",
+		proviced = @matching_engine
+	return
+end
+
+select
+        @match_status_id = match_status_id
+from
+        match_statuses
+where
+        name = @match_status
+if @match_status_id = NULL 
+begin
+        select
+                status = "Error",
+                message = "Match status not found",
+                match_status = @match_status
+        return
+end
+
+
+/*-----------------------------------------------------------------------------------
+ * STEP: Here we assign the appropriate trade_id to be used to look up the entry in trade_matches
+ */
+
+select
+        @trade_id = convert(int, substring(@cl_order_id, 1, charindex('-', @cl_order_id) - 1))
+
+begin tran
+	update
+		trade_matches
+	set
+		match_status_id = @match_status_id
+	where
+		trade_id = @trade_id
+	if @@rowcount != 1
+        begin
+                select
+                        status = "Error",
+                        message = "Problem updating trade match status",
+			trade_id = @trade_id
+                rollback tran
+                return
+        end
+
+        select
+                status = "Success",
+                message = "Updated match status",
+		trade_id = @trade_id
+
+commit tran
+
+/* --------------------------------------------------------------------------
+ * STEP: Send an acknowledgement that this trade processed through
+ * 
+ * The data required to send an ack must also be defined in the mapping.xml
+ * and may differ platform to platform. If you change the below code, remember
+ * to change the code above by the suppressed trade section
+ */
+
+if @ack_required = "Y"
+begin
+	select
+		trade_report_id=@trade_report_id,
+		symbol="NA"
+	return
+end
+
+
+
+		
+go

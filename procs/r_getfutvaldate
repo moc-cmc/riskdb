@@ -1,0 +1,46 @@
+create or replace procedure
+    r_getfutvaldate(
+            @contract varchar(50),
+            @future_type varchar(50),
+            @value_date datetime output
+    )
+
+as
+
+declare @contract_id int
+declare @future_id int
+
+select
+    @contract_id = contract_id
+from
+    contracts
+where
+    symbol = @contract
+if @@rowcount = 0
+begin
+    select
+        error = 'Error',
+        message = 'Could not find future contract',
+        contract = @contract
+    return
+end
+
+select
+    @future_id = a.future_id,
+    @value_date = a.expiration 
+from
+    future_contracts a,
+    futures b,
+    future_types c
+where
+    a.contract_id = @contract_id
+and
+    a.future_id = b.future_id
+and
+    b.future_type_id = c.future_type_id
+and
+    c.name = @future_type
+
+go
+
+

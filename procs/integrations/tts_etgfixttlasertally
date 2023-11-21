@@ -1,5 +1,3 @@
-use risk_laser_dev
-go
 
 create or replace procedure
 	tts_etgfixttlasertally
@@ -210,6 +208,10 @@ declare @c_far_tally_status varchar(10)
 declare @c_far_tally_message varchar(25)
 
 declare @c_trigger_symbol varchar(50)
+declare @c_strategy varchar(50)
+declare @c_strategy_id int
+declare @m_strategy varchar(50)
+declare @m_strategy_id int
 
 declare @deal_alias varchar(100)
 declare @existing_alias varchar(100)
@@ -229,6 +231,7 @@ begin
                 exec_type="TRADE"
 end
 
+declare @message varchar(255)
 
 /* --------------------------------------------------------------------------
  * STEP: Initial MAP proc parameters to common tally params
@@ -279,10 +282,40 @@ end
  * counterparty by calling tt_isfundagency. 
  * This logic usually differs platform by platform
  *
-
-/* This is not needed in a B2B */
-
+ * LDTF1 vs LDME workflows.  
+   - When LDME is executing firm and LDTF1 is contra firm its a market trade
+   - When LDME is executing firm and LDFT1 is not contra firm (ie, a client value is there its a client trade)
+   - When LDTD1 is executing firm and LDME is contra firm is a client trade
+   - When LDTD1 is executing firm and LDME is not contra firm is a market trade trade
+ *
 ------------------------------------------------------------------------------ */
+
+/*
+if @executing_firm = "LDME"
+begin
+	select
+		@client_or_market = "C"
+
+	if  @contra_firm = "LDTF1"
+	begin
+		select
+			@client_or_market = "M"
+	end
+end
+if @executing_firm = "LDTF1"
+begin
+	select
+		@client_or_market = "M"
+
+	if  @contra_firm = "LDME"
+	begin
+		select
+			@client_or_market = "C"
+	end
+end
+*/
+
+select @client_or_market = "M"
 
 /* --------------------------------------------------------------------------
  * STEP: Map proc parameters to common tally variable name
@@ -301,19 +334,35 @@ select
 
 /* Begin market parameters */
 
+if @venue = NULL
+	select
+		@venue = "B2B"
 
 select
         @m_platform_identifier = rtrim(@venue)+"_"+rtrim(@execution_id)+"_"+convert(char(8), @trade_date, 112)+".m"
-select
-        @m_counterparty_lookup = rtrim(@venue)+"-"+rtrim(@contra_firm),
-	@m_trader_lookup = rtrim(@entering_trader)
 
-if @entering_trader = NULL
+
+if @client_or_market = "M"
 begin
 	select
-        	@m_trader_lookup = rtrim(@executing_trader)
-end
+        	@m_counterparty_lookup = rtrim(@executing_firm)+"-"+rtrim(@venue)+"-"+rtrim(@contra_firm),
+		@m_trader_lookup = rtrim(@entering_trader),
+		@m_strategy = rtrim(@executing_trader)
 
+	if @entering_trader = NULL
+	begin
+		select
+        		@m_trader_lookup = rtrim(@executing_trader)
+	end
+end
+if @client_or_market = "C"
+begin
+	select
+        	@m_trader_lookup = rtrim(@executing_firm)+"-"+rtrim(@venue)+"-"+rtrim(@contra_firm),
+		@m_counterparty_lookup = rtrim(@executing_firm),
+		@m_strategy = rtrim(@executing_trader)
+
+end
 
 /* Set suppression and trigger_symbol variables */
 select
@@ -452,8 +501,12 @@ end
  * On a market trade, the external account is determined by the counterparty
  */
 
-select
-	@m_external_account_id = @m_cpty_external_account_id
+if @client_or_market = "M"
+	select
+		@m_external_account_id = @m_cpty_external_account_id
+if @client_or_market = "C"
+	select
+		@m_external_account_id = @m_trader_external_account_id
 
 /* --------------------------------------------------------------------------
  * STEP: Lookup external account from mapped symbol 
@@ -503,6 +556,33 @@ and
         a.aggregation_style_id = c.aggregation_style_id
 and
         a.external_account_id = @m_external_account_id
+
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Autocreate strategy if strategy not found
+ *
+ */
+
+select
+        @m_strategy_id = strategy_id
+from
+	strategies
+where
+	name = @m_strategy
+if @m_strategy_id = NULL
+begin
+	exec
+		j_nextkey
+			"strategies",
+			@m_strategy_id output
+	insert into
+		strategies(strategy_id,
+			name)
+	values(
+		@m_strategy_id,
+		@m_strategy)
+end
 
 
 /* --------------------------------------------------------------------------
@@ -626,6 +706,28 @@ begin
 			@contract_id = @contract_id output,
 			@contract = @contract output,
 			@inverted = @inverted output
+
+	if @contract_id = NULL
+	begin
+               select
+                     @message="No contract mapping for source " + rtrim(@source) + " for mapping value '" + rtrim(@symbol) + "'"
+
+                select
+                        msg = @message
+
+		if not exists(select message_id from messages  where content = @message)
+		begin
+ 			exec
+ 				ag_sendfailedmappingmessage
+ 					@login=@default_login,
+ 					@broker_id=@broker_id,
+ 					@identifier=@m_platform_identifier,
+ 					@mapping_error_type="Contract",
+ 					@message = @message
+		end
+ 		return
+
+	end
 end
 else
 begin
@@ -696,6 +798,24 @@ begin
 					select
 						status = "Error",
 						message = "Contract symbol not found"
+
+
+
+        				select
+                				@message="No contract mapping for source " + rtrim(@source) + " for mapping value '" + rtrim(@symbol) + "'"
+	
+                			select
+                        			msg = @message
+                			if not exists(select message_id from messages  where content = @message)
+                			begin
+                				exec
+                        				ag_sendfailedmappingmessage
+                                				@login=@default_login,
+                                				@broker_id=@broker_id,
+                                				@identifier=@m_platform_identifier,
+                                				@mapping_error_type="Contract",
+                                				@message = @message
+					end
 					return
 				end
 			end
@@ -852,6 +972,7 @@ begin
                        		@trade_date = @trade_date,
                        		@trader = @m_trader,
                        		@broker = @broker,
+				@strategy = @m_strategy,
                        		@identifier = @m_platform_identifier,
                        		@spot_reference = @last_spot_rate
 		select
@@ -920,6 +1041,7 @@ begin
                 	trade_date = @trade_date,
                 	trader = @m_trader,
                 	broker = @broker,
+			strategy = @m_strategy,
                 	identifier = @m_platform_identifier,
                 	spot_reference = @last_spot_rate
 	end

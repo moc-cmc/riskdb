@@ -1,0 +1,96 @@
+drop procedure
+	ag_importrollspreadschedule
+go
+
+create procedure
+	ag_importrollspreadschedule 
+		@login varchar(50),
+		@roll_spread_group varchar(50),
+		@symbol varchar(50),
+		@spread numeric(30,8),
+		@row_count int,
+		@row_index int
+
+as
+
+declare @roll_spread_group_id int
+declare @contract_id int
+
+
+if @roll_spread_group = "Spread Schedule"
+	return
+		
+
+select
+	@roll_spread_group_id = roll_spread_group_id
+from 
+	roll_spread_groups
+where
+	name = @roll_spread_group
+if @roll_spread_group_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Roll spread group not found",
+		roll_spread_group = @roll_spread_group
+	return
+end
+
+select
+	@contract_id = contract_id
+from
+	contracts
+where
+	symbol = @symbol
+if @contract_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Contract not found",
+		symbol = @symbol
+	return
+end
+
+update
+	contract_roll_spreads
+set
+	spread = @spread
+where
+	contract_id = @contract_id
+and
+	roll_spread_group_id = @roll_spread_group_id
+if @@rowcount = 0
+begin
+	insert into
+		contract_roll_spreads(
+			roll_spread_group_id,
+			contract_id,
+			spread)
+	values(
+		@roll_spread_group_id,
+		@contract_id,
+		@spread)
+end
+
+
+if @row_index = @row_count - 1
+begin
+	select
+		roll_spread_group = b.name,
+		c.symbol,
+		a.spread
+	from
+		contract_roll_spreads a,
+		roll_spread_groups b,
+		contracts c
+	where
+		a.contract_id = c.contract_id
+	and
+		a.roll_spread_group_id = b.roll_spread_group_id
+	order by
+		b.name,
+		c.symbol
+end
+
+
+go

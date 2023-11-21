@@ -1,0 +1,12 @@
+
+create or replace procedure
+    tts_ack
+            @trade_report_id varchar(50)
+as
+
+    select
+            trade_report_id=@trade_report_id,
+            trade_report_status="ACCEPTED",
+            exec_type="TRADE"
+
+go

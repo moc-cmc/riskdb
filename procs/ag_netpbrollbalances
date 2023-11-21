@@ -1,0 +1,896 @@
+drop procedure
+	ag_netpbrollbalances
+go
+
+create procedure
+	ag_netpbrollbalances
+		@login varchar(50),
+		@trade_date datetime=NULL,
+		@clearing_entity varchar(50)
+as
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+declare @pb_style varchar(250)
+
+declare @prime_broker_id int
+declare @evaluation_currency_id int
+declare @fund_id int
+declare @begin_date datetime
+declare @end_date datetime
+
+declare @id int
+declare @ids int
+declare @deal_id int
+declare @contract_id int
+declare @symbol varchar(50)
+declare @inverted_contract_id int
+declare @closing_quantity float
+declare @closing_price numeric(30,8)
+declare @roll_quantity float
+declare @roll_price numeric(30,8)
+declare @closing_date datetime
+declare @roll_date datetime
+declare @net_dealt numeric(30,4)
+declare @net_counter numeric(30,4)
+declare @net_equiv numeric(30,4)
+declare @lp_equiv numeric(30,4)
+declare @client_equiv numeric(30,4)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"back_to_dashboard",
+	"Client Rolls Dashboard",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"points",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closing_price",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"roll_price",
+	"Number",
+	"#,##0.00000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"client_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"lp_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_dealt",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"net_pct",
+	"Number",
+	"#,##0.000000;<span style=""color:red"">(#,##0.000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"roll_quantity",
+	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"closing_quantity",
+	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+
+
+exec
+	r_defaultfundforlogin
+		@login = @login,
+		@fund_id = @fund_id output
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found"
+	return
+end
+
+if @trade_date = NULL
+	select
+		@trade_date = convert(datetime, convert(date, getdate()))
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+create table
+	#conversion_rates( 
+		product_id int,
+		rate float NULL)
+insert into
+	#conversion_rates(
+		product_id)
+select
+	product_id
+from
+	products
+
+update
+	#conversion_rates
+set
+	rate = 1.0
+where 
+	product_id = @evaluation_currency_id
+
+update
+	#conversion_rates
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = a.product_id
+and 
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and 
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = c.price
+from
+	#conversion_rates a,
+	forwards b,
+	current_prices c
+where
+	b.product_id = a.product_id 
+and
+	b.currency_id = @evaluation_currency_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+update
+	#conversion_rates
+set
+	rate = 1.0 / c.price
+from
+	#conversion_rates a,
+	forwards b,
+	current_prices c
+where
+	b.product_id = @evaluation_currency_id
+and
+	b.currency_id = a.product_id
+and
+	b.contract_id = c.contract_id
+and
+	a.rate = NULL
+
+
+select
+	@prime_broker_id = a.prime_broker_id
+from
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.name = @clearing_entity
+if @prime_broker_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Clearing entity not found",
+		clearing_entity = @clearing_entity
+	return
+end
+
+
+create table
+	#rolls(
+		style varchar(250) NULL,
+		ordering int NULL,
+		deal_id int,
+		prime_broker_id int NULL,
+		prime_broker varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		closing_trade_id int NULL,
+		closing_quantity numeric(30,4) NULL,
+		roll_trade_id int NULL,
+		roll_quantity numeric(30,4) NULL,
+		contract_id int,
+		symbol varchar(50) NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		closing_date datetime NULL,
+		closing_price float NULL,
+		roll_date datetime NULL,
+		roll_price float NULL,
+		closing_dealt float NULL,
+		closing_counter float NULL,	
+		closing_dealt_equiv float NULL,
+		closing_counter_equiv float NULL,
+		roll_dealt float NULL,
+		roll_counter float NULL,
+		roll_dealt_equiv float NULL,
+		roll_counter_equiv float NULL,
+		closing_equiv float NULL,
+		roll_equiv float NULL,
+		net_equiv float NULL,
+		net_pct float NULL,
+		position varchar(15) NULL)
+insert into
+	#rolls(
+		style,
+		ordering,
+		deal_id,
+		external_account_id,
+		prime_broker_id,
+		closing_trade_id,
+		closing_quantity,
+		contract_id,
+		closing_date,
+		closing_price)
+select
+	style = @client_style,
+	ordering = 100,
+	a.deal_id,
+	a.external_account_id,
+	prime_broker_id = @prime_broker_id,
+	a.trade_id,
+	a.quantity,
+	a.contract_id,
+	a.value_date,
+	a.price
+from
+	trades a,
+	roll_prices b,
+	trade_types c,
+	external_account_prime_brokers d
+where
+	a.contract_id = b.contract_id
+and
+	a.value_date = b.closing_date
+and
+	a.trade_type_id = c.trade_type_id
+and
+	a.external_account_id = d.external_account_id
+and
+	d.prime_broker_id = @prime_broker_id
+and
+	c.name = "Swap Near"
+and
+	b.trade_date = @trade_date
+
+
+insert into
+	#rolls(
+		style,
+		ordering,
+		deal_id,
+		external_account_id,
+		prime_broker_id,
+		closing_trade_id,
+		closing_quantity,
+		contract_id,
+		closing_date,
+		closing_price)
+select
+	style = @pb_style,
+	ordering = 0,
+	a.deal_id,
+	a.external_account_id,
+	e.clearing_pb_id,
+	a.trade_id,
+	a.quantity,
+	a.contract_id,
+	a.value_date,
+	a.price
+from
+	trades a,
+	roll_prices b,
+	trade_types c,
+	external_account_prime_brokers d,
+	pb_clearing_entities e
+where
+	a.contract_id = b.contract_id
+and
+	a.value_date = b.closing_date
+and
+	a.trade_type_id = c.trade_type_id
+and
+	a.external_account_id = d.external_account_id
+and
+	d.prime_broker_id = e.clearing_pb_id
+and
+	e.prime_broker_id = @prime_broker_id
+and
+	e.clearing_pb_id != @prime_broker_id
+and
+	c.name = "Swap Near"
+and
+	b.trade_date = @trade_date
+
+update
+	#rolls
+set
+	a.symbol = b.symbol
+from
+	#rolls a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#rolls
+set
+	a.prime_broker = c.name
+from
+	#rolls a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+
+update
+	#rolls
+set
+	a.account = b.symbol
+from
+	#rolls a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#rolls
+set
+	a.roll_date = b.roll_date
+from
+	#rolls a,
+	roll_prices b
+where
+	a.contract_id = b.contract_id
+and
+	b.trade_date = @trade_date
+
+update
+	#rolls
+set
+	a.roll_trade_id = b.trade_id,
+	a.roll_price = b.price,
+	a.roll_quantity = b.quantity
+from
+	#rolls a,
+	trades b,
+	trade_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = b.contract_id
+and
+	a.roll_date = b.value_date
+and
+	b.trade_type_id = c.trade_type_id
+and
+	c.name = "Swap Far"
+and
+	a.deal_id = b.deal_id
+
+delete
+
+from
+	#rolls
+where
+	roll_trade_id = NULL
+
+update
+	#rolls
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#rolls a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#rolls
+set
+	closing_dealt = closing_quantity,
+	closing_counter = closing_quantity * closing_price * -1.0,
+	roll_dealt = roll_quantity,
+	roll_counter = roll_quantity * roll_price * -1.0
+
+	
+update
+	#rolls
+set
+	a.closing_dealt_equiv = a.closing_dealt * b.rate,
+	a.roll_dealt_equiv = a.roll_dealt * b.rate
+from
+	#rolls a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+
+
+update
+	#rolls
+set
+	a.closing_counter_equiv = a.closing_counter * b.rate,
+	a.roll_counter_equiv = a.roll_counter * b.rate
+from
+	#rolls a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+update
+	#rolls
+set
+	closing_equiv = closing_dealt_equiv + closing_counter_equiv,
+	roll_equiv = roll_dealt_equiv + roll_counter_equiv
+
+
+update
+	#rolls
+set
+	net_equiv = closing_equiv + roll_equiv
+
+update
+	#rolls
+set
+	net_pct = (abs(net_equiv / closing_quantity) * sign(net_equiv)) * 100.00
+where
+	closing_quantity != 0.0
+	
+update
+	#rolls
+set
+	position = "Long"
+where
+	closing_quantity < 0.0
+
+update
+	#rolls
+set
+	position = "Short"
+where
+	closing_quantity > 0.0
+
+create table
+	#contracts(
+		id int identity,
+		contract_id int NULL,
+		symbol varchar(50))
+insert into
+	#contracts(
+		symbol)
+select
+	distinct(symbol)
+from
+	#rolls
+order by
+	symbol
+
+update
+	#contracts
+set
+	a.contract_id = b.contract_id
+from
+	#contracts a,
+	contracts b
+where
+	a.symbol = b.symbol
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		deal_id int NULL,
+		clearing_entity varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		closing_qty numeric(30,4) NULL,
+		roll_qty numeric(30,4) NULL,
+		closing_date datetime NULL,
+		closing_price numeric(30,8) NULL,
+		roll_date datetime NULL,
+		roll_price numeric(30,8) NULL,
+		points numeric(30,8) NULL,
+		net_dealt numeric(30,4) NULL,
+		net_counter numeric(30,4) NULL,
+		net_equiv numeric(30,4) NULL)
+		
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#contracts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#contracts
+	where
+		id > @id
+
+	select
+		@symbol = NULL,
+		@net_dealt = NULL,
+		@net_counter = NULL,
+		@net_equiv = NULL
+
+	select
+		@contract_id = contract_id
+	from
+		#contracts
+	where
+		id = @id
+
+	select
+		@symbol = symbol
+	from
+		#contracts
+	where
+		contract_id = @contract_id
+
+	insert into
+		#output(
+			style,
+			contract_id,
+			symbol,
+			deal_id,
+			clearing_entity,
+			external_account_id,
+			account,
+			closing_qty,
+			roll_qty,
+			closing_date,
+			closing_price,
+			roll_date,
+			roll_price,
+			net_dealt,
+			net_counter,
+			net_equiv)
+	select
+		a.style,
+		a.contract_id,
+		a.symbol,
+		a.deal_id,
+		a.prime_broker,
+		a.external_account_id,
+		b.symbol,
+		a.closing_quantity,
+		a.roll_quantity,
+		a.closing_date,
+		a.closing_price,
+		a.roll_date,
+		a.roll_price,
+		a.closing_dealt + a.roll_dealt,
+		a.closing_counter + a.roll_counter,
+		a.net_equiv
+	from
+		#rolls a,
+		external_accounts b
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.contract_id = @contract_id
+	order by
+		a.ordering
+
+	select
+		@net_dealt = sum(net_dealt),
+		@net_counter = sum(net_counter),
+		@net_equiv = sum(net_equiv)
+	from
+		#output
+	where
+		contract_id = @contract_id
+
+	insert into
+		#output(
+			style,
+			contract_id,
+			symbol,
+			net_dealt,
+			net_counter,
+			net_equiv)
+	values(
+		@style,
+		@contract_id,
+		@symbol,
+		@net_dealt,
+		@net_counter,
+		@net_equiv)
+
+
+	select
+		@ids = count(*)
+	from
+		#contracts
+	where
+		id > @id
+end
+
+update
+	#output
+set
+	a.closing_price = convert(numeric(30,8), 1.0 / a.closing_price),
+	a.roll_price = convert(numeric(30,8), 1.0 / a.roll_price)
+from
+	#output a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	c.name = "Inverted"
+
+update
+	#output
+set
+	points = roll_price - closing_price
+
+update
+	#output
+set
+	a.points = convert(numeric(30,8), a.points * b.point_factor)
+from
+	#output a,
+	point_factors b
+where
+	a.contract_id = b.contract_id
+
+
+
+create table
+	#clearing_sum(
+		id int identity,
+		style varchar(250) NULL,
+		ordering int NULL,
+		prime_broker varchar(50) NULL,
+		account varchar(50) NULL,
+		net_equiv numeric(30,4) NULL,
+		lp_equiv numeric(30,4) NULL,
+		client_equiv numeric(30,4) NULL)
+insert into
+	#clearing_sum(
+		ordering,
+		prime_broker,
+		account,
+		net_equiv)
+select
+	ordering,
+	prime_broker,
+	account,
+	sum(net_equiv)
+from
+	#rolls
+group by
+	ordering,
+	prime_broker,
+	account
+order by
+	ordering,
+	prime_broker,
+	account
+
+update
+	#clearing_sum
+set
+	style = @style
+
+update
+	#clearing_sum
+set
+	lp_equiv = net_equiv,
+	client_equiv = 0.0
+where
+	ordering = 0
+
+update
+	#clearing_sum
+set
+	client_equiv = net_equiv,
+	lp_equiv = 0.0
+where
+	ordering = 100
+
+select
+	@lp_equiv = sum(lp_equiv),
+	@client_equiv = sum(client_equiv),
+	@net_equiv = sum(net_equiv)
+from
+	#clearing_sum
+
+if @net_equiv != NULL
+begin
+	insert into
+		#clearing_sum(
+			style,
+			lp_equiv,
+			client_equiv,
+			net_equiv)
+	values(
+		@total_style,
+		@lp_equiv,
+		@client_equiv,
+		@net_equiv)
+end
+
+select
+	style = @style,
+	back_to_dashboard = "Back To Dashboard",
+	trade_date = @trade_date
+
+select
+	style,
+	account,
+	lp_equiv,
+	client_equiv,
+	net_equiv
+from
+	#clearing_sum
+order by
+	id
+select
+	style,
+	symbol,
+	deal_id,
+	clearing_entity,
+	account,
+	closing_qty,
+	roll_qty,
+	closing_date = convert(varchar(11), closing_date),
+	closing_price,
+	roll_date = convert(varchar(11), roll_date),
+	roll_price,
+	points,
+	net_dealt,
+	net_counter,
+	net_equiv
+from
+	#output
+order by
+	id
+
+go

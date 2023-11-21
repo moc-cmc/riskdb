@@ -27,8 +27,8 @@ end
 else
 begin
 	select
-		status = "Error",
-		message = "Can not provide settlement_method to be added"
+		settlement_method = "Error",
+		message = "Can not provide settlement_method_id to be added"
 	return
 end
 

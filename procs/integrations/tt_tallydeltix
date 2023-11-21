@@ -6,6 +6,7 @@ create or replace procedure
 		@execution_id varchar(100) = NULL,
 		@corr_client_order_id varchar(100) = NULL,
 		@executing_broker varchar(50),
+		@exec_destination varchar(50),
 		@trade_date datetime,
 		@symbol varchar(50) = NULL,
 		@side varchar(10),
@@ -25,18 +26,18 @@ as
 
 
 
-
-
-
 declare @tico_account_id int
 declare @source_id int
 declare @trade_identifier varchar(100)
 declare @deal_identifier varchar(100)
 declare @tally_type_id int
+declare @tally_type varchar(50)
 declare @eb_id int
 declare @value_date datetime
 declare @deals int
 declare @deal_type_id int
+declare @deal_type varchar(50)
+declare @trade_type varchar(50)
 declare @status_id int
 declare @trade_type_id int
 declare @sales_code_id int
@@ -44,6 +45,7 @@ declare @internal_account_id int
 declare @external_account_id int
 declare @counterparty_id int
 declare @contract_id int
+declare @instrument varchar(50)
 declare @fixing_date datetime
 declare @trader_id int
 declare @pos int
@@ -55,6 +57,10 @@ declare @quantity numeric(30,10)
 declare @account_transaction_id int
 declare @transaction_type_id int
 declare @currency_id int
+declare @counterparty_lookup varchar(50)
+
+declare @f_value_date datetime
+declare @contract_symbol varchar(50)
 
 if @last_price is NULL or @last_qty is NULL 
 begin
@@ -137,20 +143,6 @@ begin
 	return
 end
 
-select
-	@trade_type_id = trade_type_id
-from
-	trade_types
-where
-	name = "Spot"
-if @trade_type_id = NULL
-begin
-	select
-		status = "Error",
-		message = "Spot trade type not found"
-	return
-end
-
 
 select
 	@status_id = status_id
@@ -166,20 +158,6 @@ begin
 	return
 end
 
-select
-	@deal_type_id = deal_type_id
-from
-	deal_types
-where
-	name = "Market Forward"
-if @deal_type_id = NULL
-begin
-	select
-		status = "Error",
-		message = "Market Forward deal type not found"
-	return
- 
-end
 
 select
 	@broker_id = broker_id
@@ -230,13 +208,17 @@ begin
 end
 
 select
+	@counterparty_lookup = rtrim(@executing_broker)+"-"+rtrim(@exec_destination)
+
+select
 	@counterparty_id = counterparty_id
 from
 	counterparty_symbols
 where
 	source_id = @source_id
 and
-	symbol =@executing_broker
+	/* symbol =@executing_broker */
+	symbol = @counterparty_lookup
 if @counterparty_id = NULL
 begin
 	select
@@ -244,13 +226,15 @@ begin
 	from
 		counterparties
 	where
-		name = @executing_broker
+		/* name = @executing_broker */
+		name = @counterparty_lookup
 	if @counterparty_id = NULL
 	begin
 		select
 			status = "Error",
 			message = "Counterparty not found",
-			counterparty = @executing_broker
+			/* counterparty = @executing_broker */
+			counterparty = @counterparty_lookup
 		return
 	end
 end
@@ -274,7 +258,8 @@ where
 and
 	a.source_id = @source_id
 and
-	a.symbol = @executing_broker
+	/* a.symbol = @executing_broker */
+	a.symbol = @exec_destination
 if @eb_id = NULL
 begin
 	select
@@ -282,7 +267,8 @@ begin
 	from
 		ebs
 	where
-		name = @executing_broker
+		/* name = @executing_broker */
+		name = @exec_destination
 	if @eb_id = NULL
 	begin
 		exec
@@ -296,7 +282,8 @@ begin
 				name)
 		values(
 			@eb_id,
-			@executing_broker)
+			/* @executing_broker */
+			@exec_destination)
 	end
 end
 
@@ -311,20 +298,6 @@ where
 and
 	source_id = @source_id
 
-select
-	@tally_type_id = tally_type_id
-from
-	tally_types
-where
-	name = "Spot"
-if @tally_type_id = NULL
-begin
-	select
-		status = "Error",
-		message = "Spot tally type not found"
-	return
-end
-
 
 select
 	@contract_id = contract_id
@@ -333,7 +306,7 @@ from
 where
 	source_id = @source_id
 and
-	symbol = @symbol
+	symbol =@symbol
 if @contract_id = NULL
 begin
 	select
@@ -344,15 +317,97 @@ begin
 		symbol = @symbol
 	if @contract_id = NULL
 	begin
+		/* Last check for future contracts that requires the counterparty symbol */
 		select
-			status = "Error",
-			message = "Contract not found",
-			symbol = @symbol
-		return
+			@contract_id = contract_id
+		from
+			contract_symbols
+		where
+			source_id = @source_id
+		and
+			symbol = @symbol+"-"+@counterparty_lookup
+		if @contract_id = NULL
+		begin
+			select
+				status = "Error",
+				message = "Contract not found",
+				symbol = @symbol,
+				counterparty_lookup = @counterparty_lookup
+			return
+		end
 	end
 end
 
+select
+	@instrument = a.name
+from
+	instruments a,
+	contracts b
+where
+	a.instrument_id = b.instrument_id
+and
+	b.contract_id = @contract_id
 
+
+if @instrument = "Forward"
+	select
+		@tally_type = "Spot",
+		@trade_type = "Spot",
+		@deal_type = "Market Forward"
+if @instrument = "Future"
+	select
+		@tally_type = "Future",
+		@trade_type = "Future",
+		@deal_type = "Market Future"
+
+
+select
+	@deal_type_id = deal_type_id
+from
+	deal_types
+where
+	name = @deal_type
+if @deal_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Deal type not found",
+		deal_type = @deal_type
+	return
+end
+
+select
+        @tally_type_id = tally_type_id
+from
+        tally_types
+where
+        name = @tally_type
+if @tally_type_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Tally type not found",
+		tally_type = @tally_type
+        return
+end
+
+
+select
+	@trade_type_id = trade_type_id
+from
+	trade_types
+where
+	name = @trade_type
+if @trade_type_id = NULL
+begin
+	select 
+		status = "Error",
+		message = "Trade type not found",
+		trade_type = @trade_type
+	return
+end 
+	
+	
 select
 	@internal_account_id = internal_account_id,
 	@trader_id = trader_id
@@ -437,6 +492,26 @@ if datepart(hour, @trade_date) >= 17
 		@value_date = dateadd(day, 1, @value_date)
 
 select
+        @contract_symbol = symbol
+from
+        contracts
+where
+        contract_id = @contract_id
+
+exec
+        r_getfutvaldate
+                @contract_symbol,
+                "Regular",
+                @f_value_date output
+
+if @f_value_date != NULL
+begin
+        /* Update our @value_date if this is a Regular future with an expiration date */
+        select
+                @value_date = @f_value_date
+end
+
+select
 	@transaction_type_id = transaction_type_id
 from
 	transaction_types
@@ -507,7 +582,7 @@ begin
 		if @currency_id = NULL
 		begin
 			select
-				status = "Error",
+				status ="Error",
 				message = "Unable to determine contract currency for commission",
 				symbol = @symbol
 			return
@@ -644,7 +719,7 @@ begin tran
 			select
 				status = "Error",
 				message = "Unable to add commission. Trade not tallied",
-				symbol = @symbol,
+				symbol =@symbol,
 				price = @price,
 				trade_identifier = @trade_identifier
 			rollback tran
@@ -686,7 +761,4 @@ select
 	deal_id = @deal_id,
 	identifier = @trade_identifier
 
-
-
-go 
-
+go

@@ -1,4 +1,6 @@
-
+drop procedure
+	ag_spotvaldatesfordate
+go
 
 create or replace procedure
 	ag_spotvaldatesfordate
@@ -42,48 +44,8 @@ insert into
 	#meta
 values(
 	"Column Link",
-	"set_date",
-	"Set Spot Settle Date",
-	NULL) 
-
-insert into
-	#meta
-values(
-	"Column Link",
-	"reject",
-	"Reject Client Request",
-	NULL) 
-
-insert into
-	#meta
-values(
-	"Column Link",
-	"next_action",
-	"Approve Next Request Action",
-	NULL) 
-
-insert into
-	#meta
-values(
-	"Column Link",
-	"enable_user",
-	"Enable Approval User",
-	NULL) 
-
-insert into
-	#meta
-values(
-	"Column Link",
-	"disable_user",
-	"Disable Approval User",
-	NULL) 
-
-insert into
-	#meta
-values(
-	"Column Link",
-	"add_admin_user",
-	"Add Approval User",
+	"view_positions",
+	"Client Rolls For Date",
 	NULL) 
 
 insert into
@@ -91,24 +53,24 @@ insert into
 values(
 	"Column Link",
 	"confirm_dates",
-	"Confirm Spot Value Dates",
-	NULL)
+	"Confirm Roll Dates For Trade Date",
+	NULL) 
 
 insert into
 	#meta
 values(
 	"Column Link",
-	"confirm_all_dates",
-	"Confirm All Spot Value Dates",
-	NULL)
+	"back_to_home",
+	"Roll Risk Home",
+	NULL) 
 
-insert into 
+insert into
 	#meta
 values(
 	"Column Link",
-	"set_holiday_for_currency",
-	"Set Spot Value Holiday",
-	NULL)
+	"set_date",
+	"Set Spot Settle Date",
+	NULL) 
 
 insert into
 	 #meta
@@ -118,6 +80,7 @@ values(
 	 "Number",
 	"#,##0.00%")
 
+
 insert into
 	#meta
 values (
@@ -126,7 +89,7 @@ values (
 	NULL,
 	NULL)
 
-select * from #meta
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
 
 
@@ -255,7 +218,7 @@ set
 	closing_date = @trade_date,
 	spot_date = @one_day
 where
-	symbol in("USDCAD", "CADUSD", "USDTRY", "TRYUSD")
+	symbol in("USDCAD", "CADUSD", "USDTRY", "TRYUSD", "USDRUB", "USDRUR")
 
 delete
 
@@ -295,6 +258,78 @@ where
 		where
 			trade_date = @trade_date)
 
+
+create table
+	#header(
+		style varchar(250) NULL,
+		back_to_home varchar(50) NULL,
+		validated_by int NULL,
+		user_login varchar(50) NULL,
+		timestamp datetime NULL,
+		trade_date datetime,
+		confirm_dates varchar(25) NULL,
+		view_positions varchar(25) NULL)
+insert into
+	#header(
+		style,
+		back_to_home,
+		trade_date)
+values(
+	@style,
+	"Back to Rolls Risk Home",
+	@trade_date)
+
+update
+	#header
+set
+	a.validated_by = b.validated_by,
+	a.timestamp = b.timestamp
+from
+	#header a,
+	roll_trade_dates b
+where
+	a.trade_date = b.trade_date
+
+update
+	#header
+set
+	a.user_login = b.login
+from
+	#header a,
+	tico_accounts b
+where
+	a.validated_by = b.account_id
+
+update
+	#header
+set
+	confirm_dates = "Confirm Dates"
+where
+	user_login = NULL
+and
+	timestamp = NULL
+
+update
+	#header
+set
+	view_positions = "View Positions"
+where
+	confirm_dates = NULL
+
+select
+	style,
+	back_to_home,
+	user_login,
+	timestamp,
+	trade_date,
+	trading_date = convert(varchar(11), trade_date),
+	confirm_dates,
+	view_positions
+from
+	#header
+
+	
+
 select
 	section = datename(weekday, a.spot_date) + " Holiday Settlements for trade date " + convert(varchar(11), a.trade_date),
 	style = @style,
@@ -315,11 +350,11 @@ where
 and
 	lower(a.includes_holiday) = "y"
 and
-        convert(varchar(11),a.trade_date, 1) = convert(varchar(11), @trade_date, 1)
-
+	convert(date, a.trade_date) = convert(date, @trade_date)
 order by
 	a.spot_date,
 	b.symbol
+
 
 select
 	section = datename(weekday, a.spot_date) + " Standard settlements for trade date " + convert(varchar(11), a.trade_date),
@@ -332,62 +367,20 @@ select
 	spot_date = convert(varchar(11), a.spot_date),
 	spot_day = datename(weekday, a.spot_date),
 	days_from_now = datediff(day, a.trade_date, a.spot_date),
-	set_date = "Override Date For " + symbol,
-	confirmed_at,
-	confirmed_by,
-	confirm_dates="Confirm"
+	set_date = "Override Date For " + symbol
 from
 	spot_value_dates a,
 	contracts b
 where
 	a.contract_id = b.contract_id
 and
-	convert(varchar(11),a.trade_date, 1) = convert(varchar(11), @trade_date, 1)
-and
 	lower(a.includes_holiday) = "n"
+and
+	convert(date, a.trade_date) = convert(date, @trade_date)
 order by
 	a.spot_date,
 	b.symbol
 
-declare @total_confirmed int
-declare @total_confirmed_dates int
 
-select
-        @total_confirmed_dates = count(*)
-from
-        spot_value_dates
-where
-        convert(varchar(11), trade_date, 101) = convert(varchar(11), @trade_date, 101)
-
-select
-        @total_confirmed = count(*)
-from
-        spot_value_dates
-where
-        confirmed_by != NULL
-and
-        convert(varchar(11), trade_date, 101) = convert(varchar(11), @trade_date, 101)
-
-if (@total_confirmed_dates != @total_confirmed)
-begin
-        select
-                section = "Confirm All",
-                tradedate = convert(char(11), @trade_date, 101),
-                confirm_all_dates = "Confirm All"
-end
-else
-begin
-        select
-                section="Confirm All",
-                tradedate = convert(char(11), @trade_date, 101),
-                confirm_all_dates = ""
-end
-
-select
-	section="SET HOLIDAYS",
-	trade_date=convert(varchar(11), @trade_date, 1),
-	set_holiday_for_currency="SET"
-
-	
 
 go

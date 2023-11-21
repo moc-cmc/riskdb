@@ -1,8 +1,10 @@
+
 create or replace procedure
 	tt_notifysingletradeeb
 		@trade_notification_id int,
 		@format_swaps char(1)=NULL
 as
+
 
 declare @source varchar(50)
 declare @source_id int
@@ -36,9 +38,10 @@ create table
 		ext_account_pb varchar(25) NULL,
 		contract_id int,
 		std_contract varchar(50) NULL,
+		standard_contract varchar(50) NULL,
 		traded_ccy varchar(10) NULL,
                 counter_ccy varchar(10) NULL,
-		quantity numeric(30, 10) NULL,
+		quantity float NULL,
 		trade_date datetime,
 		trade_day datetime NULL,
 		value_date varchar(15) NULL,
@@ -213,6 +216,7 @@ select
 	trade_notification_id = b.trade_notification_id,
 	notification_status_id = b.status_id,
 	eb_id = a.eb_id
+
 from
 	trades a,
 	#trade_notifications b
@@ -568,7 +572,6 @@ from
 where
 	a.internal_account_id = b.internal_account_id
 
-
 update
         #trades
 set
@@ -578,6 +581,18 @@ from
         ebs b
 where
         a.eb_id = b.eb_id
+
+update
+	#trades
+set
+	eb = b.name
+from
+	#trades a,
+	counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+and
+	a.eb = NULL
 
 /*
 | Query external_accounts
@@ -812,6 +827,16 @@ and
 and
         e.product_id=g.product_id
 
+update 
+	#trades
+set
+	standard_contract = b.symbol
+from
+	#trades a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
 update
 	#trades
 set
@@ -927,7 +952,7 @@ select
 	std_contract,
 	traded_ccy,
 	counter_ccy,
-        str_quantity = convert(varchar(50), quantity),
+	str_quantity = convert(varchar(50), quantity),
 	quantity,
 	abs_quantity = abs(quantity),
         trade_date = rtrim(convert(varchar(10), trade_date, 112))+" "+rtrim(convert(varchar(10), trade_date, 108)),
@@ -957,11 +982,14 @@ select
 	far_fixing_d=rtrim(convert(varchar(10), far_fixing_date, 112)),
         swapsym=swap_symbol,
 	old_qty_if_deleted,
-	notification_source=@source
+	notification_source=@source,
+	standard_contract=standard_contract
 from
         #trades
 order by
         trade_id
 
 
+
 go 
+

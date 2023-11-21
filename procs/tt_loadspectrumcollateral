@@ -1,0 +1,50 @@
+create or replace procedure
+	tt_loadspectrumcollateral
+		@login varchar(50),
+		@source varchar(50),
+		@trade_date varchar(50)=NULL,
+		@client varchar(50)=NULL,
+		@nav varchar(50)=NULL,
+		@net_collateral varchar(50)=NULL,
+		@net_equity varchar(50)=NULL,
+		@gain_loss varchar(50)=NULL,
+		@cover varchar(50)=NULL,
+		@limit_available varchar(50)=NULL,
+		@available_margin varchar(50)=NULL,
+		@cover_ratio varchar(50)=NULL,
+		@limit_amount varchar(50)=NULL,
+		@limit_utilized varchar(50)=NULL,
+		@credit_line varchar(50)=NULL
+
+
+as
+
+declare @booking_date datetime
+declare @booking_net_collateral float
+
+if @trade_date = NULL
+begin
+	select
+		@booking_date = convert(date, getdate())
+end
+else
+begin
+	select
+		@booking_date = convert(date, @trade_date)
+end
+
+select
+	@booking_net_collateral = convert(float, @net_collateral)
+
+
+
+exec
+	api_setaccountcollateralval 
+		@login= @login,
+		@source = @source,
+		@account = @client,
+		@trade_date = @booking_date,
+		@market_value =  @booking_net_collateral
+
+
+go

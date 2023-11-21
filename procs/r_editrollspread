@@ -1,4 +1,5 @@
-drop procedure r_editrollspread
+drop procedure
+	r_editrollspread
 go
 
 create procedure
@@ -65,5 +66,6 @@ exec
 	r_managerollspreadgroups
 		@login,
 		@spread_group_name
+
 
 go

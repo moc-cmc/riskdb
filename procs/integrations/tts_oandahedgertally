@@ -233,7 +233,7 @@ select
 	@far_platform_identifier = rtrim(@transaction_id)+".f",
 	@deal_exec_symbol = rtrim(@deal_reference)
 
-if @deal_reference = NULL
+if @deal_reference in(NULL, "RESIDUAL")
 begin
 	select
 		@deal_exec_symbol = rtrim(@transaction_id)+".d"
@@ -464,6 +464,17 @@ begin
 		message = "Suppresssed OAU-CIF-CIF"
 	return
 end
+
+if @deal_reference = "RESIDUAL"
+begin
+	select
+		status = "Success",
+		message = "Suppressed RESIDUAL trade based on deal reference field",
+                platform_identifier = @platform_identifier,
+                source = @source
+	return
+end
+
 
 if @suppress_trade = "Y"
 begin
