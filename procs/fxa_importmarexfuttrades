@@ -20,7 +20,7 @@ create or replace procedure
 		@price varchar(25),
 		@strike varchar(25),
 		@trade_strategy varchar(25),
-		@identifier varchar(25),
+		@identifier varchar(100),
 		@charge_currency varchar(25),
 		@net_charges varchar(25),
 		@row_index int,
@@ -33,6 +33,21 @@ declare @trade_id int
 declare @deal_id int
 declare @symbol varchar(100)
 declare @contract_symbol varchar(100)
+
+if exists (select 
+		identifier
+	   from 
+		trades
+	   where
+  	        identifier = @identifier)
+begin
+	select
+		status="Error",
+		msg="Trade already exists",
+		identifier=@identifier
+
+	return
+end
 
 select 
 	@quantity = convert(float, rtrim(@transaction_volume)),
@@ -60,11 +75,12 @@ return
 
 exec
 	api_tallymarketfuture
-                @login,
-                @buy_sell,
-                @symbol,
-                @quantity,
-                @price,
+                @login=@login,
+                @buy_sell=@buy_sell,
+                @symbol=@symbol,
+                @quantity=@quantity,
+                @price=@price,
+                @identfier=@identifier,
                 @deal_id output,
                 @trade_id output
 
