@@ -231,7 +231,7 @@ where
 and
         source_id = @mpt_source_id
 and
-        value_date = @price_date
+        value_date = @value_date
 and
         price_date = @price_date
 
