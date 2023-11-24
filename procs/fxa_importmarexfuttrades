@@ -80,7 +80,7 @@ select
         @trade_type = "Future",
 	@trader = "J.MOHIDEEN",
 	@counterparty = "DIRECT-MAREX",
-	@strategy = "J.MOHIDEEN"
+	@strategy = "Rates Hedging"
 
 select
 	@external_account_id = a.external_account_id,
