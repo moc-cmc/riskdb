@@ -1,0 +1,445 @@
+create or replace procedure
+	eod_fxlcashbalances
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime = NULL
+as
+
+
+declare @run_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @begin_day_string varchar(50)
+declare @end_day_string varchar(50)
+
+if @trade_date = NULL
+begin
+    	select
+        	@trade_date = convert(date, getdate())
+	select
+		@trade_date = convert(date, @trade_date)
+end
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+        @run_id = a.run_id
+from
+        runs a
+where
+        a.name = @run_name
+if @@rowcount != 1
+begin
+        select
+                id = -1,
+                error = "Problem finding run with name",
+                run = @run_name
+        return
+end
+
+create table
+        #external_accounts(
+                external_account_id int)
+insert into
+        #external_accounts
+select
+        external_account_id
+from
+        run_external_accounts
+where
+        run_id = @run_id
+if @@rowcount = 0
+begin
+        insert into
+                #external_accounts
+        select
+                external_account_id
+        from
+                external_accounts
+end
+
+/* This is hardcoded based on an FXL requirement to match all balances even if 0 */
+create table
+	#fxl_products(
+		product_id int,
+		external_account_id int)
+insert into
+	#fxl_products(
+		product_id,
+		external_account_id)
+select
+	a.product_id,
+	b.external_account_id
+from
+	products a,
+	#external_accounts b
+where
+	a.symbol in("AED", "ARS", "AUD", "BRL", "CAD", "CHF", "CNH", "COP", "CZK", "DKK", "EUR", "GBP", "HKD", "HUF", "ILS", "INR", "JPY", "MXN", "NOK", "NZD", "PLN", "QAR", "RON", "RUB", "RUR", "SAR", "SEK", "SGD", "THB", "TRY", "USD", "ZAR")
+
+create table
+	#begin_balances(
+		external_account_id int,
+		currency_id int NULL,
+		balance numeric(30,4) NULL)
+
+insert into
+	#begin_balances(
+		external_account_id,
+		currency_id,
+		balance)
+select
+	a.external_account_id,
+        a.currency_id,
+        round(sum(a.amount), 2)
+from
+        account_transactions a,
+        #external_accounts b,
+	product_types c,
+	products d
+where
+        a.external_account_id = b.external_account_id
+and
+	a.currency_id = d.product_id
+and
+	d.product_type_id = c.product_type_id
+and
+	c.name = "Currency"
+and
+        a.transaction_date < @trade_date
+group by
+        a.currency_id,
+        a.external_account_id
+
+
+create table
+        #end_balances(
+                external_account_id int,
+                currency_id int NULL,
+                balance numeric(30,4) NULL)
+
+insert into
+        #end_balances(
+                external_account_id,
+                currency_id,
+                balance)
+select
+        a.external_account_id,
+        a.currency_id,
+        round(sum(a.amount), 2)
+from
+        account_transactions a,
+        #external_accounts b,
+	product_types c,
+	products d
+where
+        a.external_account_id = b.external_account_id
+and
+	a.currency_id = d.product_id
+and
+        d.product_type_id = c.product_type_id
+and
+	c.name = "Currency"
+and
+	a.transaction_date <= dateadd(hour, 17, convert(datetime, convert(date, @trade_date)))
+group by
+        a.currency_id,
+        a.external_account_id
+
+
+create table
+	#fss_cash_balances(
+		trade_date datetime NULL,
+		external_account_id int NULL,
+		external_account varchar(50) NULL,
+		product_id int,
+		product varchar(50) NULL,
+		opening_balance numeric(30,4) NULL,
+		posting numeric(30,4) NULL,
+		closing_balance numeric(30,4) NULL,
+		rate numeric(30,10) NULL,
+		eval_currency_balance numeric(30,4) NULL,
+		evaluation_currency_id int NULL,
+		trade_notification_id int NULL)
+
+insert into
+	 #fss_cash_balances(
+                trade_date,
+                product_id,
+		external_account_id)
+select
+	trade_date = convert(date, @trade_date),
+	product_id,
+	external_account_id
+from
+	#fxl_products
+
+insert into
+	#fss_cash_balances(
+		trade_date,
+                product_id,
+		external_account_id)
+select
+	trade_date = convert(date, @trade_date),
+        currency_id,
+	external_account_id
+from
+	#end_balances
+where
+	currency_id not in(select product_id from #fss_cash_balances)
+	
+update
+	#fss_cash_balances
+set
+	closing_balance = a.balance
+from
+	#end_balances a,
+	#fss_cash_balances b
+where
+	a.currency_id = b.product_id
+
+update
+	#fss_cash_balances
+set
+	opening_balance = a.balance
+from
+	#begin_balances a,
+	#fss_cash_balances b
+where
+        a.external_account_id = b.external_account_id
+and
+	a.currency_id = b.product_id
+
+update
+	#fss_cash_balances
+set
+	opening_balance = 0
+where
+	opening_balance = NULL
+update
+	#fss_cash_balances
+set
+	opening_balance = 0
+where
+	opening_balance = NULL
+
+update
+	#fss_cash_balances
+set
+	closing_balance = 0
+where
+	closing_balance = NULL
+
+update
+	#fss_cash_balances
+set
+	posting = closing_balance - opening_balance
+
+update
+	#fss_cash_balances
+set
+	opening_balance = round(a.opening_balance, b.decimal_precision),
+	closing_balance = round(a.closing_balance, b.decimal_precision),
+	posting = round(a.posting, b.decimal_precision)
+from
+	#fss_cash_balances a,
+	products b
+where
+	a.product_id = b.product_id
+and
+	b.decimal_precision != NULL
+
+update
+        #fss_cash_balances
+set
+        product = b.symbol
+from
+        #fss_cash_balances a,
+        products b
+where
+        a.product_id = b.product_id
+
+update
+	#fss_cash_balances
+set
+	external_account = b.symbol,
+	evaluation_currency_id = b.evaluation_currency_id
+from
+	#fss_cash_balances a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+/* get the eval ccy */	
+create table
+        #eval_ccys(
+                product_id int,
+                symbol varchar(10) NULL
+)
+insert into
+        #eval_ccys(
+                product_id)
+select
+        distinct(evaluation_currency_id)
+from
+        #fss_cash_balances
+
+/* Find out what products have been traded */
+create table
+	#traded_products(
+		product_id int
+)
+
+insert into
+	#traded_products
+select
+	distinct(product_id)
+from
+	#fss_cash_balances
+
+/* Get the conversion rated from traded products to eval ccy */	
+create table
+	#conversion_contracts
+(
+	contract_id int NULL,
+	product_id int,
+	currency_id int,
+	inverse_contract_id int NULL,
+	standard_price float NULL,
+	conversion_price float NULL
+)
+
+insert into 
+	#conversion_contracts(
+		contract_id,
+		product_id,
+		currency_id
+	)
+select
+	a.contract_id,
+	a.product_id,
+	a.currency_id
+from
+	forwards a,
+	#traded_products b,
+	#eval_ccys c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = c.product_id
+
+update
+	#conversion_contracts
+set
+	inverse_contract_id = a.contract_id
+from
+	forwards a,
+	#conversion_contracts b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+
+/* create temp table of settle prices */
+create table
+	#settle_prices(
+		contract_id int,
+		price float
+)
+insert into
+	#settle_prices
+select
+	contract_id,
+	price
+from
+	bo_spot_settles
+where
+	price_date = @end_date
+
+/* set conversion rates from settle prices */	
+update
+	#conversion_contracts
+set
+        standard_price = a.price,
+        conversion_price = a.price
+from
+        #settle_prices a,
+        #conversion_contracts b
+where
+        a.contract_id = b.contract_id
+
+update
+	#conversion_contracts
+set
+        standard_price = a.price,
+        conversion_price = 1/a.price
+from
+        #settle_prices a,
+        #conversion_contracts b
+where
+        a.contract_id = b.inverse_contract_id
+and
+        b.standard_price = NULL
+
+/* ensure a rate of 1.0 exists for the eval to eval conversion */
+insert into
+	#conversion_contracts
+(
+	product_id,
+	currency_id,
+	conversion_price,
+	standard_price
+)
+select
+	product_id,
+	product_id,
+	1.0,
+	1.0
+from
+	#eval_ccys
+
+
+update
+	#fss_cash_balances
+set
+	rate = 	a.standard_price
+from
+	#conversion_contracts a,
+	#fss_cash_balances b
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.evaluation_currency_id
+
+update
+	#fss_cash_balances
+set
+	eval_currency_balance = closing_balance * conversion_price
+from
+	#conversion_contracts a,
+        #fss_cash_balances b
+where
+        a.product_id = b.product_id
+and
+        a.currency_id = b.evaluation_currency_id
+
+select
+	external_account,
+	product,
+	opening_balance,
+	posting,
+	closing_balance,
+	rate,
+	eval_currency_balance = round(eval_currency_balance, 2),
+	trade_notification_id
+from
+	#fss_cash_balances
+order by
+	product
+
+
+go 
