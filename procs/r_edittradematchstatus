@@ -1,11 +1,12 @@
+
 create or replace procedure
 	r_edittradematchstatus
 		@login varchar(50),
 		@trade_id varchar(50),
 		@matching_engine varchar(50),
 		@match_status varchar(100)
-
 as
+
 
 declare @tico_account_id int
 declare @match_status_id int
@@ -95,6 +96,23 @@ begin
         return
 end
 
+declare @fourth_matching_engine_id int
+
+select
+        @fourth_matching_engine_id = matching_engine_id
+from
+        matching_engines
+where
+        name = "MatchHub LDMSF"
+if @fourth_matching_engine_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Matching engine not found on fourth attempt",
+                matching_engine =  "MatchHub LDMSF"
+        return
+end
+
 select
 	@match_status_id = match_status_id
 from
@@ -140,14 +158,26 @@ begin
                 	matching_engine_id = @third_matching_engine_id
 		if @trade_match_id = NULL
 		begin
-			select
-				status = "Error",
-				msg = "Could not find trade_match_id",
-				trade_id = @trade_id_int,
-				matching_engine_id = @matching_engine_id,
-				second_matching_engine_id = @second_matching_engine_id,
-				third_matching_engine_id = @third_matching_engine_id
-			return
+                	select
+                        	@trade_match_id = trade_match_id
+                	from
+                        	trade_matches
+                	where
+                        	trade_id = @trade_id_int
+                	and
+                        	matching_engine_id = @fourth_matching_engine_id
+			if @trade_match_id = NULL
+			begin
+				select
+					status = "Error",
+					msg = "Could not find trade_match_id",
+					trade_id = @trade_id_int,
+					matching_engine_id = @matching_engine_id,
+					second_matching_engine_id = @second_matching_engine_id,
+					third_matching_engine_id = @third_matching_engine_id,
+					fourth_matching_engine_id = @fourth_matching_engine_id
+				return
+			end
 		end
 	end
 end
@@ -219,5 +249,6 @@ select
 	match_status = @match_status,
 	trade_match_id = @trade_match_id
 
-go
+
+go 
 
