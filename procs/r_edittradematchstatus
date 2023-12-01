@@ -113,6 +113,23 @@ begin
         return
 end
 
+declare @fifth_matching_engine_id int
+
+select
+	@fifth_matching_engine_id = matching_engine_id
+from
+	matching_engines
+where
+	name = "MatchHub LDTF1"
+if @fifth_matching_engine_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Matching engine not found on fifth attempt",
+		matching_engine = "MatchHub LDTF1"
+	return
+end
+
 select
 	@match_status_id = match_status_id
 from
@@ -169,14 +186,26 @@ begin
 			if @trade_match_id = NULL
 			begin
 				select
-					status = "Error",
-					msg = "Could not find trade_match_id",
-					trade_id = @trade_id_int,
-					matching_engine_id = @matching_engine_id,
-					second_matching_engine_id = @second_matching_engine_id,
-					third_matching_engine_id = @third_matching_engine_id,
-					fourth_matching_engine_id = @fourth_matching_engine_id
-				return
+					@trade_match_id = trade_match_id
+				from
+					trade_matches
+				where
+					trade_id = @trade_id int
+				and
+					matching_engine_id = @fifth_matching_engine_id
+				if @trade_match_id = NULL
+				begin
+					select
+						status = "Error",
+						msg = "Could not find trade_match_id",
+						trade_id = @trade_id_int,
+						matching_engine_id = @matching_engine_id,
+						second_matching_engine_id = @second_matching_engine_id,
+						third_matching_engine_id = @third_matching_engine_id,
+						fourth_matching_engine_id = @fourth_matching_engine_id,
+						fifth_matching_engine_id = @fifth_matching_engine_id
+					return
+				end
 			end
 		end
 	end
