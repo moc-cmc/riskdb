@@ -1,7 +1,3 @@
-use
-	risk_jeff
-go
-
 drop procedure
 	ag_processfssadjustments
 go
