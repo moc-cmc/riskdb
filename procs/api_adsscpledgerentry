@@ -1,0 +1,492 @@
+use risk_adss
+go
+
+create or replace procedure
+	api_adsscpledgerentry
+		@login varchar(50),
+		@source varchar(50),
+		@transaction_id varchar(50)=NULL,
+		@notification_status varchar(50)=NULL,
+		@transaction_type varchar(50)=NULL,
+		@account varchar(50)=NULL,
+		@product varchar(50)=NULL,
+		@quantity varchar(50)=NULL,
+		@entry_date varchar(50)=NULL,
+		@identifier varchar(100)=NULL,
+                @provided_source varchar(50)=NULL,
+		@provider varchar(50)=NULL,
+		@exchange_rate varchar(50)=NULL,
+		@deposit_amount varchar(50)=NULL,
+		@deposit_currency varchar(50)=NULL,
+		@trade_id varchar(50)=NULL,
+		@note varchar(255)=NULL,
+		@link_id varchar(100)=NULL
+		
+as
+
+declare @account_transaction_id int
+declare @notification_status_id int
+declare @transaction_type_id int
+declare @booking_quantity float
+declare @booking_orig_quantity float
+declare @booking_date datetime
+declare @external_account varchar(50)
+declare @broker varchar(50)
+declare @source_id int
+declare @booking_account varchar(50)
+
+
+if lower(@provided_source) = "mt4"
+begin
+	select
+		@booking_account = "ADSS MT4 Cash Account"	
+
+end
+if lower(@provided_source) = "adss platform"
+begin
+	select
+		@booking_account = "Adaptive Pool account"
+end
+
+if @booking_account = NULL and @provided_source not in("", NULL)
+begin
+        select
+                status = "Error",
+                message = "Uknown source should be provided as MT4 or ADSS platform",
+                provided_source = @provided_source
+        return
+end
+/*
+select
+        status = "Success",
+        message = "Booked transaction",
+        account_transaction_id = @account_transaction_id,
+        transaction_id = @transaction_id,
+        notification_status = @notification_status,
+        transaction_type = @transaction_type,
+        account = @account,
+        product = @product,
+        quantity = @quantity,
+        entry_date = @entry_date,
+        identifier = @identifier,
+        trade_id = @trade_id,
+        note = @note,
+        link_id = @link_id
+
+return
+*/
+
+if @transaction_id in("", "null")
+begin
+	select
+		@transaction_id = NULL
+end
+if @transaction_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Missing field transaction_id",
+		transaction_id = @transaction_id
+	return
+end
+
+if @transaction_id in("", "null", NULL)
+begin
+        select
+                @notification_status = "New"
+end
+
+if @transaction_type in("", "null")
+begin
+        select
+                @transaction_type = NULL
+end
+if @transaction_type = NULL
+begin
+	select
+		status = "Error",
+		message = "Missing field transaction_type",
+		transaction_type = @transaction_type
+	return
+end
+
+if @account in("", "null")
+begin
+	select
+		@account = NULL
+end
+if @account = NULL
+begin
+	select
+		status = "Error",
+		message = "Missing field account",
+		account = @account
+	return
+end
+
+if @product in(NULL, "", "null")
+begin
+	select
+		status = "Error",
+		message = "Missing field product",
+		product = @product
+	return
+end
+
+
+if @quantity in(NULL, "null", "")
+begin
+	select
+		status = "Error",
+		message = "Missing field quantity",
+		quantity = @quantity
+	return
+end
+
+if @note in(NULL, "", "null")
+begin
+	select
+		@note = "Action: "+rtrim(@transaction_type)+" Ref: "+rtrim(@transaction_id)+" PRef: "+rtrim(@identifier)
+	/*select
+		@note = rtrim(@note) + " converted at "+rtrim(@exchange_rate)+" from "+ rtrim(@product) +" to "+ rtrim(@deposit_currency)*/
+end
+
+if @entry_date in(NULL, "", "null")
+begin
+	select
+		@entry_date = convert(varchar(8), getdate(), 112)
+end
+
+if @deposit_currency in ("", NULL, "null")
+begin
+	select
+		@deposit_currency = @product,
+		@deposit_amount = @quantity
+end
+
+select
+	@booking_quantity = convert(float, @deposit_amount),
+	@booking_orig_quantity = convert(float, @quantity),
+	@booking_date = convert(datetime, @entry_date)
+
+declare @op_transaction_type varchar(50)
+declare @op_id varchar(100)
+declare @orig_transaction_type varchar(50)
+declare @middle_bookings char(1)
+
+if lower(@transaction_type) = "withdrawal"
+begin
+        select
+		@transaction_type = "Deposit",
+		@op_transaction_type = "Withdrawal"
+
+        if @product != @deposit_currency
+        begin
+                select
+                        @middle_bookings = "Y"
+        end
+end
+
+
+if lower(@transaction_type) = "topup"
+begin
+	select
+                @transaction_type = "Withdrawal",
+		@op_transaction_type = "Deposit"
+
+	if @product != @deposit_currency
+	begin
+		select
+			@middle_bookings = "Y"
+	end
+end
+
+
+	
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+
+select
+        @external_account = a.symbol
+from
+        external_accounts a,
+        external_account_symbols b
+where
+        a.external_account_id = b.external_account_id
+and
+        b.source_id = @source_id
+and
+        b.symbol = @account
+
+if @external_account = NULL
+begin
+	select
+        	@external_account = a.symbol
+	from
+        	external_accounts a
+	where
+        	a.name = @account
+end		
+
+if @external_account = NULL
+begin
+        select
+                @external_account = a.symbol
+        from
+                external_accounts a
+        where
+                a.symbol = @account
+end
+
+if @external_account = NULL
+begin
+	select
+		@external_account = @account
+end
+select
+	@booking_quantity = @booking_quantity * -1,
+	@booking_orig_quantity = @booking_orig_quantity * -1
+
+declare @deal_id int
+
+exec j_nextkey
+	"deals",
+	@deal_id output
+
+declare @op_account_transaction_id int
+declare @op_account_transaction_id_2 int
+declare @op_account_transaction_id_3 int
+declare @op_account_transaction_id_4 int
+declare @amt2 float
+declare @amt2_orig float
+declare @op_id_2 varchar(100)
+declare @op_id_3 varchar(100)
+
+select
+	@amt2 = @booking_quantity * -1,
+	@amt2_orig = @booking_orig_quantity * -1,
+	@op_id = rtrim(@identifier)+".auto",
+	@op_id_2 = rtrim(@identifier)+".auto orig c",
+	@op_id_3 = rtrim(@identifier)+".auto orig d"
+
+if @middle_bookings = "Y"
+begin
+declare @booking_orig_quantity2 float
+select 
+	@booking_orig_quantity2 = @booking_orig_quantity * -1
+declare @amt2_2 float
+select 
+	@amt2_2 = @amt2 * -1
+
+exec
+        api_addaccounttransaction
+                @login = @login,
+                @account = @external_account,
+                @transaction_type = @transaction_type,
+               	@amount = @amt2_2,
+               	@product = @deposit_currency,
+                @date = @booking_date,
+                @note = @note,
+                @identifier = @identifier,
+                @source = @source,
+                @deal_id = @deal_id,
+                @account_transaction_id = @account_transaction_id output
+
+if @account_transaction_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem booking record. No ID allocated",
+                account_transaction_id = @account_transaction_id,
+                transaction_id = @transaction_id,
+                notification_status = @notification_status,
+                transaction_type = @transaction_type,
+                account = @account,
+                product = @product,
+                quantity = @quantity,
+                entry_date = @entry_date,
+                identifier = @identifier,
+                trade_id = @trade_id,
+                note = @note,
+                deal_id = @deal_id,
+                link_id = @link_id
+        return
+end
+
+select
+        status = "Success",
+        message = "Booked transaction",
+        account_transaction_id = @account_transaction_id,
+        transaction_id = @transaction_id,
+        notification_status = @notification_status,
+        transaction_type = @transaction_type,
+        account = @account,
+        product = @product,
+        quantity = @quantity,
+        entry_date = @entry_date,
+        identifier = @identifier,
+        trade_id = @trade_id,
+        note = @note,
+        deal_id = @deal_id,
+        link_id = @link_id
+
+exec
+        api_addaccounttransaction
+                @login = @login,
+                @account = "Counterparty FX",
+                @transaction_type = @transaction_type,
+                @amount = @booking_orig_quantity,
+                @product = @product,
+                @date = @booking_date,
+                @note = @note,
+                @identifier = @op_id_2,
+                @source = @source,
+                @deal_id = @deal_id,
+                @account_transaction_id = @op_account_transaction_id_2 output
+
+exec
+        api_addaccounttransaction
+                @login = @login,
+                @account = "Counterparty FX",
+                @transaction_type = @op_transaction_type,
+                @amount = @amt2,
+                @product = @deposit_currency,
+                @date = @booking_date,
+                @note = @note,
+                @identifier = @op_id_3,
+                @source = @source,
+                @deal_id = @deal_id,
+                @account_transaction_id = @op_account_transaction_id_3 output
+
+exec
+       	api_addaccounttransaction
+               	@login = @login,
+               	@account = @booking_account,
+               	@transaction_type = @op_transaction_type,
+                @amount = @booking_orig_quantity2,
+                @product = @product,
+               	@date = @booking_date,
+               	@note = @note,
+               	@identifier = @op_id,
+               	@source = @source,
+               	@deal_id = @deal_id,
+               	@account_transaction_id = @op_account_transaction_id_4 output
+
+end
+else
+begin
+
+exec
+        api_addaccounttransaction
+                @login = @login,
+                @account = @external_account,
+                @transaction_type = @transaction_type,
+                @amount = @booking_quantity,
+                @product = @deposit_currency,
+                @date = @booking_date,
+                @note = @note,
+                @identifier = @identifier,
+                @source = @source,
+                @deal_id = @deal_id,
+                @account_transaction_id = @account_transaction_id output
+
+if @account_transaction_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem booking record. No ID allocated",
+                account_transaction_id = @account_transaction_id,
+                transaction_id = @transaction_id,
+                notification_status = @notification_status,
+                transaction_type = @transaction_type,
+                account = @account,
+                product = @product,
+                quantity = @quantity,
+                entry_date = @entry_date,
+                identifier = @identifier,
+                trade_id = @trade_id,
+                note = @note,
+                deal_id = @deal_id,
+                link_id = @link_id
+        return
+end
+
+select
+        status = "Success",
+        message = "Booked transaction",
+        account_transaction_id = @account_transaction_id,
+        transaction_id = @transaction_id,
+        notification_status = @notification_status,
+        transaction_type = @transaction_type,
+        account = @account,
+        product = @product,
+        quantity = @quantity,
+        entry_date = @entry_date,
+        identifier = @identifier,
+        trade_id = @trade_id,
+        note = @note,
+        deal_id = @deal_id,
+        link_id = @link_id
+
+	exec
+        	api_addaccounttransaction
+                	@login = @login,
+                	@account = @booking_account,
+                	@transaction_type = @op_transaction_type,
+                	@amount = @amt2,
+                	@product = @deposit_currency,
+                	@date = @booking_date,
+                	@note = @note,
+                	@identifier = @op_id,
+                	@source = @source,
+			@deal_id = @deal_id,
+                	@account_transaction_id = @op_account_transaction_id output
+	
+	if @account_transaction_id = NULL
+	begin
+        	select
+                	status = "Error",
+                	message = "Problem booking record. No ID allocated",
+                	account_transaction_id = @op_account_transaction_id,
+                	transaction_id = @transaction_id,
+                	notification_status = @notification_status,
+                	transaction_type = @op_transaction_type,
+                	account = @booking_account,
+                	product = @product,
+                	quantity = @amt2,
+                	entry_date = @entry_date,
+                	identifier = @op_id,
+                	trade_id = @trade_id,
+                	note = @note,
+			deal_id = @deal_id,
+                	link_id = @link_id
+        	return
+	end
+	
+	select
+        	status = "Success",
+        	message = "Booked transaction",
+        	account_transaction_id = @op_account_transaction_id,
+        	transaction_id = @transaction_id,
+        	notification_status = @notification_status,
+        	transaction_type = @op_transaction_type,
+        	account = @booking_account,
+        	product = @product,
+        	quantity = @amt2,
+        	entry_date = @entry_date,
+        	identifier = @op_id,
+        	trade_id = @trade_id,
+        	note = @note,
+		deal_id = @deal_id,
+        	link_id = @link_id
+end
+
+
+
+go	
+		
+		
