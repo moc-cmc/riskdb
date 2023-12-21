@@ -1,3 +1,6 @@
+USE risk_edge
+GO
+
 
 create or replace procedure
 	ttm_edgewtoedgetally
@@ -475,7 +478,7 @@ end
  * On a market trade, the external account is determined by the counterparty
  */
 
-if @is_fund_agency = "Y"
+if @is_fund_agency = "N"
 begin
 	select
 		@c_external_account_id = @c_cpty_external_account_id
@@ -681,14 +684,14 @@ exec
 if @side = "BUY"
 begin
 	select
-		@c_quantity = @qty,
-		@m_quantity = @qty * -1
+		@c_quantity = @qty * -1,
+		@m_quantity = @qty
 end
 else
 begin
 	select
-                @c_quantity = @qty * -1,
-                @m_quantity = @qty
+                @c_quantity = @qty,
+                @m_quantity = @qty * -1
 end
 
 
@@ -1023,5 +1026,5 @@ end
 
 
 
-go 
 
+GO
