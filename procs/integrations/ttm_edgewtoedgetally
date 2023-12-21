@@ -1,6 +1,3 @@
-USE risk_edge
-GO
-
 
 create or replace procedure
 	ttm_edgewtoedgetally
@@ -1022,9 +1019,4 @@ begin
 end
 
 
-
-
-
-
-
-GO
+go
