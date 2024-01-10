@@ -1,0 +1,140 @@
+drop procedure
+	r_viewsourcebalances
+go
+
+create procedure
+	r_viewsourcebalances
+		@login varchar(50),
+		@source varchar(50)=NULL,
+		@as_of datetime = NULL
+
+as
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"hiddencol",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"timestamp",
+	"Source Snapshot Balances",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"avg_short",
+	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+select * from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+
+if @as_of = NULL
+	select
+		@as_of = getdate()
+
+select
+	as_of = @as_of
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		source_id int NULL,
+		source varchar(50) NULL,
+		timestamp datetime NULL,
+		accounts int NULL)
+insert into
+	#output(
+		source,
+		timestamp,
+		accounts)
+select
+	b.name,
+	a.timestamp,
+	count(a.external_account_id)
+from
+	source_balances a,
+	sources b
+where
+	a.source_id = b.source_id
+/*
+and
+	a.timestamp >= dateadd(day, -1, @as_of)
+and
+	a.timestamp <= @as_of
+*/
+and
+	a.timestamp >= @as_of
+group by
+	a.timestamp,
+	b.name
+order by
+	a.timestamp,
+	b.name
+
+update
+	#output
+set
+	style = @style
+
+select
+	style,
+	source,
+	timestamp,
+	accounts
+from
+	#output
+order by 
+	id
+
+go
