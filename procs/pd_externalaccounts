@@ -1,0 +1,12 @@
+
+create or replace procedure
+	pd_externalaccounts
+as
+
+select
+	name = rtrim(symbol)
+from
+	external_accounts
+order by
+	symbol
+go

@@ -1,0 +1,74 @@
+create or replace procedure
+	xapi_connectioninfo
+		@source varchar(50)
+
+
+as
+
+declare @source_id int
+declare @default_vault_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source",
+		source = @source
+	return
+end
+
+select
+	@default_vault_id = key_vault_id
+from
+	key_vaults
+where
+	name = "Elysium AWS Secrets Manager"
+
+
+create table
+	#info(
+		api_key varchar(100),
+		account varchar(100),
+        	legal_entity_id varchar(100) NULL,
+		secret_id varchar(255)
+
+)
+
+insert into
+	#info
+select
+	a.description,
+	b.symbol,
+	"",
+	secret_path
+from
+	account_vault_secrets a,
+	external_accounts b,
+	statuses c,
+	sources d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.status_id = c.status_id
+and
+	a.source_id = d.source_id
+and
+	c.name = "Active"
+and
+	a.key_vault_id = @default_vault_id
+and
+	d.name = @source
+	
+
+select
+	* 
+from
+	#info
+
+go
