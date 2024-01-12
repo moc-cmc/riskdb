@@ -1,5 +1,5 @@
 create or replace procedure
-	xapi_connectioninfo
+	api_connectioninfo
 		@source varchar(50)
 
 
