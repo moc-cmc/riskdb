@@ -81,6 +81,8 @@ select
 if @as_of = NULL
 	select
 		@as_of = getdate()
+	select
+		@as_of =  dateadd(day, -1, @as_of)
 
 select
 	as_of = @as_of
@@ -135,6 +137,6 @@ select
 from
 	#output
 order by 
-	id
+	timestamp DESC
 
 go
