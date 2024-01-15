@@ -79,11 +79,14 @@ select
 
 
 if @as_of = NULL
+begin
 	select
 		@as_of = getdate()
-	select
-		@as_of =  dateadd(day, -1, @as_of)
+end
 
+select
+	@as_of = convert(date, @as_of)
+		
 select
 	as_of = @as_of
 
@@ -109,14 +112,10 @@ from
 	sources b
 where
 	a.source_id = b.source_id
-/*
-and
-	a.timestamp >= dateadd(day, -1, @as_of)
-and
-	a.timestamp <= @as_of
-*/
 and
 	a.timestamp >= @as_of
+and
+	a.timestamp < dateadd(day, 1, @as_of)
 group by
 	a.timestamp,
 	b.name
