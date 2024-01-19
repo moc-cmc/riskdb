@@ -644,7 +644,7 @@ begin
 	end
 	else
 	begin
-		if @external_account in("OC DB FXPB", "OCAN DB FXPB", "OC SCB FXPB", "OCAN SCB FXPB")
+		if @external_account in("OC DB FXPB", "OCAN DB FXPB", "OC SCB FXPB", "OCAN SCB FXPB", "OC UBS FXPB", "OCAN UBS FXPB")
 		begin
 			select
 				status = "Success",
