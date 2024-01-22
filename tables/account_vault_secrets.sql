@@ -27,7 +27,8 @@ on
 	account_vault_secrets(
 		source_id,
 		external_account_id,
-		key_vault_id)
+		key_vault_id,
+		status_id)
 go
 
 
