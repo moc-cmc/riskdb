@@ -1,0 +1,1037 @@
+create or replace procedure
+	eod_fxlsettlementdetails
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+declare @source_id int
+declare @cancelled_count int
+declare @traiana_id_prefix varchar(15)
+declare @run_id int
+declare @begin_day_string varchar(50)
+declare @end_day_string varchar(50)
+declare @cancelling_src_status_id int
+declare @cancelled_status_id int
+declare @usd_product_id int
+declare @evaluation_currency_id int
+declare @trades_begin datetime
+declare @begin_date datetime
+declare @end_date datetime
+	
+
+select
+	@run_id = a.run_id
+from
+	runs a
+where
+	a.name = @run_name
+if @@rowcount != 1
+begin
+	select
+		id = -1,
+		error = "Problem finding run with name",
+		run = @run_name
+	return
+end
+
+
+if @trade_date = NULL
+begin
+        select
+                @trade_date = getdate()
+        select
+                @trade_date = convert(date, @trade_date)
+end
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int NULL,
+		trade_type_id int,
+		trade_type varchar(25) NULL,
+		deal_type_id int NULL,
+		deal_type varchar(25) NULL,
+		internal_account_id int NULL,
+		internal_account varchar(50) NULL,
+		external_account_id int,
+		external_account varchar(50) NULL,
+		trader_id int,
+		trader varchar(50) NULL,
+		counterparty_id int,
+		counterparty varchar(50) NULL,
+                agency_vs_counterparty varchar(50) NULL,
+		fund_agency_trade char(1) NULL,
+		fund_agency_buy_sell varchar(8) NULL,
+		client_buy_sell varchar(4) NULL,
+		broker_id int,
+		broker varchar(25) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(30) NULL,
+		ext_account_pb varchar(25) NULL,
+		contract_id int,
+		contract varchar(50) NULL,
+		inverse_contract_id int NULL,
+		std_contract varchar(50) NULL,
+		traded_ccy varchar(10) NULL,
+                counter_ccy varchar(10) NULL,
+		quantity float NULL,
+		counter_qty float NULL,
+		abs_qty float NULL,
+		trade_date datetime,
+		trade_day datetime NULL,
+		value_date datetime,
+		fixing_date varchar(15) NULL,
+		db_price float,
+		std_price float NULL,
+		spot_reference float NULL,
+		sales_code_id int NULL,
+		sales_code varchar(25) NULL,
+		strategy_id int NULL,
+		strategy varchar(30) NULL,
+		identifier varchar(100) NULL,
+		deal_identifier varchar(100) NULL,
+		deal_status_id int NULL,
+		deal_status varchar(25) NULL,
+		trade_status_id int NULL,
+		trade_status varchar(25) NULL,
+		trade_notification_id int NULL,
+		/*- Option info -*/
+		option_premium float NULL,
+		option_premium_ccy_id int NULL,
+		option_premium_ccy varchar(50) NULL,
+                premium_settle_date datetime NULL,
+		option_settle_date datetime NULL,
+		optcon_exercise_style_id int NULL,
+		optcon_exercise_style varchar(30) NULL,
+		optcon_strike float NULL,
+		optcon_put_call varchar(4) NULL,
+                option_expiration_id int NULL,
+		optexp_symbol varchar(30) NULL,
+		optexp_expiration datetime NULL,
+		optexp_timezone_id int NULL,
+		optexp_time_zone varchar(30) NULL,
+		optexp_tz_symbol varchar(30) NULL,
+		optexp_tz_expiration_time varchar(30) NULL,
+		optexp_tz_display_value varchar(25) NULL,
+		optexp_tz_status int NULL,
+		option_id int NULL,
+		opt_underlying_contract_id int NULL,
+		opt_underlying_contract varchar(50) NULL,
+		opt_exchange_id int NULL,
+		opt_exchange varchar(25) NULL,
+		opt_def_exercise_style_id int NULL,
+		opt_def_exercise_style varchar(30) NULL,
+		opt_quantity float NULL,
+		opt_tick_size float NULL,
+                fxl_c_p_flip_qty float NULL,
+                fxl_c_p_flip_cnt_qty float NULL,
+                pct_price float NULL,
+		/*- Swap Info -*/
+		far_quantity float NULL,
+		far_price float NULL,
+		far_value_date datetime NULL,
+		far_fixing_date datetime NULL,
+		far_trade_notification_id int NULL,
+		swap_symbol varchar(50) NULL,
+		cl_or_lp varchar(50) NULL,
+		old_qty_if_deleted float NULL,
+		is_inverted_contract char(1) NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		pd1_eq float NULL,
+		pd2_eq float NULL,
+		vo float NULL,
+                vo_rate float NULL,
+		currency_usd_rate float NULL,
+		reval_price_db float NULL,
+		reval_price_std float NULL,
+		reval_counter_qty float NULL,
+		mtm_qty float NULL,
+		option_mtm_qty float NULL,
+		client_pay_receive varchar(50) NULL
+		)
+
+
+/*
+| Insert *_ids into #trades that need to be notified 
+*/
+insert into
+	#trades
+(
+	trade_id,
+	deal_id,
+	trade_type_id,
+	internal_account_id,
+	external_account_id,
+	trader_id,
+	counterparty_id,
+	fund_agency_trade,
+	contract_id,
+	broker_id,
+	quantity,
+	counter_qty,
+	trade_date,
+	value_date,
+	fixing_date,
+	db_price,
+	std_price,
+	spot_reference,
+	sales_code_id,
+	strategy_id,
+	identifier,
+	trade_status_id,
+	abs_qty,
+        pct_price,
+	cl_or_lp
+)
+select 
+	trade_id = a.trade_id,
+	deal_id = a.deal_id,
+	trade_type_id = a.trade_type_id,
+	internal_account_id = a.internal_account_id,
+	external_account_id = a.external_account_id,
+	trader_id = a.trader_id,
+	counterparty_id = a.counterparty_id,
+        fund_agency_trade = "N", /* defaults to 'N', updated to 'Y' if fund_agency trade */
+	contract_id = a.contract_id,
+	broker_id = a.broker_id,
+	quantity = a.quantity,
+	counter_qty = round(a.quantity * a.price, 2),
+	trade_date = a.trade_date,
+	value_date = convert(varchar(12), a.value_date, 112),
+	fixing_date = convert(varchar(12), a.fixing_date, 112),
+	db_price = a.price,
+	std_price = a.price,
+	spot_reference = a.spot_reference,
+	sales_code_id = a.sales_code_id,
+	strategy_id = a.strategy_id,
+	identifier = a.identifier,
+	trade_status_id = a.status_id,
+	abs_qty = abs(a.quantity),
+        pct_price,
+	cl_or_lp = "LP"
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g,
+	trade_types h
+where
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id= f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	a.trade_type_id = h.trade_type_id
+and
+	h.name != "Option"
+and
+	a.value_date = convert(date,@trade_date)
+and
+	a.quantity != 0
+
+insert into
+        #trades(
+                trade_id,
+                deal_id,
+                trade_type_id,
+                trade_date,
+                external_account_id,
+                trader_id,
+                counterparty_id,
+                broker_id,
+                contract_id,
+                value_date,
+                quantity,
+                counter_qty,
+                db_price,
+		std_price)
+select
+        a.trade_id,
+        a.deal_id,
+        h.trade_type_id,
+        a.trade_date,
+        a.external_account_id,
+        a.trader_id,
+        a.counterparty_id,
+        a.broker_id,
+        a.contract_id,
+        a.value_date,
+        a.quantity,
+        a.quantity * a.price * -1.0,
+        a.pct_price * 100,
+	a.pct_price * 100
+from
+        trades a,
+        #external_accounts b,
+        #internal_accounts c,
+        #traders d,
+        #strategies e,
+        #brokers f,
+        #counterparties g,
+        trade_types h,
+	account_transaction_trades i,
+	account_transactions j
+where
+        a.trade_type_id = h.trade_type_id
+and
+        a.external_account_id = b.external_account_id
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.trader_id = d.trader_id
+and
+        a.strategy_id = e.strategy_id
+and
+        a.broker_id= f.broker_id
+and
+        a.counterparty_id = g.counterparty_id
+and
+        h.name = "Option"
+and
+	a.trade_id = i.trade_id
+and
+	i.account_transaction_id = j.account_transaction_id
+and
+	transaction_date = convert(date, @trade_date)
+
+/*
+|  Adjust display prices to standard rate for all pairs
+*/
+update
+    #trades
+set
+    std_price = case 
+        when d.name = "Inverted" and c.factor != NULL then
+            (1 / a.db_price) * c.factor * d.factor
+        when d.name = "Inverted" then
+            (1 / a.db_price) * d.factor
+        when c.factor != NULL then
+            a.db_price * c.factor * d.factor
+        else
+            a.db_price * d.factor
+    end
+from
+    #trades a,
+    contracts b,
+    contract_price_styles c,
+    price_styles d
+where
+    a.contract_id = b.contract_id
+and
+    b.contract_id = c.contract_id
+and
+    c.price_style_id = d.price_style_id
+
+
+/*
+| Query trade_types
+*/
+update
+	#trades
+set
+	trade_type = b.name
+from
+	#trades a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+
+/*
+| Query external_accounts
+*/
+
+update 
+        #trades
+set
+        external_account = b.symbol
+from
+        #trades a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+
+update
+	#trades
+set
+	external_account = b.symbol
+from
+	#trades a,
+	external_account_symbols b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.source_id = @source_id
+
+update
+	#trades
+set
+	ext_account_pb = b.symbol
+from
+	#trades a,
+	client_give_ups b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.source_id = @source_id
+
+update
+	#trades
+set
+	fund_agency_buy_sell = "SELL",
+        client_buy_sell = "BUY",
+	client_pay_receive = "PAY"
+where
+	quantity < 0
+
+update
+        #trades
+set
+        fund_agency_buy_sell = "BUY",
+	client_buy_sell = "SELL",
+	client_pay_receive = "RECIEVE"
+where
+        quantity > 0
+
+
+	
+
+/*
+|  Query contracts, dealt ccy, counter ccy
+*/
+update 
+	#trades
+set
+	contract = b.symbol,
+	std_contract = b.symbol,
+        traded_ccy = g.symbol,
+        counter_ccy = f.symbol
+from
+	#trades a,
+	contracts b,
+	forwards e,
+	products f,
+	products g
+where
+	a.contract_id = b.contract_id
+and
+	b.contract_id=e.contract_id
+and
+        e.currency_id=f.product_id
+and
+        e.product_id=g.product_id
+
+update
+	#trades
+set
+	std_contract = rtrim(a.counter_ccy)+rtrim(a.traded_ccy)
+from
+	#trades a,
+	contracts b,
+	contract_price_styles c,
+	price_styles d
+where
+	a.contract_id = b.contract_id
+and
+	b.contract_id = c.contract_id
+and
+	c.price_style_id = d.price_style_id
+and
+	d.name = "Inverted"
+
+update
+	#trades
+set
+	std_contract = b.symbol
+from
+	#trades a,
+	contracts b,
+	instruments c
+where
+	a.contract_id =b.contract_id
+and
+	b.instrument_id = c.instrument_id
+and
+	c.name in("Option", "Exotic")
+
+update
+        #trades
+set
+        is_inverted_contract = "Y"
+from
+        #trades a,
+        contracts b,
+        contract_price_styles c,
+        price_styles d
+where
+        convert(varchar(3), a.traded_ccy)+convert(varchar(3), a.counter_ccy) = b.symbol
+and
+        b.contract_id = c.contract_id
+and
+        c.price_style_id = d.price_style_id
+and
+        d.name = "Inverted"
+
+
+/*
+| Query option details
+*/
+update
+	#trades
+set
+	optcon_exercise_style_id = b.exercise_style_id,
+	optcon_exercise_style = c.name,
+	optcon_strike = b.strike,
+	optcon_put_call = b.put_call,
+	option_expiration_id = b.option_expiration_id
+from
+	#trades a,
+	option_contracts b,
+	exercise_styles c
+where
+        a.contract_id = b.contract_id
+
+update
+	#trades
+set
+	option_id = b.option_id,
+	optexp_symbol = b.symbol,
+	optexp_expiration = b.expiration,
+	optexp_timezone_id = b.timezone_id
+from
+        #trades a,
+	option_expirations b
+where
+	a.option_expiration_id = b.option_expiration_id
+
+update 
+	#trades
+set
+	optexp_time_zone = b.timezone,
+	optexp_tz_symbol = b.symbol,
+	optexp_tz_expiration_time = b.expiration_time,
+	optexp_tz_display_value = b.display_value,
+	optexp_tz_status = b.status
+from
+	#trades a,
+	timezones b
+where
+	a.optexp_timezone_id = b.timezone_id
+
+update
+	#trades
+set
+	opt_underlying_contract_id = b.underlying_contract_id,
+	opt_exchange_id = b.exchange_id,
+	opt_exchange = c.name,
+	opt_def_exercise_style_id = b.def_exercise_style_id,
+	opt_def_exercise_style = d.name,
+	opt_quantity = b.quantity,
+	opt_tick_size = b.tick_size
+from
+	#trades a,
+	options b,
+	exchanges c,
+	exercise_styles d
+where
+	a.option_id = b.option_id
+and
+	b.exchange_id = c.exchange_id
+and
+	b.def_exercise_style_id = d.exercise_style_id
+	
+update
+        #trades
+set
+	opt_underlying_contract = b.symbol,
+        traded_ccy = g.symbol,
+        counter_ccy = f.symbol
+from
+        #trades a,
+        contracts b,
+        forwards e,
+        products f,
+        products g
+where
+        a.opt_underlying_contract_id = b.contract_id
+and
+        b.contract_id=e.contract_id
+and
+        e.currency_id=f.product_id
+and
+        e.product_id=g.product_id
+
+update
+	#trades
+set
+	product_id = b.product_id
+from
+	#trades a,
+	products b
+where
+	a.traded_ccy = b.symbol
+
+update
+	#trades
+set
+	currency_id = b.product_id
+from
+	#trades a,
+        products b
+where
+        a.counter_ccy = b.symbol
+
+
+update
+	#trades
+set
+	is_inverted_contract = "Y"
+from
+	#trades a,
+	contracts b,
+        contract_price_styles c,
+        price_styles d
+where
+	convert(varchar(3), a.traded_ccy)+convert(varchar(3), a.counter_ccy) = b.symbol
+and
+        b.contract_id = c.contract_id
+and
+        c.price_style_id = d.price_style_id
+and
+        d.name = "Inverted"
+
+update
+	#trades
+set
+	counter_qty = round((quantity * optcon_strike), 2)
+where
+	trade_type in("Option")
+
+update
+	#trades
+set
+	counter_qty = round((quantity * (1/optcon_strike)), 2)
+where
+	trade_type = "Option"
+and
+	is_inverted_contract = "Y"
+and
+	optcon_strike not in(NULL, 0)
+
+update
+	#trades
+set
+	option_premium = b.amount,
+	option_premium_ccy_id = b.currency_id,
+	premium_settle_date = b.transaction_date
+from
+	#trades a,
+	account_transactions b,
+	account_transaction_trades c
+where
+	a.trade_id = c.trade_id
+and
+	c.account_transaction_id = b.account_transaction_id
+
+update
+	#trades
+set
+	option_premium_ccy = b.symbol
+from
+	#trades a,
+	products b
+where
+	a.option_premium_ccy_id = b.product_id
+
+update
+	#trades
+set
+	option_settle_date = b.settledate
+from
+	#trades a,
+	option_settledates b
+where
+	a.contract_id = b.contract_id
+
+create table
+	#transactions(
+		account_transaction_id int,
+		external_account_id int,
+		external_account varchar(50) NULL,
+		currency_id int,
+		currency varchar(5) NULL,
+		trade_date datetime NULL,
+		value_date datetime NULL,
+		direction varchar(50) NULL,
+		quantity numeric(30,4) NULL)
+
+insert into 		
+	#transactions(
+		account_transaction_id,
+		external_account_id,
+		currency_id,
+		trade_date,
+		value_date,
+		quantity)
+select
+	a.account_transaction_id,
+	a.external_account_id,
+	a.currency_id,
+	trade_date = convert(date, @trade_date),
+	a.transaction_date,
+	a.amount
+from
+	account_transactions a,
+	#external_accounts b,
+	transaction_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_type_id = c.transaction_type_id
+and
+	c.name in("Deposit", "Withdrawal")
+and
+	a.transaction_date = convert(date, @trade_date)
+
+update
+	#transactions
+set
+	external_account = b.symbol
+from
+	#transactions a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#transactions
+set
+	direction = "DEPOSIT"
+where
+	quantity > 0
+
+update
+	#transactions
+set
+        direction = "WITHDRAWAL"
+where
+	quantity < 0
+
+update
+	#transactions
+set
+	quantity = quantity * -1
+
+update
+	#transactions
+set
+	currency = b.symbol
+from
+	#transactions a,
+	products b
+where
+	a.currency_id = b.product_id 
+
+
+create table
+	#output(
+		trade_type varchar(50) NULL,
+		trade_id varchar(50) NULL,
+		transaction_type varchar(50) NULL,
+		trade_date datetime NULL,
+		value_date datetime NULL,
+		direction varchar(50) NULL,
+		price float NULL,
+		symbol varchar(50) NULL,
+		ccy1 varchar(5) NULL,
+		ccy1_qty float NULL,
+		ccy2 varchar(50) NULL,
+		ccy2_qty float NULL,
+		trade_notification_id int NULL)
+
+insert into
+        #output(
+                transaction_type,
+                trade_id,
+                trade_type,
+                trade_date,
+                value_date,
+                direction,
+                ccy1,
+                ccy1_qty,
+		ccy2_qty)
+select
+	"CASH MOVEMENTS",
+	"NO NOTES ADDED",
+	"CASH",
+	trade_date,
+        value_date,
+	direction,
+        currency,
+        quantity,
+	0
+from
+	#transactions
+order by
+	currency
+
+
+insert into
+	#output(
+		transaction_type,
+		trade_id,
+		trade_type,
+		trade_date,
+		value_date,
+		direction,
+		price,
+		symbol,
+		ccy1,
+		ccy2,
+		ccy1_qty,
+		ccy2_qty)
+select
+	"SETTLED FX TRADES",
+	trade_id = convert(varchar(50), trade_id),
+	trade_type,
+	trade_date,
+	value_date,
+	client_buy_sell,
+	std_price,
+	contract,
+	traded_ccy,
+	counter_ccy,
+	quantity,
+	counter_qty
+from
+	#trades
+where
+	value_date = convert(date, @trade_date)
+
+insert into
+        #output(
+                transaction_type,
+                trade_id,
+                trade_type,
+                trade_date,
+                value_date,
+                direction,
+                price,
+                symbol,
+                ccy1,
+                ccy1_qty,
+		ccy2_qty)
+select
+        "SETTLED PREMIUMS",
+        convert(varchar(50), trade_id),
+        trade_type,
+        trade_date,
+        premium_settle_date,
+        client_pay_receive,
+        std_price,
+        opt_underlying_contract,
+        option_premium_ccy,
+        option_premium * -1,
+        0
+from
+        #trades
+where
+        premium_settle_date = convert(date, @trade_date)
+
+/* adjust decimal precision*/
+
+update
+	#output
+set
+	ccy1_qty = round(a.ccy1_qty, b.decimal_precision)
+from
+	#output a,
+	products b
+where
+	a.ccy1 = b.symbol
+and
+	b.decimal_precision != NULL
+
+update
+        #output
+set
+        ccy2_qty = round(a.ccy2_qty, b.decimal_precision)
+from
+        #output a,
+	products b
+where
+        a.ccy2 = b.symbol
+and
+        b.decimal_precision != NULL
+
+/* Flip for client perspective */
+
+update
+	#output
+set
+	ccy1_qty = ccy1_qty * -1
+	
+
+select
+	run_name = @run_name,
+	transaction_type,
+        trade_id,
+        trade_type,
+        trade_date = rtrim(convert(varchar(10), trade_date, 112))+" "+rtrim(convert(varchar(10), trade_date, 108)),
+        value_date = rtrim(convert(varchar(10), value_date, 112)),
+        direction,
+        price = convert(numeric(30,8), price),
+        symbol,
+        ccy1,
+        ccy2,
+        ccy1_qty,
+        ccy2_qty,
+	trade_notification_id
+from
+	#output
+
+
+go 
+
+

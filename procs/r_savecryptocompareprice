@@ -1,16 +1,10 @@
 create or replace procedure
-	r_savecryptocompareprice
-		@login varchar(50),
-		@source varchar(50),
-		@timestamp_et varchar(50),
-		@date varchar(50),
-		@ld_venue_symbol varchar(50),
-		@ld_symbol varchar(50),
+        r_savecryptocompareprice
+                @login varchar(50),
+                @source varchar(50),
+                @timestamp varchar(50),
+		@market varchar(50),
 		@instrument varchar(50),
-		@volume varchar(50),
-		@high varchar(50),
-		@low varchar(50),
-		@open varchar(50),
 		@close varchar(50)
 
 as
@@ -29,6 +23,8 @@ declare @price_id int
 declare @bo_spot_settle_id int
 declare @bo_price_id int
 declare @mpt_source_id int
+declare @date_from_epoch datetime
+declare @timestamp_float float
 
 select
         @source_id = source_id
@@ -100,9 +96,14 @@ exec
 select
 	@price = convert(float, @close_char)
 
+/* convert epoch */
 select
-	@price_date = convert(datetime, @date + ' 17:00:00'),
-	@value_date = convert(datetime, @date)
+	@timestamp_float = convert(float, @timestamp)
+select
+	@date_from_epoch = convert(date, dbo.f_datefromepochsec(@timestamp_float))
+select 
+	@price_date = dateadd(hh, 17, @date_from_epoch),
+	@value_date = @date_from_epoch
 
 select
 	@contract_id = a.contract_id,
@@ -115,7 +116,7 @@ where
 and
 	b.source_id = @source_id
 and
-	b.symbol = @ld_venue_symbol
+	b.symbol = @instrument
 
 if @contract_id = NULL
 begin
@@ -135,7 +136,6 @@ begin
 	select
 		error = "Error",
 		message = "Could not find contract",
-		ld_venue_symbol = @ld_venue_symbol,
 		instrument = @instrument
 	return
 end
@@ -231,7 +231,7 @@ where
 and
         source_id = @mpt_source_id
 and
-        value_date = @price_date
+        value_date = @value_date
 and
         price_date = @price_date
 
@@ -279,22 +279,10 @@ exec
 select
         msg = "price successfully saved",
 	contract_symbol = @contract_symbol,
-	mapping_symbol = @ld_venue_symbol,
+	mapping_symbol = @instrument,
         price_date = @price_date,
 	price = @price
-	
 
-
-/*
-select
-	@login,
-	@source,
-	@timestamp_et,
-	@price_date,
-	@ld_venue_symbol,
-	@instrument,
-	@price
-*/
 
 go
 		

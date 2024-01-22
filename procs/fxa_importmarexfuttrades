@@ -27,13 +27,34 @@ create or replace procedure
 		@row_count int
 as
 
-declare @quantity numeric(30,2) 
-declare @trade_price numeric(30,2) 
+declare @quantity numeric(30, 10)
 declare @trade_id int
 declare @deal_id int
 declare @symbol varchar(100)
 declare @contract_symbol varchar(100)
+declare @source varchar(50)
+declare @source_id int
+declare @broker varchar(50)
+declare @tally_type varchar(50)
+declare @deal_type varchar(50)
+declare @external_account varchar(50)
+declare @external_account_id int
+declare @counterparty varchar(50)
+declare @trader varchar(50)
+declare @strategy varchar(50)
+declare @contract_id int
+declare @contract varchar(50)
+declare @future_id int
+declare @value_date datetime
+declare @inverted varchar(1)
+declare @contract_size float
+declare @quantity_char varchar(50)
+declare @price_char varchar(50)
+declare @trade_price float
+declare @tally_status varchar(25)
+declare @tally_message varchar(25)
 
+<<<<<<< HEAD
 if exists (select 
 		identifier
 	   from 
@@ -53,27 +74,161 @@ select
 	@quantity = convert(float, rtrim(@transaction_volume)),
 	@trade_price = convert(float, rtrim(@price)),
 	@contract_symbol = rtrim(@instrument_code) + "_" + rtrim(@delivery_prompt_date)	
+=======
+/* convert varchar fields */
+
+exec
+        u_stripcommas
+                @price,
+                @price_char output
+
+exec
+        u_stripcommas
+                @transaction_volume,
+                @quantity_char output
 
 select
-	@symbol = symbol
-from
-	contract_symbols
-where
-	@symbol = @contract_symbol
+        @quantity = convert(numeric(30,10), rtrim(@quantity_char)),
+        @trade_price = convert(float, @price_char),
+        @contract_symbol = rtrim(@instrument_code) + "_" + rtrim(@delivery_prompt_date)
 
-if @@rowcount != 1
+
+select
+	@source = "Marex",
+	@broker = "Marex",
+        @tally_type = "Future",
+        @deal_type = "Market Future",
+        @trade_type = "Future",
+	@trader = "J.MOHIDEEN",
+	@counterparty = "DIRECT-MAREX",
+	@strategy = "Rates Hedging"
+>>>>>>> 59ff88993edee93386a7f7a94c1b14f4a0e22fdf
+
+select
+	@external_account_id = a.external_account_id,
+	@external_account = a.symbol
+from
+	external_accounts a,
+	counterparties b
+where
+	b.name = @counterparty
+
+if @external_account_id = NULL
 begin
 	select
-		status="Error",
-		msg="Cannot determine contract for symbol",
-		symbol=@contract_symbol
-
+		error = "Error",
+		msg = "Could not find external_account",
+		counterparty = @counterparty
 	return
 end
 
-return
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+
+if @source_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find source",
+		source = @source
+	return
+end
+
+
+
+select
+        @contract_id = a.contract_id,
+        @contract = a.symbol,
+        @future_id = c.future_id,
+        @value_date = c.expiration,
+        @inverted = "N"
+from
+        contracts a,
+        contract_symbols b,
+        future_contracts c
+where
+        a.contract_id = b.contract_id
+and
+        a.contract_id = c.contract_id
+and
+        b.source_id = @source_id
+and
+        b.symbol = @contract_symbol
+
+if @contract_id = NULL
+begin
+        /* if not found look up in in contracts */
+        select
+                @contract_id = a.contract_id,
+                @contract = a.symbol,
+                @value_date = b.expiration,
+                @future_id = b.future_id
+        from
+                contracts a,
+                future_contracts b
+        where
+                a.contract_id = b.contract_id
+        and
+                a.symbol = @contract_symbol
+
+        if @contract_id = NULL
+        begin
+                /* if not found try and find the future name */
+                select
+                        @contract_id  = a.contract_id,
+                        @contract = a.symbol,
+                        @value_date = b.expiration,
+                        @future_id = c.future_id
+                from
+                        contracts a,
+                        future_contracts b,
+                        futures c
+                where
+                        a.contract_id = b.contract_id
+                and
+                        b.future_id = c.future_id
+                and
+                        c.root_symbol = @instrument_code
+                if @contract = NULL
+                begin
+                        select
+                                status = "Error",
+                                message = "Contract symbol not found",
+				symbol = @contract_symbol
+                        return
+                end
+	end
+end
+
+select
+	@contract_size = quantity
+from
+	futures
+where
+	future_id = @future_id
+
+select
+	@quantity = @quantity / @contract_size
+
+if @buy_sell = "Sell"
+begin
+	select
+		@quantity = abs(@quantity) * -1.0
+end
+
+if @buy_sell = "Buy"
+begin
+	select
+		@quantity = abs(@quantity)
+end
 
 exec
+<<<<<<< HEAD
 	api_tallymarketfuture
                 @login=@login,
                 @buy_sell=@buy_sell,
@@ -83,6 +238,63 @@ exec
                 @identfier=@identifier,
                 @deal_id output,
                 @trade_id output
+=======
+	fxa_tallytrade
+		@login = @login,
+		@source = @source,
+		@broker = @broker,
+		@trade_id = @trade_id output,
+		@deal_id = @deal_id output,
+		@tally_type = @tally_type,
+		@deal_type = @deal_type,
+		@trade_type = @trade_type,
+		@quantity = @quantity,
+		@symbol = @contract,
+		@value_date = @value_date,
+		@price = @trade_price,
+		@external_account = @external_account,
+		@counterparty = @counterparty,
+		@trader = @trader,
+		@trade_date = @trade_date,
+		@strategy = @strategy,
+		@identifier = @identifier
+
+if @trade_id != NULL
+begin
+	select
+        	@tally_status = "Success",
+        	@tally_message = "Tallied trade"
+end
+else
+begin
+	select
+		@tally_status = "Error",
+                @tally_message = "Problem tallying trade"
+end
+
+
+select
+        status = @tally_status,
+        message = @tally_message,
+        trade_id = @trade_id,
+        deal_id = @deal_id,
+        login = @login,
+        source = @source,
+        tally_type = @tally_type,
+        deal_type = @deal_type,
+        trade_type = @trade_type,
+        external_account = @external_account,
+        counterparty = @counterparty,
+        quantity = @quantity,
+        symbol = @contract,
+        value_date = @value_date,
+        price = @trade_price,
+        trade_date = @trade_date,
+        trader = @trader,
+        broker = @broker,
+        strategy = @strategy,
+        identifier = @identifier
+>>>>>>> 59ff88993edee93386a7f7a94c1b14f4a0e22fdf
 
 go
 

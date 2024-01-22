@@ -1,0 +1,165 @@
+create or replace procedure
+	eod_fxlusdprices
+		@login varchar(50),
+		@run_name varchar(50),
+		@settle_date datetime=NULL
+as
+
+
+declare @begin_date datetime  
+declare @end_date datetime
+declare @date datetime
+declare @day char(2)
+declare @month char(2)
+declare @year char(4)
+declare @datestring varchar(50)
+declare @usd_product_id int
+
+
+if @settle_date = NULL
+begin
+	select
+		@settle_date = getdate()
+	select
+		@settle_date = convert(date, @settle_date)
+end	
+
+select
+	@usd_product_id = product_id
+from
+	products
+where
+	name = "USD"
+
+create table
+	#prices(
+		contract_id int,
+		price_date datetime,
+		product_id int,
+		product varchar(3) NULL,
+		currency_id int,
+		currency varchar(3) NULL,
+		price float,
+		symbol varchar(50) NULL,
+		trade_notification_id int NULL)
+
+insert into
+	#prices(
+		contract_id,
+		price_date,
+		product_id,
+		currency_id,
+		price)
+
+select
+        a.contract_id,
+	c.price_date,
+        b.product_id,
+        b.currency_id,
+	c.price
+from
+        contracts a,
+        forwards b,
+        bo_spot_settles c,
+	products d,
+	product_types e
+where
+        a.contract_id = b.contract_id
+and
+        a.contract_id = c.contract_id
+and
+	b.product_id = d.product_id
+and
+	d.product_type_id = e.product_type_id
+and
+	e.name = "Currency"
+and
+	b.product_id = @usd_product_id
+and
+        convert(date, c.price_date) = convert(date, @settle_date)
+
+insert into
+        #prices(
+                contract_id,
+                price_date,
+                product_id,
+                currency_id,
+                price)
+
+select
+        a.contract_id,
+        c.price_date,
+        b.product_id,
+        b.currency_id,
+        c.price
+from
+        contracts a,
+        forwards b,
+        bo_spot_settles c,
+	products d,
+	product_types e
+where
+        a.contract_id = b.contract_id
+and
+	a.contract_id = c.contract_id
+and
+        b.product_id = d.product_id
+and
+        d.product_type_id = e.product_type_id
+and
+        e.name = "Currency"
+and
+        b.currency_id = @usd_product_id
+and
+        convert(date, c.price_date) = convert(date, @settle_date)
+
+update
+	#prices
+set
+	product = b.symbol
+from
+	#prices a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+        #prices
+set
+        currency = b.symbol
+from
+        #prices a,
+        products b
+where
+        a.currency_id = b.product_id
+
+update
+	#prices
+set
+	symbol = product + "/" + currency
+
+update
+	#prices
+set
+	symbol =  currency + "/" + product
+from
+	#prices
+where
+	product = "USD"
+
+select
+	@run_name,	
+	trade_date = rtrim(convert(varchar(10), @settle_date, 112)),
+	product,
+	currency,
+	price,
+	symbol,
+	trade_notification_id
+from
+	#prices
+order by 
+	product,
+	currency
+
+
+go 

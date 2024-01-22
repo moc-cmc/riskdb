@@ -1,0 +1,65 @@
+create or replace procedure
+	api_addkeyvault
+		@login varchar(100),
+		@vault_name varchar(50),
+		@url varchar(100)=NULL
+
+as
+
+declare @tico_account_id int
+declare @key_vault_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+
+/* look up the key vault*/
+select
+	@key_vault_id = key_vault_id
+from
+	key_vaults
+where
+	name = @vault_name
+
+
+if @key_vault_id = NULL
+begin
+	exec
+		j_nextkey 
+			"key_vaults",
+			@key_vault_id output
+	
+	insert into
+		key_vaults(
+			key_vault_id,
+			name,
+			url)
+	values(
+		@key_vault_id,
+		@vault_name,
+		@url)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem adding key vault"
+	end
+end
+
+select
+       	status = "Success",
+       	message = "Added vault store '"+rtrim(@vault_name)+"'"
+
+
+go
