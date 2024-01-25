@@ -1,0 +1,729 @@
+
+create or replace procedure
+    rdb_cashrisk
+        @login varchar(50),
+        @legal_entity varchar(50)=NULL,
+        @trade_date datetime=NULL
+as
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+declare @legal_entity_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @tico_account_id int
+declare @evaluation_currency varchar(50)
+declare @total float
+declare @id int
+declare @ids int
+declare @product_id int
+declare @product varchar(50)
+declare @cpty varchar(50)
+declare @exposure float
+
+create table
+    #meta(
+        meta_type char(200),
+        name char(50) NULL,
+        action char(100) NULL,
+        value char(200) NULL)
+
+insert into
+    #meta
+values(
+    "Row Style",
+    "style",
+    NULL,
+    NULL)
+
+insert into
+    #meta
+values(
+    "Column Hidden",
+    "prime_broker",
+    NULL,
+    NULL)
+
+insert into
+    #meta
+values(
+    "Column Hidden",
+    "trade_date",
+    NULL,
+    NULL)
+
+insert into
+    #meta
+values(
+    "Column Link",
+    "refresh",
+    "Laser Entity Balance Risk",
+    NULL)
+
+insert into
+    #meta
+values(
+    "Column Link",
+    "balance",
+    "Cash Risk Detail",
+    NULL)
+
+insert into
+    #meta
+values(
+    "Column Link",
+    "set_cpty_type",
+    "Set Counterparty Type",
+    NULL)
+
+insert into
+    #meta
+values(
+    "Column Link",
+    "set_cpty_limit",
+    "Set Counterparty Exposure Limit",
+    NULL)
+
+insert into
+    #meta
+values(
+    "Column Format",
+    "balance",
+    "Number",
+    "#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+    #meta
+values(
+    "Column Format",
+    "equiv",
+    "Number",
+    "#,##0;<span style=""color:red"">(#,##0)</span>")
+        
+insert into     
+    #meta
+values(
+    "Column Format",
+    "weight",
+    "Number",
+    "#,##0.00%")
+
+insert into     
+    #meta
+values(
+    "Column Format",
+    "limit_usage",
+    "Number",
+    "#,##0.00%")
+
+insert into
+    #meta
+ values (
+    "Column Group",
+    "section",
+    NULL,
+    NULL)
+
+select * from #meta
+
+select
+    @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+    @deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+    @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+    @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+    @subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+    @style = "background:#FFFFFF;border: 1px solid white",
+    @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+    @selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+exec
+    r_defaultfundforlogin
+        @login,
+        @fund_id output
+
+if @trade_date = NULL
+begin
+    select
+        @trade_date = getdate()
+end
+
+exec
+    r_daterangefordate
+        @trade_date,
+        @begin_date output,
+        @end_date output
+
+select
+    @tico_account_id = account_id
+from
+    tico_accounts
+where
+    login = @login
+
+if @tico_account_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Unable to resolve login"
+    return
+end
+
+select
+    @evaluation_currency_id = evaluation_currency_id
+from
+    funds
+where
+    fund_id = @fund_id
+
+select
+    @evaluation_currency = symbol
+from
+    products
+where
+    product_id = @evaluation_currency_id
+
+select
+    external_account_id,
+    product_id,
+    payments,
+    payments_equiv,
+    settlements,
+    settlements_equiv,
+    forwards,
+    forwards_equiv,
+    futures,
+    futures_equiv,
+    total,
+    total_equiv
+into
+    #all
+from 
+    x_all_entity_bals
+where
+    _login = @login
+and
+    _legal_entity = @legal_entity
+and
+    _trade_date = @trade_date
+
+create table
+    #net_bals(
+        id int identity,
+        style varchar(250) NULL,
+        product_id int NULL,
+        product varchar(50) NULL,
+        balance float NULL,
+        equiv float NULL)
+
+insert into
+    #net_bals(
+        product,
+        balance,
+        equiv)
+
+select
+    a.symbol,
+    sum(b.total),
+    sum(b.total_equiv)
+from
+    products a,
+    #all b
+where
+    a.product_id = b.product_id
+group by
+    a.symbol
+order by
+    sum(b.total_equiv) desc
+update
+    #net_bals
+set
+    a.product_id = b.product_id
+from
+    #net_bals a,
+    products b
+where
+    a.product = b.symbol
+update
+    #net_bals
+set
+    style = @style
+select
+    @total = sum(equiv)
+from
+    #net_bals
+
+insert into
+    #net_bals(
+        style,
+        product,
+        equiv)
+values(
+    @total_style,
+    "Total",
+    @total)
+
+create table
+    #products(
+        id int identity,
+        product_id int NULL,
+        product varchar(50))
+
+insert into
+    #products(
+        product_id,
+        product)
+
+select
+    product_id,
+    product
+from
+    #net_bals
+where
+    product_id != NULL
+order by
+    product
+
+create table
+    #products_by_acct(
+        id int identity,
+        style varchar(250) NULL,
+        product_id int NULL,
+        product varchar(50) NULL,
+        external_account_id int NULL,
+        account varchar(50) NULL,
+        balance float NULL,
+        equiv float NULL)
+
+select
+    @id = 0
+select
+    @ids = count(*)
+from
+    #products
+where
+    id > @id
+
+while @ids > 0
+begin
+    select
+        @id = min(id)
+    from
+        #products
+    where
+        id > @id
+    select
+        @product_id = NULL,
+        @product = NULL,
+        @total = NULL
+    select
+        @product_id = product_id,
+        @product = product
+    from
+        #products
+    where
+        id = @id
+    insert into
+        #products_by_acct(
+            style,
+            product_id,
+            product)
+    values(
+        @client_style,
+        @product_id,
+        @product)
+    insert into
+        #products_by_acct(
+            style,
+            product_id,
+            external_account_id,
+            account,
+            balance,
+            equiv)
+    select
+        style = @style,
+        a.product_id,
+        a.external_account_id,
+        b.symbol,
+        a.total,
+        a.total_equiv
+    from
+        #all a,
+        external_accounts b
+    where
+        a.external_account_id = b.external_account_id
+    and
+        a.product_id = @product_id
+    order by
+        b.symbol
+    select
+        @total = sum(total_equiv)
+    from
+        #all
+    where
+        product_id = @product_id
+    insert into
+        #products_by_acct(
+            style,
+            account,
+            equiv)
+    values(
+        @subtotal_style,
+        @product,
+        @total)
+    
+    select
+        @ids = count(*)
+    from
+        #products
+    where
+        id > @id
+end
+
+create table
+    #cpty_exposure(
+        id int identity,
+        style varchar(250) NULL,
+        prime_broker_id int NULL,
+        cpty varchar(100) NULL,
+        type  varchar(50) NULL,
+        equiv float NULL,
+        limit float NULL,
+        limit_usage float NULL,
+        rating float NULL,
+        weight float NULL)
+
+insert into
+    #cpty_exposure(
+        cpty,
+        equiv)
+select 
+    d.name,
+    sum(a.total_equiv)
+from    
+    #all a,
+    external_account_prime_brokers b,
+    prime_brokers c,
+    sources d
+where   
+    a.external_account_id = b.external_account_id
+and
+    b.prime_broker_id = c.prime_broker_id
+and
+    c.source_id = d.source_id
+group by
+    d.name
+order by
+    d.name
+
+update
+    #cpty_exposure
+set
+    style = @style
+
+update
+    #cpty_exposure
+set
+    type = "Uncategorized"
+
+update
+    #cpty_exposure
+set
+    a.prime_broker_id = c.prime_broker_id
+from
+    #cpty_exposure a,
+    sources b,
+    prime_brokers c
+where
+    a.cpty = b.name
+and
+    b.source_id = c.source_id
+
+update
+    #cpty_exposure
+set
+    a.type = d.name
+from
+    #cpty_exposure a,
+    sources b,
+    prime_brokers c,
+    prime_broker_types d
+where
+    a.cpty = b.name
+and
+    b.source_id = c.source_id
+and
+    c.prime_broker_type_id = d.prime_broker_type_id
+and
+    c.prime_broker_type_id != NULL
+
+update
+    #cpty_exposure
+set
+    a.limit = b.limit
+from
+    #cpty_exposure a,
+    pb_limits b
+where
+    a.prime_broker_id = b.prime_broker_id
+    
+select
+    @exposure = sum(equiv)
+from
+    #cpty_exposure
+update
+    #cpty_exposure
+set
+    limit_usage = equiv / limit
+where
+    limit != 0.0
+
+if @exposure != 0.0
+    update
+        #cpty_exposure
+    set
+        weight = equiv / @exposure
+    
+create table
+    #by_type(
+        id int identity,
+        style varchar(250) NULL,
+        type varchar(50) NULL,
+        equiv float NULL)
+
+insert into
+    #by_type(
+        type,
+        equiv)
+select
+    type,
+    sum(equiv)
+from
+    #cpty_exposure
+group by
+    type
+order by
+    type
+update
+    #by_type
+set
+    style = @style
+insert into
+    #by_type(
+        style,
+        type,
+        equiv)
+values(
+    @total_style,
+    "Total",
+    @exposure)
+
+create table
+    #cpty_detail(
+        id int identity,
+        style varchar(250) NULL,
+        cpty varchar(50) NULL,
+        account varchar(50) NULL,
+        product varchar(50) NULL,
+        equiv float NULL)
+
+select
+    @id = 0
+
+select
+    @ids = count(*)
+from
+    #cpty_exposure
+where
+    id > 0
+
+while @ids > 0
+begin
+    select
+        @id = min(id)
+    from
+        #cpty_exposure
+    where
+        id > @id
+    select
+        @total = NULL
+    select
+        @cpty = cpty
+    from
+        #cpty_exposure
+    where
+        id = @id
+    insert into
+        #cpty_detail(
+            style,
+            cpty)
+    values(
+        @client_style,
+        @cpty)
+    insert into
+        #cpty_detail(
+            account,
+            product,
+            equiv)
+    select
+        b.symbol,
+        f.symbol,
+        sum(a.total_equiv)
+    from
+        #all a,
+        external_accounts b,
+        external_account_prime_brokers c,
+        prime_brokers d,
+        sources e,
+        products f
+    where
+        a.external_account_id = b.external_account_id
+    and
+        b.external_account_id = c.external_account_id
+    and
+        a.external_account_id = c.external_account_id
+    and
+        c.prime_broker_id = d.prime_broker_id
+    and
+        d.source_id = e.source_id
+    and
+        a.product_id = f.product_id
+    and
+        e.name = @cpty
+    group by
+        f.symbol,
+        b.symbol
+    order by
+        f.symbol,
+        b.symbol
+    select
+        @total = sum(a.total_equiv)
+    from
+        #all a,
+        external_account_prime_brokers b,
+        prime_brokers c,
+        sources d
+    where
+        a.external_account_id = b.external_account_id
+    and
+        b.prime_broker_id = c.prime_broker_id
+    and
+        c.source_id = d.source_id
+    and
+        d.name = @cpty
+    if @total != NULL
+        insert into
+            #cpty_detail(
+                style,
+                account,
+                equiv)
+        values(
+            @subtotal_style,
+            @cpty,
+            @total)
+        
+    select
+        @ids = count(*)
+    from
+        #cpty_exposure
+    where
+        id > @id
+end
+
+update
+    #cpty_detail
+set
+    style = @style
+where
+    style = NULL
+select
+    @exposure = sum(equiv)
+from
+    #cpty_exposure
+insert into
+    #cpty_exposure(
+        style,
+        cpty,
+        equiv)
+values(
+    @total_style,
+    "Total",
+    @exposure)
+
+select
+    style = @style,
+    refresh = "Refresh to now"
+
+select
+    section = "Counterparty Exposure",
+    style,
+    prime_broker = cpty,
+    cpty,
+    type,
+    set_cpty_type =  "Set",
+    equiv,
+    limit,
+    set_cpty_limit = "Set Limit",
+    limit_usage,
+    rating,
+    weight
+from
+    #cpty_exposure
+order by
+    id
+
+select
+    section = "Exposure By Counterparty Type",
+    style,
+    type,
+    equiv
+from        
+    #by_type
+order by    
+    id      
+
+select
+    section = "Grand Total",
+    trade_date = @trade_date,
+    style,
+    product,
+    balance = dbo.f_fmtproductqty(product, balance),
+    equiv = dbo.f_fmtproductqty(@evaluation_currency, equiv),
+    symbol = product
+from
+    #net_bals
+order by
+    id
+
+select
+    section = "Product Balances By Account",
+    style,
+    product,
+    account,
+    balance = dbo.f_fmtproductqty(product, balance),
+    equiv = dbo.f_fmtproductqty(@evaluation_currency, equiv)
+from
+    #products_by_acct
+order by
+    id
+    
+select
+    section = "Counterparty Accounts",
+    style,
+    cpty,
+    account,
+    product,
+    equiv
+from
+    #cpty_detail
+order by
+    id
+    
+go
