@@ -159,7 +159,7 @@ if @seventh_matching_engine_id = NULL
 begin
 	select
 		status = "Error",
-		message = "Matching engine not found on sixth attempt",
+		message = "Matching engine not found on seventh attempt",
 		matching_engine = "MatchHub LDEAF"
 	return
 end
