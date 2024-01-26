@@ -209,7 +209,8 @@ create table
 		vo float NULL,
                 vo_rate float NULL,
                 capture_date datetime NULL,
-		cpty_lei varchar(50) NULL
+		cpty_lei varchar(50) NULL,
+		upi_code varchar(50) NULL
 		)
 
 create table
@@ -2097,6 +2098,20 @@ where
 and
     a.broker_id = @manual_tally_broker_id
 
+/* update for UPI Code */
+
+update
+	#trades
+set
+	upi_code = b.symbol
+from
+	#trades a,
+	upi_codes b
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_type_id = b.trade_type_id
+
 
 select
 	trade_id,
@@ -2250,6 +2265,7 @@ select
 	lei = @usi_lookup,
 	cpty_lei = cpty_lei,
 	capture_date = dbo.f_easterntoutc(capture_date),
+	upi_code,
         "_1" = "",
         "_2" = "",
         "_3" = "",

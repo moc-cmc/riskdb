@@ -1,0 +1,242 @@
+create or replace procedure
+	r_addupimapping
+		@login varchar(50),
+		@contract_symbol varchar(50),
+		@trade_type varchar(50),
+		@upi_mapping varchar(50)
+
+as
+
+
+declare @contract_id int
+declare @trade_type_id int
+declare @swap_near_trade_type_id int
+declare @swap_far_trade_type_id int
+declare @source_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "Anna DSB"
+
+if @source_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find source",
+		source = "Anna DSB"
+	return
+end
+
+
+if @trade_type != "Swap Near" and @trade_type != "Swap Far"
+begin
+	
+	select
+		@trade_type_id = trade_type_id
+	from
+		trade_types
+	where
+		name = @trade_type
+	
+	if @trade_type_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find trade type",
+			trade_type = @trade_type
+		return
+	end
+
+        select
+                @contract_id = contract_id
+        from
+                upi_code_symbols
+        where
+                source_id = @source_id
+        and
+                trade_type_id = @trade_type_id
+
+	if @contract_id != NULL
+	begin
+		select
+			error = "Error",
+			msg = "Code already mapped for contract",
+			contract_symbol = @contract_symbol,
+			trade_type = @trade_type
+		return
+	end
+
+        select
+                @contract_id = contract_id
+        from
+                contracts
+        where
+                symbol = @contract_symbol
+        if @contract_id = NULL
+        begin
+                select
+                        error = "Error",
+                        msg = "Could not find contract",
+                        contract_symbol = @contract_symbol
+                return
+        end
+		
+
+	insert into
+		upi_code_symbols(
+			contract_id,
+			trade_type_id,
+			source_id,
+			symbol)
+	select
+		@contract_id,
+		@trade_type_id,
+		@source_id,
+		@upi_mapping
+
+	if @@rowcount = 1
+	begin
+		select
+			msg = "Inserted UPI Mapping",
+			contract_symbol = @contract_symbol,
+			trade_type = @trade_type,
+			upi_code = @upi_mapping
+	end
+end
+
+if @trade_type = "Swap Near" or @trade_type = "Swap Far"
+begin
+
+	select
+		@swap_near_trade_type_id = trade_type_id
+	from
+		trade_types
+	where
+		name = "Swap Near"
+
+	select
+		@swap_far_trade_type_id = trade_type_id
+	from
+		trade_types
+	where
+		name = "Swap Far"
+
+
+	if @swap_near_trade_type_id = NULL or @swap_far_trade_type_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find swap trade types",
+			trade_type = @trade_type
+		return
+	end
+
+        select
+                @contract_id = contract_id
+        from
+                upi_code_symbols
+        where
+                source_id = @source_id
+        and
+                trade_type_id = @swap_near_trade_type_id
+
+        if @contract_id != NULL
+        begin
+                select
+                        error = "Error",
+                        msg = "Code already mapped for contract",
+                        contract_symbol = @contract_symbol,
+                        trade_type = "Swap Near"
+                return
+        end
+
+        select
+                @contract_id = contract_id
+        from
+                upi_code_symbols
+        where
+                source_id = @source_id
+        and
+                trade_type_id = @swap_far_trade_type_id
+
+        if @contract_id != NULL
+        begin
+                select
+                        error = "Error",     
+                        msg = "Code already mapped for contract",
+                        contract_symbol = @contract_symbol,
+                        trade_id = @swap_far_trade_type_id
+                return
+        end
+
+        select
+                @contract_id = contract_id
+        from
+                contracts
+        where
+                symbol = @contract_symbol
+
+        if @contract_id = NULL
+        begin
+                select
+                        error = "Error",
+                        msg = "Could not find contract",
+                        contract_symbol = @contract_symbol
+                return
+        end
+
+        insert into
+                upi_code_symbols(
+                        contract_id,
+                        trade_type_id,
+                        source_id,
+                        symbol)
+        select
+                @contract_id,
+                @swap_near_trade_type_id,
+                @source_id,
+                @upi_mapping
+
+        if @@rowcount = 1
+        begin
+                select
+                        msg = "Inserted UPI Mapping",
+                        contract_symbol = @contract_symbol,
+                        trade_type = "Swap Near",
+                        upi_code = @upi_mapping
+        end
+
+        insert into
+                upi_code_symbols(
+                        contract_id,
+                        trade_type_id,
+                        source_id,
+                        symbol)
+        select
+                @contract_id,
+                @swap_far_trade_type_id,
+                @source_id,
+                @upi_mapping
+
+        if @@rowcount = 1
+        begin
+                select
+                        msg = "Inserted UPI Mapping",
+                        contract_symbol = @contract_symbol,
+                        trade_type = "Swap Far",
+                        upi_code = @upi_mapping
+        end
+
+end
+
+
+exec
+	r_manageupicodes
+		@login
+
+
+
+go

@@ -1,0 +1,217 @@
+create or replace procedure
+	r_verifyupicodes
+		@login varchar(50),
+		@trade_date datetime=NULL
+
+as
+
+declare @tico_account_id int
+declare @begin_date datetime
+declare @end_date datetime
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+        	status="Error",
+        	message="Problem finding account for login"
+	return
+end
+
+if @trade_date = NULL
+begin
+        select
+                @trade_date = convert(date, getdate())
+end
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+   #meta(
+           meta_type char(200),
+           name char(50) NULL,
+           action char(100) NULL,
+           value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_code",
+	"Edit UPI Code for Contract",
+	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_code",
+        "Add UPI Code for Contract",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "verify_codes",
+        "Verify Codes for Contract",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_mapping",
+        "Add UPI Mapping",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "manage_upi_codes",
+        "Manage UPI Codes",
+        NULL
+)
+
+select * From #meta
+
+create table
+	#traded_contracts(
+		contract_id int,
+		contract_symbol varchar(50) NULL,
+		trade_type_id int,
+		trade_type varchar(50) NULL,
+		upi_code varchar(50) NULL,
+		style varchar(50) NULL)
+
+insert into
+	#traded_contracts(
+		contract_id,
+		trade_type_id)
+select
+	contract_id,
+	trade_type_id
+from
+	trades
+where
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+group by
+	contract_id,
+	trade_type_id
+
+update
+	#traded_contracts
+set
+	style = @style
+
+update
+	#traded_contracts
+set
+	contract_symbol = b.symbol
+from
+	#traded_contracts a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#traded_contracts
+set
+	trade_type = b.name
+from
+	#traded_contracts a,
+	trade_types b
+where
+	a.trade_type_id = b.trade_type_id
+
+delete from
+	#traded_contracts
+where
+	trade_type = "Spot"
+
+update
+	#traded_contracts
+set
+	upi_code = b.symbol
+from
+	#traded_contracts a,
+	upi_codes b
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_type_id = b.trade_type_id
+
+update
+	#traded_contracts
+set
+	style = @error_style
+where
+	upi_code = NULL
+
+select
+        manage_upi_codes = "<< Back to UPI Codes",
+        style = @style
+
+select
+	contract_symbol,
+	trade_type,
+	upi_code,
+	style,
+	add_code = "Add",
+	edit_code = "Edit"
+	
+from
+	#traded_contracts
+order by
+	contract_symbol
+
+go
+
+

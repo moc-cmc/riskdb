@@ -257,7 +257,8 @@ create table
                 capture_date datetime NULL,
 		cpty_lei varchar(50) NULL,
 		mtm float NULL,
-		mtm_identifier varchar(100) NULL
+		mtm_identifier varchar(100) NULL,
+		upi_code varchar(50) NULL
 		)
 
 create table
@@ -2186,6 +2187,20 @@ and
 	b.trade_id >= @min_trade_id
 and
 	b.trade_date = @trade_date
+
+/* update for UPI Code */
+                
+update          
+        #trades 
+set             
+        upi_code = b.symbol
+from            
+        #trades a,
+        upi_codes b
+where   
+        a.contract_id = b.contract_id 
+and             
+        a.trade_type_id = b.trade_type_id
 	
 select
 	trade_id,
@@ -2346,6 +2361,7 @@ select
 	buyer_lei = case when fund_agency_buy_sell = "BUY" then @usi_lookup else cpty_lei end,
 	seller_lei = case when fund_agency_buy_sell = "SELL" then @usi_lookup else cpty_lei end,
 	package_id = str_replace(swap_symbol, ".", NULL),
+	upi_code,
         "_1" = "",
         "_2" = "",
         "_3" = "",
