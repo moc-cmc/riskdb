@@ -224,7 +224,7 @@ begin
 				from
 					trade_matches
 				where
-					trade_id = @trade_id int
+					trade_id = @trade_id_int
 				and
 					matching_engine_id = @fifth_matching_engine_id
 				if @trade_match_id = NULL
@@ -234,7 +234,7 @@ begin
 					from
 						trade_matches
 					where
-						trade_id = @trade_id int
+						trade_id = @trade_id_int
 					and
 						matching_engine_id = @sixth_matching_engine_id
 					if @trade_match_id = NULL
@@ -244,7 +244,7 @@ begin
 						from
 							trade_matches
 						where
-							trade_id = @trade_id int
+							trade_id = @trade_id_int
 						and
 							matching_engine_id = @seventh_matching_engine_id
 						if @trade_match_id = NULL
