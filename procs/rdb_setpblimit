@@ -1,0 +1,29 @@
+
+drop procedure
+	rdb_setpblimit
+go
+
+create or replace procedure
+	rdb_setpblimit
+		@login varchar(50),
+		@prime_broker varchar(50),
+		@limit float
+
+as
+
+declare @pb_limit_id  int
+
+exec
+	api_setpblimit
+		@login = @login,
+		@prime_broker = @prime_broker,
+		@limit = @limit,
+		@pb_limit_id = @pb_limit_id output
+
+
+exec
+	rdb_cashrisk
+		@login = @login
+
+
+go
