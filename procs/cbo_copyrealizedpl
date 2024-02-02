@@ -269,7 +269,7 @@ begin
 		external_account_id = @external_account_id
 
 	select        
-        	@identifier = rtrim(@account) + rtrim(@contract_symbol) + convert(varchar(11), @trade_date) + "TEST"
+        	@identifier = rtrim(@account) + rtrim(@contract_symbol) + convert(varchar(11), @trade_date)
 
 	select
         	@account_transaction_id = account_transaction_id
