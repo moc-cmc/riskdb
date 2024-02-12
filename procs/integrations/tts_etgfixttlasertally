@@ -36,7 +36,8 @@ create or replace procedure
 		@giveup_clearing_firm varchar(50)=NULL,
 		@entering_trader varchar(50)=NULL,
 		@venue varchar(50)=NULL,
-		@symbol_suffix varchar(20)=NULL
+		@symbol_suffix varchar(20)=NULL,
+		@account varchar(50)=NULL
 as
 
 
@@ -219,6 +220,7 @@ declare @netlink_pb_source_id int
 
 declare @future_id int
 declare @contract_size float
+declare @determined_value_date datetime
 
 select
 	@ack_required = "Y"
@@ -229,6 +231,29 @@ begin
                 trade_report_id=@trade_report_id,
                 trade_report_status="ACCEPTED",
                 exec_type="TRADE"
+end
+
+
+
+/*  removing this hack added in June 2023
+if @contra_firm != "HRP_FX"
+begin
+        select
+		msg = "vd override"
+	select
+		@value_date = dbo.f_botradedate(@trade_date)
+end
+*/
+
+/* Laser does not do 5pm-5pm checks for vd, so if they send us a value date
+ * that registeres as 'yesterday' compared to the trade date, then bump it up, 
+ * else use what they provide */
+select
+	@determined_value_date = dbo.f_botradedate(@trade_date)
+if @value_date < @determined_value_date or @value_date = NULL
+begin
+	select
+		@value_date = @determined_value_date
 end
 
 declare @message varchar(255)
@@ -315,6 +340,7 @@ begin
 end
 */
 
+
 select @client_or_market = "M"
 
 /* --------------------------------------------------------------------------
@@ -353,6 +379,11 @@ begin
 	begin
 		select
         		@m_trader_lookup = rtrim(@executing_trader)
+	end
+	if @executing_firm  = "LDMSF"
+	begin
+		select
+			@m_counterparty_lookup = rtrim(@m_counterparty_lookup)+"-"+rtrim(@ccy1)+"-"+rtrim(@executing_trader)
 	end
 end
 if @client_or_market = "C"
@@ -447,8 +478,9 @@ exec
                 @broker_id = @broker_id,
                 @identifier = @m_platform_identifier,
                 @trader_mapping_error_id = @m_trader_mapping_error_id output,
-                @cpty_mapping_error_id = @m_cpty_mapping_error_id output
-
+ 
+               @cpty_mapping_error_id = @m_cpty_mapping_error_id output
+select m_trader_lookup = @m_trader_lookup, m_counterparty_lookup = @m_counterparty_lookup
 exec
         tt_resolvetradermapping
                 @login=@default_login,
@@ -1047,7 +1079,9 @@ begin
 	end
 end
 
-
+exec u_setcurrentprice 
+	@contract,
+	@price
 /* --------------------------------------------------------------------------
  * STEP: Send trade notifications
  *
