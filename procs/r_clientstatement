@@ -66,6 +66,8 @@ where
         a.external_account_type_id = b.external_account_type_id
 and
         b.name = "Client"
+and
+	a.archived_at = NULL
 order by
         a.symbol
 

@@ -219,6 +219,16 @@ where
 and
 	b.symbol in("INTERNAL", "FC FTPROA3900", "FC FXTRADECL")
 
+delete from
+	#external_accounts
+from
+	#external_accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	archived_at != NULL
+
 
 create table
 	#account_transactions(

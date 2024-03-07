@@ -156,6 +156,15 @@ set
 where
 	account_type not in("Counterparty", "Client")
 
+delete from
+	#ext_accts
+from
+	#ext_accts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.archived_at != NULL
 		
 select
 	section,
