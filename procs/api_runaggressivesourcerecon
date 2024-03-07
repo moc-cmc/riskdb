@@ -257,7 +257,7 @@ select
 	a.recon_method_id,
 	d.product_id,
 	d.currency_id,
-	convert(numeric(30, 8), a.quantity * a.price) * -1
+	convert(numeric(30, 8), (a.quantity * convert(numeric(30, 10), a.price) * -1))
 from
 	remote_trade_symbols a,
 	#statuses b,
@@ -288,7 +288,7 @@ end
 update
 	#remote_trades
 set
-	counter_quantity = convert(numeric(30, 8), a.quantity * (1/a.price)) * -1
+	counter_quantity = convert(numeric(30, 8), (a.quantity * convert(numeric(30, 10), (1/a.price)) * -1))
 from
 	#remote_trades a,
 	contracts b,
@@ -808,7 +808,7 @@ select
 	a.fixing_date,
         c.product_id,
         c.currency_id,
-        a.quantity * convert(numeric(30, 10), a.price) * -1
+        convert(numeric(30, 8), (a.quantity * convert(numeric(30, 10), a.price) * -1))
 from
 	trades a,
 	contracts b,
