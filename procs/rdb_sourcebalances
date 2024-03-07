@@ -460,6 +460,21 @@ from
 	#futs b
 where
 	a.contract_id = b.contract_id
+and
+	a.external_account_id = b.external_account_id
+
+update
+	#contract_pos
+set
+	diff = position - riskdb_pos
+
+
+update  
+        #contract_pos
+set     
+        style = @error_style
+where
+        abs(diff) > 0.00000001
 	
 	
 select
