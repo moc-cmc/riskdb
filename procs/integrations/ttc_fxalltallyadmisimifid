@@ -1177,7 +1177,7 @@ begin
                                 source_id,
                                 alias)
                 select
-                        @m_trade_id,
+                        @m_far_trade_id,
                         @gmi_fix_source_id,
                         @far_trading_venue
         end
