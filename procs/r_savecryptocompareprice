@@ -25,6 +25,12 @@ declare @bo_price_id int
 declare @mpt_source_id int
 declare @date_from_epoch datetime
 declare @timestamp_float float
+declare @forward_instrument_id int
+declare @future_instrument_id int
+declare @contract_instrument_id int
+declare @underlying_contract_id int
+declare @inverted_underlying char(1)
+
 
 select
         @source_id = source_id
@@ -107,7 +113,8 @@ select
 
 select
 	@contract_id = a.contract_id,
-	@contract_symbol = a.symbol
+	@contract_symbol = a.symbol,
+	@contract_instrument_id = a.instrument_id
 from
 	contracts a,
 	contract_symbols b
@@ -140,6 +147,43 @@ begin
 	return
 end
 
+select
+        @future_instrument_id = instrument_id
+from
+        instruments
+where
+        name = "Future"
+
+if @contract_instrument_id = @future_instrument_id
+begin
+	select
+		@underlying_contract_id = a.forward_id
+	from
+		futures a,
+		future_contracts b
+	where
+		a.future_id = b.future_id
+	and
+		b.contract_id = @contract_id
+	
+	select
+		@inverted_underlying = "Y"
+	from
+		contract_price_styles a,
+		price_styles b
+	where
+		a.price_style_id = b.price_style_id
+	and
+		b.name = "Inverted"
+	and
+		a.contract_id = @underlying_contract_id
+
+	if @inverted_underlying = "Y"
+	begin
+		select
+			@price = 1/@price
+	end	
+end
 		
 
 select
