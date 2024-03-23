@@ -1,0 +1,184 @@
+create or replace procedure
+	r_unsentaccountrans
+		@source varchar(50)
+
+as
+
+declare @source_id int
+declare @cancelled_status_id int
+declare @active_status_id int
+declare @edit_status_id int
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+select
+        @edit_status_id = status_id
+from
+        statuses 
+where
+        name = "Edit"
+select
+	@cancelled_status_id = status_id
+from
+        statuses 
+where
+        name = "Cancelled"
+
+
+if @source_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find source",
+		source = @source
+	return
+end
+
+create table
+	#account_trans_notifications(
+		account_trans_notification_id int,
+		source_id int,
+		account_transaction_id int,
+		status_id int,
+		status varchar(50) NULL,
+		capture_date datetime NULL,
+		notify_date datetime NULL,
+		transaction_type_id int,
+		transaction_type varchar(50) NULL,
+		product_id int,
+		product varchar(50) NULL,
+		external_account_id int,
+		external_account varchar(50) NULL,
+		amount float,
+		note varchar(255) NULL)
+
+insert into
+	#account_trans_notifications(
+		account_trans_notification_id,
+		source_id,
+		account_transaction_id,
+		status_id,
+		capture_date,
+		notify_date,
+		transaction_type_id,
+		product_id,
+		external_account_id,
+		amount,
+		note)
+select
+	a.account_trans_notification_id,
+	a.source_id,
+	a.account_transaction_id,
+	a.status_id,
+	a.capture_date,
+	a.notify_date,
+	b.transaction_type_id,
+	b.currency_id,
+	b.external_account_id,
+	b.amount,
+	b.note
+from
+	account_trans_notifications a,
+	account_transactions b
+where
+	a.account_transaction_id = b.account_transaction_id
+and
+	a.source_id = @source_id
+and
+	a.status_id in(@active_status_id, @edit_status_id, @cancelled_status_id)
+
+update
+	#account_trans_notifications
+set
+	transaction_type = b.name
+from
+	#account_trans_notifications a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+
+update
+	#account_trans_notifications
+set
+        transaction_type = b.symbol
+from
+        #account_trans_notifications a,
+        transaction_type_symbols b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	b.source_id = @source_id
+	
+update
+	#account_trans_notifications
+set
+	product = b.symbol
+from
+	#account_trans_notifications a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#account_trans_notifications
+set
+	external_account = b.symbol
+from
+	#account_trans_notifications a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+        #account_trans_notifications
+set
+        external_account = b.symbol
+from
+        #account_trans_notifications a,
+        external_account_symbols b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.source_id = @source_id
+
+update
+	#account_trans_notifications
+set
+	status = b.name
+from
+	#account_trans_notifications a,
+	statuses b
+where
+	a.status_id = b.status_id
+
+update
+	#account_trans_notifications
+set
+	note = "Sent via ETG"
+where
+	note = NULL
+
+select
+	counterparty_id = CONVERT(INT, external_account),
+	type = transaction_type,
+	amount = amount,
+	asset = product,
+	note = note,
+	account_transaction_id = account_transaction_id,
+	status = status,
+	trade_notification_id = account_trans_notification_id
+from
+	#account_trans_notifications
+
+go

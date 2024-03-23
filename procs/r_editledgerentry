@@ -118,6 +118,19 @@ begin tran
 	end
 commit tran
 
+if (@amount = 0)
+begin
+        exec
+                r_updateaccttransnotification @account_transaction_id, "Cancelled"
+end
+else
+begin
+
+        exec
+                r_updateaccttransnotification @account_transaction_id, "Edit"
+end
+
+
 select
 	style =  @style,
 	status = "Success",
