@@ -1,4 +1,4 @@
-create procedure
+create or replace procedure
 	rdb_initproduct
                 @login varchar(50),
                 @symbol varchar(50),
