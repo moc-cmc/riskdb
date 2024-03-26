@@ -1,0 +1,48 @@
+
+create or replace procedure
+	r_edittimezone
+		@login varchar(25),
+		@timezone_id int,
+		@timezone varchar(25),
+		@symbol varchar(15),
+		@expiration varchar(12),
+		@display varchar(5)
+as
+
+begin tran
+	update
+		timezones
+	set
+		timezone=@timezone,
+		symbol=@symbol,
+		expiration_time=@expiration,
+		display_value=@display
+	where
+		timezone_id=@timezone_id
+
+	if (@@rowcount !=1)
+	begin
+		select
+			status="Error",
+			msg="Timezone not edited",
+			timezone=@timezone
+		
+		rollback tran
+
+
+	end
+	else
+	begin
+		select
+			status="Success",
+			msg="Timezone modified",
+			timezone=@timezone
+
+		commit tran
+	end
+
+
+exec r_viewtimezones @login
+
+go
+

@@ -1,0 +1,64 @@
+
+create or replace procedure
+	r_deletetimezone
+		@login varchar(25),
+		@timezone_id int,
+		@timezone varchar(25)
+as
+
+if not exists (select timezone_id from timezones where timezone_id=@timezone_id and timezone=@timezone)
+begin
+	select
+		status="Error",
+		msg="Timezone does not exist",
+		timezone=@timezone
+
+	exec r_viewtimezones @login
+
+	return
+end
+
+if exists (select timezone_id from option_expirations where timezone_id=@timezone_id)
+begin
+	select
+		status="Error",
+		msg="References to this timezone exist, cannot delete",
+		timezone=@timezone
+
+	exec r_viewtimezones @login
+
+	return
+
+end
+
+begin tran
+	delete from
+		timezones
+	where
+		timezone_id=@timezone_id
+
+	if (@@rowcount != 1)
+	begin
+		select
+			status="Error",
+			msg="Could not delete timezone",
+			timezone=@timezone
+
+		rollback tran
+	end
+	else
+	begin
+		select
+			status="Success",
+			msg="Timezone deleted",
+			timezone=@timezone
+
+		commit tran
+	end
+
+exec r_viewtimezones @login
+
+return
+
+go
+

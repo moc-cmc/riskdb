@@ -1,0 +1,115 @@
+
+create or replace procedure
+	r_viewtimezones
+		@login varchar(25)
+
+as
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "Edit",
+        "Edit Timezones",
+        NULL) 
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "New Timezone",
+        "Add Timezone",
+        NULL) 
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "Delete",
+        "Delete Timezone",
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"timezone_id",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "display",
+        "Number",
+        "####")
+
+select * from #meta
+
+create table #addtimezone(
+	New_Timezone varchar(25))
+
+insert into
+	#addtimezone (
+		New_Timezone)
+values(
+	"Add")
+
+select
+	New_Timezone		
+from
+	#addtimezone
+
+create table #timezones (
+	timezone_id int,
+	timezone varchar(25),
+	symbol varchar(15),
+	expiration_time varchar(12),
+	display_value varchar(5),
+	Edit_Timezone varchar(5),
+	Delete_Timezone varchar(7))
+
+insert into
+	#timezones(
+	timezone_id,
+	timezone,
+	symbol,
+	expiration_time,
+	display_value,
+	Edit_Timezone,
+	Delete_Timezone)
+select
+	timezone_id,
+	timezone,
+	symbol,
+	expiration_time,
+	display_value,
+	"Edit",
+	"Delete"
+from
+	timezones
+
+select
+	timezone_id=timezone_id,
+	"Timezone"=timezone,
+	"Symbol"=symbol,
+	"Expiration"=expiration_time,
+	"Display"=display_value,
+	"Edit"=Edit_Timezone,
+	"Delete"=Delete_Timezone
+from
+	#timezones
+
+order by 
+	timezone_id
+
+go
+

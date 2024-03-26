@@ -1,0 +1,54 @@
+
+create or replace procedure
+	r_addtimezone
+		@login varchar(25),
+		@timezone varchar(25),
+		@symbol varchar(15),
+		@expiration_time varchar(12),
+		@display_value varchar(5)
+as
+
+declare @timezone_id int
+
+exec j_nextkey "timezones", @timezone_id out
+
+insert into
+	timezones (
+		timezone_id,
+		timezone,
+		symbol,
+		expiration_time,
+		display_value,
+		status)
+	values(
+		@timezone_id,
+		@timezone,
+		@symbol,
+		@expiration_time,
+		@display_value,
+		1)
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		msg="Could not insert new timezone",
+		timezone=@timezone
+
+end
+else
+begin
+	select
+		status="Success",
+		msg="Timezone inserted",
+		timezone=@timezone
+end
+
+exec r_viewtimezones @login
+
+return
+
+go
+
+
+
