@@ -4,15 +4,15 @@
 > **Updated** Apr 11, 2024 – Lo Shih – initial doc
 
 
-### Creating User Auths for API Access 
+## Creating User Auths for API Access 
 
 > **See** [elysium/riskapi](/elysium/riskapi)
 
 Implementation notes:
 
-#### Using HMAC-SHA256/512 API Keys
+### Using HMAC-SHA256/512 API Keys
 
-##### Generating API Keys
+#### Generating API Keys
 
 1.  **Generate API Key**
     - Generate properties:
@@ -102,7 +102,7 @@ Implementation notes:
             @user_auth_id=@user_auth_id out        
         ```
 
-##### Verifying API Keys
+#### Verifying API Keys
 
 1. **Verifying Identity**
     1. Determine the SecretId for the key
@@ -140,7 +140,7 @@ Implementation notes:
 
 
 
-### User Auths Schema
+## User Auths Schema
 
 For the table [`user_auths`](../tree/master/tables/user_auths.sql).
 
@@ -212,13 +212,13 @@ create table
                 12 API Key HMAC-SHA       api-key-hmac-sha NULL                     NULL               NULL      N          N
 ```
 
-#### Implementation Notes
+### Implementation Notes
 
 - *tbd*
 
 
 
-#### `slugify`
+### `slugify`
 
 - a title string converted into kebab case
 - dashes are converted to double dash
