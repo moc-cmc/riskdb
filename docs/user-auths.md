@@ -131,7 +131,7 @@ Implementation notes:
 2. **Validating the Request**
     1. Check rate limits
     3. Check client IP whitelist, see **user_auth_iplists** for more info
-3. **Performing Actions**
+3. **Performing Actions**$$
     1. When calling procs, use the `api_key` as input, and for the ones that require a password or secret, use the formatted secret as `"sm:{SecretId}"`
     2. Procs should lookup the `api_key` in **user_auths**.pubkey to:
        1. Determine the `user_id` for the key
