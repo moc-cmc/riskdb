@@ -1,70 +1,26 @@
+1> source r_clientagstatement
 
-create or replace procedure
+
+create procedure
 	r_clientagstatement
 		@login varchar(50),
-		@run_name varchar(50)=NULL,
+		@run_name varchar(50),
 		@trade_date datetime=NULL
 as
 
 declare @fund_id int
 declare @evaluation_currency_id int
-declare @evaluation_currency varchar(50)
 declare @run_id int
 declare @begin_date datetime
 declare @end_date datetime
 declare @fx_transaction_type_id int
-declare @option_premium_type_id int
 declare @source_id int
-declare @external_account_id int
-declare @account_symbol varchar(50)
-declare @name varchar(200)
-declare @phone varchar(20)
-declare @email varchar(20)
-declare @address_line1 varchar(100)
-declare @address_line2 varchar(100)
-declare @additional1 varchar(100)
-declare @additional2 varchar(100)
-declare @additional3 varchar(100)
 declare @cfd_transaction_type_id int
 declare @cfd_roll_type_id int
-declare @equiv float
 declare @cfd_trade_type_id int
-declare @style varchar(200)
-declare @total_style varchar(200)
-
-declare @begin_equiv float
-declare @begin_end_equiv float 
-declare @activity_equiv float
-declare @end_equiv float
-declare @fwd_open_equiv float
-declare @opt_open_equiv float
-declare @start_time datetime
-declare @end_time datetime
-declare @tag_run_name varchar(50)
-declare @proc_start_time datetime
-declare @proc_end_time datetime
-declare @activate_timer int
-
-select @activate_timer = 1
-
-select @proc_start_time = getdate()
-
-if (@activate_timer = 1)
-begin
-	select @start_time = getdate()
-end
-
-if @run_name = NULL
-	return
-
-select @tag_run_name = "run:" + lower(STR_REPLACE(@run_name, " ", "_"))
-
-select
-	@style = "background:#FFFFFF;border: 1px solid white",
-	@total_style = "background:#fff;border:1px solid white;height:2em;font-weight:bold"
 
 exec
-	ag_clientstatementlinks
+	r_clientstatementlinks
 		@login
 
 exec
@@ -97,8 +53,7 @@ exec
 /* DEBUG */
 /*select begin_date = @begin_date, end_date=@end_date*/
 
- 
-/* select
+select
 	@evaluation_currency_id = evaluation_currency_id
 from
 	funds
@@ -110,28 +65,7 @@ begin
 		status = "Error",
 		message = "Evalution Currency not found"
 	return
-end */
-select
-	@evaluation_currency_id = evaluation_currency_id
-from
-	external_accounts
-where
-	symbol = @run_name
-if @evaluation_currency_id = NULL
-begin
-	select
-		status = "Error",
-		message = "Evaluationc currency not found for account",
-		account = @run_name
-	return
 end
-
-select
-	@evaluation_currency = symbol
-from
-	products
-where
-	product_id = @evaluation_currency_id
 
 select
 	@source_id = source_id
@@ -174,122 +108,19 @@ begin
 	return
 end
 
-
 select
-	@external_account_id = external_account_id,
-	@account_symbol = symbol
-from
-	external_accounts
-where
-	symbol = @run_name
-select
-	@name = name,
-	@phone = phone,
-	@email = email,
-	@address_line1 = address_line1,
-	@address_line2 = address_line2,
-	@additional1 = additional1,
-	@additional2 = additional2,
-	@additional3 = additional3
-from
-	client_contacts
-where
-	external_account_id = @external_account_id
-
-if (@activate_timer = 1)
-begin
-	select
-        	@end_time = getdate()
-	exec 
-		sp_dogstatsdtimer 
-			@metric_name="ase.proc.r_clientagstatement.s1",
-			@start_time=@start_time,
-			@end_time=@end_time,
-			@tags=@tag_run_name,
- 			@sample_rate="1.0"
-	select
-		@start_time = getdate()
-end
-
-create table
-	#header(
-		id int identity,
-		customer varchar(100) NULL,
-		label varchar(50) NULL,
-		value varchar(50) NULL)
-insert into
-	#header(
-		customer,
-		label,
-		value)
-values(
-	@name,
-	"Date:",
-	convert(varchar(11), @end_date))
-
-insert into
-	#header(
-		customer,
-		label,
-		value)
-values(
-	@address_line1,
-	"Account Number:",
-	@account_symbol)
-
-insert into
-	#header(
-		customer,
-		label,
-		value)
-values(
-	@address_line2,
-	"Account Name:",
-	@name)
-
-insert into
-	#header(
-		customer,
-		label,
-		value)
-values(
-	NULL,
-	"Account Currency:",
-	@evaluation_currency)
-
-select
-	section = "Statement Date - " + convert(varchar(11), @end_date),
-	style = @style,
-	customer,
-	label,
-	value
-from
-	#header
-order by
-	id
-
-if (@activate_timer = 1)
-begin
-	select
-        	@end_time = getdate()
-
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s2",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-	select
-		@start_time = getdate()
-end
+	section = @run_name + " - Trading Statement",
+	style = "background:#FFFFFF;border: 1px solid white",
+	customer = @run_name,
+	statement_begin_date = @begin_date,
+	statement_end_date = @end_date
 
 create table
 	#external_accounts(
 		external_account_id int,
 		prime_broker_id int NULL,
-		margin_multiplier float NULL)
+		margin_multiplier float NULL,
+		symbol varchar(50) NULL)
 insert into
 	#external_accounts(
 		external_account_id)
@@ -313,6 +144,16 @@ end
 update
 	#external_accounts
 set
+	a.symbol = b.symbol
+from
+	#external_accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#external_accounts
+set
 	a.prime_broker_id = b.prime_broker_id
 from
 	#external_accounts a,
@@ -331,20 +172,6 @@ where
 	a.external_account_id = b.external_account_id
 
 select
-	@option_premium_type_id = transaction_type_id
-from
-	transaction_types
-where
-	name = "Option Premium"
-if @option_premium_type_id = NULL
-begin
-	select
-		status = "Error",
-		message = "Option Premium transaction type not found"
-	return
-end
-
-select
 	@fx_transaction_type_id = transaction_type_id
 from
 	transaction_types
@@ -360,35 +187,35 @@ end
 
 
 select
-	@cfd_transaction_type_id = transaction_type_id
+        @cfd_transaction_type_id = transaction_type_id
 from
-	transaction_types
+        transaction_types
 where
-	name = "CFD Settlement"
+        name = "Variation Margin"
 if @cfd_transaction_type_id = NULL
 begin
-	select
-		status = "Error",
-		message = "CFD Settlement transaction type not found"
-	return
+        select
+                status = "Error",
+                message = "Variation Margintransaction type not found"
+        return
 end
 
 /* Exclude CFDs from some sections using this*/
 create table
-	#trade_types(
-		trade_type_id int,
-		name varchar(25)
+        #trade_types(
+                trade_type_id int,
+                name varchar(25)
 )
 
 insert into
-	#trade_types
+        #trade_types
 select
-	trade_type_id,
-	name
+        trade_type_id,
+        name
 from
-	trade_types
+        trade_types
 where
-	name not in("CFD", "CFD Roll")
+        name not in("CFD", "CFD Roll")
 	
 /* Fetch all the trades */
 
@@ -403,315 +230,19 @@ create table
 		margin_multiplier float NULL,
 		quantity float,
 		contract_id int,
-		symbol varchar(50) NULL,
 		product_id int,
 		currency_id int,
 		price float,
 		value_date datetime,
-		fixing_date datetime NULL,
-		counterparty_id int, 
- 		lp_transparency varchar(5) NULL,
+		counterparty_id int,
+		lp_transparency varchar(5) NULL,
 		counterparty varchar(50) NULL,
 		margin float NULL,
 		product_qty float NULL,
 		product_equiv float NULL,
 		currency_qty float NULL,
 		currency_equiv float NULL,
-		evaluation_currency_id int,
-		buy_sell varchar(5) NULL, 
- 		display_price float NULL,
-		reval_counter_qty float NULL,
-		reval_price_db float NULL,
-		reval_price_std float NULL,
-		discount_factor float NULL,
-		mtm float NULL)
-insert into
-	#trades(
-		trade_id,
-		deal_id, 
- 		trade_type_id,
-		trade_date,
-		external_account_id,
-		prime_broker_id,
-		margin_multiplier,
-		quantity,
-		contract_id,
-		product_id,
-		currency_id,
-		price,
-		value_date,
-		fixing_date,
-		counterparty_id,
-		margin,
-		evaluation_currency_id,
-		display_price)
-select
-	a.trade_id,
-	a.deal_id,
-	a.trade_type_id,
-	a.trade_date,
-	a.external_account_id,
-	b.prime_broker_id,
-	b.margin_multiplier,
-	a.quantity,
-	a.contract_id,
-	c.product_id,
-	c.currency_id,
-	a.price,
-	a.value_date,
-	a.fixing_date,
-	a.counterparty_id, 
-	margin = 0.0,
-	evaluation_currency_id = @evaluation_currency_id,
-	a.price
-from
-	trades a,
-	#external_accounts b,
-	forwards c
-where
-	a.external_account_id = b.external_account_id
-and
-	a.contract_id = c.contract_id
-and
-	a.value_date >= @begin_date
-and
-	a.trade_date < @end_date
-
-
-create table
-	#new_trades(
-		trade_id int,
-		external_account_id int NULL,
-		trade_type_id int,
-		trade_date datetime,
-		value_date datetime,
-		fixing_date datetime NULL,
-		buy_sell varchar(10) NULL,
-		quantity float NULL,
-		price float NULL,
-		contract_id int NULL,
-		ccy_pair varchar(50) NULL,
-		ccy1_qty float NULL,
-		ccy2_qty float NULL)
-insert into
-	#new_trades(
-		trade_id,
-		external_account_id,
-		trade_type_id,
-		trade_date,
-		value_date,
-		fixing_date,
-		quantity,
-		price, 
- 		contract_id,
-		ccy_pair,
-		ccy1_qty,
-		ccy2_qty)
-select
-	a.trade_id,
-	a.external_account_id,
-	a.trade_type_id,
-	a.trade_date,
-	a.value_date,
-	a.fixing_date,
-	a.quantity,
-	a.price,
-	a.contract_id,
-	b.symbol,
-	a.quantity,
-	a.quantity * a.price * -1.0
-from 
- 	#trades a,
-	contracts b
-where
-	a.contract_id = b.contract_id
-and
-	a.trade_date >= @begin_date
-
-update
-	#new_trades
-set
-	a.quantity = a.quantity * -1.0,
-	ccy1_qty = a.ccy1_qty * -1.0,
-	ccy2_qty = a.ccy2_qty * -1.0
-from
-	#new_trades a,
-	external_accounts b,
-	external_account_types c
-where
-	a.external_account_id = b.external_account_id
-and
-	b.external_account_type_id = c.external_account_type_id
-and
-	c.name = "Client"
-
-update
-	#new_trades
-set
-	buy_sell = "Buy"
-where
-	quantity >= 0.0
-
-update
-	#new_trades
-set 
-	buy_sell = "Sell"
-where
-	quantity < 0.0
-update
-	#new_trades
-set
-	a.price = 1.0 / a.price
-from
-	#new_trades a,
-	contract_price_styles b,
-	price_styles c
-where
-	a.contract_id = b.contract_id
-and
-	b.price_style_id = c.price_style_id
-and
-	c.name = "Inverted"
-
-		
-/* MARKR */
-create table
-	#inverted_trades(
-		trade_id int NULL,
-		trade_date datetime NULL,
-		product_id int NULL,
-		currency_id int NULL,
-		contract_id int NULL,
-		symbol varchar(50) NULL,
-		price float NULL,
-		quantity float NULL,
-		inverted_contract_id int NULL,
-		inverted_symbol varchar(50) NULL,
-		inverted_price float NULL,
-		inverted_quantity float NULL)
-		
-insert into
-	#inverted_trades(
-		trade_id,
-		trade_date,
-		product_id,
-		currency_id,
-		contract_id,
-		symbol,
-		price,
-		quantity)
-select
-	a.trade_id,
-	a.trade_date,
-	a.product_id,
-	a.currency_id,
-	a.contract_id,
-	d.symbol,
-	a.price,
-	a.quantity
-from
-	#trades a,
-	contract_price_styles b,
-	price_styles c,
-	contracts d
-where
-	a.contract_id = b.contract_id
-and
-	b.price_style_id = c.price_style_id
-and
-	a.contract_id = d.contract_id
-and
-	c.name = "Inverted"
-/* MARKR and
-	a.trade_date < @begin_date */
-
-update
-	#inverted_trades
-set
-	a.inverted_contract_id = b.contract_id
-from
-	#inverted_trades a,
-	forwards b
-where
-	a.product_id = b.currency_id
-and
-	a.currency_id = b.product_id
-
-update
-	#inverted_trades
-set
-	a.inverted_symbol = b.symbol
-from
-	#inverted_trades a,
-	contracts b
-where
-	a.inverted_contract_id = b.contract_id
-
-update
-	#inverted_trades
-set
-	inverted_quantity = quantity * price * -1.0
-update
-	#inverted_trades
-set
-	inverted_price = 1.0 / price
-
-/* DEBUG
-select
-	style = @style,
-	trade_id,
-	trade_date,
-	symbol,
-	price,
-	quantity,
-	inverted_contract_id,
-	inverted_symbol,
-	inverted_quantity,
-	inverted_price
-from
-	#inverted_trades
-order by
-	symbol,
-	trade_date  */
-
-
-update
-	#trades
-set
-	a.product_id = b.currency_id,
-	a.currency_id = b.product_id,
-	a.contract_id = b.inverted_contract_id,
-	a.quantity = b.inverted_quantity,
-	a.price = b.inverted_price,
-	a.product_qty = inverted_quantity,
-	a.currency_qty = inverted_quantity * inverted_price * -1.0
-from
-	#trades a,
-	#inverted_trades b
-where
-	a.trade_id = b.trade_id
-
-update
-	#trades
-set
-	a.display_price = 1.0 / a.display_price
-from
-	#trades a,
-	contract_price_styles b,
-	price_styles c
-where
-	a.contract_id = b.contract_id
-and
-	b.price_style_id = c.price_style_id
-and
-	c.name = "Inverted"
-and
-	a.display_price != 0.0
-
-
-/* The far leg of a CFD Roll will show up with tradedate today at 5:01 PM 
-   going to pull those in separately, because they dont meet the above end_date requirement*/
-
+		evaluation_currency_id int)
 insert into
 	#trades(
 		trade_id,
@@ -726,8 +257,8 @@ insert into
 		product_id,
 		currency_id,
 		price,
-		value_date, 
- 		counterparty_id,
+		value_date,
+		counterparty_id,
 		margin,
 		evaluation_currency_id)
 select
@@ -742,31 +273,81 @@ select
 	a.contract_id,
 	c.product_id,
 	c.currency_id,
-	a.price, 
- 	a.value_date,
+	a.price,
+	a.value_date,
 	a.counterparty_id,
 	margin = 0.0,
 	evaluation_currency_id = @evaluation_currency_id
 from
 	trades a,
 	#external_accounts b,
-	forwards c,
-	trade_types d
+	forwards c
 where
 	a.external_account_id = b.external_account_id
 and
-	a.contract_id = c.contract_id 
+	a.contract_id = c.contract_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date < @end_date
+/* The far leg of a CFD Roll will show up with tradedate today at 5:01 PM 
+   going to pull those in separately, because they dont meet the above end_date requirement*/
+
+insert into
+        #trades(
+                trade_id,
+                deal_id,
+                trade_type_id,
+                trade_date,
+                external_account_id,
+                prime_broker_id,
+                margin_multiplier,
+                quantity,
+                contract_id,
+                product_id,
+                currency_id,
+                price,
+                value_date,
+                counterparty_id,
+                margin,
+                evaluation_currency_id)
+select
+        a.trade_id,
+        a.deal_id,
+        a.trade_type_id,
+        a.trade_date,
+        a.external_account_id,
+        b.prime_broker_id,
+        b.margin_multiplier,
+        a.quantity,
+        a.contract_id,
+        c.product_id,
+        c.currency_id,
+        a.price,
+        a.value_date,
+        a.counterparty_id,
+        margin = 0.0,
+        evaluation_currency_id = @evaluation_currency_id
+from
+        trades a,
+        #external_accounts b,
+        forwards c,
+	trade_types d
+where
+        a.external_account_id = b.external_account_id
+and
+        a.contract_id = c.contract_id
 and
 	a.trade_type_id = d.trade_type_id
 and
 	d.name = "CFD Roll"
 and
-	a.value_date >= @end_date
+        a.value_date >= @end_date
 and
-	/*a.trade_date = convert(date, convert(varchar(8), @end_date, 112) + " 17:01")*/
-	/* These are the same since end date is correct when chopping of timestam
- p */
-	convert(date, a.trade_date) = convert(date, @end_date)
+        /*a.trade_date = convert(date, convert(varchar(8), @end_date, 112) + " 17:01")*/
+        /* These are the same since end date is correct when chopping of timestamp */
+        convert(date, a.trade_date) = convert(date, @end_date)
+
 
 update
 	#trades
@@ -797,37 +378,13 @@ where
 update
 	#trades
 set
- 	buy_sell = "Buy"
-where
-	product_qty >= 0.0
-
-update
-	#trades
-set
-	buy_sell = "Sell"
-where
-	product_qty < 0.0
-
-
-update
-	#trades
-set
-	a.symbol = b.symbol
-from
-	#trades a,
-	contracts b
-where
-	a.contract_id = b.contract_id
-
-update
-	#trades
-set
 	a.lp_transparency = b.lp_transparency
 from
 	#trades a,
 	external_accounts b
 where
 	a.external_account_id = b.external_account_id
+
 
 update
 	#trades
@@ -866,25 +423,37 @@ and
 	b.source_id = @source_id 
 
 
+/* Set the margin rates */
+update
+	#trades
+set
+	a.margin = b.margin * a.margin_multiplier
+from
+	#trades a,
+	product_margins b
+where
+	a.product_id = b.product_id
+and
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.margin > a.margin
+
+update
+	#trades
+set
+	a.margin = b.margin * a.margin_multiplier
+from
+	#trades a,
+	product_margins b
+where
+	a.currency_id = b.product_id
+and
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.margin > a.margin
+
+
 /* End Trade Fetch */
-
-if (@activate_timer = 1)
-begin
-
-	select
-        	@end_time = getdate()
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s3",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-	select 
-		@start_time = getdate()
-
-end
 
 /* Fetch all account transactions */
 
@@ -898,7 +467,6 @@ create table
 		currency_id int,
 		amount float,
 		evaluation_currency_id int,
-		note varchar(250) NULL,
 		begin_equiv float NULL,
 		end_equiv float NULL)
 insert into
@@ -910,8 +478,7 @@ insert into
 		transaction_date,
 		currency_id,
 		amount,
-		evaluation_currency_id,
-		note)
+		evaluation_currency_id)
 select
 	a.account_transaction_id,
 	a.entered_by,
@@ -920,21 +487,12 @@ select
 	a.transaction_date,
 	a.currency_id,
 	a.amount,
-	evaluation_currency_id = @evaluation_currency_id,
-	note
+	evaluation_currency_id = @evaluation_currency_id
 from
 	account_transactions a,
-	#external_accounts b,
-	products c,
-	product_types d
+	#external_accounts b
 where
 	a.external_account_id = b.external_account_id
-and
-	a.currency_id = c.product_id
-and
-	c.product_type_id = d.product_type_id
-and
-	d.name != "Collateral Balance"
 and
 	convert(date, a.transaction_date) <= convert(date, @end_date)
 
@@ -965,18 +523,35 @@ create table
 		product_id int,
 		evaluation_currency_id int NULL,
 		begin_rate float NULL,
-		end_rate float NULL,
-		contract_id int NULL,
-		inverted_contract_id int NULL,
-		begin_display_rate float NULL,
-		end_display_rate float NULL)
+		end_rate float NULL)
 insert into
 	#conversion_rates(
 		product_id)
 select
 	distinct(product_id)
 from
-	#all_products 
+	#all_products
+
+/* For conversion rate from the @evaluation_currency_id to the external
+ * account's native, we'll make sure that we populate conversion rates with
+ * those currencies as well */
+insert into
+	#conversion_rates(
+	product_id)
+select distinct
+	b.evaluation_currency_id
+from
+	#external_accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.evaluation_currency_id not in (
+	select
+		product_id
+	from
+		#conversion_rates
+	)
 
 update
 	#conversion_rates
@@ -1008,7 +583,7 @@ and
 and
 	convert(date, c.price_date) = convert(date, @begin_date)
 
-update 
+update
 	#conversion_rates
 set
 	a.begin_rate = 1.0 / c.price
@@ -1039,7 +614,7 @@ where
 	a.product_id = b.product_id
 and
 	a.evaluation_currency_id = b.currency_id
-and 
+and
 	b.contract_id = c.contract_id
 and
 	convert(date, c.price_date) = convert(date, @end_date)
@@ -1063,165 +638,6 @@ and
 and
 	a.end_rate = NULL
 
-update
-	#conversion_rates
-set
-	a.contract_id = b.contract_id
-from
-	#conversion_rates a,
-	forwards b 
-where
-	a.product_id = b.product_id
-and
-	a.evaluation_currency_id = b.currency_id
-
-update
-	#conversion_rates
-set
-	a.inverted_contract_id = b.contract_id
-from
-	#conversion_rates a,
-	forwards b
-where
-	a.product_id = b.currency_id
-and
-	a.evaluation_currency_id = b.product_id
-
-update
-	#conversion_rates
-set
-	begin_display_rate = begin_rate,
-	end_display_rate = end_rate
-
-update
-	#conversion_rates
-set
-	a.begin_display_rate = 1.0 / a.begin_display_rate,
-	a.end_display_rate = 1.0 / a.end_display_rate
-from
-	#conversion_rates a,
-	contract_price_styles b,
-	price_styles c
-where
-	a.contract_id = b.contract_id
-and
-	b.price_style_id = c.price_style_id
-and
-	c.name = "Inverted"
-
-/* UPDATE MTM WITH OVERRIDE */
-update
-	#trades
-set
-	reval_price_db = b.price, 
-     	reval_price_std = b.price
-from
-	#trades a,
-	bo_prices b
-where
-	a.contract_id = b.contract_id
-and
-	a.value_date = b.value_date
-and
-	b.price_date = @end_date
-
-/* This looks wrong, trying it a different way 
-update
-    	#trades
-set
-	reval_price_std = 1/b.price
-from
-	#trades a,
-	bo_prices b,
-	#inverted_trades c
-where
-	a.trade_id = c.trade_id
-and
-	a.contract_id = b.contract_id
-and
-	a.value_date = b.value_date
-and
-	b.price_date = @end_date
-and
-	b.price != 0 */
-
-
-update
-	#trades
-set
-	discount_factor = b.discount_factor
-from
-	#trades a,
-	bo_points b
-where
-	a.contract_id = b.contract_id
-and
-	a.value_date = b.value_date
-and
-	b.price_date = @end_date
-
-update
-	#trades
-set
-	discount_factor = b.discount_factor
-from
-	#trades a,
-	bo_points b,
-	#inverted_trades c
-where
-	a.trade_id = c.trade_id
-and
-	a.contract_id = b.contract_id
-and
-	a.value_date = b.value_date
-and
-	b.price_date = @end_date
-and
-	b.discount_factor != 0
-
-update
-	#trades
-set
-	reval_counter_qty = product_qty * reval_price_db
-
-update
-	#trades
-set
-	mtm = round(((a.reval_counter_qty - (a.currency_qty*-1)) * b.end_rate * a.discount_factor), 2) 
-from
-	#trades a,
-	#conversion_rates b
-where
-	a.currency_id = b.product_id
-and
-	b.evaluation_currency_id = @evaluation_currency_id
-
-
-/*OVERRIDE IF POSSIBLE */
-update
-	#trades
-set
-	a.mtm = b.mtm * -1.0
-from
-	#trades a,
-	trade_mtms b
-where
-	a.trade_id = b.trade_id
-and
-	convert(date, b.trade_date) = convert(date, @end_date)  /* MTM */
-
-
-/* select
-	a.symbol,
-	b.begin_rate,
-	b.begin_display_rate,
-	b.end_rate,
-	b.end_display_rate
-from
-	products a,
-	#conversion_rates b
-where
-	a.product_id = b.product_id DEBUG */
 
 update
 	#trades
@@ -1232,6 +648,7 @@ from
 	#conversion_rates b
 where
 	a.product_id = b.product_id
+
 
 update
 	#trades
@@ -1254,6 +671,7 @@ from
 where
 	a.currency_id = b.product_id
 
+
 update
 	#account_transactions
 set
@@ -1263,24 +681,6 @@ from
 	#conversion_rates b
 where
 	a.currency_id = b.product_id
-
-if (@activate_timer = 1)
-begin
-
-	select
-        	@end_time = getdate()
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s4",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-	select
-        	@start_time = getdate()
-
-end
 
 /* Find the open trade equity */
 create table
@@ -1338,12 +738,14 @@ group by
 	external_account_id,
 	product_id
 
+	
+
 /* Find the Maturing Balances for FX	*/
 
 create table
 	#maturing_balances(
-		external_account_id int, 
- 		product_id int,
+		external_account_id int,
+		product_id int,
 		quantity float)
 insert into
 	#maturing_balances
@@ -1352,9 +754,12 @@ select
 	product_id,
 	sum(product_qty) 
 from
-	#trades
+	#trades a,
+	#trade_types b
 where
 	convert(date, value_date) = convert(date, @end_date)
+and
+	a.trade_type_id = b.trade_type_id
 group by
 	external_account_id,
 	product_id
@@ -1367,38 +772,44 @@ select
 	currency_id,
 	sum(currency_qty)
 from
-	#trades
+	#trades a,
+	#trade_types b
 where
+	a.trade_type_id = b.trade_type_id
+and
 	convert(date, value_date) = convert(date, @end_date)
 group by
 	external_account_id,
 	currency_id
 
-/* Find the Maturing Balances for CFD  only use the currency, not the product, since the product is the CFD and that will be zero*/
+/* Find the Maturing Balances for CFD    
+   only use the currency, not the product, since the product is the CFD and that will be zero*/
 
 create table
-	#maturing_cfd_balances(
-		external_account_id int,
-		product_id int,
-		quantity float)
+        #maturing_cfd_balances(
+                external_account_id int,
+                product_id int,
+                quantity float)
 insert into
-	#maturing_cfd_balances
+        #maturing_cfd_balances
 select
-	external_account_id, 
-	currency_id,
-	sum(currency_qty)
+        external_account_id,
+        currency_id,
+        sum(currency_qty)
 from
-	#trades a,
-	trade_types b
+        #trades a,
+        trade_types b
 where
-	convert(date, value_date) = convert(date, @end_date)
+        convert(date, value_date) = convert(date, @end_date)
 and
-	a.trade_type_id = b.trade_type_id
+        a.trade_type_id = b.trade_type_id
 and
 	b.name in("CFD", "CFD Roll")
 group by
-	external_account_id,
-	currency_id
+        external_account_id,
+        currency_id
+
+
 
 create table
 	#maturing_totals(
@@ -1417,57 +828,23 @@ group by
 	external_account_id,
 	product_id
 
-update
-	#maturing_totals
-set
-	quantity = round(quantity, 2)
-
-update
-	#maturing_totals
-set
-	a.quantity = round(a.quantity, 0)
-from
-	#maturing_totals a,
-	products b
-where
-	a.product_id = b.product_id
-and
-	b.symbol = "JPY"
-
 create table
-	#maturing_cfd_totals(
-		external_account_id int,
-		product_id int,
-		quantity float)
+        #maturing_cfd_totals(
+                external_account_id int,
+                product_id int,
+                quantity float)
 insert into
-	#maturing_cfd_totals
+        #maturing_cfd_totals
 select
-	external_account_id,
-	product_id,
-	sum(quantity)
+        external_account_id,
+        product_id,
+        sum(quantity)
 from
-	#maturing_cfd_balances
+        #maturing_cfd_balances
 group by
-	external_account_id,
-	product_id
+        external_account_id,
+        product_id
 
-if (@activate_timer = 1)
-begin
-
-	select
-        	@end_time = getdate()
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s5",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-	select
-        	@start_time = getdate()
-
-end
 
 /* Get the opening and closing balances by currency */
 create table
@@ -1513,11 +890,62 @@ group by
 	currency_id
 
 create table
-	#cash(
+	#settlements(
 		external_account_id int,
 		product_id int,
 		quantity float,
-		equiv float)
+		equiv float NULL)
+insert into
+	#settlements
+select
+	external_account_id,
+	currency_id,
+	sum(amount),
+	sum(end_equiv)
+from
+	#account_transactions
+where
+	transaction_type_id = @fx_transaction_type_id
+and
+	transaction_date >= @begin_date
+and
+	transaction_date < @end_date
+group by
+	external_account_id,
+	currency_id
+
+create table
+        #cfd_settlements(
+                external_account_id int,
+                product_id int,
+                quantity float,
+                equiv float)
+insert into
+        #cfd_settlements
+select
+        external_account_id,
+        currency_id,
+        sum(amount),
+        sum(end_equiv)
+from
+        #account_transactions
+where
+        transaction_type_id = @cfd_transaction_type_id
+and
+        transaction_date >= @begin_date
+and
+        transaction_date < @end_date
+group by
+        external_account_id,
+        currency_id
+
+
+create table
+	#cash(
+		external_account_id int,
+		product_id int NULL,
+		quantity float NULL,
+		equiv float NULL)
 insert into
 	#cash
 select
@@ -1531,29 +959,61 @@ where
 	transaction_date >= @begin_date
 and
 	transaction_date < @end_date
+and
+	transaction_type_id not in( @fx_transaction_type_id, @cfd_transaction_type_id)
+and
+	transaction_type_id not in(
+		select
+			transaction_type_id
+		from
+			fee_transaction_types)
 group by
 	external_account_id,
 	currency_id
 
+
+create table
+	#fees(
+		external_account_id int,
+		product_id int,
+		quantity float,
+		equiv float)
+insert into
+	#fees
 select
-	@activity_equiv = sum(equiv)
+	a.external_account_id,
+	a.currency_id,
+	sum(a.amount),
+	sum(a.end_equiv)
 from
-	#cash
-if @activity_equiv = NULL
-	select
-		@activity_equiv = 0.0
+	#account_transactions a,
+	fee_transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date < @end_date
+group by
+	a.external_account_id,
+	a.currency_id
+
 
 create table
 	#net_activity(
 		external_account_id int,
 		product_id int,
 		opening_balance float NULL,
+		maturing_fx float NULL,
+                cfd_realized_pl float NULL,
 		cash float NULL,
-		settlements float NULL,
+		fees float NULL,
+		settled_premium float NULL,
 		closing_balance float NULL,
-		equiv float NULL,
-		conversion_rate float NULL,
-		display_conversion_rate float NULL)
+		unsettled_prem float NULL,
+		open_position float NULL,
+		open_option_pos float NULL,
+		total_equity float NULL)
 insert into
 	#net_activity(
 		external_account_id,
@@ -1568,11 +1028,66 @@ update
 	#net_activity
 set
 	opening_balance = 0.0,
+	maturing_fx = 0.0,
+	cfd_realized_pl = 0.0,
 	cash = 0.0,
-	settlements = 0.0,
+	fees = 0.0,
+	settled_premium = 0.0,
 	closing_balance = 0.0,
-	equiv = 0.0
+	unsettled_prem = 0.0,
+	open_position = 0.0,
+	open_option_pos = 0.0,
+	total_equity = 0.0
 
+update
+	#net_activity
+set
+	a.opening_balance = b.quantity
+from
+	#net_activity a,
+	#opening_balances b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+	#net_activity
+set
+	a.maturing_fx = b.quantity
+from
+	#net_activity a,
+	#settlements b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+update
+        #net_activity
+set
+        a.cfd_realized_pl = b.quantity
+from
+        #net_activity a,
+        #cfd_settlements b
+where
+        a.external_account_id = b.external_account_id
+and
+        a.product_id = b.product_id
+
+
+update
+	#net_activity
+set
+	a.fees = b.quantity
+from
+	#net_activity a,
+	#fees b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+	
 update
 	#net_activity
 set
@@ -1588,493 +1103,294 @@ and
 update
 	#net_activity
 set
-	a.settlements = b.quantity
-from
-	#net_activity a,
-	#maturing_totals b
-where
-	a.product_id = b.product_id
-and
-	a.external_account_id = b.external_account_id  
-
-update
-	#net_activity
-set
-	a.opening_balance = b.quantity
-from
-	#net_activity a,
-	#opening_balances b
-where
-	a.external_account_id = b.external_account_id
-and
-	a.product_id = b.product_id
-
-
-update
-	#net_activity
-set
 	a.closing_balance = b.quantity
 from
 	#net_activity a,
 	#closing_balances b
 where
-	a.product_id = b.product_id
-and
 	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
 
 update
 	#net_activity
 set
-	a.equiv = a.closing_balance * b.end_rate,
-	a.conversion_rate = b.end_rate,
-	a.display_conversion_rate = b.end_display_rate
+	a.open_position = b.quantity
 from
 	#net_activity a,
-	#conversion_rates b
+	#net_open_equity b
 where
-	a.product_id = b.product_id
-
-if (@activate_timer = 1)
-begin
-
-	select
-        	@end_time = getdate()
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s6",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-	select 
-        	@start_time = getdate()
-
-end	
-
-/* Option Trades */
-
-create table
-	#option_trades(
-		trade_id int NULL,
-		identifier varchar(50) NULL,
-		ex_identifier varchar(50) NULL, 
- 		exercise_trade_id int NULL,
-		trade_date datetime NULL,
-		value_date datetime NULL,
-		fixing_date datetime NULL,
-		expiration datetime NULL,
-		contract_id int NULL,
-		product_id int NULL,
-		currency_id int NULL,
-		quantity float NULL,
-		price float NULL, 
- 		pct_price float NULL,
-		display_price float NULL,
-		buy_sell varchar(10) NULL,
-		trade_type_id int NULL,
-		trade_type varchar(50) NULL,
-		put_call varchar(5) NULL,
-		strike float NULL,
-		underlying_contract_id int NULL,
-		underlying varchar(50) NULL, 
- 		dealt_qty float NULL,
-		counter_qty float NULL,
-		premium_equiv float NULL, /* this is because jeff can't give us the right conversion rate for trades */
-		premium float NULL,
-		premium_currency_id int NULL,
-		premium_currency varchar(50) NULL,
-		premium_settle_date datetime NULL,
-		settle_price float NULL,
-		current_value float NULL,
-		equiv_value float NULL
-		)
-insert into
-	#option_trades(
-		trade_id,
-		identifier,
-		ex_identifier,
-		trade_type_id,
-		trade_date,
-		value_date,
-		fixing_date,
-		expiration,
-		contract_id, 
- 		quantity,
-		price,
-		pct_price,
-		display_price,
-		buy_sell,
-		put_call,
-		strike,
-		underlying_contract_id,
-		dealt_qty,
-		counter_qty)
-select
-	a.trade_id,
-	a.identifier,
-	ex_identifier = stuff(a.identifier, charindex("-0", a.identifier), 2, "-1"),
-	a.trade_type_id,
-	a.trade_date,
-	a.value_date,
-	a.fixing_date,
-	d.expiration,
-	a.contract_id,
-	a.quantity * -1.0,
-	a.price,
-	a.pct_price,
-	a.pct_price,
-	buy_sell = case when a.quantity >= 0.0 then "BUY" else "SELL" end,
-	c.put_call,
-	c.strike,
-	e.underlying_contract_id,
-	a.quantity * -1.0,
-	a.quantity * c.strike
-from
-	trades a,
-	#external_accounts b,
-	option_contracts c,
-	option_expirations d,
-	options e
-where 
 	a.external_account_id = b.external_account_id
 and
-	a.contract_id = c.contract_id
-and
-	c.option_expiration_id = d.option_expiration_id
-and
-	d.option_id = e.option_id
-and
-	a.trade_date <= @end_date
-and
-	d.expiration >= @begin_date
-
-create index otuc on #option_trades(underlying_contract_id)
+	a.product_id = b.product_id
 
 update
-	#option_trades
+	#net_activity
 set
-	a.counter_qty = (a.quantity * -1.0) / a.strike
-from
-	#option_trades a,
-	contract_price_styles b,
-	price_styles c
-where
-	a.underlying_contract_id = b.contract_id
-and
-	b.price_style_id = c.price_style_id
-and
-	c.name = "Inverted"
+	total_equity = closing_balance + unsettled_prem + open_position + open_option_pos
 
-create index ci on #option_trades(contract_id)
-
-update
-        #option_trades
-set
-        a.settle_price = b.price,
-	a.current_value = a.quantity * b.price
-from
-        #option_trades a,
-        bo_prices b
-where
-        a.contract_id = b.contract_id
-and
-        convert(date, b.price_date) = convert(date, @end_date)
-
-/* update
-	#option_trades
-set
-	ex_identifier = stuff(identifier, charindex("-0", identifier), 2, "-1"),
-	current_value = quantity * settle_price
-*/
-
-update
-	#option_trades
-set
-	a.exercise_trade_id = b.trade_id
-from
-	#option_trades a,
-	trades b
-where
-	a.ex_identifier = b.identifier 
-
-update
-	#option_trades
-set
-	dealt_qty = dealt_qty * -1.0,
-	counter_qty = counter_qty * -1.0
-where
-	put_call = "P"
-
-update
-	#option_trades
-set
-	a.product_id = b.product_id,
-	a.currency_id = b.currency_id
-from
-	#option_trades a,
-	forwards b
-where
-	a.underlying_contract_id = b.contract_id
-
-/*
-
-update
-	#option_trades
-set
-	a.settle_price = b.price
-from
-	#option_trades a,
-	bo_prices b
-where
-	a.contract_id = b.contract_id
-and
-	convert(date, b.price_date) = convert(date, @end_date)
-
-
-update
-	#option_trades
-set
-	current_value = quantity * settle_price
-*/
-
-update
-	#option_trades
-set
-	a.equiv_value = a.current_value * b.end_rate
-from
-	#option_trades a,
-	#conversion_rates b
-where
-	a.currency_id = b.product_id
-
-create index ti on #option_trades (trade_id)
-
-update
-	#option_trades
-set
-	a.premium = c.amount,
-	a.premium_currency_id = c.currency_id,
-	a.premium_settle_date = c.transaction_date
-from
-	#option_trades a,
-	account_transaction_trades b,
-	account_transactions c
-where
-	a.trade_id = b.trade_id
-and
-	b.account_transaction_id = c.account_transaction_id
-
-update
-	#option_trades
-set
-	a.premium_equiv = a.premium * b.end_rate
-from
-	#option_trades a,
-	#conversion_rates b
-where
-	a.premium_currency_id = b.product_id
-
-update
-	#option_trades
-set
-	a.premium_currency = b.symbol
-from
-	#option_trades a,
-	products b
-where
-	a.premium_currency_id = b.product_id
-
-update
-	#option_trades
-set
-	a.underlying = b.symbol
-from
-	#option_trades a,
-	contracts b
-where
-	a.underlying_contract_id = b.contract_id
-
-update
-	#option_trades
-set
-	a.trade_type = b.name
-from
-	#option_trades a,
-	trade_types b
-where
-	a.trade_type_id = b.trade_type_id
-
-update
-	#option_trades
-set
-	buy_sell = "BUY"
-where
-	quantity >= 0.0
-update
-	#option_trades
-set
-	buy_sell = "SELL"
-where
-	quantity < 0.0
-
+/* Create the Equity Value Summary */
 create table
-	#open_options(
-		id int identity,
-		style varchar(200) NULL,
-		row_kind int NULL,
-		trade_id int NULL,
-		instrument varchar(50) NULL,
-		trade_date datetime NULL,
-		expiry_date datetime NULL,
-		buy_sell varchar(10) NULL,
-		put_call varchar(5) NULL,
-		strike float NULL,
-		trade_price float NULL,
-		underlying varchar(50) NULL,
-		ccy1_quantity float NULL, 
-		ccy2_quantity float NULL,
-		daily_mark float NULL,
-		mtm_equiv float NULL)
+	#equity_value_summary(
+	external_account_id int,
+	product_id int,
+	evaluation_currency_id int,
+	total_equity float,
+	conversion_rate float NULL,
+	converted_value float NULL)
 insert into
-	#open_options(
-		style,
-		row_kind,
-		trade_id,
-		instrument,
-		trade_date,
-		expiry_date,
-		buy_sell,
-		put_call,
-		strike,
-		trade_price,
-		underlying,
-		ccy1_quantity,
-		ccy2_quantity,
-		daily_mark,
-		mtm_equiv)
+	#equity_value_summary (
+	external_account_id,
+	product_id,
+	evaluation_currency_id,
+	total_equity
+	)
 select
-	style = @style,
-	row_kind = 0,
-	trade_id,
-	instrument = trade_type,
-	trade_date,
-	expiration,
-	buy_sell,
-	put_call,
-	strike,
-	trade_price = display_price,
-	underlying,
-	ccy1_quantity = dealt_qty,
-	ccy2_quantity = counter_qty,
-	daily_mark = settle_price,
-	mtm_equiv = equiv_value
+	a.external_account_id,
+	a.product_id,
+	@evaluation_currency_id,
+	a.total_equity
 from
-	#option_trades
+	#net_activity a
+
+update
+	#equity_value_summary
+set
+	evaluation_currency_id = c.evaluation_currency_id,
+	conversion_rate = b.end_rate / d.end_rate,
+	converted_value = a.total_equity * b.end_rate / d.end_rate
+from
+	#equity_value_summary a,
+	#conversion_rates b,
+	external_accounts c,
+	#conversion_rates d
 where
-	convert(date, expiration) > convert(date, @end_date) /* TESTING */
-/* where
-	trade_date < @begin_date */
-order by
-	underlying,
-	expiration,
-	put_call
+	a.product_id = b.product_id
+and
+	a.evaluation_currency_id = b.evaluation_currency_id
+and
+	a.external_account_id = c.external_account_id
+and
+	c.evaluation_currency_id = d.product_id
+and
+	a.evaluation_currency_id = d.evaluation_currency_id
 
-
-select
-	@opt_open_equiv = sum(mtm_equiv)
-from
-	#open_options
-if @opt_open_equiv = NULL
-	select
-		@opt_open_equiv = 0.0
-
-
+/* Calculate Margin Summary */
 create table
-	#open_option_totals(
-		underlying varchar(50),
-		expiration datetime,
-		strike float,
-		put_call varchar(5) NULL, 
- 		dealt_qty float NULL,
-		counter_qty float NULL,
-		equiv_value float NULL)
+	#margin_summary(
+	external_account_id int,
+	net_equity float,
+	net_margin_use float NULL,
+	pct_use float NULL,
+	available_funds float NULL,
+	currency_id int NULL)
 insert into
-	#open_option_totals(
-		underlying,
-		expiration,
-		strike,
-		put_call,
-		dealt_qty,
-		counter_qty,
-		equiv_value)
+	#margin_summary (
+	external_account_id,
+	net_equity
+	)
 select
-	underlying,
-	expiration,
-	strike,
-	put_call, 
- 	sum(dealt_qty),
-	sum(counter_qty),
-	sum(equiv_value)
+	external_account_id,
+	net_equity = sum(converted_value)
 from
-	#option_trades
-where
-	convert(date, expiration) > convert(date, @end_date)
-	/* trade_date < @begin_date */
+	#equity_value_summary
 group by
-	underlying,
-	expiration,
-	strike,
-	put_call
+	external_account_id
 
-
-/* MARKR OPTIONS */
-insert into 
- 	#open_options(
-		style,
-		row_kind,
-		expiry_date,
-		underlying,
-		strike,
-		put_call,
-		ccy1_quantity,
-		ccy2_quantity,
-		mtm_equiv)
-select
-	style = @total_style,
-	row_kind = 100,
-	expiration,
-	underlying,
-	strike,
-	put_call,
-	dealt_qty,
-	counter_qty, 
-	equiv_value
+update
+	#margin_summary
+set
+	currency_id = b.evaluation_currency_id
 from
-	#open_option_totals
+	#margin_summary a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
 
-if (@activate_timer = 1)
-begin
+/* Calculate Margin Usage */
+create table
+	#product_balances(
+	external_account_id int,
+	product_id int,
+	margin float NULL,
+	quantity float,
+	equiv float NULL)
 
-	select
-        	@end_time = getdate()
+insert into
+	#product_balances(
+	external_account_id,
+	product_id,
+	margin,
+	quantity,
+	equiv)
+select
+	external_account_id,
+	product_id,
+	margin,
+	sum(product_qty),
+	sum(product_equiv)
+from
+	#trades
+group by
+	external_account_id,
+	product_id,
+	margin
 
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s7",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
+insert into
+	#product_balances(
+	external_account_id,
+	product_id,
+	margin,
+	quantity,
+	equiv)
+select
+	external_account_id,
+	currency_id,
+	margin,
+	sum(currency_qty),
+	sum(currency_equiv)
+from
+	#trades
+group by
+	external_account_id,
+	currency_id,
+	margin
 
-	select
-        	@start_time = getdate()	
+/* Calculate Account > Margin > Product margin usage */
+create table
+	#account_margin_product_usage(
+	external_account_id int,
+	margin float,
+	product_id int,
+	quantity float,
+	equiv float NULL,
+	margin_use float NULL)
+insert into
+	#account_margin_product_usage(
+	external_account_id,
+	margin,
+	product_id,
+	quantity,
+	equiv)
+select
+	external_account_id,
+	margin,
+	product_id,
+	sum(quantity),
+	sum(equiv)
+from
+	#product_balances
+group by
+	external_account_id,
+	margin,
+	product_id
 
-end
+delete
+	#account_margin_product_usage
+where
+	equiv >= 0
 
-/* MARKR MARKR */
-	
-/* End option trade gathering */
+update
+	#account_margin_product_usage
+set
+	margin_use = margin * abs(equiv)
+
+/* Calculate Account > Margin margin usage */
+create table
+	#account_margin_usage(
+		external_account_id int,
+		margin float NULL,
+		equiv float NULL,
+		margin_use float NULL)
+insert into
+	#account_margin_usage(
+		external_account_id,
+		margin,
+		equiv,
+		margin_use)
+select
+	external_account_id,
+	margin,
+	total_equiv = sum(equiv),
+	sum(margin_use)
+from
+	#account_margin_product_usage
+group by
+	external_account_id,
+	margin
+
+/* Calculate Account margin usage */
+create table
+	#account_usage(
+	external_account_id int,
+	equiv float NULL,
+	margin_use float NULL)
+insert into
+	#account_usage(
+	external_account_id,
+	equiv,
+	margin_use)
+select
+	external_account_id,
+	sum(equiv),
+	sum(margin_use)
+from
+	#account_margin_usage
+group by
+	external_account_id
+
+/* Update margin summary */
+update
+	#margin_summary
+set
+	net_margin_use = b.margin_use / c.end_rate
+from
+	#margin_summary a,
+	#account_usage b,
+	#conversion_rates c
+where
+	a.external_account_id = b.external_account_id
+and
+	c.product_id = a.currency_id
+and
+	c.evaluation_currency_id = @evaluation_currency_id
+
+update
+	#margin_summary
+set
+	net_margin_use = 0
+where
+	net_margin_use = NULL
+
+update
+	#margin_summary
+set
+	available_funds = a.net_equity / b.end_rate - a.net_margin_use
+from
+	#margin_summary a,
+	#conversion_rates b
+where
+	b.product_id = a.currency_id
+and
+	b.evaluation_currency_id = @evaluation_currency_id
+
+update
+	#margin_summary
+set
+	pct_use = net_margin_use / net_equity
+where
+	net_equity != 0.0
+
+/* DEBUGGING
+select section = "#margin_summary", * from #margin_summary
+select "#product_balances", external_account_id, margin, product=b.symbol, quantity=convert(numeric(30,0), quantity), equiv=convert(numeric(30,0), equiv) from #product_balances a join products b on a.product_id = b.product_id order by external_account_id, margin, product
+select "#account_margin_product_usage", external_account_id, margin, product=b.symbol, quantity=convert(numeric(30,0), quantity), equiv=convert(numeric(30,0), equiv), margin_use=convert(numeric(30,0), margin_use) from #account_margin_product_usage a join products b on a.product_id = b.product_id order by external_account_id, margin, product
+select "#account_margin_usage", external_account_id, margin, equiv=convert(numeric(30,0), equiv), margin_use=convert(numeric(30,0), margin_use) from #account_margin_usage order by external_account_id, margin
+select "#account_usage", * from #account_usage
+select "#account_usage", external_account_id, equiv=convert(numeric(30,0), equiv), margin_use=convert(numeric(30,0), margin_use) from #account_usage order by external_account_id
+*/
+
+
 
 
 /* Calculate Open Trades */
@@ -2083,11 +1399,7 @@ create table
 		row_kind int,
 		contract varchar(25),
 		contract_id int NULL,
-		product_id int NULL,
-		trade_type_id int NULL,
-		trade_type varchar(50) NULL,
 		value_date datetime NULL,
-		fixing_date datetime NULL,
 		trade_id int NULL,
 		buy_sell varchar(10) NULL,
 		symbol varchar(25),
@@ -2097,22 +1409,14 @@ create table
 		counter_amount float,
 		market_rate float NULL,
 		market_value float NULL,
-		conversion_rate float NULL,
-		currency_id int NULL,
-		equiv float NULL,
-		discount_factor float NULL,
 		trade_date datetime NULL,
-		style varchar(75),
-		display_price float NULL)
+		style varchar(75))
 insert into
 	#open_trades(
 		row_kind,
 		contract,
 		contract_id,
-		trade_type_id,
-		trade_type,
 		value_date,
-		fixing_date,
 		trade_id,
 		buy_sell,
 		symbol,
@@ -2121,28 +1425,21 @@ insert into
 		rate,
 		counter_amount,
 		trade_date,
-		style,
-		display_price,
-		equiv)
+		style)
 select
 	row_kind = 0,
 	contract = c.symbol,
 	a.contract_id,
-	a.trade_type_id,
-	b.name,	
 	a.value_date,
-	a.fixing_date,
 	a.trade_id,
-	buy_sell = case when a.product_qty >= 0 then "Buy" else "Sell" end,
+	buy_sell = case when a.product_qty >= 0 then "Bought" else "Sold" end,
 	symbol = c.symbol,
 	counterparty = a.counterparty,
-	dealt_amount = round(a.product_qty, 2),
+	dealt_amount = a.product_qty,
 	rate = a.price,
-	counter_amount = round(a.currency_qty, 2),
+	counter_amount = a.currency_qty,
 	a.trade_date,
-	style = "background:#FFFFFF;border: 1px solid white",
-	a.price,
-	a.mtm
+	style = "background:#FFFFFF;border: 1px solid white"
 from
 	#trades a,
 	#trade_types b,
@@ -2155,41 +1452,13 @@ and
 	a.value_date >= @end_date
 order by
 	c.symbol,
-	a.value_date
-	/* a.trade_id */
-
-/*
-update
-	#open_trades
-set
-	dealt_amount = round(dealt_amount, 2),
-	counter_amount = round(counter_amount, 2)
-*/
-
-create index ci on #open_trades (contract_id)
-create index vd on #open_trades (value_date)
-
-update
-	#open_trades
-set
-	dealt_amount = round(dealt_amount, 0)
-where
-	symbol like "JPY%"
-/* MARKR TESTING */
-
-update
-	#open_trades
-set
-	counter_amount = round(counter_amount, 0)
-where
-	symbol like "%JPY"
-/* MARKR TESTING */
+	a.trade_id
 
 update
 	#open_trades
 set
 	a.market_rate = b.price,
-	a.market_value = ((b.price - a.rate) * a.dealt_amount)/*  * -1.0 */
+	a.market_value = ((b.price - a.rate) * a.dealt_amount) * -1.0
 from
 	#open_trades a,
 	bo_prices b
@@ -2200,230 +1469,44 @@ and
 and
 	convert(date, b.price_date) = convert(date, @end_date)
 
-/* New Way */
-update
-	#open_trades
-set
-	a.market_rate = 1.0 / d.price,
-	a.market_value = ((1.0 / d.price - a.rate) * a.dealt_amount)
-from
-	#open_trades a,
-
- 	forwards b,
-	forwards c,
-	bo_prices d
-where
-	a.contract_id = b.contract_id
-and
-	b.product_id = c.currency_id
-and
-	b.currency_id = c.product_id
-and
-	c.contract_id = d.contract_id
-and
-	convert(date, a.value_date) = convert(date, d.value_date)
-and
-	convert(date, d.price_date) = convert(date, @end_date)
-	
-
-/* TESTING */
-update
-	#open_trades
-set
-	a.product_id = b.product_id,
-	a.currency_id = b.currency_id
-from
-	#open_trades a,
-	forwards b
-where
-	a.contract_id = b.contract_id
-
-update
-	#open_trades
-set
-	a.market_rate = 1.0 / c.price,
-	a.market_value = (((1.0/c.price - a.rate) * a.dealt_amount))
-from
-	#open_trades a,
-	forwards b,
-	bo_prices c
-where
-	a.product_id = b.currency_id
-and
-	a.currency_id = b.product_id
-and
-	b.contract_id = c.contract_id
-and
-	convert(date, a.value_date) = convert(date, c.value_date)
-and
-	convert(date, c.price_date) = convert(date, @end_date)
-	
-
-update
-	#open_trades
-set
-	a.currency_id = b.currency_id
-from
-	#open_trades a,
-	forwards b
-where
-	a.contract_id = b.contract_id
-
-update
-	#open_trades
-set
-	a.discount_factor = b.discount_factor
-from
-	#open_trades a,
-	bo_points b
-where
-	a.contract_id = b.contract_id
-and
-	a.value_date = b.value_date
-and
-	convert(date, b.price_date) = convert(date, @end_date)
-
-
-update
-	#open_trades
-set
-	a.product_id = b.product_id,
-	a.currency_id = b.currency_id
-from
-	#open_trades a,
-	forwards b
-where
-	a.contract_id = b.contract_id
-
-update
-	#open_trades
-set
-	a.discount_factor = 1.0 / c.discount_factor
-from
-	#open_trades a,
-	forwards b,
-	bo_points c
-where
-	a.product_id = b.currency_id
-and
-	a.currency_id = b.product_id
-and
-	b.contract_id = c.contract_id
-and
-	convert(date, a.value_date) = convert(date, c.value_date)
-and
-	convert(date, c.price_date) = convert(date, @end_date) /* BO POINTS */
-
-update
-	#open_trades
-set
-	a.conversion_rate = b.end_rate,
-	a.equiv = a.market_value * b.end_rate * a.discount_factor /* 1234 */
-from
-	#open_trades a,
-	#conversion_rates b
-where
-	a.currency_id = b.product_id 
-
-update
-	#open_trades
-set
-	a.equiv = b.mtm * -1.0
-from
-	#open_trades a,
-	trade_mtms b
-where
-	a.trade_id = b.trade_id
-and
-	convert(date, b.trade_date) = convert(date, @end_date)  /* MTM */
-
-
-update
-	#open_trades
-set
-	a.display_price = 1.0 / a.display_price
-from
-	#open_trades a,
-	contract_price_styles b,
-	price_styles c
-where
-	a.contract_id = b.contract_id
-and
-	b.price_style_id = c.price_style_id
-and
-	c.name = "Inverted"
 
 insert into
 	#open_trades (
 		row_kind,
 		contract,
-		value_date,
 		symbol,
 		dealt_amount,
 		counter_amount,
-		equiv,
+		market_value,
 		style
 	)
 select
 	row_kind = 1,
 	contract,
-	value_date,
 	symbol = "<b>Total</b>",
 	dealt_amount = sum(dealt_amount),
 	counter_amount = sum(counter_amount),
-	equiv = sum(equiv),
-	style = @total_style
+	market_value = sum(market_value),
+	style = "background:#fff;border:1px solid white;height:2em;font-weight:bold"
 from
 	#open_trades
 group by
-	contract,
-	value_date /* MARKR MARKR */
+	contract
 
-update
+/* update
 	#open_trades
 set
-	dealt_amount = round(dealt_amount, 2),
-	counter_amount = round(counter_amount, 2)
-
-update
-	#open_trades 
-set
-	dealt_amount = round(dealt_amount, 0)
+	dealt_amount = abs(dealt_amount),
+	counter_amount = abs(counter_amount)
 where
-	contract like "JPY%" /*MARKR TEST */
+	row_kind = 0 */
 
-update
-	#open_trades
-set
-	counter_amount = round(counter_amount, 0)
-where
-	contract like "%JPY" /*MARKR TEST */
-
-if (@activate_timer = 1)
-begin
-
-	select
-        	@end_time = getdate()
-
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s7B",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-	select 
-        	@start_time = getdate()
-
-end
 
 /* Calculate Maturing Trades */
 create table
 	#maturing_trades(
 		row_kind int,
 		contract varchar(25),
-		contract_id int NULL,
 		value_date datetime NULL,
 		trade_id int NULL,
 		buy_sell varchar(10) NULL,
@@ -2435,14 +1518,11 @@ create table
 		counter_amount float,
 		counter_ccy varchar(10) NULL,
 		trade_date datetime NULL,
-		style varchar(75),
-		trade_type varchar(50) NULL,
-		display_price float NULL)
+		style varchar(75))
 insert into
 	#maturing_trades(
 		row_kind,
 		contract,
-		contract_id,
 		value_date,
 		trade_id,
 		buy_sell,
@@ -2454,16 +1534,13 @@ insert into
 		counter_amount,
 		counter_ccy,
 		trade_date,
-		style,
-		trade_type,
-		display_price)
+		style)
 select
 	row_kind = 0,
 	contract = c.symbol,
-	a.contract_id,
 	a.value_date,
 	a.trade_id,
-	buy_sell = case when a.product_qty >= 0 then "Buy" else "Sell" end,
+	buy_sell = case when a.product_qty >= 0 then "Bought" else "Sold" end,
 	symbol = c.symbol,
 	counterparty = a.counterparty,
 	rate = a.price,
@@ -2472,9 +1549,7 @@ select
 	counter_amount = a.currency_qty,
 	counter_ccy = e.symbol,
 	a.trade_date,
-	style = "background:#FFFFFF;border: 1px solid white",
-	b.name,
-	a.price
+	style = "background:#FFFFFF;border: 1px solid white"
 from
 	#trades a,
 	#trade_types b,
@@ -2497,48 +1572,10 @@ order by
 	c.symbol,
 	a.trade_id
 
-update
-	#maturing_trades
-set
-	a.display_price = 1.0 / a.display_price
-from
-	#maturing_trades a,
-	contract_price_styles b,
-	price_styles c
-where
-	a.contract_id = b.contract_id
-and
-	b.price_style_id = c.price_style_id
-and
-	c.name = "Inverted"
-
-update
-	#maturing_trades
-set
-	counter_amount = round(counter_amount, 2),
-	dealt_amount = round(dealt_amount, 2)
-
-update
-	#maturing_trades
-set
-	dealt_amount = round(dealt_amount, 0)
-where
-	symbol like "JPY%"
-/* MARKR TEST */
-
-update
-	#maturing_trades
-set
-	counter_amount = round(counter_amount, 0)
-where
-	symbol like "%JPY"
-/* MARKR TEST */
-
 insert into
 	#maturing_trades (
 		row_kind,
 		contract,
-		value_date,
 		symbol,
 		dealt_amount,
 		counter_amount,
@@ -2547,202 +1584,82 @@ insert into
 select
 	row_kind = 1,
 	contract,
-	value_date,
 	symbol = "<b>Total</b>",
 	dealt_amount = sum(dealt_amount),
-	counter_amount = sum(counter_amount), 
+	counter_amount = sum(counter_amount),
 	style = "background:#fff;border:1px solid white;height:2em;font-weight:bold"
 from
 	#maturing_trades
 group by
-	contract,
-	value_date
+	contract
+
+update
+	#maturing_trades
+set
+	dealt_amount = abs(dealt_amount),
+	counter_amount = abs(counter_amount)
+where
+	row_kind = 0
+
+
+
+
+/* Show the Margin Summary */
+select
+	section = "Margin Summary",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = b.symbol,
+	a.net_equity,
+	a.net_margin_use,
+	a.pct_use,
+	a.available_funds,
+	currency = c.symbol
+from
+	#margin_summary a,
+	external_accounts b,
+	products c
+where
+	a.external_account_id = b.external_account_id
+and
+	c.product_id = a.currency_id
+order by
+	b.symbol
+
 
 /* Select out Today's Trades */
-update
-	#new_trades
-set
-	ccy1_qty = round(ccy1_qty, 2),
-	ccy2_qty = round(ccy2_qty, 2)
-
-update
-	#new_trades
-set
-	ccy2_qty = round(ccy2_qty, 0)
-where
-	ccy_pair like "%JPY"
-update
-	#new_trades
-set
-	ccy1_qty = round(ccy1_qty, 0)
-where
-	ccy_pair like "JPY%"
-
 select
-	section = "New Trading Activity - FX",
-	style = "background:#fff",
-	a.trade_id, 
- 	trade_type = case when
-		a.fixing_date = NULL
-			then b.name
-		else
-			"NDF"
-	end,
-	trade_date = convert(varchar(11), a.trade_date),
+	/* section = "Today's Trades FX", */
+	section = "Today's Trades",
+	trade_type = b.name,
+	a.trade_id,
 	value_date = convert(varchar(11), a.value_date),
-	fixing_date = convert(varchar(11), a.fixing_date),
-	a.buy_sell,
-	trade_rate = a.price,
-	a.ccy_pair,
-	ccy1_quantity = a.ccy1_qty,
-	ccy2_quantity = a.ccy2_qty
+	a.counterparty,
+	dealt_ccy = c.symbol,
+	dealt_amount = a.product_qty,
+	counter_ccy = d.symbol,
+	counter_amount = a.currency_qty,
+	rate = a.price,
+	a.trade_date,
+	style = "background:#fff"
 from
-	#new_trades a,
-	#trade_types b
+	#trades a,
+	#trade_types b,
+	products c,
+	products d
 where
 	a.trade_type_id = b.trade_type_id
+and
+	a.product_id = c.product_id
+and
+	a.currency_id = d.product_id
 and
 	a.trade_date >= @begin_date
 and
 	a.trade_date < @end_date
 order by
-	a.ccy_pair,
+	c.symbol,
+	d.symbol,
 	a.trade_id
-
-update
-	#option_trades
-set
-	dealt_qty = round(dealt_qty, 2),
-	counter_qty = round(counter_qty, 2)
-
-update
-	#option_trades
-set
-	dealt_qty = round(dealt_qty, 0)
-where
-	underlying like "JPY%"
-
-update
-	#option_trades
-set
-	counter_qty = round(counter_qty, 0)
-where
-	underlying like "%JPY"
-select
-	section = "New Trading Activity - Options",
-	style = @style,
-	trade_id,
-	instrument = trade_type,
-	trade_date = convert(varchar(11), trade_date),
-	value_date = convert(varchar(11), value_date),
-	expiry_date = convert(varchar(11), expiration),
-	buy_sell,
-	put_call,
-	strike,
-	trade_price = display_price * 100.00,
-	underlying,
-	ccy1_quantity = dealt_qty,
-	ccy2_quantity = counter_qty,
-	premium_currency,
-	prem_amount = premium,
-	prem_settle_date = convert(varchar(11), premium_settle_date)
-from
-	#option_trades
-where
-	trade_date >= @begin_date
-order by
-	underlying,
-	expiration,
-	put_call
-
-
-/* Expiring Options */
-select
-	section = "Expired Options",
-	style = @style,
-	trade_id,
-	instrument = trade_type,
-	trade_date = convert(varchar(11), trade_date),
-	value_date = convert(varchar(11), value_date),
-	expiry_date = convert(varchar(11), expiration),
-	buy_sell,
-	put_call,
-	strike,
-	trade_price = display_price * 100.00,
-	underlying,
-	ccy1_quantity = dealt_qty,
-	ccy2_quantity = counter_qty,
-	premium_currency,
-	prem_amount = premium,
-	prem_settle_date = convert(varchar(11), premium_settle_date)
-from
-	#option_trades
-where
-	convert(date, expiration) = convert(date, @end_date)
-and
-	exercise_trade_id = NULL
-order by
-	underlying, 
- 	expiration,
-	put_call
-
-update
-	#maturing_trades
-set
-	dealt_amount = round(dealt_amount, 2),
-	counter_amount = round(counter_amount, 2)
-
-update
-	#maturing_trades
-set
-	dealt_amount = round(dealt_amount, 0)
-where
-	symbol like "JPY%"
-
-update
-	#maturing_trades
-set
-	counter_amount = round(counter_amount, 0)
-where
-	symbol like "%JPY"
-select
-	section = "Settling Trades Details",
-	trade_id,
-	instrument = trade_type,
-	trade_date = convert(varchar(11), trade_date),
-	value_date = convert(varchar(11), value_date),
-	"Buy/Sell" = buy_sell,
-	trade_rate = display_price,
-	/* ccy_pair = rtrim(dealt_ccy) + "/" + rtrim(counter_ccy), */
-	ccy_pair = symbol,
-	ccy1_quantity = dealt_amount,
-	ccy2_quantity = counter_amount,
-	style
-from
-	#maturing_trades
-order by
-	contract,
-	value_date,
-	row_kind
-
-if (@activate_timer = 1)
-begin
-
-	select
-        	@end_time = getdate()
-
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s8",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-	select
-        	@start_time = getdate()
-
-end
 
 /* Select out Today's CFD Trades - w/o rolls */
 select
@@ -2753,7 +1670,7 @@ select
 	dealt_contract = e.symbol,
 	dealt_amount = a.product_qty,
 	rate = a.price,
-	currency = d.symbol, 
+	currency = d.symbol,
 	/*counter_amount = a.currency_qty,*/
 	a.trade_date,
 	style = "background:#fff"
@@ -2783,122 +1700,68 @@ order by
 	a.trade_id
 
 
-/* MARKR */
 /* Select out Open Trades FX */
-update
-	#open_trades
-set
-	dealt_amount = round(dealt_amount, 2),
-	counter_amount = round(counter_amount, 2)
-
-update
-	#open_trades
-set
-	dealt_amount = round(dealt_amount, 0)
-where
-	symbol like "JPY%"
-
-update
-	#open_trades
-set
-	counter_amount = round(counter_amount, 0)
-where
-	symbol like "%JPY"
-
 select
-	section = "Open Position Details - FX",
+	/* section = "Open Trades FX", */
+	section = "Open Trades",
+	value_date,
 	trade_id,
-	instrument = case when
-		fixing_date = NULL
-			then trade_type
-		else
-			"NDF" 
- 	end,
-	trade_date = convert(varchar(11), trade_date),
-	value_date = convert(varchar(11), value_date),
-	"Buy/Sell" = buy_sell,
-	trade_rate = display_price,
-	ccy_pair = symbol,
-	ccy1_quantity = dealt_amount,
-	ccy2_quantity = counter_amount,
-	daily_mark = market_rate,
-	conversion_rate,
-	mark_to_market = equiv,
+	/* "Buy/Sell" = buy_sell, */
+	symbol,
+	counterparty,
+	dealt_amount = dealt_amount,
+	rate,
+	counter_amount = counter_amount,
+	market_rate,
+	market_value,
+	trade_date,
 	style
 from
 	#open_trades
 order by
 	contract,
-	convert(date, value_date),
 	row_kind,
 	trade_id
 
-/* MAYBE DO THIS? delete
-	#open_trades
-from
-	#open_trades a,
-	#option_trades b
-where
-	a.trade_id = b.exercise_trade_id /* MARKR MARKR */ */
-
-select
-	@fwd_open_equiv = sum(equiv)
-from
-	#open_trades
-where
-	row_kind = 0
-
 /* Select out Open Trades CFD*/
 select
-	section = "Open Trades CFD",
-	trade_type = b.name,
-	a.trade_id,
-	a.counterparty,
-	dealt_contract = e.symbol,
-	open_amount = f.open_amount * -1,
-	rate = f.price,
-	currency = d.symbol,
-	/*counter_amount = a.currency_qty,*/
-	/*a.trade_date,*/
-	style = "background:#fff"
+        section = "Open Trades CFD",
+        trade_type = b.name,
+        a.trade_id,
+        a.counterparty,
+        dealt_contract = e.symbol,
+        open_amount = f.open_amount * -1,
+        rate = f.price,
+        currency = d.symbol,
+        /*counter_amount = a.currency_qty,*/
+        /*a.trade_date,*/
+        style = "background:#fff"
 from
-	#trades a,
-	trade_types b,
-	products c,
-	products d,
+        #trades a,
+        trade_types b,
+        products c,
+        products d,
 	contracts e,
 	open_trades f
 where
-	a.trade_type_id = b.trade_type_id
+        a.trade_type_id = b.trade_type_id
 and
 	a.contract_id = e.contract_id
 and
-	a.product_id = c.product_id
+        a.product_id = c.product_id
 and
-	a.currency_id = d.product_id
+        a.currency_id = d.product_id
 and
 	a.trade_id = f.trade_id
 and
 	convert(date, f.trade_date) = convert(date, @end_date)
 order by
-	c.symbol,
-	d.symbol,
-	a.trade_id
+        c.symbol,
+        d.symbol,
+        a.trade_id
 
-select
-        @end_time = getdate()
-exec
-        sp_dogstatsdtimer
-                @metric_name="ase.proc.r_clientagstatement.s8",
-                @start_time=@start_time,
-                @end_time=@end_time,
-                @tags=@tag_run_name,
-                @sample_rate="1.0"
 
-select
-        @start_time = getdate()
 
-/* Select out Today's Round Turns - multiply by -1 to since its client side */
 create table
 	#closed_cfd_trades(
 		row_kind int,
@@ -2951,15 +1814,15 @@ select
 	external_account_id = a.external_account_id,
 	entry_trade_id = a.entry_trade_id, 
 	entry_date = a.entry_date,
-	entry_quantity = a.entry_quantity * -1,
+	entry_quantity = a.entry_quantity,
 	entry_price = a.entry_price,
 	exit_trade_id = a.exit_trade_id,
 	exit_date = a.exit_date,
-	exit_quantity = a.exit_quantity * -1,
+	exit_quantity = a.exit_quantity,
 	exit_price = a.exit_price,
 	currency_id = a.currency_id,
 	currency = b.symbol,
-	realized_pl = a.realized_pl * -1,
+	realized_pl = a.realized_pl,
 	style = "background:#fff"
 from
 	round_turns a,
@@ -2973,9 +1836,9 @@ and
 and
 	a.external_account_id = d.external_account_id
 and
-	a.trade_date > @begin_date
+        a.trade_date > @begin_date
 and
-	a.trade_date <= @end_date
+        a.trade_date <= @end_date
 order by
 	a.round_turn_id
 
@@ -2988,19 +1851,149 @@ insert into
 		style)
 select
 	row_kind = 1,
-	contract = "<b>Total</b>",
-	currency = currency,
+	contract,
+	currency,
 	realized_pl = sum(realized_pl),
 	style = "background:#fff;border:1px solid white;height:2em;font-weight:bold"
 from
 	#closed_cfd_trades
 group by
-	contract,
-	currency 
+	currency,
+	contract
+
+create table
+	#open_perps(
+		id int identity,
+		style varchar(250) NULL,
+		trade_id int NULL,
+		trade_date datetime NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		original_qty float NULL,
+		open_amount float NULL,
+		price float NULL,
+		current_price float NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		unrealized_pl float NULL)
+insert into
+	#open_perps(
+		style,
+		trade_id,
+		trade_date,
+		external_account_id,
+		account,
+		contract_id,
+		symbol,
+		value_date,
+		open_amount,
+		price,
+		current_price,
+		currency_id,
+		currency,
+		unrealized_pl)
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	a.trade_id,
+	a.trade_date,
+	a.external_account_id,
+	b.symbol,
+	a.contract_id,
+	c.symbol,
+	a.value_date,
+	a.open_amount,
+	a.price,
+	a.current_price,
+	a.currency_id,
+	d.symbol,
+	a.unrealized_pl
+from
+	open_trades a,
+	#external_accounts b,
+	contracts c,
+	products d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = c.contract_id
+and
+	a.currency_id = d.product_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+order by
+	a.id
+
+update
+	#open_perps
+set
+	a.original_qty = b.quantity,
+	a.trade_date = b.trade_date
+from
+	#open_perps a,
+	trades b
+where
+	a.trade_id = b.trade_id
+	
+
+create table
+	#net_perp_unrealized(
+		currency_id int,
+		unrealized_pl float NULL)
+insert into
+	#net_perp_unrealized(
+		currency_id,
+		unrealized_pl)
+select
+	currency_id,
+	sum(unrealized_pl)
+from
+	#open_perps
+group by
+	currency_id
+
+update
+	#net_activity
+set
+	a.open_position = a.open_position + b.unrealized_pl
+from
+	#net_activity a,
+	#net_perp_unrealized b
+where
+	a.product_id = b.currency_id
+update
+        #net_activity
+set
+        total_equity = closing_balance + unsettled_prem + open_position + open_option_pos
+
+
+select
+	section = "Open Perpetuals",
+	style,
+	trade_id,
+	trade_date,
+	account,
+	symbol,
+	value_date,
+	original_qty,
+	open_amount,
+	price,
+	settle_price = current_price,
+	currency,
+	unrealized_pl
+from
+	#open_perps
+order by
+	id
+		
 	
 
 select
-	section = "Closed Trades CFD",
+	section = "Closed Trades Perpetuals",
 	round_turn_id = a.round_turn_id,
 	symbol = a.contract,
 	entry_trade_id = a.entry_trade_id,
@@ -3009,7 +2002,7 @@ select
 	entry_price = a.entry_price,
 	exit_trade_id = a.exit_trade_id,
 	exit_date = a.exit_date,
-	exit_quntity = a.exit_quantity,
+	exit_quantity = a.exit_quantity,
 	exit_price = a.exit_price,
 	currency = a.currency,
 	realized_pl = a.realized_pl,
@@ -3018,80 +2011,35 @@ from
 	#closed_cfd_trades a
 order by
 	a.currency,
-	a.contract,
+	/* a.contract, */
 	a.row_kind,
 	a.round_turn_id
 /* Select out Maturing Trades */
-
-if (@activate_timer = 1)
-begin
-
-	select
-        	@end_time = getdate()
-
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s9",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-	select
-        	@start_time = getdate()
-
-end
-
-/* Open Option Positions */
-update
-	#open_options
-set
-	ccy1_quantity = round(ccy1_quantity, 2),
-	ccy2_quantity = round(ccy2_quantity, 2)
-
-update
-	#open_options
-set
-	ccy1_quantity = round(ccy1_quantity, 0)
-where
-	underlying like "JPY%"
-
-update
-	#open_options
-set
-	ccy2_quantity = round(ccy2_quantity, 0)
-where
-	underlying like "%JPY"
-
 select
-	section = "Open Position Details - Options",
-	style,
-	trade_id, 
- 	instrument,
-	trade_date = convert(varchar(11), trade_date),
-	expiry_date = convert(varchar(11), expiry_date),
-	buy_sell,
-	put_call,
-	strike,
-	trade_price,
-	ccy_pair = underlying,
-	ccy1_quantity,
-	ccy2_quantity,
-	daily_mark,
-	mark_to_market = mtm_equiv
+	section = "Maturing Trades",
+	value_date,
+	trade_id,
+	"Buy/Sell" = buy_sell,
+	symbol,
+	counterparty,
+	rate,
+	dealt_amount = dealt_amount,
+	dealt_ccy,
+	counter_amount = counter_amount,
+	counter_ccy,
+	trade_date,
+	style
 from
-	#open_options
+	#maturing_trades
 order by
-	underlying,
-	expiry_date,
-	strike,
-	put_call,
-	row_kind /* WHAT */
+	contract,
+	row_kind,
+	trade_id
 
 
 /* Select out the Maturing Totals */
 select
-	section = "Maturing FX",
+	section = "Maturing Totals ",
 	style = "background:#FFFFFF;border: 1px solid white",
 	account = c.symbol,
 	currency = a.symbol,
@@ -3106,46 +2054,41 @@ and
 	b.external_account_id = c.external_account_id
 order by
 	c.symbol,
-	a.symbol  
-
+	a.symbol
 
 /* Select out the Maturing Totals CFD*/
 select
-	section = "Maturing Totals from CFDs",
-	style = "background:#FFFFFF;border: 1px solid white",
-	account = c.symbol,
-	currency = a.symbol,
-	amount = b.quantity
+        section = "Maturing Totals from CFDs",
+        style = "background:#FFFFFF;border: 1px solid white",
+        account = c.symbol,
+        currency = a.symbol,
+        amount = b.quantity
 from
-	products a,
-	#maturing_cfd_totals b,
-	external_accounts c
+        products a,
+        #maturing_cfd_totals b,
+        external_accounts c
 where
-	a.product_id = b.product_id
+        a.product_id = b.product_id
 and
-	b.external_account_id = c.external_account_id
+        b.external_account_id = c.external_account_id
 order by
-	c.symbol,
-	a.symbol
+        c.symbol,
+        a.symbol
 
 
 /* Select out the Account Activity */
 select
-	section = "Cash Movements",
+	section = "Account Activity",
 	style = "background:#FFFFFF;border: 1px solid white",
-	transaction_id = a.account_transaction_id, /* MARKR */
-	e.trade_id,
 	account = b.symbol,
 	activity = c.name,
 	a.amount,
-	currency = d.symbol,
-	note
+	currency = d.symbol
 from
 	#account_transactions a,
 	external_accounts b,
 	transaction_types c,
-	products d,
-	account_transaction_trades e
+	products d
 where
 	a.external_account_id = b.external_account_id
 and
@@ -3153,52 +2096,29 @@ and
 and
 	a.currency_id = d.product_id
 and
-	c.name != "Net Cash Activity"
-and
-	a.account_transaction_id *= e.account_transaction_id
-and
 	a.transaction_date >= @begin_date
 and
 	a.transaction_date < @end_date
 order by
-	d.symbol,
 	b.symbol,
 	a.transaction_date
 
-
-create table
-	#cash_balances(
-		id int identity,
-		section varchar(50) NULL,
-		style varchar(250) NULL,
-		account varchar(50) NULL,
-		product varchar(25) NULL,
-		opening_balance float NULL,
-		change float NULL,
-		closing_balance float NULL,
-		equiv float NULL,
-		conversion_rate float NULL)
-insert into
-	#cash_balances(
-		section,
-		style,
-		account,
-		product,
-		opening_balance,
-		change,
-		closing_balance,
-		equiv,
-		conversion_rate)
 select
-	section = "Cash Balances",
+	section = "Net Equity Activity",
 	style = "background:#FFFFFF;border: 1px solid white",
 	account = b.symbol,
 	product = c.symbol,
 	a.opening_balance,
-	change = a.cash, /*  + a.settlements, */
+	a.maturing_fx,
+	perps_realized = a.cfd_realized_pl,
+	a.cash,
+	a.fees,
+	a.settled_premium,
 	a.closing_balance,
-	a.equiv,
-	conversion_rate = a.display_conversion_rate
+	a.unsettled_prem,
+	a.open_position,
+	a.open_option_pos,
+	a.total_equity
 from
 	#net_activity a,
 	external_accounts b,
@@ -3210,137 +2130,99 @@ and
 order by
 	b.symbol,
 	c.symbol
-select
-	@equiv = sum(equiv)
-from
-	#cash_balances
 
-insert into 
-	#cash_balances(
+/* Show the Equity Value Summary */
+create table
+	#equity_summary_output
+(
+	id int identity,
+	section varchar(50) NULL,
+	style varchar(50) NULL,
+	account varchar(50) NULL,
+	product varchar(50) NULL,
+        total_equity float NULL,
+        conversion_rate float NULL,
+        converted_value float NULL,
+	evaluation_ccy varchar(10) NULL
+)
+insert into
+	#equity_summary_output(
 		section,
 		style,
-		equiv)
-values(
-	"Cash Balances",
-	@style,
-	@equiv)
+		account,
+		product,
+		total_equity,
+		conversion_rate,
+		converted_value,
+		evaluation_ccy
+)
+select
+	section = "Equity Value Summary",
+	style = "background:#FFFFFF;border: 1px solid white",
+	account = b.symbol,
+	product = c.symbol,
+	a.total_equity,
+	a.conversion_rate,
+	a.converted_value,
+	evaluation_ccy = d.symbol
+from
+	#equity_value_summary a,
+	external_accounts b,
+	products c,
+	products d
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = c.product_id
+and
+	a.evaluation_currency_id = d.product_id
+order by
+	b.symbol,
+	c.symbol
+
+insert into
+	#equity_summary_output(
+                section,
+                style,
+                account,
+                converted_value,
+                evaluation_ccy
+)
+select
+        section = "Equity Value Summary",
+        style = "background:#FFFFFF;border: 1px solid white",
+	account = rtrim(account)+" Total",
+	converted_value = sum(converted_value),
+	evaluation_ccy
+from
+	#equity_summary_output
+group by
+	section,
+	style,
+	account,
+	evaluation_ccy
 
 select
 	section,
 	style,
 	account,
 	product,
-	opening_balance,
-	change,
-	closing_balance,
-	equiv,
-	conversion_rate
+	total_equity,
+	conversion_rate,
+	converted_value,
+	evaluation_ccy
 from
-	#cash_balances
+	#equity_summary_output
 order by
-	id
+	account,
+	product
 
-create table 
- 	#acct_summary(
-		id int identity,
-		style varchar(250) NULL,
-		opening_cash_balance float NULL,
-		opening_balance_mtm float NULL,
-		change_in_cash_balance float NULL,
-		closing_cash_balance float NULL,
-		unrealized_fx float NULL,
-		unrealized_option float NULL,
-		unrealized_pl float NULL)
-
-select
-	@begin_equiv = sum(begin_equiv),
-	@begin_end_equiv = sum(end_equiv)
-from
-	#account_transactions
-where
-	convert(date, transaction_date) < convert(date, @end_date)
-if @begin_equiv = NULL
-	select
-		@begin_equiv = 0.0
-if @begin_end_equiv = NULL
-	select
-		@begin_end_equiv = 0.0
-
-select
-	@end_equiv = sum(end_equiv)
-from
-	#account_transactions
-if @end_equiv = NULL
-	select
-		@end_equiv = 0.0
-
-insert into
-	#acct_summary(
-		style,
-		opening_cash_balance,
-		opening_balance_mtm,
-		change_in_cash_balance,
-		closing_cash_balance,
-		unrealized_fx,
-		unrealized_option,
-		unrealized_pl)
-values(
-	@style,
-	@begin_equiv,
-	@begin_end_equiv - @begin_equiv,
-	@activity_equiv,
-	@end_equiv,
-	@fwd_open_equiv,
-	@opt_open_equiv,
-	@fwd_open_equiv + @opt_open_equiv)
-
-
-select
-	section = "Account Summary",
-	style,
-	opening_cash_balance,
-	opening_balance_mtm,
-	change_in_cash_balance,
-	closing_cash_balance,
-	unrealized_fx,
-	unrealized_option,
-	unrealized_pl
-from
-	#acct_summary
-order by
-	id
 	
-
 exec
 	r_showdisclaimer
 	"Daily Trading Statement"
 
-if (@activate_timer = 1)
-begin
 
-	select
-        	@end_time = getdate()
-
-	exec
-        	sp_dogstatsdtimer
-                	@metric_name="ase.proc.r_clientagstatement.s10",
-                	@start_time=@start_time,
-                	@end_time=@end_time,
-                	@tags=@tag_run_name,
-                	@sample_rate="1.0"
-
-end
-
-select
-	@proc_end_time = getdate()
-
-exec
-	sp_dogstatsdtimer
-		@metric_name="ase.proc.r_clientagstatement",
-		@start_time=@proc_start_time,
-		@end_time=@proc_end_time,
-		@tags=@tag_run_name,
-		@sample_rate="1.0"
-
-go 
-
+  
+                                                                                                                                                                                                             
+1> 
