@@ -1,0 +1,319 @@
+create or replace procedure
+        r_savespectrumeodrates
+                @login varchar(50),
+                @source varchar(50),
+		@date varchar(50),
+                @currency1 varchar(50),
+		@currency2 varchar(50),
+		@terms varchar(50),
+		@rate varchar(50)
+
+as
+
+declare @contract_id int
+declare @contract_symbol varchar(50)
+declare @value_date datetime
+declare @price_date datetime
+declare @price float
+declare @close_char varchar(50)
+
+declare @source_id int
+declare @price_type_id int
+declare @status_id int
+declare @price_id int
+declare @bo_spot_settle_id int
+declare @bo_price_id int
+declare @mpt_source_id int
+declare @date_from_epoch datetime
+declare @timestamp_float float
+declare @pair varchar(50)
+declare @date_from_input datetime
+declare @is_inverted varchar(50)
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+if @@rowcount != 1
+begin
+        select
+                error = "Error",
+		message = "Source not found",
+                source = @source
+        return
+end
+
+select
+        @mpt_source_id = source_id
+from
+        sources
+where
+        name = "MPT"
+if @@rowcount != 1
+begin
+        select
+                error = "Error",
+                message = "Soure not found",
+                source = "MPT"
+        return
+end
+
+select
+        @price_type_id = price_type_id
+from
+        price_types
+where
+        name = "Close"
+if @@rowcount != 1
+begin
+        select
+		error = "Error",
+                message = "Price type not found",
+                price_type = "Close"
+        return
+end
+
+select
+        @status_id = status_id
+from
+        statuses
+where
+        name = "User Review"
+if @@rowcount != 1
+begin
+        select
+		error = "Error",
+                message = "Status not found",
+                status = "User Review"
+        return
+end
+
+/* Build contract symbol */
+select
+	@pair = @currency1+@currency2
+
+
+/* convert varchar fields */
+exec
+        u_stripcommas
+                @rate,
+                @close_char output
+
+/* Convert Price */
+select
+	@price = convert(float, @close_char)
+
+/* convert UK date */
+
+select
+        @date_from_input = convert(datetime, @date, 103) 
+select
+	@date_from_input = convert(date, @date_from_input)
+select 
+	@price_date = dateadd(hh, 17, @date_from_input),
+	@value_date = @date_from_input
+
+select
+	@contract_id = a.contract_id,
+	@contract_symbol = a.symbol
+from
+	contracts a,
+	contract_symbols b
+where
+	a.contract_id = b.contract_id 
+and
+	b.source_id = @source_id
+and
+	b.symbol = @pair
+
+if @contract_id = NULL
+begin
+	select
+		@contract_id = contract_id,
+		@contract_symbol = symbol
+	from
+		contracts
+	where
+		symbol = @pair
+
+	if @contract_id = NULL
+	begin
+
+		select
+			error = "Error",
+			message = "Could not find contract",
+			instrument = @pair
+		return
+	end
+end
+
+select
+	@is_inverted = "N"
+
+select
+	@is_inverted = "Y"
+from
+	contracts a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+and
+	a.contract_id = @contract_id
+and
+	c.name = "Inverted"
+
+if @is_inverted = "Y"
+begin
+	select
+		error = "Error",
+		msg = "Contract is inverted. Not saving price",
+		contract = @pair
+	return
+end		
+
+select
+	@price_id = price_id
+from
+	prices
+where
+	contract_id = @contract_id
+and
+	price_date = @price_date
+and
+	price_type_id = @price_type_id
+
+if @price_id = NULL
+begin
+
+	exec
+        	j_nextkey
+                	"prices",
+                	@price_id output
+
+	insert into
+        	prices(
+                	price_id,
+                	status_id,
+                	contract_id,
+                	price_date,
+                	price_type_id,
+                	price)
+        	values(
+                	@price_id,
+                	@status_id,
+                	@contract_id,
+                	@price_date,
+                	@price_type_id,
+                	@price)
+end
+else
+begin
+	update
+        	prices
+	set
+        	price = @price
+	where
+        	price_id = @price_id
+end
+
+
+select
+        @bo_spot_settle_id = bo_spot_settle_id
+from
+        bo_spot_settles
+where
+        price_date = @price_date
+and
+        contract_id = @contract_id
+
+if @bo_spot_settle_id = NULL
+begin
+
+        insert into
+                bo_spot_settles(
+                        contract_id,
+                        source_id,
+                        price_date,
+                        price)
+                values(
+                        @contract_id,
+                        @mpt_source_id,
+                        @price_date,
+                        @price)
+end
+else
+begin
+        update
+                bo_spot_settles
+        set
+                price = @price
+        where
+                bo_spot_settle_id = @bo_spot_settle_id
+end
+
+select
+        @bo_price_id = bo_price_id
+from
+        bo_prices
+where
+        contract_id = @contract_id
+and
+        source_id = @mpt_source_id
+and
+        value_date = @value_date
+and
+        price_date = @price_date
+
+if @bo_price_id = NULL
+begin
+        exec
+                j_nextkey
+                        "bo_prices",
+                        @bo_price_id output
+
+        insert into
+                bo_prices(
+                        bo_price_id,
+                        status_id,
+                        contract_id,
+                        price_date,
+                        value_date,
+                        source_id,
+                        price)
+        values(
+                @bo_price_id,
+                3,
+                @contract_id,
+                @price_date,
+                @value_date,
+                @mpt_source_id,
+                @price)
+
+end
+else
+begin
+        update
+                bo_prices
+        set
+                price = @price
+        where
+                bo_price_id = @bo_price_id
+end
+
+
+select
+        msg = "price successfully saved",
+	contract_symbol = @contract_symbol,
+	mapping_symbol = @pair,
+        price_date = @price_date,
+	price = @price
+
+
+go
+		
+		

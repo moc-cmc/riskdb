@@ -260,6 +260,7 @@ where
 /* CUSTOM ADMISI MIFID FIELD REQUIRED */
 declare @gmi_source_id int
 declare @bo_mifid_source_id int
+declare @gmi_fix_source_id int
 
 select
         @gmi_source_id = source_id
@@ -288,6 +289,21 @@ begin
                 status = "Error",
                 error = "Error",
                 message = "could not find source ADM BackOffice MIFID"
+        return
+end
+
+select
+        @gmi_fix_source_id = source_id
+from
+        sources
+where
+        name = "FIXTT ADMISIGMI"
+if @@rowcount != 1
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "could not find source FIXTT ADMISIGMI"
         return
 end
 
@@ -1040,73 +1056,131 @@ if @m_trade_id != NULL
 begin
 	if @far_price = NULL and @trading_venue != NULL /* Spot or Forward trade */
 	begin
-		insert into
-			trade_aliases(
-				trade_id,
-				source_id,
-				alias)
-		select
-			@m_trade_id,
-			@gmi_source_id,
-			@trading_venue
+		if not exists(select 1 from trade_aliases where trade_id = @m_trade_id and source_id = @gmi_source_id)
+		begin
+			insert into
+				trade_aliases(
+					trade_id,
+					source_id,
+					alias)
+			select
+				@m_trade_id,
+				@gmi_source_id,
+				@trading_venue
+		end
 
-                insert into
-                        trade_aliases(
-                                trade_id,
-                                source_id,
-                                alias)
-                select
-                        @m_trade_id,
-                        @bo_mifid_source_id,
-                        @trading_venue
+		if not exists(select 1 from trade_aliases where trade_id = @m_trade_id and source_id = @bo_mifid_source_id)
+		begin
+                	insert into
+                        	trade_aliases(
+                                	trade_id,
+                                	source_id,
+                                	alias)
+                	select
+                        	@m_trade_id,
+                        	@bo_mifid_source_id,
+                        	@trading_venue
+		end
+
+                if not exists(select 1 from trade_aliases where trade_id = @m_trade_id and source_id = @gmi_fix_source_id)
+                begin
+                        insert into
+                                trade_aliases(
+                                        trade_id,
+                                        source_id,
+                                        alias)
+                        select
+                                @m_trade_id,
+                                @gmi_fix_source_id,
+                                @trading_venue
+                end
 	end
 
 	if @far_price != NULL and @near_trading_venue != NULL
 	begin
-		insert into
-                        trade_aliases(
-                                trade_id,
-                                source_id,
-                                alias)
-                select
-                        @m_trade_id,
-                        @gmi_source_id,
-                        @near_trading_venue
+		if not exists(select 1 from trade_aliases where trade_id = @m_trade_id and source_id = @gmi_source_id)
+		begin
+			insert into
+                        	trade_aliases(
+                                	trade_id,
+                                	source_id,
+                                	alias)
+                	select
+                        	@m_trade_id,
+                        	@gmi_source_id,
+                        	@near_trading_venue
+		end
 
-                insert into
-                        trade_aliases(
-                                trade_id,
-                                source_id,
-                                alias)
-                select
-                        @m_trade_id,
-                        @bo_mifid_source_id,
-                        @near_trading_venue
+		if not exists(select 1 from trade_aliases where trade_id = @m_trade_id and source_id = @bo_mifid_source_id)
+		begin
+                	insert into
+                        	trade_aliases(
+                                	trade_id,
+                                	source_id,
+                                	alias)
+                	select
+                        	@m_trade_id,
+                        	@bo_mifid_source_id,
+                        	@near_trading_venue
+		end
+
+                if not exists(select 1 from trade_aliases where trade_id = @m_trade_id and source_id = @gmi_fix_source_id)
+                begin
+                        insert into
+                                trade_aliases(
+                                        trade_id,
+                                        source_id,
+                                        alias)
+                        select
+                                @m_trade_id,
+                                @gmi_fix_source_id,
+                                @near_trading_venue
+                end
+
 	end
 end
 
 
 if @m_far_trade_id != NULL and @far_trading_venue != NULL
 begin
-	insert into
-        	trade_aliases(
-                	trade_id,
-                	source_id,
-                	alias)
-	select
-        	@m_far_trade_id,
-        	@gmi_source_id,
-        	@far_trading_venue
+	if not exists(select 1 from trade_aliases where trade_id = @m_far_trade_id and source_id = @gmi_source_id)
+	begin
+		insert into
+        		trade_aliases(
+                		trade_id,
+                		source_id,
+                		alias)
+		select
+        		@m_far_trade_id,
+        		@gmi_source_id,
+        		@far_trading_venue
+	end
 
-        insert into
-                trade_aliases(
-                        trade_id,
-                        source_id,
-                        alias)
-        select
-                @m_far_trade_id,
-                @bo_mifid_source_id,
-                @far_trading_venue
+	if not exists(select 1 from trade_aliases where trade_id = @m_far_trade_id and source_id = @bo_mifid_source_id)
+	begin
+        	insert into
+                	trade_aliases(
+                        	trade_id,
+                        	source_id,
+                        	alias)
+        	select
+                	@m_far_trade_id,
+                	@bo_mifid_source_id,
+                	@far_trading_venue
+	end
+
+        if not exists(select 1 from trade_aliases where trade_id = @m_far_trade_id and source_id = @gmi_fix_source_id)
+        begin
+                insert into
+                        trade_aliases(
+                                trade_id,
+                                source_id,
+                                alias)
+                select
+                        @m_far_trade_id,
+                        @gmi_fix_source_id,
+                        @far_trading_venue
+        end
 end
 
 		
@@ -1159,4 +1233,4 @@ begin
 end
 
 
-go 
+go

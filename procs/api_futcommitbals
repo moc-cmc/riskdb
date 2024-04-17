@@ -1,0 +1,403 @@
+drop procedure
+    api_futcommitbals
+go
+create procedure
+    api_futcommitbals
+        @login varchar(50),
+        @legal_entity varchar(100)=NULL,
+        @account varchar(50)=NULL,
+        @trade_date datetime=NULL
+as
+declare @tico_account_id int
+declare @external_account_id int
+declare @legal_entity_id int
+declare @begin_date datetime
+declare @end_date datetime
+select
+    @tico_account_id = account_id
+from
+    tico_accounts
+where
+    login = @login
+if @tico_account_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Unable to resolve login"
+    return
+end
+if @trade_date = NULL
+begin
+    select
+        @trade_date = getdate()
+end
+exec
+    r_daterangefordate
+        @trade_date,
+        @begin_date output,
+        @end_date output
+create table
+    #legal_entities(
+        legal_entity_id int,
+        name varchar(100))
+insert into
+    #legal_entities(
+        legal_entity_id,
+        name)
+select
+    a.legal_entity_id,
+    a.name
+from
+    legal_entities a,
+    legal_entity_tico_accounts b
+where
+    a.legal_entity_id = b.legal_entity_id
+and
+    b.tico_account_id = @tico_account_id
+select
+    @legal_entity_id = legal_entity_id
+from
+    legal_entities
+where
+    name = @legal_entity
+if @legal_entity_id != NULL
+begin
+    delete
+    from
+        #legal_entities
+    where
+        legal_entity_id != @legal_entity_id
+end
+create table
+    #accounts(
+        external_account_id int)
+insert into
+    #accounts(
+        external_account_id)
+select
+    a.external_account_id
+from
+    bo_master_accounts a,
+    #legal_entities b
+where
+    a.legal_entity_id = b.legal_entity_id
+insert into
+    #accounts(
+        external_account_id)
+select
+    a.external_account_id
+from
+    fo_sub_accounts a,
+    bo_master_accounts b,
+    #legal_entities c
+where
+    a.bo_master_account_id = b.bo_master_account_id
+and
+    b.legal_entity_id = c.legal_entity_id
+select
+    @external_account_id = external_account_id
+from
+    external_accounts
+where
+    symbol = @account
+if @external_account_id != NULL
+begin
+    delete
+    from
+        #accounts
+    where
+        external_account_id != @external_account_id
+end
+
+create table
+    #trades(
+        external_account_id int,
+        contract_id int,
+        quantity float,
+        price float)
+insert into
+    #trades(
+        external_account_id,
+        contract_id,
+        quantity,
+        price)
+select
+    a.external_account_id,
+    a.contract_id,
+    a.open_pos,
+    a.avg_long
+from
+    realized_pls a,
+    #accounts b
+where
+    a.external_account_id = b.external_account_id
+and
+    a.open_pos > 0
+and
+    a.trade_date = @begin_date
+insert into
+    #trades(
+        external_account_id,
+        contract_id,
+        quantity,
+        price)
+select
+    a.external_account_id,
+    a.contract_id,
+    a.open_pos,
+    a.avg_short
+from
+    realized_pls a,
+    #accounts b
+where
+    a.external_account_id = b.external_account_id
+and
+    a.open_pos < 0
+and
+    a.trade_date = @begin_date
+insert into
+    #trades(
+        external_account_id,
+        contract_id,
+        quantity,
+        price)
+select
+    a.external_account_id,
+    a.contract_id,
+    a.quantity,
+    a.price
+from
+    trades a,
+    #accounts b,
+    future_contracts c
+where
+    a.external_account_id = b.external_account_id
+and
+    a.contract_id = c.contract_id
+and
+    a.trade_date >= @begin_date
+and
+    a.trade_date < @end_date
+create table
+    #avg_trades(
+        external_account_id int,
+        contract_id int,
+        direction float,
+        net_qty float,
+        avg_price float)
+insert into
+    #avg_trades(
+        external_account_id,
+        contract_id,
+        direction,
+        net_qty,
+        avg_price)
+select
+    external_account_id,
+    contract_id,
+    sign(quantity),
+    sum(quantity),
+    sum(quantity * price) / sum(quantity)
+from
+    #trades
+where
+    quantity != 0
+group by
+    external_account_id,
+    contract_id,
+    sign(quantity)
+
+delete from 
+	#avg_trades 
+where 
+	net_qty = 0
+
+create table
+    #pos_accounts(
+        external_account_id int)
+insert into
+    #pos_accounts(
+        external_account_id)
+select
+    distinct(external_account_id)
+from
+    #avg_trades
+delete
+from
+    #accounts
+where
+    external_account_id not in(
+        select
+            distinct(external_account_id)
+        from
+            #pos_accounts)
+create table
+    #output(
+        external_account_id int NULL,
+        contract_id int NULL,
+        longs float NULL,
+        avg_long float NULL,
+        shorts float NULL,
+        avg_short float NULL,
+        open_pos float NULL,
+        avg_open float NULL,
+        closed_pos float NULL,
+        product_id int NULL,
+        currency_id int NULL,
+        multiplier float NULL,
+        realized_pl float NULL,
+        unrealized_pl float NULL,
+        last_price float NULL)
+create table
+    #contracts(
+        contract_id int)
+insert into
+    #contracts(
+        contract_id)
+select
+    distinct(contract_id)
+from
+    #avg_trades
+insert into
+    #output(
+        external_account_id,
+        contract_id,
+        longs,
+        shorts,
+        open_pos,
+        closed_pos,
+        realized_pl,
+        unrealized_pl)
+select
+    a.external_account_id,
+    b.contract_id,
+    longs = 0.0,
+    shorts = 0.0,
+    open_pos = 0.0,
+    closed_pos = 0.0,
+    realized_pl = 0.0,
+    unrealized_pl = 0.0
+from
+    #accounts a,
+    #contracts b
+update
+    #output
+set
+    a.longs = b.net_qty,
+    a.avg_long = b.avg_price
+from
+    #output a,
+    #avg_trades b
+where
+    a.external_account_id = b.external_account_id
+and
+    a.contract_id = b.contract_id
+and
+    b.direction > 0.0
+update
+    #output
+set
+    a.shorts = b.net_qty,
+    a.avg_short = b.avg_price
+from
+    #output a,
+    #avg_trades b
+where
+    a.external_account_id = b.external_account_id
+and
+    a.contract_id = b.contract_id
+and
+    b.direction < 0.0
+    
+delete
+from
+    #output
+where
+    abs(longs) + abs(shorts) = 0.0
+update
+    #output
+set
+    a.product_id = d.product_id,
+    a.currency_id = d.currency_id,
+    a.multiplier = c.quantity
+from
+    #output a,
+    future_contracts b,
+    futures c,
+    forwards d
+where
+    a.contract_id = b.contract_id
+and
+    b.future_id = c.future_id
+and
+    c.forward_id = d.contract_id
+update
+    #output
+set
+    a.last_price = b.price
+from
+    #output a,
+    prices b
+where
+    a.contract_id = b.contract_id
+and
+    convert(date, b.price_date) = convert(date, @end_date)
+update
+    #output
+set
+    closed_pos = abs(longs),
+    avg_open = avg_short
+where
+    abs(longs) <= abs(shorts)
+update
+    #output
+set
+    closed_pos = abs(shorts),
+    avg_open = avg_long
+where
+    abs(shorts) < abs(longs)
+update
+    #output
+set
+    open_pos = longs + shorts
+update
+    #output
+set
+    realized_pl = closed_pos * (avg_short - avg_long) * multiplier,
+    unrealized_pl = open_pos * (last_price - avg_open) * multiplier 
+update
+    #output
+set
+    realized_pl = 0.0
+where
+    closed_pos = 0
+or
+    closed_pos = NULL
+update
+    #output
+set
+    unrealized_pl  = 0.0,
+    last_price =  1.0 /* Until we figure out how to handle perps*/
+where
+    open_pos = 0
+or
+    open_pos = NULL
+select
+    external_account_id,
+    contract_id,
+    longs,
+    avg_long,
+    shorts,
+    avg_short,
+    open_pos,
+    avg_open,
+    closed_pos,
+    product_id,
+    currency_id,
+    multiplier,
+    realized_pl,
+    unrealized_pl,
+    last_price
+from
+    #output
+go

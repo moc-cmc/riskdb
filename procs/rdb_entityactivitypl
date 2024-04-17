@@ -1,0 +1,2260 @@
+
+create or replace procedure
+	rdb_entityactivitypl
+		@login varchar(50),
+		@legal_entity varchar(50)=NULL,
+		@from_date datetime=NULL,
+		@to_date datetime=NULL
+as
+
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+
+declare @settlement_product_id int
+declare @trade_date datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @day1 datetime
+declare @day2 datetime
+declare @entity varchar(50)
+declare @legal_entity_id int
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @tico_account_id int
+declare @evaluation_currency varchar(50)
+declare @begin_total float
+declare @end_total float
+declare @id int
+declare @ids int
+declare @entity_id int
+
+declare @product_id int
+declare @product varchar(50)
+declare @cpty varchar(50)
+declare @payments float
+declare @ledgers float
+declare @fwd float
+declare @fut_pos float
+declare @fut_trades float
+declare @_from_date datetime
+declare @_to_date datetime
+
+declare @trades_equiv float
+declare @pos_equiv float 
+declare @total_equiv float
+declare @non_pl_equiv float
+
+declare @ordering int
+declare @starting_equiv float
+declare @pos_pl float
+declare @pl_activity float
+declare @non_pl_activity float
+declare @ending_equiv float
+declare @p_l float
+declare @pair_equiv float
+
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"hiddencol",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"settle_recon",
+	"Reconcile System Settlements",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"avg_short",
+	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"avg_long",
+	"Number",
+	"#,##0.00000000;<span style=""color:red"">(#,##0.00000000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"close_price",
+	"Number",
+	"#,##0.0000;<span style=""color:red"">(#,##0.0000)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"pos_pl",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"non_pl_activity",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"pl_activity",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"p_l",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total_equiv_pl",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"trades_equiv_pl",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"pos_equiv_pl",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"starting_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ledger_movements",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"total",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"fut_pos_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"fut_trades_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"spot_fwds_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance_equiv_change",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv_pl",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"native_pl",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"shorts",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"longs",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"position",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv_change",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ccy2_amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ccy1_amount",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"starting_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"ending_equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+		
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv",
+	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+		
+insert into     
+	#meta
+values(
+	"Column Format",
+	"weight",
+	"Number",
+	"#,##0.00%")
+
+insert into     
+	#meta
+values(
+	"Column Format",
+	"limit_usage",
+	"Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@deficit_style = "background:#F5F3CE;color:#FF0000;border: 1px solid white",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold", 
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+select
+	@_from_date = @from_date,
+	@_to_date = @to_date
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@settlement_product_id = settlement_product_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @settlement_product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Settlement product not found"
+	return
+end
+
+if @from_date = NULL or @from_date = ""
+begin
+	if @to_date = NULL or @to_date = ""
+	begin
+		select
+			@trade_date = convert(datetime, convert(date, getdate()))
+
+		exec
+			r_daterangefordate
+				@trade_date,
+				@begin_date output,
+				@end_date output
+	end
+	else
+	begin
+		select
+			@to_date = convert(datetime, convert(date, @to_date))
+		exec
+			r_daterangefordate
+				@to_date,
+				@begin_date output,
+				@end_date output
+	end
+end
+
+if @to_date = NULL or @to_date = ""
+begin
+	if @from_date = NULL or @from_date = ""
+	begin
+		select
+			@trade_date = convert(datetime, convert(date, getdate()))
+		exec
+			r_daterangefordate
+				@trade_date,
+				@begin_date output,
+				@end_date output
+	end
+	else
+	begin
+		select
+			@from_date = convert(datetime, convert(date, @from_date))
+
+		exec
+			r_daterangefordate
+				@from_date,
+				@begin_date output,
+				@end_date output
+	end
+end
+
+if @begin_date = NULL and @end_date = NULL /* both dates were not null */
+begin
+	select
+		@from_date = convert(datetime, convert(date, @from_date))
+	exec
+		r_prevbusinessday
+			@from_date,
+			@begin_date output
+
+	select
+		@begin_date = dateadd(hour, 17, @begin_date)
+
+	select
+		@to_date = convert(datetime, convert(date, @to_date))
+
+	if datename(weekday, @to_date) = "Saturday"
+		select
+			@to_date = dateadd(day, 2, @to_date)
+	if datename(weekday, @to_date) = "Sunday"
+		select
+			@to_date = dateadd(day, 1, @to_date)
+
+	select
+		@end_date = dateadd(hour, 17, @to_date)
+end
+
+select
+	@day1 = convert(datetime, convert(date, @begin_date)),
+	@day2 = convert(datetime, convert(date, @end_date))
+	
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@evaluation_currency = symbol
+from
+	products
+where
+	product_id = @evaluation_currency_id
+
+select
+	product_id,
+	rate
+into
+	#end_rates
+from
+	x_conversion_rates
+where
+	_login = @login
+and
+	_as_of_date = @end_date
+and
+	_product = @evaluation_currency
+
+create table
+	#legal_entities(
+		id int identity,
+		legal_entity_id int,
+		name varchar(100))
+insert into
+	#legal_entities(
+		legal_entity_id,
+		name)
+select
+	a.legal_entity_id,
+	a.name
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = @tico_account_id
+order by
+	a.name
+
+select
+	@legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @legal_entity
+if @legal_entity_id != NULL
+begin
+	delete
+
+	from
+		#legal_entities
+	where
+		legal_entity_id != @legal_entity_id
+end
+
+create table
+	#accts(
+		external_account_id int,
+		account varchar(50) NULL,
+		legal_entity_id int NULL,
+		legal_entity varchar(50) NULL,
+		strategy_id int NULL,
+		strategy varchar(50) NULL
+		)
+create unique index
+	u_a
+on
+	#accts(
+		external_account_id)
+
+insert into
+	#accts(
+		external_account_id,
+		legal_entity_id,
+		legal_entity)
+select
+	a.external_account_id,
+	a.legal_entity_id,
+	b.name
+from
+	bo_master_accounts a,
+	#legal_entities b
+where
+	a.legal_entity_id = b.legal_entity_id
+
+insert into
+	#accts(
+		external_account_id,
+		legal_entity_id,
+		legal_entity)
+select
+	a.external_account_id,
+	b.legal_entity_id,
+	c.name
+from
+	fo_sub_accounts a,
+	bo_master_accounts b,
+	#legal_entities c
+where
+	a.bo_master_account_id = b.bo_master_account_id
+and
+	b.legal_entity_id = c.legal_entity_id
+and
+	a.external_account_id not in(
+		select
+			distinct(external_account_id)
+		from
+			#accts)
+
+
+update
+	#accts
+set
+	a.account = b.symbol
+from
+	#accts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#accts
+set
+	strategy_id = 0,
+	strategy = "Unassigned"
+
+update
+	#accts
+set
+	a.strategy_id = c.strategy_id,
+	a.strategy = c.name
+from
+	#accts a,
+	account_strategies b,
+	strategies c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.strategy_id = c.strategy_id
+
+select  
+	external_account_id,
+	product_id,
+	payments,
+	payments_equiv,  
+	settlements,
+	settlements_equiv,
+	forwards,
+	forwards_equiv,
+	futures,
+	futures_equiv,
+	total,
+	total_equiv 
+into    
+	#begin    
+from	
+	x_all_entity_bals
+where   
+	_login = @login
+and	  
+	_legal_entity = @legal_entity
+and     
+	_trade_date = @day1
+
+select  
+	external_account_id,
+	product_id,
+	payments,
+	payments_equiv, 
+	settlements,
+	settlements_equiv,
+	forwards,
+	forwards_equiv,
+	futures,
+	futures_equiv,
+	total,
+	total_equiv
+into    
+	#end    
+from	    
+	x_all_entity_bals
+where   
+	_login = @login
+and	     
+	_legal_entity = @legal_entity
+and     
+	_trade_date = @day2
+
+
+select
+	external_account_id,
+	contract_id,
+	longs,
+	avg_long,
+	shorts,
+	avg_short,
+	open_pos,
+	avg_open,
+	closed_pos,
+	product_id,
+	currency_id,
+	multiplier,
+	open_value,
+	open_equiv,
+	realized_pl,
+	unrealized_pl,
+	realized_equiv,
+	unrealized_equiv,
+	last_price
+into
+	#fut_trades_exp
+from
+	x_range_fut_bals
+where
+	_login = @login
+and
+	_legal_entity = @legal_entity
+and
+	_from_date = @from_date
+and
+	_to_date = @to_date
+
+create table
+	#fut_trades(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		longs float NULL,
+		avg_long float NULL,
+		shorts float NULL,
+		avg_short float NULL,
+		currency_id int NULL,
+		realized_pl float NULL,
+		unrealized_pl float NULL,
+		total_pl float NULL,
+		equiv_pl float NULL,
+		close_price float NULL)
+insert into
+	#fut_trades(
+		style,
+		external_account_id,
+		account,
+		contract_id,
+		symbol,
+		longs,
+		avg_long,
+		shorts,
+		avg_short,
+		currency_id,
+		realized_pl,
+		unrealized_pl,
+		total_pl,
+		close_price)
+select
+	style = @style,
+	a.external_account_id,
+	b.symbol,
+	a.contract_id,
+	c.symbol,
+	a.longs,
+	a.avg_long,
+	a.shorts,
+	a.avg_short,
+	a.currency_id,
+	a.realized_pl,
+	a.unrealized_pl,
+	realized_pl + unrealized_pl,
+	a.last_price
+from
+	#fut_trades_exp a,
+	external_accounts b,
+	contracts c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = c.contract_id
+order by
+	b.symbol,
+	c.symbol
+
+update
+	#fut_trades
+set
+	a.equiv_pl = total_pl * b.rate
+from
+	#fut_trades a,
+	#end_rates b
+where
+	a.currency_id = b.product_id
+
+select
+	@fut_trades = sum(equiv_pl)
+from
+	#fut_trades
+if @fut_trades = NULL
+	select
+		@fut_trades = 0.0
+
+insert into
+	#fut_trades(
+		style,
+		account,
+		equiv_pl)
+values(
+	@total_style,
+	"Total",
+	@fut_trades)
+
+/* Spot Fwd Trades during range */
+select
+	external_account_id,
+	product_id,
+	balance
+into
+	#fwd_trades
+from
+	x_range_trade_bals
+where
+	_login = @login
+and
+	_legal_entity = @legal_entity
+and
+	_from_date = @_from_date
+and
+	_to_date = @_to_date
+
+create table
+	#fwds(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		balance float NULL,
+		equiv float NULL,
+		close_price float NULL)
+insert into
+	#fwds(
+		style,
+		external_account_id,
+		account,
+		product_id,
+		product,
+		balance,
+		equiv)
+select
+	style = @style,
+	a.external_account_id,
+	b.symbol,
+	a.product_id,
+	c.symbol,
+	a.balance,
+	equiv = 0.0
+from
+	#fwd_trades a,
+	external_accounts b,
+	products c
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = c.product_id
+
+update
+	#fwds
+set
+	a.equiv = a.balance * b.rate,
+	a.close_price =  b.rate
+from
+	#fwds a,
+	#end_rates b
+where
+	a.product_id = b.product_id
+
+select
+	@trades_equiv = sum(equiv)
+from
+	#fwds
+insert into
+	#fwds(
+		style,
+		account,
+		equiv)
+values(
+	@total_style,
+	"Total",
+	@trades_equiv)
+
+create table
+	#fwd_pairs(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		product_qty float NULL,
+		product_equiv float NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		currency_qty float NULL,
+		currency_equiv float NULL,
+		market_rate float NULL,
+		equiv float NULL)
+		
+insert into
+	#fwd_pairs(
+		account,
+		symbol,
+		product_qty,
+		currency_qty)
+select
+	d.symbol,
+	b.symbol,
+	sum(a.quantity),
+	sum(a.quantity * a.price * -1.0)
+from
+	trades a,
+	contracts b,
+	forwards c,
+	external_accounts d
+where
+	a.external_account_id = d.external_account_id
+and
+	a.contract_id = b.contract_id
+and
+	a.contract_id = c.contract_id
+and
+	b.contract_id = c.contract_id
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+group by
+	d.symbol,
+	b.symbol
+order by
+	d.symbol,
+	b.symbol
+
+update
+	#fwd_pairs
+set
+	a.external_account_id = b.external_account_id
+from
+	#fwd_pairs a,
+	external_accounts b
+where
+	a.account = b.symbol
+
+update
+	#fwd_pairs
+set
+	a.contract_id = b.contract_id
+from
+	#fwd_pairs a,
+	contracts b
+where
+	a.symbol = b.symbol
+
+update
+	#fwd_pairs
+set
+	a.product_id = b.product_id,
+	a.product = c.symbol,
+	a.currency_id = b.currency_id,
+	a.currency = d.symbol
+from
+	#fwd_pairs a,
+	forwards b,
+	products c,
+	products d
+where
+	a.contract_id = b.contract_id
+and
+	b.product_id = c.product_id
+and
+	b.currency_id = d.product_id
+
+update
+	#fwd_pairs
+set
+	a.product_equiv = a.product_qty * b.rate
+from
+	#fwd_pairs a,
+	#end_rates b
+where
+	a.product_id = b.product_id
+
+update
+	#fwd_pairs
+set
+	a.currency_equiv = a.currency_qty * b.rate
+from
+	#fwd_pairs a,
+	#end_rates b
+where
+	a.currency_id = b.product_id
+
+update
+	#fwd_pairs
+set
+	style = @style,
+	equiv = product_equiv + currency_equiv /* MARKR */
+
+
+update
+	#fwd_pairs
+set
+	a.market_rate = b.price
+from
+	#fwd_pairs a,
+	prices b
+where
+	a.contract_id = b.contract_id
+and
+	convert(date, b.price_date) = convert(date, @end_date)
+
+if @end_date > getdate()
+	update
+		#fwd_pairs
+	set
+		a.market_rate = b.price
+	from
+		#fwd_pairs a,
+		current_prices b
+	where
+		a.contract_id = b.contract_id
+
+
+select
+	@pair_equiv = sum(equiv)
+from
+	#fwd_pairs
+
+insert into
+	#fwd_pairs(
+		style,
+		account,
+		equiv)
+values(
+	@total_style,
+	"Total",
+	@pair_equiv)
+
+
+
+
+
+
+
+/***********************************************************************/
+create table
+	#non_pl_types(
+		transaction_type_id int)
+insert into
+	#non_pl_types(
+		transaction_type_id)
+select
+	transaction_type_id
+from
+	transaction_types
+where
+	transaction_type_id not in(
+		select
+			transaction_type_id
+		from
+			pl_transaction_types)
+
+create table
+	#non_pl_ledgers(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		balance float NULL,
+		equiv float NULL,
+		close_price float NULL)
+insert into
+	#non_pl_ledgers(
+		account,
+		product,
+		balance)
+select
+	c.symbol,
+	d.symbol,
+	sum(a.amount)
+from
+	account_transactions a,
+	#non_pl_types b,
+	external_accounts c,
+	products d
+where
+	a.external_account_id = c.external_account_id
+and
+	a.currency_id = d.product_id
+and
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date < @end_date
+group by
+	c.symbol,
+	d.symbol
+order by
+	c.symbol,
+	d.symbol
+
+update
+	#non_pl_ledgers
+set
+	a.product_id = b.product_id
+from
+	#non_pl_ledgers a,
+	products b
+where
+	a.product = b.symbol
+
+update
+	#non_pl_ledgers
+set
+	a.external_account_id = b.external_account_id
+from
+	#non_pl_ledgers a,
+	external_accounts b
+where
+	a.account = b.symbol
+
+update
+	#non_pl_ledgers
+set
+	a.equiv = a.balance * b.rate,
+	a.close_price = b.rate
+from
+	#non_pl_ledgers a,
+	#end_rates b
+where
+	a.product_id = b.product_id
+select
+	@non_pl_equiv = sum(equiv)
+from
+	#non_pl_ledgers
+
+update
+	#non_pl_ledgers
+set
+	style = @style
+
+/***********************************************************************/
+
+create table
+	#pl_transaction_types(
+		transaction_type_id int)
+insert into
+	#pl_transaction_types(
+		transaction_type_id)
+select
+	a.transaction_type_id
+from
+	pl_transaction_types a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+and
+	b.name not in("Digital Realized P&L", "Realized P&L", "Digital Settlement", "FX Settlement", "Trades Settlement")
+
+create table
+	#pl_ledgers(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		balance float NULL,
+		equiv float NULL,
+		close_price float NULL)
+insert into
+	#pl_ledgers(
+		account,
+		product,
+		balance)
+select
+	c.symbol,
+	d.symbol,
+	sum(a.amount)
+from
+	account_transactions a,
+	#pl_transaction_types b,
+	external_accounts c,
+	products d
+where
+	a.external_account_id = c.external_account_id
+and
+	a.currency_id = d.product_id
+and
+	a.transaction_type_id = b.transaction_type_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date < @end_date
+	
+group by
+	c.symbol,
+	d.symbol
+order by
+	c.symbol,
+	d.symbol
+
+update
+	#pl_ledgers
+set
+	a.product_id = b.product_id
+from
+	#pl_ledgers a,
+	products b
+where
+	a.product = b.symbol
+
+update
+	#pl_ledgers
+set
+	a.close_price = b.rate
+from
+	#pl_ledgers a,
+	#end_rates b
+where
+	a.product_id = b.product_id
+
+update
+	#pl_ledgers
+set
+	a.external_account_id = b.external_account_id
+from
+	#pl_ledgers a,
+	external_accounts b
+where
+	a.account = b.symbol
+
+update
+	#pl_ledgers
+set
+	a.equiv = a.balance * b.rate
+from
+	#pl_ledgers a,
+	#end_rates b
+where
+	a.product_id = b.product_id
+select
+	@total_equiv = sum(equiv)
+from
+	#pl_ledgers
+
+update
+	#pl_ledgers
+set
+	style = @style
+
+create table
+	#all_products(
+		product_id int)
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(product_id)
+from
+	#begin
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(product_id)
+from
+	#end
+where
+	product_id not in(
+		select
+			product_id
+		from
+			#all_products)
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(product_id)
+from
+	#pl_ledgers
+where
+	product_id != NULL
+and
+	product_id not in(
+		select
+			product_id
+		from
+			#all_products)
+
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(currency_id)
+from
+	#fut_trades_exp
+where
+	currency_id not in(
+		select
+			product_id
+		from
+			#all_products)
+
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(product_id)
+from
+	#fwds
+where
+	product_id not in(
+		select
+			product_id
+		from
+			#all_products)
+
+	
+create table
+	#products(
+		id int identity,
+		product_id int,
+		product varchar(50) NULL)
+insert into
+	#products(
+		product_id,
+		product)
+select
+	a.product_id,
+	a.symbol
+from
+	products a,
+	#all_products b
+where
+	a.product_id = b.product_id
+order by
+	a.symbol
+
+
+create table
+	#accounts_all(
+		id int identity,
+		legal_entity_id int NULL,
+		legal_entity varchar(100) NULL,
+		strategy_id int NULL,
+		strategy varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		starting_bal float NULL,
+		sb_equiv float NULL,
+		ledgers float NULL,
+		l_equiv float NULL,
+		non_pl float NULL,
+		np_equiv float NULL,
+		spot_trades float NULL,
+		st_equiv float NULL,
+		fut_trades float NULL,
+		ft_equiv float NULL,
+		ending_bal float NULL,
+		eb_equiv float NULL,
+		p_l float NULL,
+		activity_pl float NULL)
+insert into
+	#accounts_all(
+		external_account_id,
+		account,
+		product_id,
+		product,
+		starting_bal,
+		sb_equiv,
+		ledgers,
+		l_equiv,
+		non_pl,
+		np_equiv,
+		spot_trades,
+		st_equiv,
+		fut_trades,
+		ft_equiv,
+		ending_bal,
+		eb_equiv,
+		p_l,
+		activity_pl)
+select
+	a.external_account_id,
+	a.account,
+	b.product_id,
+	b.product,
+	starting_bal = 0.0,
+	sb_equiv = 0.0,
+	ledgers = 0.0,
+	l_equiv = 0.0,
+	non_pl = 0.0,
+	np_equiv = 0.0,
+	spot_trades = 0.0,
+	st_equiv = 0.0,
+	fut_trades = 0.0,
+	ft_equiv = 0.0,
+	ending_bal =  0.0,
+	eb_equiv = 0.0,
+	p_l = 0.0,
+	activity_pl = 0.0
+from
+	#accts a,
+	#products b
+order by
+	a.account,
+	b.product
+
+update
+	#accounts_all
+set
+	a.starting_bal = b.total,
+	a.sb_equiv = b.total_equiv
+from
+	#accounts_all a,
+	#begin b
+where
+	a.product_id = b.product_id
+and
+	a.external_account_id = b.external_account_id
+
+update
+	#accounts_all
+set
+	a.ledgers = b.balance,
+	a.l_equiv = b.equiv
+from
+	#accounts_all a,
+	#pl_ledgers b
+where
+	a.product_id = b.product_id
+and
+	a.external_account_id = b.external_account_id
+
+update
+	#accounts_all
+set
+	a.non_pl = b.balance,
+	a.np_equiv = b.equiv
+from
+	#accounts_all a,
+	#non_pl_ledgers b
+where
+	a.product_id = b.product_id
+and
+	a.external_account_id = b.external_account_id
+
+update
+	#accounts_all
+set
+	a.spot_trades = b.balance,
+	a.st_equiv = b.equiv
+from
+	#accounts_all a,
+	#fwds b
+where
+	a.product_id = b.product_id
+and
+	a.external_account_id = b.external_account_id
+
+update
+	#accounts_all
+set
+	a.fut_trades = b.total_pl,
+	a.ft_equiv = b.equiv_pl
+from
+	#accounts_all a,
+	#fut_trades b
+where
+	a.product_id = b.currency_id
+and
+	a.external_account_id = b.external_account_id
+
+update
+	#accounts_all
+set
+	a.ending_bal = b.total,
+	a.eb_equiv = b.total_equiv
+from
+	#accounts_all a,
+	#end b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.product_id = b.product_id
+
+delete
+
+from
+	#accounts_all
+where
+	abs(starting_bal) + abs(ledgers) + abs(spot_trades) + abs(fut_trades) + abs(ending_bal) = 0.0
+
+/* MARKR */
+
+update
+	#accounts_all
+set
+	p_l = eb_equiv - np_equiv - sb_equiv
+
+update
+	#accounts_all
+set
+	activity_pl = l_equiv + st_equiv + ft_equiv
+update
+	#accounts_all
+set
+	a.legal_entity_id = b.legal_entity_id,
+	a.legal_entity = b.legal_entity,
+	a.strategy_id = b.strategy_id,
+	a.strategy = b.strategy
+from
+	#accounts_all a,
+	#accts b
+where
+	a.external_account_id = b.external_account_id
+
+insert into
+	#pl_ledgers(
+		style,
+		account,
+		equiv)
+values(
+	@total_style,
+	"Total",
+	@total_equiv)
+
+insert into
+	#non_pl_ledgers(
+		style,
+		account,
+		equiv)
+values(
+	@total_style,
+	"Total",
+	@non_pl_equiv)
+
+create table
+	#entity_out(
+		id int identity,
+		style varchar(250) NULL,
+		row_type varchar(10) NULL,
+		ordering int NULL,
+		legal_entity_id int NULL,
+		legal_entity varchar(100) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		starting_bal float NULL,
+		starting_equiv float NULL,
+		pos_pl float NULL,
+		pl_activity float NULL,
+		non_pl_activity float NULL,
+		ending_bal float NULL,
+		ending_equiv float NULL,
+		p_l float NULL,
+		close_price float NULL)
+insert into
+	#entity_out(
+		legal_entity)
+select
+	distinct(legal_entity)
+from
+	#accts
+order by
+	legal_entity
+update
+	#entity_out
+set
+	style = @client_style,
+	ordering = id * 100000,
+	row_type = "Header"
+
+insert into
+	#entity_out(
+		legal_entity,
+		product,
+		starting_bal,
+		starting_equiv,
+		pl_activity,
+		non_pl_activity,
+		ending_bal,
+		ending_equiv,
+		p_l)
+select
+	legal_entity,
+	product,
+	sum(starting_bal),
+	sum(sb_equiv),
+	sum(activity_pl),
+	sum(np_equiv),
+	sum(ending_bal),
+	sum(eb_equiv),
+	sum(p_l)
+from
+	#accounts_all
+group by
+	legal_entity,
+	product
+order by
+	legal_entity,
+	product
+update
+	#entity_out
+set
+	style = @style,
+	row_type = "Data"
+where
+	style = NULL
+
+update
+	#entity_out
+set
+	a.ordering = b.ordering + a.id
+from
+	#entity_out a,
+	#entity_out b
+where
+	a.legal_entity = b.legal_entity
+and
+	a.row_type = "Data"
+and
+	b.row_type = "Header"
+
+insert into
+	#entity_out(
+		legal_entity,
+		starting_equiv,
+		pl_activity,
+		non_pl_activity,
+		ending_equiv,
+		p_l)
+select
+	legal_entity,
+	sum(sb_equiv),
+	sum(activity_pl),
+	sum(np_equiv),
+	sum(eb_equiv),
+	sum(p_l)
+from
+	#accounts_all
+group by
+	legal_entity
+order by
+	legal_entity
+
+update
+	#entity_out
+set
+	row_type = "Subtotal",
+	style = @subtotal_style
+where
+	style = NULL
+
+update
+	#entity_out
+set
+	a.ordering = b.ordering + a.id
+from
+	#entity_out a,
+	#entity_out b
+where
+	a.legal_entity = b.legal_entity
+and
+	a.row_type = "Subtotal"
+and
+	b.row_type = "Header"
+
+create table
+	#entity_rows(
+		legal_entity varchar(100),
+		num_rows int)
+insert into
+	#entity_rows(
+		legal_entity,
+		num_rows)
+select
+	legal_entity,
+	count(id)
+from
+	#entity_out
+where
+	row_type = "Data"
+group by
+	legal_entity
+
+delete
+	#entity_out
+from
+	#entity_out a,
+	#entity_rows b
+where
+	a.legal_entity = b.legal_entity
+and
+	b.num_rows = 0
+
+update
+	#entity_out
+set
+	legal_entity = NULL
+where
+	row_type in("Data", "Subtotal")
+
+update
+	#entity_out
+set
+	pos_pl = p_l - pl_activity
+
+select
+	@ordering = max(ordering)
+from
+	#entity_out
+
+select
+	@starting_equiv = sum(starting_equiv),
+	@pos_pl = sum(pos_pl),
+	@pl_activity = sum(pl_activity),
+	@non_pl_activity = sum(non_pl_activity),
+	@ending_equiv = sum(ending_equiv),
+	@p_l = sum(p_l)
+from
+	#entity_out
+where
+	row_type = "Data"
+
+update
+	#entity_out
+set
+	a.product_id = b.product_id
+from
+	#entity_out a,
+	products b
+where
+	a.product = b.symbol
+
+update
+	#entity_out
+set
+	a.close_price = b.rate
+from
+	#entity_out a,
+	#end_rates b
+where
+	a.product_id = b.product_id
+
+
+insert into
+	#entity_out(
+		ordering,
+		style,
+		legal_entity,
+		starting_equiv,
+		pos_pl,
+		pl_activity,
+		non_pl_activity,
+		ending_equiv,
+		p_l)
+values(
+	@ordering,
+	@total_style,
+	"Total",
+	@starting_equiv,
+	@pos_pl,
+	@pl_activity,
+	@non_pl_activity,
+	@ending_equiv,
+	@p_l)
+
+
+/*******************************************************************/
+create table
+	#strategy_out(
+		id int identity,
+		style varchar(250) NULL,
+		row_type varchar(10) NULL,
+		ordering int NULL,
+		strategy_id int NULL,
+		strategy varchar(100) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		starting_bal float NULL,
+		starting_equiv float NULL,
+		pos_pl float NULL,
+		pl_activity float NULL,
+		non_pl_activity float NULL,
+		ending_bal float NULL,
+		ending_equiv float NULL,
+		p_l float NULL,
+		close_price float NULL)
+insert into
+	#strategy_out(
+		strategy)
+select
+	distinct(strategy)
+from
+	#accts
+order by
+	strategy
+update
+	#strategy_out
+set
+	style = @client_style,
+	ordering = id * 100000,
+	row_type = "Header"
+
+insert into
+	#strategy_out(
+		strategy,
+		product,
+		starting_bal,
+		starting_equiv,
+		pl_activity,
+		non_pl_activity,
+		ending_bal,
+		ending_equiv,
+		p_l)
+select
+	strategy,
+	product,
+	sum(starting_bal),
+	sum(sb_equiv),
+	sum(activity_pl),
+	sum(np_equiv),
+	sum(ending_bal),
+	sum(eb_equiv),
+	sum(p_l)
+from
+	#accounts_all
+group by
+	strategy,
+	product
+order by
+	strategy,
+	product
+update
+	#strategy_out
+set
+	style = @style,
+	row_type = "Data"
+where
+	style = NULL
+
+update
+	#strategy_out
+set
+	a.ordering = b.ordering + a.id
+from
+	#strategy_out a,
+	#strategy_out b
+where
+	a.strategy = b.strategy
+and
+	a.row_type = "Data"
+and
+	b.row_type = "Header"
+
+insert into
+	#strategy_out(
+		strategy,
+		starting_equiv,
+		pl_activity,
+		non_pl_activity,
+		ending_equiv,
+		p_l)
+select
+	strategy,
+	sum(sb_equiv),
+	sum(activity_pl),
+	sum(np_equiv),
+	sum(eb_equiv),
+	sum(p_l)
+from
+	#accounts_all
+group by
+	strategy
+order by
+	strategy
+
+update
+	#strategy_out
+set
+	row_type = "Subtotal",
+	style = @subtotal_style
+where
+	style = NULL
+
+update
+	#strategy_out
+set
+	a.ordering = b.ordering + a.id
+from
+	#strategy_out a,
+	#strategy_out b
+where
+	a.strategy = b.strategy
+and
+	a.row_type = "Subtotal"
+and
+	b.row_type = "Header"
+
+create table
+	#strategy_rows(
+		strategy varchar(100),
+		num_rows int)
+insert into
+	#strategy_rows(
+		strategy,
+		num_rows)
+select
+	strategy,
+	count(id)
+from
+	#strategy_out
+where
+	row_type = "Data"
+group by
+	strategy
+
+delete
+	#strategy_out
+from
+	#strategy_out a,
+	#strategy_rows b
+where
+	a.strategy = b.strategy
+and
+	b.num_rows = 0
+
+update
+	#strategy_out
+set
+	strategy = NULL
+where
+	row_type in("Data", "Subtotal")
+
+update
+	#strategy_out
+set
+	pos_pl = p_l - pl_activity
+
+select
+	@ordering = max(ordering)
+from
+	#strategy_out
+
+select
+	@starting_equiv = sum(starting_equiv),
+	@pos_pl = sum(pos_pl),
+	@pl_activity = sum(pl_activity),
+	@non_pl_activity = sum(non_pl_activity),
+	@ending_equiv = sum(ending_equiv),
+	@p_l = sum(p_l)
+from
+	#strategy_out
+where
+	row_type = "Data"
+
+update
+	#strategy_out
+set
+	a.product_id = b.product_id
+from
+	#strategy_out a,
+	products b
+where
+	a.product = b.symbol
+
+update
+	#strategy_out
+set
+	a.close_price = b.rate
+from
+	#strategy_out a,
+	#end_rates b
+where
+	a.product_id = b.product_id
+
+
+insert into
+	#strategy_out(
+		ordering,
+		style,
+		strategy,
+		starting_equiv,
+		pos_pl,
+		pl_activity,
+		non_pl_activity,
+		ending_equiv,
+		p_l)
+values(
+	@ordering,
+	@total_style,
+	"Total",
+	@starting_equiv,
+	@pos_pl,
+	@pl_activity,
+	@non_pl_activity,
+	@ending_equiv,
+	@p_l)
+
+
+/*******************************************************************/
+
+select	  
+	section = "Begin Date Warning",
+	style = @selected_style,
+	message = "No begin equiv value found for product",
+	product = b.symbol,
+	account = c.symbol,
+	begin_date = @begin_date
+from	    
+	#begin a,
+	products b,
+	external_accounts c
+where	   
+	a.product_id = b.product_id
+and	     
+	a.external_account_id = c.external_account_id
+and     
+	a.total_equiv = NULL
+order by
+	b.symbol,
+	c.symbol
+
+select	  
+	section = "End Date Warning",
+	style = @selected_style,
+	message = "No end equiv value found for product",
+	product = b.symbol,
+	account = c.symbol,
+	end_date = @end_date
+from	    
+	#end a,
+	products b,
+	external_accounts c
+where	   
+	a.product_id = b.product_id
+and	     
+	a.external_account_id = c.external_account_id
+and     
+	a.total_equiv = NULL
+order by
+	b.symbol,
+	c.symbol
+
+update
+	#fwds
+set
+	style = @selected_style
+where
+	equiv = NULL
+and
+	account != "Total"
+
+update
+	#non_pl_ledgers
+set
+	style = @selected_style
+where
+	equiv = NULL
+and
+	account != "Total"
+
+update
+	#pl_ledgers
+set
+	style = @selected_style
+where
+	equiv = NULL
+and
+	account != "Total"
+
+
+update
+	#fut_trades
+set
+	style = @selected_style
+where
+	close_price = NULL
+and
+	account != "Total"
+
+select    
+        section = "End Date Warning",
+        style = @selected_style,
+        message = "No close price found for contract",
+        contract = b.symbol,
+        account = c.symbol,
+        end_date = @end_date
+from        
+        #fut_trades a,
+        contracts b,
+        external_accounts c
+where      
+        a.contract_id = b.contract_id
+and
+        a.external_account_id = c.external_account_id
+and    
+        a.close_price = NULL
+order by
+        b.symbol,
+        c.symbol
+
+update
+	#entity_out
+set
+	style = @selected_style
+where
+	row_type = "Data"
+and
+	(starting_equiv = NULL
+or
+	ending_equiv = NULL)
+
+
+update
+	#strategy_out
+set
+	style = @selected_style
+where
+	row_type = "Data"
+and
+	(starting_equiv = NULL
+or
+	ending_equiv = NULL)
+
+
+/* Select the output */
+select
+	begin_date = @begin_date,
+	end_date = @end_date 
+
+select
+	section = "By Entity",
+	style,
+	legal_entity,
+	product,
+	starting_bal = dbo.f_fmtproductqty(product, starting_bal),
+	starting_equiv,
+	pos_pl,
+	pl_activity,
+	non_pl_activity,
+	ending_bal = dbo.f_fmtproductqty(product, ending_bal),
+	ending_equiv,
+	p_l,
+	prod = product,
+	close_price
+from
+	#entity_out
+order by
+	ordering
+
+
+select
+	section = "By Strategy",
+	style,
+	strategy,
+	product,
+	starting_bal = dbo.f_fmtproductqty(product, starting_bal),
+	starting_equiv,
+	pos_pl,
+	pl_activity,
+	non_pl_activity,
+	ending_bal = dbo.f_fmtproductqty(product, ending_bal),
+	ending_equiv,
+	p_l,
+	prod = product,
+	close_price
+from
+	#strategy_out
+order by
+	ordering
+
+
+select
+	section = "P&L Ledger Movements",
+	style,
+	account,
+	product,
+	balance,
+	equiv,
+	close_price
+from
+	#pl_ledgers
+order by
+	id
+
+select
+	section = "Traded Futures Summary P&L",
+	style,
+	account,
+	symbol,
+	longs,
+	avg_long,
+	shorts,
+	avg_short,
+	native_pl = total_pl,
+	equiv_pl,
+	close_price
+from
+	#fut_trades
+order by
+	id
+	
+select
+	section = "Traded Spot/Fwd Pairs",
+	style,
+	account,
+	symbol,
+	ccy1 = product,
+	ccy1_amount = product_qty,
+	ccy2 = currency,
+	ccy2_amount = currency_qty,
+	equiv,
+	close_price = market_rate
+from
+	#fwd_pairs
+order by
+	id
+
+select
+	section = "Traded Spot/Fwds",
+	style,
+	account,
+	product,
+	balance,
+	equiv,
+	close_price
+from
+	#fwds
+order by
+	id
+
+
+select
+	section = "Non-P&L Ledger Movements",
+	style,
+	account,
+	product,
+	balance,
+	equiv,
+	close_price
+from
+	#non_pl_ledgers
+order by
+	id
+
+
+
+go 
+

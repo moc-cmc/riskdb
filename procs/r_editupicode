@@ -1,0 +1,168 @@
+create or replace procedure
+	r_editupicode
+		@login varchar(50),
+		@contract_symbol varchar(50),
+		@trade_type varchar(50),
+		@upi_code varchar(50),
+		@new_upi_code varchar(50)
+
+as
+
+
+declare @contract_id int
+declare @trade_type_id int
+declare @swap_near_trade_type_id int
+declare @swap_far_trade_type_id int
+
+
+if @trade_type != "Swap Near" and @trade_type != "Swap Far"
+begin
+	select
+		@contract_id = contract_id
+	from
+		contracts
+	where
+		symbol = @contract_symbol
+	
+	if @contract_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find contract",
+			contract_symbol = @contract_symbol
+		return
+	end
+
+	select
+		@trade_type_id = trade_type_id
+	from
+		trade_types
+	where
+		name = @trade_type
+	
+	if @trade_type_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find trade type",
+			trade_type = @trade_type
+		return
+	end
+
+	update
+		upi_codes
+	set
+		symbol = @new_upi_code
+	where
+		contract_id = @contract_id
+	and
+		trade_type_id = @trade_type_id
+	and
+		symbol = @upi_code
+
+	if @@rowcount = 1
+	begin
+		select
+			msg = "Updated UPI Code",
+			contract_symbol = @contract_symbol,
+			trade_type = @trade_type,
+                        old_upi_code = @upi_code,
+                        new_upi_code = @new_upi_code
+	end
+end
+
+if @trade_type = "Swap Near" or @trade_type = "Swap Far"
+begin
+
+        select
+                @contract_id = contract_id
+        from
+                contracts
+        where
+                symbol = @contract_symbol
+
+        if @contract_id = NULL
+        begin
+                select
+                        error = "Error",
+                        msg = "Could not find contract",
+                        contract_symbol = @contract_symbol
+                return
+        end
+
+	select
+		@swap_near_trade_type_id = trade_type_id
+	from
+		trade_types
+	where
+		name = "Swap Near"
+
+	select
+		@swap_far_trade_type_id = trade_type_id
+	from
+		trade_types
+	where
+		name = "Swap Far"
+
+
+	if @swap_near_trade_type_id = NULL or @swap_far_trade_type_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find swap trade types",
+			trade_type = @trade_type
+		return
+	end
+
+        update
+                upi_codes
+        set
+                symbol = @new_upi_code
+        where
+                contract_id = @contract_id
+        and
+                trade_type_id = @swap_far_trade_type_id
+        and
+                symbol = @upi_code
+
+        if @@rowcount = 1
+        begin
+                select
+                        msg = "Updated UPI Code",
+                        contract_symbol = @contract_symbol,
+                        trade_type = "Swap Near",
+                        old_upi_code = @upi_code,
+			new_upi_code = @new_upi_code
+        end
+
+        update
+                upi_codes
+        set
+                symbol = @new_upi_code
+        where
+                contract_id = @contract_id
+        and
+                trade_type_id = @swap_near_trade_type_id
+        and
+                symbol = @upi_code
+
+        if @@rowcount = 1
+        begin
+                select
+                        msg = "Updated UPI Code",
+                        contract_symbol = @contract_symbol,
+                        trade_type = "Swap Near",
+                        old_upi_code = @upi_code,
+                        new_upi_code = @new_upi_code
+        end
+
+end
+
+
+exec
+	r_manageupicodes
+		@login
+
+
+
+go

@@ -849,16 +849,17 @@ and
 
 if @symbol_provided_as_inverted = "Y"
 begin
-	if @cover_price not in(NULL, 0)
+	/* if @cover_price not in(NULL, 0)
 	begin
-		select
-			@cover_price = 1/@cover_price
+		 select
+			@cover_price = 1/@cover_price 
 	end
 	if @cover_price_far not in(NULL, 0)
 	begin
-		select
-			@cover_price_far = 1/@cover_price_far
+		 select
+			@cover_price_far = 1/@cover_price_far 
 	end
+	*/
 
         select
                 @price = 1/@price
@@ -867,6 +868,20 @@ begin
         begin
                 select
                         @far_price = 1/@far_price
+        end
+end
+
+if @inverted = "Y"
+begin
+	if @cover_price not in(NULL, 0)
+        begin
+                 select
+                        @cover_price = 1/@cover_price
+        end
+        if @cover_price_far not in(NULL, 0)
+        begin
+                 select
+                        @cover_price_far = 1/@cover_price_far
         end
 end
 
@@ -1002,9 +1017,8 @@ begin
                         @tally_status = "Success",
                         @tally_message = "Tallied client trade"
 
-        	select
-                	status = @tally_status,
-                	message = @tally_message,
+                select
+			message = @tally_message,
                 	trade_id = @c_trade_id,
                 	deal_id = @deal_id,
                 	login = @c_trader_login,

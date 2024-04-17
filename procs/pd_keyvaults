@@ -1,0 +1,15 @@
+create or replace procedure
+	pd_keyvaults
+
+as
+
+select
+	name = name
+from
+	key_vaults
+order by
+	name
+	
+
+go
+

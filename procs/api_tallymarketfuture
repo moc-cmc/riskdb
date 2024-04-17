@@ -10,7 +10,8 @@ create procedure
 		@symbol varchar(50),
 		@quantity numeric(30,2),
 		@price float,
-		@deal_id int output,
+		@identifier varchar(100),
+                @deal_id int output,
 		@trade_id int output
 as
 
@@ -87,7 +88,8 @@ exec
 		@symbol = @symbol,
 		@value_date = @value_date,
 		@price = @price,
-		@trade_date = @trade_date,
+		@identifier = @identifier,
+                @trade_date = @trade_date,
 		@sales_code = @sales_code
 
 

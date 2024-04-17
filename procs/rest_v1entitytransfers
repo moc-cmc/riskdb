@@ -1,0 +1,329 @@
+create or replace procedure
+	rest_v1entitytransfers(
+		@api_key varchar(100),
+		@legal_entity varchar(50),
+		@account_strategy varchar(50)=NULL,
+		@transaction_date datetime=NULL)
+as
+
+declare @fund_id int
+declare @run_id int
+declare @ordering int
+declare @ids int
+declare @id int
+declare @oid int
+declare @oids int
+declare @sql varchar(255)
+declare @transaction_type_id int
+declare @tico_label varchar(50)
+declare @final_select varchar(255)
+declare @amount float
+declare @update_sql varchar(255)
+declare @evaluation_currency_id int
+declare @missing_conversion_rates int
+declare @begin_balance float
+declare @end_balance float
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+
+declare @begin_date datetime
+declare @end_date datetime
+
+declare @external_account_id int
+declare @tico_account_id int
+declare @legal_entity_id int
+declare @strategy_id int
+
+
+declare @start_time datetime
+declare @end_time datetime
+select
+	@start_time = getdate()
+
+
+select
+	@tico_account_id = user_id
+from
+	user_auths
+where
+	pubkey = @api_key
+
+if @tico_account_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find user for API key",
+		api_key = @api_key
+	return
+end
+
+
+if @transaction_date = NULL
+begin
+        select
+                @transaction_date = getdate()
+end
+
+exec    
+        r_daterangefordate
+                @transaction_date,
+                @begin_date output,
+                @end_date output
+
+
+select
+	@legal_entity_id = legal_entity_id
+from
+	legal_entities
+where
+	name = @legal_entity
+if @@rowcount = 0
+begin
+        select
+                error = "error",
+                msg = "Could not find legal entity",
+                legal_entity = @legal_entity
+        return
+end
+
+if @account_strategy != NULL
+begin
+	select
+		@strategy_id = strategy_id
+	from
+		strategies
+	where
+		name = @account_strategy
+	
+	if @strategy_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find strategy",
+			strategy = @account_strategy
+		return
+	end
+end
+
+create table
+        #legal_entity_accounts(
+                external_account_id int,
+                legal_entity_id int)
+
+if @strategy_id = NULL
+begin
+	insert into
+        	#legal_entity_accounts(
+                	external_account_id,
+                	legal_entity_id)
+	select
+        	a.external_account_id,
+        	b.legal_entity_id
+	from
+        	fo_sub_accounts a,
+        	bo_master_accounts b,
+		legal_entity_tico_accounts c
+	where
+        	a.bo_master_account_id = b.bo_master_account_id
+	and
+		b.legal_entity_id = c.legal_entity_id
+	and
+		c.tico_account_id = @tico_account_id
+	and
+		b.legal_entity_id = @legal_entity_id
+	
+	
+	insert into
+        	#legal_entity_accounts(
+                	external_account_id,
+                	legal_entity_id)
+	select
+        	a.external_account_id,
+        	a.legal_entity_id
+	from
+        	bo_master_accounts a,
+		legal_entity_tico_accounts b
+	where
+		a.legal_entity_id = b.legal_entity_id
+	and
+		a.legal_entity_id = @legal_entity_id 
+	and
+        	a.external_account_id not in ( select external_account_id from #legal_entity_accounts)
+end
+
+if @strategy_id != NULL
+begin
+        insert into
+                #legal_entity_accounts(
+                        external_account_id,
+                        legal_entity_id)
+        select
+                a.external_account_id,
+                b.legal_entity_id
+        from
+                fo_sub_accounts a,
+                bo_master_accounts b,
+                legal_entity_tico_accounts c,
+		account_strategies d
+        where
+                a.bo_master_account_id = b.bo_master_account_id
+        and
+                b.legal_entity_id = c.legal_entity_id
+        and
+                c.tico_account_id = @tico_account_id
+        and
+                b.legal_entity_id = @legal_entity_id
+	and
+		a.external_account_id = d.external_account_id
+	and
+		d.strategy_id = @strategy_id
+
+
+        insert into
+                #legal_entity_accounts(
+                        external_account_id,
+                        legal_entity_id)
+        select
+                a.external_account_id,
+                a.legal_entity_id
+        from
+                bo_master_accounts a,
+                legal_entity_tico_accounts b,
+		account_strategies c
+        where
+                a.legal_entity_id = b.legal_entity_id
+        and
+                a.legal_entity_id = @legal_entity_id
+	and
+		a.external_account_id = c.external_account_id
+	and
+		c.strategy_id = @strategy_id
+        and
+                a.external_account_id not in ( select external_account_id from #legal_entity_accounts)
+end
+
+
+
+create table
+	#account_transactions(
+		account_transaction_id int,
+		entered_by int,
+		entered_by_name varchar(50) NULL,
+		external_account_id int,
+		transaction_type_id int,
+		transaction_type varchar(50) NULL,
+		transaction_date datetime,
+		currency_id int,
+		currency varchar(50) NULL,
+		amount float,
+		note varchar(255) NULL,
+                identifier varchar(100) NULL,
+                trade_id int NULL)
+insert into
+	#account_transactions(
+		account_transaction_id,
+		entered_by,
+		external_account_id,
+		transaction_type_id,
+		transaction_date,
+		currency_id,
+		amount,
+		note)
+select
+	a.account_transaction_id,
+	a.entered_by,
+	a.external_account_id,
+	a.transaction_type_id,
+	a.transaction_date,
+	a.currency_id,
+	a.amount,
+	a.note
+from
+	account_transactions a,
+	#legal_entity_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_date >= @begin_date
+and
+	a.transaction_date < @end_date
+
+update
+	#account_transactions
+set
+	entered_by_name = b.login
+from
+	#account_transactions a,
+	tico_accounts b
+where
+	a.entered_by = b.account_id
+
+update
+	#account_transactions
+set
+	transaction_type = b.name
+from
+	#account_transactions a,
+	transaction_types b
+where
+	a.transaction_type_id = b.transaction_type_id
+
+update
+	#account_transactions
+set
+	currency = b.symbol
+from
+	#account_transactions a,
+	products b
+where
+	a.currency_id = b.product_id
+
+/*
+update
+        #account_transactions
+set
+	identifier = b.identifier
+*/
+
+update
+        #account_transactions
+set
+	trade_id = b.trade_id
+from
+	#account_transactions a,
+	account_transaction_trades b
+where
+	a.account_transaction_id = b.account_transaction_id
+
+select
+	"transaction_id" = account_transaction_id,
+	"entered_by" = entered_by_name,
+	"transaction_type" = transaction_type,
+	"entry_date" = transaction_date,
+	"product" = currency,
+	"quantity" = convert(varchar(30), convert(numeric(30, 10), amount)),
+	"note" = note,
+	"trade_id" = trade_id
+from
+	#account_transactions
+order by
+	transaction_date ASC
+
+
+select
+	@end_time = getdate()
+
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.rest_v1transfers",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags=NULL,
+                @sample_rate="1.0"
+
+
+	
+
+go

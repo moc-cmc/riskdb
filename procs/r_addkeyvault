@@ -1,0 +1,19 @@
+create or replace procedure
+	r_addkeyvault
+		@login varchar(100),
+		@vault_name varchar(50),
+		@url varchar(100)=NULL
+
+as
+
+exec
+	api_addkeyvault
+		@login = @login,
+		@vault_name = @vault_name,
+		@url = @url
+
+exec
+	r_managesecretpaths
+		@login
+
+go

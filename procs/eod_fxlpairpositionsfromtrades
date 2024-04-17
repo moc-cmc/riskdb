@@ -1,0 +1,964 @@
+create or replace procedure
+	eod_fxlpairpositionsfromtrades
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+
+declare @run_id int
+declare @tico_account_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @trades_begin datetime
+
+
+exec
+        r_defaultfundforlogin
+                @login,
+                @fund_id output
+
+select
+        @evaluation_currency_id = evaluation_currency_id
+from
+        funds
+where
+        fund_id = @fund_id
+
+select
+        @tico_account_id = account_id
+from
+        tico_accounts
+where
+        login = @login
+if @tico_account_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Login not found"
+        return
+end
+
+select
+        @run_id = a.run_id
+from
+        runs a,
+        user_runs b
+where
+        a.run_id = b.run_id
+and
+        b.tico_account_id = @tico_account_id
+and
+        a.name = @run_name
+if @run_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Run not found",
+                run_name = @run_name
+        return
+end
+
+if @trade_date = NULL
+begin
+        select
+                @trade_date = getdate()
+        select
+                @trade_date = convert(date, @trade_date)
+end
+
+exec
+        r_daterangefordate
+                @trade_date,
+                @begin_date output,
+                @end_date output
+
+select
+	@trades_begin = min(trade_date)
+from
+	trades
+where
+	value_date >= @end_date
+
+
+create table
+        #traders(
+                trader_id int)
+insert into
+        #traders
+select
+        trader_id
+from
+        run_traders
+where
+        run_id = @run_id
+if @@rowcount = 0
+begin
+        insert into
+                #traders
+        select
+                trader_id
+        from
+                traders
+end
+
+create table
+        #strategies(
+                strategy_id int)
+insert into
+        #strategies
+select
+        strategy_id
+from
+        run_strategies
+where
+        run_id = @run_id
+if @@rowcount = 0
+begin
+        insert into
+                #strategies
+        select
+                strategy_id
+        from
+                strategies
+end
+create table
+        #external_accounts(
+                external_account_id int)
+insert into
+        #external_accounts
+select
+        external_account_id
+from
+        run_external_accounts
+where
+        run_id = @run_id
+if @@rowcount = 0
+begin
+        insert into
+                #external_accounts
+        select
+                external_account_id
+        from
+                external_accounts
+end
+
+create table
+        #internal_accounts(
+                internal_account_id int)
+insert into
+        #internal_accounts
+select
+        internal_account_id
+from
+        run_internal_accounts
+where
+        run_id = @run_id
+if @@rowcount = 0
+        insert into
+                #internal_accounts
+        select
+                internal_account_id
+        from
+                internal_accounts
+create table
+        #brokers(
+                broker_id int)
+insert into
+        #brokers
+select
+        broker_id
+from
+        run_brokers
+where
+        run_id = @run_id
+if @@rowcount = 0
+        insert into
+                #brokers
+        select
+                broker_id
+        from
+                brokers
+
+create table
+        #counterparties(
+                counterparty_id int)
+insert into
+        #counterparties
+select
+        counterparty_id
+from
+        run_counterparties
+where
+        run_id = @run_id
+if @@rowcount = 0
+        insert into
+                #counterparties
+        select
+                counterparty_id
+        from
+                counterparties
+
+create table
+        #trades(
+                trade_id int,
+                deal_id int,
+                deal_type_id int NULL,
+                ladder_view varchar(20) NULL,
+                trade_date datetime,
+                external_account_id int NULL,
+                trader_id int NULL,
+                counterparty_id int NULL,
+                broker_id int NULL,
+                contract_id int,
+                value_date datetime,
+                product_id int,
+                product_qty float,
+                currency_id int,
+                currency_qty float,
+                price_style varchar(50) NULL,
+                display_contract_id int NULL,
+                display_product_qty float NULL,
+                display_currency_qty float NULL,
+                rate float NULL,
+                product_equiv float NULL,
+                currency_equiv float NULL,
+		reval_counter_qty float NULL,
+		reval_price_db float NULL,
+		reval_price_std float NULL,
+		discount_factor float NULL,
+		trade_mtm float NULL)
+
+
+insert into
+        #trades(
+                trade_id,
+                deal_id,
+                trade_date,
+                external_account_id,
+                trader_id,
+                counterparty_id,
+                broker_id,
+                contract_id,
+                value_date,
+                product_id,
+                product_qty,
+                currency_id,
+                currency_qty,
+                rate)
+select
+        a.trade_id,
+        a.deal_id,
+        a.trade_date,
+        a.external_account_id,
+        a.trader_id,
+        a.counterparty_id,
+        a.broker_id,
+        a.contract_id,
+        a.value_date,
+        h.product_id,
+        a.quantity,
+        h.currency_id,
+        a.quantity * a.price * -1.0,
+        a.price
+from
+        trades a,
+        #external_accounts b,
+        #internal_accounts c,
+        #traders d,
+        #strategies e,
+        #brokers f,
+        #counterparties g,
+        forwards h
+where
+        a.contract_id = h.contract_id
+and
+        a.external_account_id = b.external_account_id
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.trader_id = d.trader_id
+and
+        a.strategy_id = e.strategy_id
+and
+        a.broker_id= f.broker_id
+and
+        a.counterparty_id = g.counterparty_id
+and
+        a.value_date >= @end_date
+and
+        a.trade_date >= @trades_begin
+and
+        a.trade_date < @end_date
+
+
+update
+	#trades
+set
+	price_style = "Standard",
+	display_contract_id = contract_id
+
+update
+	#trades
+set
+	a.deal_type_id = b.deal_type_id
+from
+	#trades a,
+	deals b
+where
+	a.deal_id = b.deal_id
+
+update
+	#trades
+set
+	a.price_style = c.name
+from
+	#trades a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+
+update
+	#trades
+set
+	a.display_contract_id = b.contract_id
+from
+	#trades a,
+	forwards b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	a.price_style = "Inverted"
+
+update
+	#trades
+set
+	display_product_qty = product_qty,
+	display_currency_qty = currency_qty
+where
+	price_style = "Standard"
+
+update
+	#trades
+set
+	display_product_qty = currency_qty,
+	display_currency_qty = product_qty
+where
+	price_style = "Inverted"
+
+create table
+	#prices(
+		contract_id int,
+		price float)
+insert into
+	#prices(
+		contract_id,
+		price)
+select
+	contract_id,
+	price
+from
+	bo_spot_settles
+where
+	price_date = @end_date
+
+create table
+	#rates(
+		contract_id int NULL,
+		price_style varchar(50) NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		rate float NULL,
+		display_rate float NULL,
+		timestamp datetime NULL,
+		derived_timestamp datetime NULL)
+
+insert into
+	#rates(
+		product_id)
+select
+	distinct(a.product_id)
+from
+	products a,
+	product_types b
+where
+	a.product_type_id = b.product_type_id
+
+update
+	#rates
+set
+	currency_id = @evaluation_currency_id,
+	price_style = "Standard"
+
+
+update
+	#rates
+set
+	a.contract_id = b.contract_id
+from
+	#rates a,
+	forwards b
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+
+update
+	#rates
+set
+	rate = 1.0,
+	timestamp = getdate()
+where
+	product_id = currency_id
+
+update
+	#rates
+set
+	a.rate = c.price,
+	a.timestamp = c.price_date
+from
+	#rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+
+update
+	#rates
+set
+	a.rate = 1.0 / c.price,
+	a.timestamp = c.price_date
+from
+	#rates a,
+	forwards b,
+	bo_spot_settles c
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	b.contract_id = c.contract_id
+and
+	convert(date, c.price_date) = convert(date, @end_date)
+and
+	a.rate = NULL
+
+update
+	#rates
+set
+	a.price_style = c.name
+from
+	#rates a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+
+update
+	#rates
+set
+	display_rate = rate
+
+update
+	#rates
+set
+	display_rate = 1.0 / rate
+where
+	price_style = "Inverted"
+
+/* Update MTMS with overide */
+
+update
+        #trades
+set
+        reval_price_db = b.price,
+        reval_price_std = b.price
+from
+        #trades a,
+        bo_prices b
+where
+        a.contract_id = b.contract_id
+and
+        a.value_date = b.value_date
+and
+        b.price_date = @end_date
+
+update
+        #trades
+set
+        reval_price_std = 1/b.price
+from
+        #trades a,
+        bo_prices b
+where
+        a.contract_id = b.contract_id
+and
+        a.value_date = b.value_date
+and
+        b.price_date = @end_date
+and
+	a.price_style = "Inverted"
+and
+        b.price != 0
+
+update
+        #trades
+set
+        discount_factor = b.discount_factor
+from
+        #trades a,
+        bo_points b
+where
+        a.contract_id = b.contract_id
+and
+        a.value_date = b.value_date
+and
+        b.price_date = @end_date
+
+update
+ 	#trades
+set
+        discount_factor = b.discount_factor
+from
+        #trades a,
+        bo_points b
+where
+        a.contract_id = b.contract_id
+and
+        a.value_date = b.value_date
+and
+        b.price_date = @end_date
+and
+	a.price_style = "Inverted"
+and
+        b.discount_factor != 0
+
+update
+        #trades
+set
+        reval_counter_qty = product_qty * reval_price_db
+
+update
+        #trades
+set
+        trade_mtm = round(((a.reval_counter_qty - (a.currency_qty*-1)) * b.rate * a.discount_factor), 2)
+from
+        #trades a,
+        #rates b
+where
+        a.currency_id = b.product_id
+and
+        b.currency_id = @evaluation_currency_id
+
+/* Override if we have the mtm */
+update
+	#trades
+set
+	trade_mtm = b.mtm
+from
+	#trades a,
+	trade_mtms b
+where
+	a.trade_id = b.trade_id
+and
+	b.trade_date = @end_date
+
+/* END MTMS */
+
+create table
+	#pair_ladder(
+		id int identity,
+		style varchar(250) NULL,
+		contract_id int NULL,
+		inverse_contract_id int NULL,
+		symbol varchar(50) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		product_qty float NULL,
+		product_equiv float NULL,
+		currency_qty float NULL,
+		currency_equiv float NULL,
+		market_rate float NULL,
+		value_date datetime NULL,
+		native_pl float NULL,
+		equiv float NULL,
+		vwap float NULL,
+		settle_price float NULL,
+		cross_usd_contract_id int NULL,		
+		usd_price float NULL,
+		reval_price_db float NULL,
+		reval_price_std float NULL,
+		discount_factor float NULL,
+		reval_counter_qty float NULL,
+		mtm_qty float NULL,
+		trade_mtm float NULL,
+		trade_notification_id int NULL)
+insert into
+	#pair_ladder(
+		contract_id,
+		product_qty,
+		currency_qty,
+		trade_mtm,
+		value_date)
+select
+	display_contract_id,
+	sum(display_product_qty),
+	sum(display_currency_qty),
+	sum(trade_mtm),
+	value_date
+from
+	#trades
+group by
+	display_contract_id,
+	value_date
+
+update
+	#pair_ladder
+set
+	a.symbol = b.symbol
+from
+	#pair_ladder a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+update
+	#pair_ladder
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#pair_ladder a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#pair_ladder
+set
+	a.product = b.symbol
+from
+	#pair_ladder a,
+	products b
+where
+	a.product_id = b.product_id
+
+update
+	#pair_ladder
+set
+	a.currency = b.symbol
+from
+	#pair_ladder a,
+	products b
+where
+	a.currency_id = b.product_id
+
+update
+	#pair_ladder
+set
+	inverse_contract_id = a.contract_id
+from
+	forwards a,
+	#pair_ladder b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+
+update
+        #pair_ladder
+set
+        reval_price_db = b.price,
+        reval_price_std = b.price
+from
+        #pair_ladder a,
+        bo_prices b
+where
+        a.contract_id = b.contract_id
+and
+        a.value_date = b.value_date
+and
+        b.price_date = @end_date
+
+update
+        #pair_ladder
+set
+        reval_price_db = 1/b.price,
+        reval_price_std = 1/b.price
+from
+        #pair_ladder a,
+        bo_prices b
+where
+        a.inverse_contract_id = b.contract_id
+and
+        a.value_date = b.value_date
+and
+        b.price_date = @end_date
+and
+	a.reval_price_db = NULL
+
+update
+	#pair_ladder
+set
+	discount_factor = b.discount_factor
+from
+	#pair_ladder a,
+	bo_points b
+where
+        a.contract_id = b.contract_id
+and
+        a.value_date = b.value_date
+and
+        b.price_date = @end_date
+
+update
+        #pair_ladder
+set
+        discount_factor = b.discount_factor
+from
+        #pair_ladder a,
+        bo_points b
+where
+        a.inverse_contract_id = b.contract_id
+and
+        a.value_date = b.value_date
+and
+        b.price_date = @end_date
+and
+        a.discount_factor = NULL
+
+update
+	#pair_ladder
+set
+	a.product_equiv = a.product_qty * b.rate
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.product_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+update
+	#pair_ladder
+set
+	a.currency_equiv = a.currency_qty * b.rate
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.currency_id = b.product_id
+and
+	b.currency_id = @evaluation_currency_id
+
+update
+	#pair_ladder
+set
+	equiv = product_equiv + currency_equiv
+
+
+update
+	#pair_ladder
+set
+	settle_price = b.price
+from
+	#pair_ladder a,
+	#prices b
+where
+	a.contract_id = b.contract_id 
+
+update
+        #pair_ladder
+set
+        a.market_rate = b.price
+from
+        #pair_ladder a,
+        bo_spot_settles b
+where
+        a.contract_id = b.contract_id
+and
+	b.price_date = @end_date
+
+/*
+update
+	#pair_ladder
+set
+	a.market_rate = 1.0 / b.rate
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	a.market_rate = NULL
+*/
+
+update
+	#pair_ladder
+set
+	reval_counter_qty = product_qty * reval_price_db
+
+update
+	#pair_ladder
+set
+	mtm_qty = round((a.reval_counter_qty - (a.currency_qty * -1)) * b.rate * a.discount_factor,2)
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.currency_id = b.product_id
+and
+        b.currency_id = @evaluation_currency_id
+
+update
+	#pair_ladder
+set
+	native_pl = currency_qty - (product_qty * market_rate * -1.0)
+
+update
+        #pair_ladder
+set
+        vwap = 0
+where
+        currency_qty = 0
+
+update
+        #pair_ladder
+set
+        vwap = 0
+where
+        product_qty = 0
+
+update
+        #pair_ladder
+set
+        vwap = round(abs(currency_qty/product_qty), 6)
+where
+        vwap = NULL
+
+update
+	#pair_ladder
+set
+	usd_price = b.display_rate
+from
+	#pair_ladder a,
+	#rates b
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+
+update
+        #pair_ladder
+set
+        usd_price = b.display_rate
+from
+        #pair_ladder a,
+        #rates b
+where
+        a.product_id = b.currency_id
+and
+        a.currency_id = b.product_id
+
+
+update
+        #pair_ladder
+set
+        usd_price = b.display_rate
+from
+        #pair_ladder a,
+        #rates b
+where
+        b.currency_id = @evaluation_currency_id
+and
+        a.currency_id = b.product_id
+
+
+/* Adjust decimal precision */
+
+update
+        #pair_ladder
+set
+        product_qty = round(a.product_qty, b.decimal_precision)
+from
+        #pair_ladder a,
+        products b
+where
+        a.product = b.symbol
+and
+        b.decimal_precision != NULL
+
+update
+        #pair_ladder
+set
+        currency_qty = round(a.currency_qty, b.decimal_precision)
+from
+        #pair_ladder a,
+        products b
+where
+        a.currency = b.symbol
+and
+        b.decimal_precision != NULL
+
+
+/* Flip for client perspective */
+
+update
+	#pair_ladder
+set
+	product_qty = product_qty * -1,
+	currency_qty = currency_qty * -1,
+	mtm_qty = mtm_qty * -1,
+	trade_mtm = trade_mtm * -1
+
+
+select
+	run_name = @run_name, 
+	trade_date = rtrim(convert(varchar(10), @trade_date, 112)), 
+	value_date = rtrim(convert(varchar(10), value_date, 112)),
+	vwap,
+	symbol,
+	product,
+	product_qty,
+	currency,
+	currency_qty,
+	settle_price,
+	usd_price,
+	equiv,
+	reval_price_db,
+	reval_price_std,
+	reval_counter_qty,
+	mtm_qty,
+	trade_mtm,
+	trade_notification_id
+from
+	#pair_ladder
+order by
+	value_date,
+	symbol,
+	trade_date DESC
+	
+	
+
+
+go 

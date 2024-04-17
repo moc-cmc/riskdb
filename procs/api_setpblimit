@@ -1,0 +1,123 @@
+
+create or replace procedure
+	api_setpblimit
+		@login varchar(50),
+		@prime_broker varchar(50),
+		@limit float,
+		@pb_limit_id int output
+
+as
+
+declare @tico_account_id int
+declare @prime_broker_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@prime_broker_id = a.prime_broker_id
+from
+	prime_brokers a,
+	sources b
+where
+	a.source_id = b.source_id
+and
+	b.name = @prime_broker
+if @prime_broker_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Prime broker not found",
+		prime_broker = @prime_broker
+	return
+end
+
+exec
+	j_nextkey
+		"pb_limits",
+		@pb_limit_id output
+
+begin tran
+	insert into
+		pb_limit_edits(
+			pb_limit_id,
+			prime_broker_id,
+			tico_account_id,
+			limit,
+			as_of)
+	select
+		pb_limit_id,
+		prime_broker_id,
+		tico_account_id,
+		limit,
+		as_of
+	from
+		pb_limits
+	where
+		prime_broker_id = @prime_broker_id
+	if @@rowcount > 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to archive pb limit",
+			prime_broker = @prime_broker
+		rollback tran
+		return
+	end
+
+	delete
+
+	from
+		pb_limits
+	where
+		prime_broker_id = @prime_broker_id
+	if @@rowcount > 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to unset existing limit",
+			prime_broker = @prime_broker
+		rollback tran
+		return
+	end
+
+	insert into
+		pb_limits(
+			pb_limit_id,
+			prime_broker_id,
+			tico_account_id,
+			limit,
+			as_of)
+	values(
+		@pb_limit_id,
+		@prime_broker_id,
+		@tico_account_id,
+		@limit,
+		getdate())
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Unable to set prime broker limit",
+			prime_broker = @prime_broker,
+			limit = @limit
+		rollback tran
+		return
+	end
+
+commit tran
+
+
+go
+

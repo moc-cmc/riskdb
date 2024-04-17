@@ -1,6 +1,3 @@
-drop table user_emails
-go
-
 create table
 	user_emails(
 		tico_account_id int,

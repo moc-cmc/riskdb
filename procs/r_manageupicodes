@@ -1,0 +1,202 @@
+create or replace procedure 
+	r_manageupicodes
+		@login varchar(50)
+
+as
+
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+        	status="Error",
+        	message="Problem finding account for login"
+	return
+end
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+   #meta(
+           meta_type char(200),
+           name char(50) NULL,
+           action char(100) NULL,
+           value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_code",
+	"Edit UPI Code for Contract",
+	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_code",
+        "Add UPI Code for Contract",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "verify_codes",
+        "Verify Codes for Contract",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "add_mapping",
+        "Add UPI Mapping",
+        NULL
+)
+
+select * From #meta
+
+select
+	section = "UPI Management",
+	style =  @style,
+/*	add_mapping = "Add UPI Mapping", */
+	verify_codes = "Verify Codes for Contract"
+
+create table
+	#contracts(
+		section varchar(50),
+		contract_id int,
+		contract_symbol varchar(50) NULL,
+		trade_type_id int NULL,
+		trade_type varchar(50) NULL,
+		upi_symbol varchar(50) NULL)
+
+insert into
+	#contracts(
+		section,
+		contract_id,
+		contract_symbol)
+select
+	section = "Forward",
+	contract_id,
+	symbol
+from
+	contracts a,
+	instruments b
+where
+	a.instrument_id = b.instrument_id
+and
+	b.name = "Forward"
+
+insert into
+        #contracts(
+                section,
+                contract_id,
+                contract_symbol)
+select
+        section = "Swap Near",
+        contract_id,
+        symbol
+from
+        contracts a,
+        instruments b
+where
+        a.instrument_id = b.instrument_id
+and
+        b.name = "Forward"
+
+insert into
+        #contracts(
+                section,
+                contract_id,
+                contract_symbol)
+select
+        section = "Swap Far",
+        contract_id,
+        symbol
+from
+        contracts a,
+        instruments b
+where
+        a.instrument_id = b.instrument_id
+and
+        b.name = "Forward"
+
+update
+	#contracts
+set
+	trade_type_id = b.trade_type_id,
+	trade_type = b.name
+from
+	#contracts a,
+	trade_types b
+where
+	a.section = b.name
+
+update
+	#contracts
+set
+	upi_symbol = b.symbol
+from
+	#contracts a,
+	upi_codes b
+where
+	a.contract_id = b.contract_id
+and
+	a.trade_type_id = b.trade_type_id
+
+select 
+	style = @style,
+	section,
+	contract_symbol,
+	trade_type,
+	upi_code = upi_symbol,
+	add_code = "ADD",
+	edit_code = "EDIT"
+from
+	#contracts
+order by
+	section ASC,
+	contract_symbol ASC
+
+go

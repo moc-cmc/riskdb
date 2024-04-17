@@ -1,13 +1,11 @@
 drop procedure
-	cbo_savefuturesrealized
+    cbo_savefuturesrealized
 go
-
 create procedure
-	cbo_savefuturesrealized
-		@login varchar(50),
-		@trade_date datetime=NULL
+    cbo_savefuturesrealized
+        @login varchar(50),
+        @trade_date datetime=NULL
 as
-
 declare @begin_date datetime
 declare @end_date datetime
 declare @transaction_date datetime
@@ -15,152 +13,236 @@ declare @tico_account_id int
 declare @account varchar(50)
 declare @symbol varchar(50)
 declare @value_date datetime
-
 declare @id int
 declare @ids int
-
+declare @eod_id int
+declare @external_account_id int
+declare @contract_id int
+declare @longs float
+declare @avg_long float
+declare @shorts float
+declare @avg_short float
+declare @open_pos float
+declare @close_price float
+declare @realized_pl float
+declare @unrealized_pl float
+declare @realized_pl_id int
+declare @net_id int
+declare @future_id int
+declare @net float
+declare @starttime datetime
+declare @endtime datetime
+declare @starttime_trades datetime
+declare @endtime_trades datetime
+declare @from_date datetime
+declare @to_date datetime
+select @starttime = getdate()
 
 select
-	@tico_account_id = account_id
+    @tico_account_id = account_id
 from
-	tico_accounts
+    tico_accounts
 where
-	login = @login
+    login = @login
 if @tico_account_id = NULL
 begin
-	select
-		status = "Error",
-		message = "Unable to resolve login"
-	return
+    select
+        status = "Error",
+        message = "Unable to resolve login"
+    return
 end
-
 select
-	@trade_date = convert(datetime, convert(date, @trade_date))
-
+    @trade_date = convert(datetime, convert(date, @trade_date))
 exec
-	r_daterangefordate
-		@trade_date,
-		@begin_date output,
-		@end_date output
-
+    r_daterangefordate
+        @trade_date,
+        @begin_date output,
+        @end_date output
 select
-	@transaction_date = convert(datetime, convert(date, @end_date))
-
-
+    @transaction_date = convert(datetime, convert(date, @end_date))
+select
+    @from_date = convert(datetime, convert(date, @begin_date)),
+    @to_date = convert(datetime, convert(date, @end_date))
+select
+    external_account_id,
+    contract_id,
+    longs,
+    avg_long,
+    shorts,
+    avg_short,
+    open_pos,
+    avg_open,
+    closed_pos,
+    product_id,
+    currency_id,
+    multiplier,
+    realized_pl,
+    unrealized_pl,
+    last_price
+into
+    #futs
+from
+    x_fut_commit_bals
+where
+    _login = @login
+and
+    _trade_date = @trade_date
+delete
+from
+    #futs
+where
+    open_pos = 0.0
+select
+    msg = "No close  price found",
+    a.symbol,
+    trade_date = @trade_date
+from
+    contracts a,
+    #futs b,
+    future_contracts c
+where
+    a.contract_id = b.contract_id
+and
+    a.contract_id = c.contract_id
+and
+    b.contract_id = c.contract_id
+and
+    b.last_price = NULL
+and
+    (c.expiration = NULL
+or
+    c.expiration  >= @begin_date)
+and
+    abs(b.open_pos) > 0.0
 create table
-	#futures(
-		id int identity,
-		external_account_id int NULL,
-		account varchar(50) NULL,
-		contract_id int NULL,
-		contract varchar(50) NULL,
-		value_date datetime NULL,
-		tickets int NULL)
+    #pls(
+        id  int identity,
+        external_account_id int,
+        contract_id int,
+        longs float NULL,
+        avg_long float NULL,
+        shorts float NULL,
+        avg_short float NULL,
+        open_pos float NULL,
+        close_price float NULL,
+        realized_pl float NULL,
+        unrealized_pl float NULL)
 insert into
-	#futures(
-		external_account_id,
-		contract_id,
-		value_date,
-		tickets)
+    #pls(
+        external_account_id,
+        contract_id,
+        longs,
+        avg_long,
+        shorts,
+        avg_short,
+        open_pos,
+        close_price,
+        realized_pl,
+        unrealized_pl)
 select
-	a.external_account_id,
-	a.contract_id,
-	a.value_date,
-	count(a.trade_id)
+    external_account_id,
+    contract_id,
+    longs,
+    avg_long,
+    shorts,
+    avg_short,
+    open_pos,
+    last_price,
+    realized_pl,
+    unrealized_pl
 from
-	trades a,
-	future_contracts b
-where
-	a.contract_id = b.contract_id
-and
-	a.trade_date >= @begin_date
-and
-	a.trade_date < @end_date
-group by
-	a.external_account_id,
-	a.contract_id,
-	a.value_date
-
-update
-	#futures
-set
-	a.account = b.symbol
-from
-	#futures a,
-	external_accounts b
-where
-	a.external_account_id = b.external_account_id
-
-update
-	#futures
-set
-	contract = b.symbol
-from
-	#futures a,
-	contracts b
-where
-	a.contract_id = b.contract_id
-
+    #futs
 select
-	@id = 0
+    @id = 0
 select
-	@ids = count(*)
+    @ids = count(*)
 from
-	#futures
+    #pls
 where
-	id > @id
-
+    id > @id
 while @ids > 0
 begin
-	select
-		@id = min(id)
-	from
-		#futures
-	where
-		id > @id
-
-	select
-		@account = NULL,
-		@symbol = NULL,
-		@value_date = NULL
-
-	select
-		@account = account,
-		@symbol = contract,
-		@value_date = value_date
-	from
-		#futures
-	where
-		id = @id
-
-	select
-		account = @account,
-		symbol = @symbol,
-		value_date = @value_date
-	
-	exec
-		api_processcontractfifo
-			@login = @login,
-			@external_account = @account,
-			@trade_date = @trade_date,
-			@symbol = @symbol,
-			@value_date = @value_date
-
-
-	select
-		@ids = count(*)
-	from
-		#futures
-	where
-		id > @id
+    select
+        @id = min(id)
+    from
+        #pls
+    where
+        id > @id
+    select
+        @realized_pl_id = NULL,
+        @external_account_id = NULL,
+        @contract_id = NULL,
+        @longs = NULL,
+        @avg_long = NULL,
+        @shorts = NULL,
+        @avg_short = NULL,
+        @open_pos = NULL,
+        @close_price = NULL,
+        @realized_pl = NULL,
+        @unrealized_pl = NULL
+    select
+        @external_account_id = external_account_id,
+        @contract_id = contract_id,
+        @longs = longs,
+        @avg_long = avg_long,
+        @shorts = shorts,
+        @avg_short = avg_short,
+        @open_pos = open_pos,
+        @close_price = close_price,
+        @realized_pl = realized_pl,
+        @unrealized_pl = unrealized_pl
+    from
+        #pls
+    where
+        id  = @id
+   /*  select
+        external_account_id = @external_account_id,
+        contract_id = @contract_id,
+        longs = @longs,
+        avg_long = @avg_long,
+        shorts = @shorts,
+        avg_short = @avg_short,
+        open_pos = @open_pos,
+        close_price = @close_price,
+        realized_pl = @realized_pl,
+        unrealized_pl = @unrealized_pl,
+	date = @end_date */
+    exec
+        j_nextkey
+            "realized_pls",
+            @realized_pl_id output
+    insert into
+        realized_pls(
+            realized_pl_id,
+            trade_date,
+            external_account_id,
+            contract_id,
+            longs,
+            avg_long,
+            short,
+            avg_short,
+            open_pos,
+            close_price,
+            realized_pl,
+            unrealized_pl)
+    values(
+        @realized_pl_id,
+        @end_date,
+        @external_account_id,
+        @contract_id,
+        @longs,
+        @avg_long,
+        @shorts,
+        @avg_short,
+        @open_pos,
+        @close_price,
+        @realized_pl,
+        @unrealized_pl)
+    select
+        @ids = count(*)
+    from
+        #pls
+    where
+        id > @id
 end
-
-exec
-	cbo_bookfutrealized
-		@login = @login,
-		@trade_date = @trade_date
-
-
-
-
 go

@@ -1,0 +1,290 @@
+create or replace procedure
+	api_pairscheck
+		@login varchar(50)
+as
+
+
+declare @fund_id int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+declare @alert_high_style varchar(250)
+declare @alert_med_style varchar(250)
+declare @alert_low_style varchar(250)
+declare @alert_none_style varchar(250)
+declare @product varchar(50)
+declare @currency varchar(50)
+declare @product_id int
+declare @id int
+declare @ids int
+declare @settlement_product_id int
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values
+ (
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"scratch_set",
+	NULL,
+	NULL)
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dsl_change",
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.
+ name, #meta.action, #meta.value from #meta
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@alert_high_style = "color:#ffffff; background:#f03b20; border:1px solid #ff00ff; font-weight:bold",
+	@alert_med_style = "color:#000000; background:#feb24c; border:1px solid #ff00ff; font-weight:bold",
+	@alert_low_style = "color:#000000; background:#ffeda0; border:1px solid #ff00ff; font-weight:bold",
+	@alert_none_style = "color:#000000; background:#e5f5e0; border:1px solid #ff00ff; font-weight:bold"
+
+
+create table
+	#output(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		currency_id int NULL,
+		currency varchar(50) NULL,
+		contract_id int NULL,
+		symbol varchar(50) NULL)
+
+create table
+	#products(
+		id int identity,
+		product_id int,
+		symbol varchar(50))
+insert into
+	#products(
+		product_id,
+		symbol)
+select
+	product_id,
+	symbol
+from
+	products
+order by
+	symbol
+
+select
+	@settlement_product_id = settlement_product_id
+from
+	funds
+
+if @settlement_product_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Settlement product not found"
+	return
+end
+
+/* delete
+
+from
+	#products
+where
+	product_id = @settlement_product_id */
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#products
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#products
+	where
+		id > @id
+
+	select
+		@product_id = product_id,
+		@product = symbol
+	from
+		#products
+	where
+		id = @id
+
+	insert into
+		#output(
+			style,
+			product_id,
+			product,
+			currency_id,
+			currency)
+	select
+		style = @style,
+		product_id = @product_id,
+		product = @product,
+		currency_id = product_id,
+		currency = symbol
+	from
+		products
+	where
+		product_id != @product_id
+	order by
+		symbol
+			
+	select
+		@ids = count(*)
+	from
+		#products
+	where
+		id > @id
+end
+
+update
+	#output
+set
+	a.contract_id = b.contract_id
+from
+	#output a,
+	forwards b
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+
+update
+	#output
+set
+	a.symbol = b.symbol
+from
+	#output a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+
+create table
+	#ids(
+		id int)
+insert into
+	#ids(
+		id)
+select
+	id
+from
+	#output
+where
+	contract_id = NULL
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#ids
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#ids
+	where
+		id > @id
+
+	select
+		@product = product,
+		@currency = currency
+	from
+		#output
+	where
+		id = @id
+
+	exec
+		ag_initpairfromproducts
+			@login = @login,
+			@product = @product,
+			@currency = @currency
+
+	select
+		@ids = count(*)
+	from
+		#ids
+	where
+		id > @id
+end
+
+update
+	#output
+set
+	a.contract_id = b.contract_id
+from
+	#output a,
+	forwards b
+where
+	a.product_id = b.product_id
+and
+	a.currency_id = b.currency_id
+
+update
+	#output
+set
+	a.symbol = b.symbol
+from
+	#output a,
+	contracts b
+where
+	a.contract_id = b.contract_id
+go
+

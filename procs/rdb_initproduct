@@ -1,0 +1,22 @@
+create or replace procedure
+	rdb_initproduct
+                @login varchar(50),
+                @symbol varchar(50),
+                @name varchar(50)
+as
+
+declare @product_id int
+
+exec
+        api_initproduct
+                @login = @login,
+                @symbol = @symbol,
+                @name = @name,
+		@product_id = @product_id output
+
+exec
+	api_pairscheck
+		@login = @login
+
+go
+

@@ -1,0 +1,14 @@
+
+create or replace procedure
+	pd_exchanges
+as
+
+select
+	name 
+from
+	exchanges
+order by
+	name
+
+go
+

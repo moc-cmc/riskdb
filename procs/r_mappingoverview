@@ -685,6 +685,34 @@ begin
 
 end
 
+/* Remove archived accounts */
+delete from
+	#accounts
+from
+	#accounts a,
+	external_accounts b
+where
+	a.external_account_id = b.external_account_id 
+and
+	b.archived_at != NULL
+
+delete from
+	#traders
+from
+	#traders a,
+	traders b,
+	external_accounts c
+where
+	a.trader_id = b.trader_id
+and
+	b.external_account_id = c.external_account_id
+and
+	c.archived_at != NULL
+
+/* End */
+
+	
+
 select
 	section = "Account Mappings",
 	style,

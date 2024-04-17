@@ -1,0 +1,641 @@
+create or replace procedure
+	eod_fxlnetposbyccy
+		@login varchar(50),
+		@run_name varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+
+declare @run_id int
+declare @tico_account_id int
+declare @trades_begin datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @total_style varchar(250)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(250)
+declare @error_style varchar(250)
+declare @style varchar(250)
+declare @total_equiv float
+declare @contract_id int
+declare @contracts int
+declare @price float
+declare @product_id int
+declare @display_product_id int
+declare @currency_id int
+declare @product_rate float
+declare @currency_rate float
+declare @value_date datetime
+declare @value_dates int
+declare @balances int
+declare @timestamp datetime
+declare @derived_timestamp datetime
+declare @derived_rate float
+declare @product_style varchar(50)
+declare @currency_style varchar(50)
+declare @toggle_string varchar(200)
+declare @incl varchar(10)
+declare @original_as_of_date datetime
+declare @original_incl varchar(10)
+declare @total_prem_equiv float
+declare @id int
+declare @ids int
+declare @forward_id int
+
+declare @forward varchar(50)
+declare @net_pos float
+declare @net_pl float
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+	select
+		@trade_date = convert(date, @trade_date)
+end
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+
+select
+	@trades_begin = min(trade_date)
+from
+        trades
+where
+        value_date >= @begin_date
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Login not found"
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @run_name
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @run_name
+if @run_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Run not found",
+		run_name = @run_name
+	return
+end
+
+create table
+	#traders(
+		trader_id int)
+insert into
+	#traders
+select
+	trader_id
+from
+	run_traders
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id
+	from
+		traders
+end
+
+create table
+	#strategies(
+		strategy_id int)
+insert into
+	#strategies
+select
+	strategy_id
+from
+	run_strategies
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id
+	from
+		strategies
+end
+
+create table
+	#external_accounts(
+		external_account_id int)
+insert into
+	#external_accounts
+select
+	external_account_id
+from
+	run_external_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#external_accounts
+	select
+		external_account_id
+	from
+		external_accounts
+end
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+create table
+	#brokers(
+		broker_id int)
+insert into
+	#brokers
+select
+	broker_id
+from
+	run_brokers
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#brokers
+	select
+		broker_id
+	from
+		brokers
+
+create table
+	#counterparties(
+		counterparty_id int)
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+
+create table
+	#trades(
+		trade_id int,
+		deal_id int,
+		deal_type_id int NULL,
+		ladder_view varchar(20) NULL,
+		trade_date datetime,
+		external_account_id int NULL,
+		trader_id int NULL,
+		counterparty_id int NULL,
+		broker_id int NULL,
+		contract_id int,
+		value_date datetime,
+		product_id int,
+		product_qty float,
+		currency_id int,
+		currency_qty float,
+		price_style varchar(50) NULL,
+		display_contract_id int NULL,
+		display_product_qty float NULL,
+		display_currency_qty float NULL,
+		rate float NULL,
+		product_equiv float NULL,
+		currency_equiv float NULL)
+
+
+insert into
+	#trades(
+		trade_id,
+		deal_id,
+		trade_date,
+		external_account_id,
+		trader_id,
+		counterparty_id,
+		broker_id,
+		contract_id,
+		value_date,
+		product_id,
+		product_qty,
+		currency_id,
+		currency_qty,
+		rate)
+select
+	a.trade_id,
+	a.deal_id,
+	a.trade_date,
+	a.external_account_id,
+	a.trader_id,
+	a.counterparty_id,
+	a.broker_id,
+	a.contract_id,
+	a.value_date,
+	h.product_id,
+	a.quantity,
+	h.currency_id,
+	a.quantity * a.price * -1.0,
+	a.price
+from
+	trades a,
+	#external_accounts b,
+	#internal_accounts c,
+	#traders d,
+	#strategies e,
+	#brokers f,
+	#counterparties g,
+	forwards h
+where
+	a.contract_id = h.contract_id
+and
+	a.external_account_id = b.external_account_id
+and
+	a.internal_account_id = c.internal_account_id
+and
+	a.trader_id = d.trader_id
+and
+	a.strategy_id = e.strategy_id
+and
+	a.broker_id= f.broker_id
+and
+	a.counterparty_id = g.counterparty_id
+and
+	a.value_date >= @begin_date
+and
+	a.trade_date >= @trades_begin
+and
+	a.trade_date < @end_date
+
+update
+	#trades
+set
+	price_style = "Standard",
+	display_contract_id = contract_id
+
+update
+	#trades
+set
+	a.deal_type_id = b.deal_type_id
+from
+	#trades a,
+	deals b
+where
+	a.deal_id = b.deal_id
+
+update
+	#trades
+set
+	ladder_view = "Cash"
+
+update
+	#trades
+set
+	a.ladder_view = "EFP"
+from
+	#trades a,
+	deal_types b
+where
+	a.deal_type_id = b.deal_type_id
+and
+	b.name like "%EFP%"
+	
+update
+	#trades
+set
+	a.price_style = c.name
+from
+	#trades a,
+	contract_price_styles b,
+	price_styles c
+where
+	a.contract_id = b.contract_id
+and
+	b.price_style_id = c.price_style_id
+
+update
+	#trades
+set
+	a.display_contract_id = b.contract_id
+from
+	#trades a,
+	forwards b
+where
+	a.product_id = b.currency_id
+and
+	a.currency_id = b.product_id
+and
+	a.price_style = "Inverted"
+
+update
+	#trades
+set
+	display_product_qty = product_qty,
+	display_currency_qty = currency_qty
+where
+	price_style = "Standard"
+
+update
+	#trades
+set
+	display_product_qty = currency_qty,
+	display_currency_qty = product_qty
+where
+	price_style = "Inverted"
+
+
+
+create table
+	#products(
+		product_id int,
+		value_date datetime,
+		balance float)
+insert into
+	#products
+select
+	product_id,
+	value_date,
+	sum(product_qty)
+from
+	#trades
+where
+	ladder_view = "Cash"
+group by
+	product_id,
+	value_date
+
+insert into
+	#products
+select
+	currency_id,
+	value_date,
+	sum(currency_qty)
+from
+	#trades
+where
+	ladder_view = "Cash"
+group by
+	currency_id,
+	value_date
+
+
+
+create table
+	#balances(
+		product_id int,
+		balance float NULL,
+		value_date datetime NULL,
+		currency_id int NULL,
+		market_rate float NULL,
+		equiv float NULL)
+
+insert into
+	#balances(
+		product_id,
+		value_date,
+		balance)
+select
+	product_id,
+	value_date,
+	sum(balance)
+from
+	#products
+group by
+	product_id,
+	value_date
+
+delete
+
+from
+	#balances
+where
+	balance = 0.0
+
+update
+	#balances
+set
+	currency_id = @evaluation_currency_id
+
+update
+	#balances
+set
+	equiv = balance,
+	market_rate = 1.0
+where
+	product_id = currency_id
+
+
+
+
+create table
+	#forward_ladder(
+		id int identity,
+		style varchar(250) NULL,
+		date datetime NULL,
+		product_id int NULL,
+		product varchar(50) NULL,
+		value_date datetime NULL,
+		balance float NULL,
+		ccy varchar(50) NULL,
+		equiv float NULL,
+		trade_notification_id int NULL)
+
+create table
+	#value_dates(
+		value_date datetime)
+insert into
+	#value_dates
+select
+	distinct(value_date)
+from
+	#trades
+where
+	ladder_view = "Cash"
+
+select
+	@value_date = dateadd(year, -1, min(value_date))
+from
+	#value_dates
+
+select
+	@value_dates = count(*)
+from
+	#value_dates
+where
+	value_date > @value_date
+
+while @value_dates > 0
+begin
+	select
+		@value_date = min(value_date)
+	from
+		#value_dates
+	where
+		value_date > @value_date
+
+	select
+		@balances = NULL
+	select
+		@balances = count(*)
+	from
+		#balances
+	where
+		value_date = @value_date
+
+	if @balances = NULL
+		select
+			@balances = 0
+
+	if @balances > 0
+	begin
+		insert into
+			#forward_ladder(
+				style,
+				/* product, MARKR */
+				product_id,
+				value_date,
+				balance,
+				ccy,
+				equiv)
+		select
+			style = @style,
+			/* MARKR b.symbol, */
+			a.product_id,
+			a.value_date,
+			round(a.balance, 2),
+			b.symbol,
+			a.equiv
+		from
+			#balances a,
+			products b
+		where
+			a.product_id = b.product_id
+		and
+			a.value_date = @value_date
+		order by
+			b.symbol
+
+		select
+			@total_equiv = NULL
+		select
+			@total_equiv = sum(equiv)
+		from
+			#forward_ladder
+		where
+			value_date = @value_date
+	end
+
+
+	select
+		@value_dates = count(*)
+	from
+		#value_dates
+	where
+		value_date > @value_date
+end
+
+/* Round for JPY */
+update
+	#forward_ladder
+set
+	balance = round(a.balance, b.decimal_precision)
+from
+	#forward_ladder a,
+	products b
+where
+	a.product_id = b.product_id
+and
+	b.decimal_precision != NULL
+
+/* Flip for client perspective */
+update
+	#forward_ladder
+set
+	balance = balance * -1
+
+select
+	account = @run_name,
+        value_date = rtrim(convert(varchar(10), value_date, 112)),
+	ccy,
+	balance,
+	trade_notification_id
+from
+	#forward_ladder
+order by
+	value_date,
+	ccy
+
+
+
+go 

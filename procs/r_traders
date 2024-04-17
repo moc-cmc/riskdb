@@ -8,6 +8,42 @@ create procedure
 	r_traders
 as
 
-select name=symbol from traders order by name 
+declare @archive_column varchar(1)
+
+select
+	 @archive_column = "Y"
+from
+	syscolumns a,
+	sysobjects b
+where
+	a.id = b.id
+and
+	b.name = "external_accounts"
+and
+	a.name = "archived_at"
+
+if @archive_column = "Y"
+begin
+	select 
+		name=a.symbol 
+	from 
+		traders a,
+		external_accounts b
+	where
+		a.external_account_id = b.external_account_id 
+	and
+		b.archived_at = NULL
+	order 
+		by a.name
+end
+else
+begin
+	select
+		name = symbol
+	from
+		traders
+	order by
+		name
+end
 
 go

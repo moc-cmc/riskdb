@@ -173,7 +173,12 @@ begin tran
 		rollback tran
 		return
 	end
+
 commit tran
+
+exec
+	r_insertaccounttransnotification
+        	@account_transaction_id
 
 select
 	style = @style,
