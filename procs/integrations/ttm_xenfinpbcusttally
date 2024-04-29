@@ -293,7 +293,7 @@ select
         @m_suppression_lookup = @m_counterparty_lookup,
 	@c_suppression_lookup = @c_trader_lookup
 
-/* Not using trigger symbols, ticket creation values not currently supported
+/*
 select
         @trigger_symbol = @m_trader_lookup,
 	@trigger_symbol = @c_counterparty_lookup
@@ -840,6 +840,51 @@ begin
                              @m_trade_id = @m_trade_id
 end
 
+if @c_trade_id != NULL
+begin
+        exec
+                r_ticketcreationvalues
+                        @trigger_symbol = @c_counterparty_lookup,
+                        @login = @trader_login,
+                        @source = @source,
+                        @deal_id = @deal_id,
+                        @deal_exec_symbol = @deal_exec_symbol,
+                        @tally_type = @trade_type,
+                        @deal_type = @deal_type,
+                        @trade_type = @trade_type,
+                        @quantity = @c_quantity,
+                        @symbol = @contract,
+                        @value_date = @value_date,
+                        @fixing_date = @fixing_date,
+                        @price = @price,
+                        @trade_date = @trade_date,
+                        @broker = @broker,
+                        @trade_identifier = @c_platform_identifier,
+                        @spot_reference = @last_spot_rate
+end
+
+if @m_trade_id != NULL
+begin
+        exec
+                r_ticketcreationvalues
+                        @trigger_symbol = @m_trader_lookup,
+                        @login = @trader_login,
+                        @source = @source,
+                        @deal_id = @deal_id,
+                        @deal_exec_symbol = @deal_exec_symbol,
+                        @tally_type = @trade_type,
+                        @deal_type = @deal_type,
+                        @trade_type = @trade_type,
+                        @quantity = @m_quantity,
+                        @symbol = @contract,
+                        @value_date = @value_date,
+                        @fixing_date = @fixing_date,
+                        @price = @price,
+                        @trade_date = @trade_date,
+                        @broker = @broker,
+                        @trade_identifier = @m_platform_identifier,
+                        @spot_reference = @last_spot_rate
+end
 
 /* --------------------------------------------------------------------------
  * STEP: Send trade notifications 
@@ -876,7 +921,5 @@ begin
                 exec_type=@exec_type
 	return
 end
-
-
 
 go
