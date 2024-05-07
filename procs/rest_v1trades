@@ -1,0 +1,166 @@
+create or replace procedure
+        rest_v1trades
+                @api_key varchar(100),
+                @account varchar(50),
+                @transaction_date datetime=NULL,
+		@trade_id int=NULL
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+
+declare @external_account_id int
+
+declare @start_time datetime
+declare @end_time datetime
+select
+	@start_time = getdate()
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+
+if @transaction_date = NULL
+begin
+        select
+                @transaction_date = getdate()
+end
+
+exec
+        r_daterangefordate
+                @transaction_date,
+                @begin_date output,
+                @end_date output
+
+if @trade_id = NULL
+begin
+	select
+		"trade_id" = a.trade_id,
+		"deal_id" = a.deal_id,
+		"trade_date" = a.trade_date,
+		"trade_type" = d.name,
+		"contract" = c.symbol,
+		"traded_ccy" = h.symbol,
+		"counter_ccy" = i.symbol,
+		"trader" = f.symbol,
+                CASE 
+                    WHEN a.quantity > 0 THEN 'Buy'
+                    WHEN a.quantity < 0 THEN 'Sell'
+                END AS "side",
+		"quantity" = convert(varchar(30), convert(numeric(30, 10), a.quantity)),
+		"price" = a.price,
+		"value_date" = a.value_date,
+		"identifier" = a.identifier,
+		"broker" = e.symbol,
+		"strategy" = g.name
+	from
+		trades a,
+		external_accounts b,
+		contracts c,
+		trade_types d,
+		brokers e,
+		traders f,
+		strategies g,
+		products h,
+		products i,
+		forwards j
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.contract_id = c.contract_id
+	and
+		a.trade_type_id = d.trade_type_id
+	and
+		a.broker_id = e.broker_id
+	and
+		a.trader_id = f.trader_id
+	and
+		a.strategy_id = g.strategy_id
+	and
+		a.contract_id = j.contract_id
+	and
+		j.product_id = h.product_id
+	and
+		j.currency_id = i.product_id
+	and
+		a.trade_date >= @begin_date
+	and
+		a.trade_date < @end_date
+	and
+		a.external_account_id = @external_account_id 
+	order by
+		a.trade_date ASC
+
+end
+
+if @trade_id != NULL 
+begin
+        select
+                "trade_id" = a.trade_id,
+                "deal_id" = a.deal_id,
+		"trade_date" = a.trade_date,
+                "trade_type" = d.name,
+                "contract" = c.symbol,
+                "traded_ccy" = h.symbol,
+                "counter_ccy" = i.symbol,
+                "trader" = f.symbol,
+                CASE
+                    WHEN a.quantity > 0 THEN 'Buy'
+                    WHEN a.quantity < 0 THEN 'Sell'
+                END AS "side",
+		"quantity" = convert(varchar(30), convert(numeric(30, 10), a.quantity)),
+                "price" = a.price,
+                "value_date" = a.value_date,
+                "identifier" = a.identifier,
+                "broker" = e.symbol,
+                "strategy" = g.name
+        from
+                trades a,
+                external_accounts b,
+                contracts c,
+                trade_types d,
+                brokers e,
+                traders f,
+                strategies g,
+                products h,
+                products i,
+                forwards j
+        where
+                a.external_account_id = b.external_account_id
+        and
+                a.contract_id = c.contract_id
+        and
+                a.trade_type_id = d.trade_type_id
+        and
+                a.broker_id = e.broker_id
+        and
+                a.trader_id = f.trader_id
+        and
+                a.strategy_id = g.strategy_id
+	and
+                a.contract_id = j.contract_id
+        and
+                j.product_id = h.product_id
+        and
+                j.currency_id = i.product_id
+        and
+		a.trade_id = @trade_id
+end
+
+
+select
+	@end_time = getdate()
+
+exec 
+	sp_dogstatsdtimer 
+		@metric_name="ase.proc.rest_v1trades",
+		@start_time=@start_time,
+		@end_time=@end_time,
+		@tags=NULL,
+		@sample_rate="1.0"
+	
+go
+
