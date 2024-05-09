@@ -6,28 +6,27 @@ create or replace procedure
 		@broker varchar(50),
 		@account varchar(100)=NULL,
 		@apikey varchar(100)=NULL,
-    		@_id varchar(50) = NULL,
+		@_id varchar(50) = NULL,
 		@_trade_id varchar(50) = NULL,
-    		@_ordertxid varchar(50) = NULL,
-    		@_posstatus varchar(50) = NULL,
-    		@_pair varchar(50) = NULL,
-    		@_time varchar(50) = NULL,
-    		@_type varchar(50) = NULL,
-    		@_ordertype varchar(50) = NULL,
-    		@_cost varchar(50) = NULL,
-    		@_fee varchar(50) = NULL,
-    		@_vol varchar(50) = NULL,
-    		@_vol_closed varchar(50) = NULL,
-    		@_margin varchar(50) = NULL,
-    		@_value varchar(50) = NULL,
-    		@_net varchar(50) = NULL,
-    		@_terms varchar(50) = NULL,
-    		@_rollovertm varchar(50) = NULL,
-    		@_misc varchar(50) = NULL,
-    		@_oflags varchar(50) = NULL
-
-
+		@_ordertxid varchar(50) = NULL,
+		@_posstatus varchar(50) = NULL,
+		@_pair varchar(50) = NULL,
+		@_time varchar(50) = NULL,
+		@_type varchar(50) = NULL,
+		@_ordertype varchar(50) = NULL,
+		@_cost varchar(50) = NULL,
+		@_fee varchar(50) = NULL,
+		@_vol varchar(50) = NULL,
+		@_vol_closed varchar(50) = NULL,
+		@_margin varchar(50) = NULL,
+		@_value varchar(50) = NULL,
+		@_net varchar(50) = NULL,
+		@_terms varchar(50) = NULL,
+		@_rollovertm varchar(50) = NULL,
+		@_misc varchar(50) = NULL,
+		@_oflags varchar(50) = NULL
 as
+
 /* select out all the parameters received and return them as a result set */
 
 select
@@ -55,7 +54,7 @@ select
     @_misc as _misc,
     @_oflags as _oflags
 
-
+declare @mapped_symbol varchar(50)
 declare @sender_comp varchar(50)
 declare @target_comp varchar(50)
 declare @exec_type varchar(50)
@@ -313,7 +312,7 @@ select
 
 /* Re-assigned */
 select
-        @fee_ccy = "USD",
+        @fee_ccy = NULL,
         @deal_exec_symbol = @_ordertxid,
         @deal_alias = NULL,
         @side = @_type,
@@ -364,7 +363,7 @@ if @client_or_market = "M"
 begin
     select
         @m_counterparty_lookup = rtrim(@account),
-        @m_trader_lookup = rtrim(@account)/*instead of api key*/
+        @m_trader_lookup = rtrim(@apikey)
 end
 /* Set suppression and trigger_symbol variables */
 select
@@ -649,6 +648,24 @@ end
 
 if @trade_type = "Spot"
 begin
+
+	select
+		@mapped_symbol = a.symbol
+	from
+		contracts a,
+		contract_symbols b
+	where
+		a.contract_id = b.contract_id
+	and
+		b.source_id = @source_id
+	and
+		b.symbol = @symbol
+	if @mapped_symbol != NULL
+	begin
+		select
+			@symbol = @mapped_symbol
+	end
+
 	exec
 		r_validateccypair
 			@login=@default_login,
@@ -679,6 +696,34 @@ begin
 		end
  		return
 
+	end
+	select
+		@fee_ccy = a.symbol
+	from
+		products a,
+		contracts b,
+		forwards c
+	where
+		b.contract_id = c.contract_id
+	and
+		c.currency_id = a.product_id
+	and
+		b.contract_id = @contract_id
+	if @fee_ccy = NULL
+	begin
+		select
+			@message="No unable to determine fee ccy for " + rtrim(@source) + " for mapping value '" + rtrim(@symbol) + "'"
+                if not exists(select message_id from messages  where content = @message)
+                begin
+                        exec
+                                ag_sendfailedmappingmessage
+                                        @login=@default_login,
+                                        @broker_id=@broker_id,
+                                        @identifier=@m_platform_identifier,
+                                        @mapping_error_type="Contract",
+                                        @message = @message
+                end
+		return
 	end
 end
 else
@@ -1058,6 +1103,7 @@ begin
 	return
 end
 */
+
 
 go 
 
