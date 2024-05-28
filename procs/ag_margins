@@ -1,13 +1,5 @@
-use
-	risk_jeff
-go
 
-
-drop procedure
-	ag_margins
-go
-
-create procedure
+create or replace procedure
 	ag_margins
 		@login varchar(50),
 		@prime_broker varchar(50)=NULL
