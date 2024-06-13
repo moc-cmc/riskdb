@@ -15,22 +15,19 @@ as
 declare @result int
 
 select
-    @result = syb_sendmsg(b.host, b.port,
-        "@" + @@servername + "." + db_name() + " notify update messages "
-        + convert(varchar(10), message_id) + " "
-        + convert(varchar(10), author_user_id) + " "
-        + "'" + convert(varchar(26), dateadd(mi, datediff(mi, getdate(), getutcdate()), date), 9) + "' "
-        + convert(varchar(10), channel_id) + " "
-        + (case when item_relation_id = NULL then "NULL" else convert(varchar(10), item_relation_id) end) + " "
-        + (case when item_id = NULL then "NULL" else convert(varchar(10), item_id) end) + " "
-        + "'" + str_replace(subject, "'", "\'") + "' "
-        + (case when content = NULL then "NULL" else "'" + str_replace(content, "'", "\'") + "'" end) + " "
-        + (case when properties = NULL then "NULL" else "'" + str_replace(properties, "'", "\'") + "'" end) + " "
-        + convert(varchar(10), priority_id) + " "
-        + convert(varchar(10), status_id)
+    @result = syb_sendmsg("localhost", 9999,
+        "Notify /topic/Store.Notify." + @@servername + "." + db_name() + ".messages: update "
+        + convert(varchar(10), a.message_id) + " "
+        + convert(varchar(10), a.author_user_id) + " "
+        + "'" + convert(varchar(19), a.message_date, 23) + "." + substring(convert(varchar(15), a.message_date, 20), 10, 3) + "' "
+        + convert(varchar(10), a.channel_id) + " "
+        + convert(varchar(10), a.message_type_id) + " "
+        + "'" + str_replace(str_replace(str_replace(str_replace(str_replace(a.subject, "\", "\\"), char(9), "\t"), char(13), "\r"), char(10), "\n"), "'", "\'") + "' "
+        + (case when a.content = NULL then "NULL" else "'" + str_replace(str_replace(str_replace(str_replace(str_replace(a.content, "\", "\\"), char(9), "\t"), char(13), "\r"), char(10), "\n"), "'", "\'") + "'" end) + " "
+        + convert(varchar(10), a.priority_id) + " "
+        + convert(varchar(10), a.activity_status_id)
     )
 from
-    inserted a,
-    dbagents b
+    inserted a
 
 go
