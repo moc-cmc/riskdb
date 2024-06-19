@@ -135,6 +135,13 @@ values(
         "Manage Logins",
         NULL)
 
+insert into
+        #meta
+values(
+        "Column Link",
+        "manage_user_logins",
+        "Manage User Logins",
+        NULL)
 
 insert into
         #meta
@@ -363,6 +370,22 @@ values(
 	"Fixing Centers",
 	NULL)
 
+insert into
+	#meta
+values(
+	"Column Link",
+	"Init Product",
+	"Init Product",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"Option Cutoff",
+	"Option Cutoff",
+	NULL)
+
 /* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
 select
@@ -413,6 +436,7 @@ begin
                 section="Login Management",
                 style = @style,
                 manage_logins="Manage Logins",
+                manage_user_logins="Manage User Logins",
                 manage_runs="Manage Runs"
 end
 else
@@ -431,7 +455,9 @@ begin
 		interest_rates = "Manage Interest Rates",	
 		spread_groups = "Manage Roll Spread Groups",
 		manage_ops_tasks = "Manage Ops Tasks",
-		fixing_centers = "Fixing Centers"
+		fixing_centers = "Fixing Centers",
+		init_product = "Init Product",
+		option_cutoff = "Option Cutoff"
 	
 	select
 		section="Credit Management",
@@ -445,14 +471,17 @@ begin
 		section="Login Management",
 		style = @style,
 		manage_logins="Manage Logins",
-		manage_runs="Manage Runs",
+		manage_user_logins="Manage User Logins",
+                manage_runs="Manage Runs",
 		manage_client_notifications="Manage Client Notifications",
 		active_logins="Active Logins"
 end
 
+/*
+
 if @login_type = "Elysium"
 begin
-
+*/
 	select
 		section = "Advanced Configurations",
 		trader_list="Trader List",
@@ -477,8 +506,9 @@ begin
 		mc_runs="MC Dropdown Runs",
 		filedrop_multiruns="Filedrop Multiruns",
 		tico_reports = "Tico Reports Home"
+/*
 end
-
+*/
 
 go 
 
