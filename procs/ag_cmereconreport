@@ -1,0 +1,168 @@
+create or replace procedure
+	ag_cmereconreport
+		@login varchar(50),
+		@source varchar(50),
+		@begin_date datetime = NULL,
+		@end_date datetime = NULL
+
+as
+
+declare @tico_account_id int
+declare @source_id int
+
+select
+    @tico_account_id = account_id
+from
+     tico_accounts
+where
+    login = @login
+if @tico_account_id = NULL
+begin
+    select
+           status="Error",
+           message="Problem finding account for login"
+    return
+end
+
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+declare @begin_day_string char(20)
+declare @end_day_string char(20)
+
+
+select
+    @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+    @subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+    @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+    @style = "background:#FFFFFF;border: 1px solid white",
+    @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+    @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+    #meta(
+        meta_type char(200),
+        name char(50) NULL,
+        action char(100) NULL,
+        value char(200) NULL)
+insert into
+    #meta
+values(
+    "Row Style",
+    "style",
+    NULL,
+    NULL)
+
+insert into
+    #meta
+values (
+    "Column Group",
+    "section",
+    NULL,
+    NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"id_recon",
+	"Run CME ID Recon",
+	NULL) 
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source",
+		source = @source
+	return
+end
+
+
+if @begin_date = NULL
+	select
+		@begin_date = getdate()
+	if datepart(hour, @begin_date) >= 17
+		exec
+			r_nextbusinessday
+				@begin_date,
+				@begin_date output
+
+	select
+		@begin_day_string = convert(char(2), datepart(month, @begin_date)) + "/" +
+			convert(char(2),datepart(day, @begin_date)) + "/" +
+			convert(char(4), datepart(year, @begin_date))
+	select
+		@begin_date = convert(datetime, @begin_day_string)
+
+	exec
+		r_prevbusinessday
+			@begin_date,
+			@begin_date output
+
+	select
+		@begin_date = dateadd(hour, 17, @begin_date)
+
+if @end_date = NULL
+	exec
+		r_nextbusinessday
+			@begin_date,
+			@end_date output
+
+select
+	@end_day_string = convert(char(2), datepart(month, @end_date)) + "/" +
+			convert(char(2), datepart(day, @end_date)) + "/" +
+			convert(char(4), datepart(year, @end_date)) + " 17:00"
+select
+	@end_date = convert(datetime, @end_day_string)
+
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+select
+	id_recon = "Change Date"
+
+select 
+	section = "ID Recon for Range",
+	trade_date = a.trade_date, 
+	etg_id= a.trade_id,
+	spectrum_id=case when b.alias != NULL then b.alias else "" end, 
+	cme_id = rtrim(lei_number)+convert(char(10),a.trade_id),
+	style=@style
+from
+	trades a, 
+	trade_aliases b, 
+	fund_regulatory_info c,
+	external_accounts d,
+	external_account_types e
+where 
+	a.trade_id *= b.trade_id 
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	b.source_id = @source_id
+and
+	a.external_account_id = d.external_account_id
+and
+	d.external_account_type_id = e.external_account_type_id 
+and
+	e.name="Client"
+
+order by 
+	a.trade_date
+
+go
+
+
