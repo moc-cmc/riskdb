@@ -604,7 +604,7 @@ and
 and
         a.quantity = c.quantity
 and
-        convert(int, a.counter_quantity) = convert(int, c.counter_quantity) /* relaxed counters vs price  + identifiers*/
+        convert(bigint, a.counter_quantity) = convert(bigint, c.counter_quantity) /* relaxed counters vs price  + identifiers*/
 and
 	a.identifier = c.identifier
 and
