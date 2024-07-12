@@ -585,7 +585,7 @@ and
 and
         a.quantity = c.quantity
 and
-	convert(numeric(30, 2), c.quantity * convert(numeric(30, 9), (c.price)) * -1) = convert(numeric(30, 2), a.quantity * convert(numeric(30, 9), (1/a.price)) * -1)
+	convert(numeric(30, 2), c.quantity * convert(numeric(30, 8), (c.price)) * -1) = convert(numeric(30, 2), a.quantity * convert(numeric(30, 8), (1/a.price)) * -1)
 and
         a.value_date = c.value_date
 and
