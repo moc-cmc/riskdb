@@ -221,6 +221,7 @@ declare @netlink_pb_source_id int
 declare @future_id int
 declare @contract_size float
 declare @determined_value_date datetime
+declare @weekday int
 
 select
 	@ack_required = "Y"
@@ -255,6 +256,25 @@ begin
 	select
 		@value_date = @determined_value_date
 end
+
+/* Adding value date check for weekend trades WD 20240629*/
+select
+        @weekday = datepart(weekday, @value_date)
+
+if @weekday = 7
+begin
+        select
+                @value_date = dateadd(day, 2, @value_date)
+end
+if @weekday = 1
+begin
+        select
+                @value_date = dateadd(day, 1, @value_date)
+end
+
+/* Can remove select out after confirmation */
+select "value_date" = @value_date
+
 
 declare @message varchar(255)
 
@@ -374,6 +394,13 @@ begin
         	@m_counterparty_lookup = rtrim(@executing_firm)+"-"+rtrim(@venue)+"-"+rtrim(@contra_firm),
 		@m_trader_lookup = rtrim(@entering_trader),
 		@m_strategy = rtrim(@executing_trader)
+
+	/* Change to use Account instead of combining fields, when provided */
+	if @account not in(NULL, "")
+	begin
+		select
+			@m_counterparty_lookup = rtrim(@account)
+	end
 
 	if @entering_trader = NULL
 	begin
@@ -1114,5 +1141,5 @@ begin
 end
 */
 
-go 
 
+go
