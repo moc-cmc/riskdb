@@ -608,6 +608,55 @@ where
 and
         b.remote_trade_id = NULL
 
+/* We know the trades in trades table store inverted price on an inverted pair. the next check is for inverted contracts in trades */
+/* relaxed counter qty*/
+
+update
+        #remote_trades
+set
+        recon_status_id = b.status_id,
+        trade_id = c.trade_id,
+        recon_method_id = @algo_recon_method_id
+from
+        #remote_trades a,
+        #statuses b,
+        #trades c
+where
+        b.name = "Mismatched"
+and
+        a.internal_account_id = c.internal_account_id
+and
+        a.external_account_id = c.external_account_id
+and
+        a.counterparty_id = c.counterparty_id
+and
+        a.contract_id = c.contract_id
+and
+        a.quantity = c.quantity
+and
+        convert(numeric(30, 2), c.quantity * convert(numeric(30, 8), (1/c.price)) * -1) = convert(numeric(30, 2), a.quantity * convert(numeric(30, 8), (a.price)) * -1)
+and
+        a.value_date = c.value_date
+and
+        a.trade_id = NULL
+and
+        c.remote_trade_id = NULL
+
+select
+        @mismatched_count = @mismatched_count + @@rowcount
+
+update
+        #trades
+set
+        b.remote_trade_id = a.remote_trade_symbol_id
+from
+        #remote_trades a,
+        #trades b
+where
+        a.trade_id = b.trade_id
+and
+        b.remote_trade_id = NULL
+
 
 if @match_inverted = "Y"
 begin
