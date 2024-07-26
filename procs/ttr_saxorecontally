@@ -1,0 +1,326 @@
+
+create or replace procedure
+        ttr_saxorecontally
+		@source varchar(50),
+		@default_login varchar(50),
+    		@commissioninstrumentcurrency varchar(50)=NULL,
+    		@employeeid varchar(50)=NULL,
+    		@reportingdate varchar(12),
+    		@price varchar(20),
+    		@originaltradeid varchar(50)=NULL,
+    		@taxinstrumentcurrency varchar(50)=NULL,
+    		@tradeallocation varchar(10)=NULL,
+    		@expirydate varchar(12)=NULL,
+    		@transferfee varchar(50)=NULL,
+    		@parentinstrumentuic varchar(50)=NULL,
+    		@executingentityidentificationc varchar(50)=NULL,
+    		@pricemultiplier varchar(10)=NULL,
+    		@ordernumber varchar(50)=NULL,
+    		@decisionmakeruserid varchar(50)=NULL,
+    		@securitiesfinancingtransaction varchar(10)=NULL,
+    		@counterpartid varchar(50)=NULL,
+    		@tradedate varchar(12),
+    		@partneraccountkey varchar(50)=NULL,
+    		@quotedvalue varchar(20)=NULL,
+    		@tradedamount varchar(20)=NULL,
+    		@buysell varchar(10)=NULL,
+    		@instrumentclassification varchar(50)=NULL,
+    		@venue varchar(50)=NULL,
+    		@valuedate varchar(12),
+    		@caeventtypename varchar(50)=NULL,
+    		@isincode varchar(50)=NULL,
+    		@accountcurrency varchar(5)=NULL,
+    		@correctionleg varchar(10)=NULL,
+    		@caeventid varchar(10)=NULL,
+    		@tradetype varchar(50)=NULL,
+    		@countryofissue varchar(50)=NULL,
+    		@instrumentuic varchar(50)=NULL,
+    		@caeventtypeid varchar(10)=NULL,
+    		@corporateactionreference varchar(50)=NULL,
+    		@relatedtradeid varchar(50)=NULL,
+    		@isomic varchar(10)=NULL,
+    		@eodrate varchar(20)=NULL,
+    		@figuresize varchar(10)=NULL,
+    		@additionaltransactioncostinstr varchar(20)=NULL,
+    		@tradeexecutiontime varchar(30)=NULL,
+    		@roottradeid varchar(50)=NULL,
+    		@saxoportfoliomanagertriggered varchar(10)=NULL,
+    		@exchangedescription varchar(50)=NULL,
+    		@instrumenttype varchar(50)=NULL,
+    		@otcposttradeindicator varchar(10)=NULL,
+    		@correlationkey varchar(50)=NULL,
+    		@instrumentdescription varchar(100)=NULL,
+    		@operatingmic varchar(10)=NULL,
+    		@accountnumber varchar(50)=NULL,
+    		@tradenumber varchar(50)=NULL,
+    		@instrumentcode varchar(50)=NULL,
+    		@exchangeisocode varchar(10)=NULL,
+    		@settlementstyle varchar(50)=NULL,
+    		@tradetime varchar(30)=NULL,
+    		@instrumentcurrency varchar(5)=NULL,
+    		@actualtradedate varchar(12)=NULL,
+    		@transactiondescription varchar(50)=NULL,
+    		@externalorderid varchar(50)=NULL,
+    		@useridontrade varchar(50)=NULL,
+    		@parentinstrumentname varchar(50)=NULL,
+    		@termoftheunderlyingindex varchar(50)=NULL,
+    		@commodityderivativeindicator varchar(10)=NULL,
+    		@originatingtool varchar(50)=NULL
+
+as
+
+declare @source_id int
+declare @symbol varchar(50)
+declare @contract_symbol varchar(50)
+declare @contract_mapping varchar(50)
+declare @ccy1 varchar(50)
+declare @ccy2 varchar(50)
+declare @tally_qty float
+declare @tally_price float
+declare @tally_trade_date datetime
+declare @tally_value_date datetime
+declare @tally_fixing_date datetime
+
+declare @quantity numeric(30, 2)
+
+declare @account_lookup varchar(50)
+declare @counterparty_lookup varchar(50)
+
+declare @internal_account varchar(50)
+declare @counterparty_id int
+declare @counterparty varchar(50)
+declare @external_account_id int
+declare @external_account varchar(50)
+
+declare @contract_id int
+declare @inverted varchar(50)
+declare @tally_status varchar(10)
+declare @tally_message varchar(25)
+
+declare @remote_trade_symbol_id int
+declare @identifier varchar(100)
+declare @contract varchar(50)
+declare @side varchar(50)
+declare @action varchar(20)
+declare @reason varchar(50)
+
+declare @fixing_date datetime
+
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+
+if @source_id = NULL
+begin
+	select
+		error = "error",
+		msg = "Could not find source",
+		source = @source
+	return
+end
+
+/* --------------------------------------------------------------------------
+ * STEP: Map params and convert
+ *
+ */
+
+
+select
+	@tally_qty = convert(numeric(30, 4), @tradedamount),
+	@tally_price = convert(float, @price),
+	@tally_trade_date = convert(datetime, @tradedate),
+	@tally_value_date = convert(datetime, @valuedate),
+	@contract_mapping = @instrumentcode,
+	@identifier = rtrim(@tradenumber),
+	@internal_account = "OANDA ALL"
+
+if @fixing_date not in("", NULL, " ")
+begin
+	select
+		@tally_fixing_date = convert(datetime, @fixing_date)
+end
+else
+begin
+	select
+		@tally_fixing_date = NULL
+end
+
+
+select
+	@account_lookup = rtrim(@executingentityidentificationc),
+	@counterparty_lookup = rtrim(@executingentityidentificationc)
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Lookup trader and counterparty symbols
+ *
+ * ag_pendingmappingerrors determines if there is currently a mapping error for a
+ * trade. If there is, then @mapping_error_id wont be NULL. The tt_resolve* procs
+ * will onlu send a message about the failed mapping if there is not an existing
+ * mapping error.
+ */
+
+select
+	@external_account_id = a.external_account_id,
+	@external_account = a.symbol
+from
+	external_accounts a,
+	external_account_symbols b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @account_lookup
+if @external_account_id  = NULL
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "account mapping error trade not processed",
+		account_lookup = @account_lookup
+        return
+end
+
+select
+        @counterparty_id = a.counterparty_id,
+        @counterparty = a.name
+from
+        counterparties a,
+        counterparty_symbols b
+where
+        a.counterparty_id = b.counterparty_id
+and
+        b.source_id = @source_id
+and
+        b.symbol  = @counterparty_lookup
+if @counterparty_id = NULL
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "counterparty mapping error trade not processed",
+		counterparty_lookup = @counterparty_lookup
+        return
+end
+
+/* --------------------------------------------------------------------------
+ * STEP: Determine the contract
+ *
+ */
+
+select
+	@contract_symbol = a.symbol
+from
+	contracts a,
+	contract_symbols b
+where
+	a.contract_id = b.contract_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @contract_mapping
+
+if @contract_symbol = NULL
+begin
+	select
+		error = "error",
+		msg = "Could not find contract",
+		mapping = @contract_mapping
+	return
+end
+
+/*
+exec
+        r_validateccypair
+                @login=@default_login,
+                @symbol=@symbol,
+                @contract_id = @contract_id output,
+                @contract = @contract output,
+                @inverted = @inverted output
+*/
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Adjust the perspective of the trade and set the quantity
+ *
+ * The direction of the trade can be affected by the side and the perspective
+ * of the message. Some platforms have different perspectives for client
+ * messages vs market messages. We tally trades in perspective of the fund
+ * or agency so set the direction accordingly
+ */
+
+select
+		@quantity = @tally_qty * 1
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Tally the trade
+ *
+ */
+
+if @reason = "CANCEL"
+begin
+	select
+		@action = "Cancel"
+end
+else
+begin
+	select
+		@action = NULL
+end
+
+exec
+        api_addremotetradesymbol
+                @login=@default_login,
+                @source=@source,
+                @internal_account=@internal_account,
+                @external_account=@external_account,
+                @counterparty=@counterparty,
+                @quantity=@quantity,
+                @price=@tally_price,
+                @contract=@contract_symbol,
+                @trade_date=@tally_trade_date,
+                @value_date=@tally_value_date,
+                @fixing_date=@tally_fixing_date,
+                @identifier=@identifier,
+		@action=@action,
+                @remote_trade_symbol_id=@remote_trade_symbol_id output
+
+
+if @remote_trade_symbol_id = NULL
+begin
+        select
+                @tally_status = "Error",
+                @tally_message = "Problem tallying remote trade"
+end
+else
+begin
+        select
+                @tally_status = "Success",
+                @tally_message = "Tallied remote trade"
+end
+
+select
+        status = @tally_status,
+        message = @tally_message,
+	reason = @reason,
+        remote_trade_symbol_id = @remote_trade_symbol_id,
+        login = @default_login,
+        source = @source,
+        external_account = @external_account,
+        counterparty = @counterparty,
+        quantity = @quantity,
+        symbol = @symbol,
+        value_date = @tally_value_date,
+        fixing_date = @tally_fixing_date,
+        price = @tally_price,
+        trade_date = @tally_trade_date,
+        identifier = @identifier
+
+
+go
