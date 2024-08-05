@@ -1,9 +1,5 @@
 
-drop procedure
-	ag_edtiextacctdets
-go
-
-create procedure
+create or replace procedure
 	ag_edtiextacctdets
 		@login varchar(50),
 		@account varchar(50),
@@ -17,9 +13,9 @@ create procedure
 		@wire_source varchar(50)=NULL,
 		@pip_spread varchar(50)=NULL,
 		@nop_type varchar(50)=NULL,
-		@collateral varchar(50)=NULL
+		@collateral varchar(50)=NULL,
+		@prime_broker varchar(100)=NULL
 as
-
 
 declare @external_account_id int
 declare @external_account_type_id int
@@ -30,7 +26,7 @@ declare @wire_source_id int
 declare @pip_spread_id int
 declare @nop_type_id int
 declare @collateral_product_id int
-
+declare @prime_broker_id int
 
 select
 	@external_account_id = external_account_id
@@ -38,6 +34,7 @@ from
 	external_accounts
 where
 	symbol = @account
+
 if @external_account_id = NULL
 begin
 	select
@@ -53,6 +50,7 @@ from
 	external_account_types
 where
 	name = @account_type
+
 if @external_account_type_id = NULL
 begin
 	select
@@ -68,6 +66,7 @@ from
 	aggregation_styles
 where
 	name = @agg_style
+
 if @aggregation_style_id = NULL
 begin
 	select
@@ -77,13 +76,13 @@ begin
 	return
 end
 
-
 select
 	@evaluation_currency_id = product_id
 from
 	products
 where
 	symbol = @base_ccy
+
 if @evaluation_currency_id = NULL
 begin
 	select
@@ -93,13 +92,13 @@ begin
 	return
 end
 
-
 select
 	@settlement_method_id = settlement_method_id
 from
 	settlement_methods
 where
 	name = @settlement
+
 if @settlement_method_id = NULL
 begin
 	select
@@ -114,9 +113,11 @@ begin
 	select
 		@wire_source_id = source_id
 	from
-		sources
+
+ 		sources
 	where
 		name = @wire_source
+	
 	if @wire_source_id = NULL
 	begin
 		select
@@ -142,7 +143,8 @@ begin
 			message = "Pip spread not found",
 			pip_spread = @pip_spread
 		return
-	end
+
+ 	end
 end
 
 if @nop_type != NULL
@@ -162,6 +164,7 @@ begin
 		return
 	end
 end
+ 
 
 
 if @collateral != NULL
@@ -182,6 +185,27 @@ begin
 	end
 end
 
+if @prime_broker != NULL and @prime_broker != ""
+begin
+	select
+		@prime_broker_id = a.prime_broker_id
+	from
+		prime_brokers a,
+		sources b
+	where
+		a.source_id = b.source_id
+	and
+		b.name = @prime_broker
+	if @prime_broker_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Prime broker not found",
+			prime_broker = @prime_broker
+		return
+	end
+end
+
 
 update
 	external_accounts
@@ -194,19 +218,34 @@ set
 	max_mtd_statement_trades = @max_mtd_trades,
 	margin_multiplier = @margin_mult,
 	wire_source_id = @wire_source_id,
-	pip_spread_id = @pip_spread_id,
+ 	pip_spread_id = @pip_spread_id,
 	nop_type_id = @nop_type_id,
 	collateral_product_id = @collateral_product_id
 where
 	external_account_id = @external_account_id
 
+if @prime_broker_id != NULL
+begin
+	delete
+
+	from
+		external_account_prime_brokers
+	where
+		external_account_id = @external_account_id
+
+	insert into
+		external_account_prime_brokers(
+			external_account_id,
+			prime_broker_id)
+	values(
+		@external_account_id,
+		@prime_broker_id)
+end
 
 exec
 	ag_extaccountdetails
 		@login = @login,
 		@account = @account
 
-
-
-
 go
+
