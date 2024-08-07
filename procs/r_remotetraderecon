@@ -1,3 +1,4 @@
+
 create or replace procedure
 	r_remotetraderecon
 		@login varchar(50),
@@ -193,6 +194,15 @@ insert into
         #meta
 values(
         "Column Link",
+        "add_note",
+        "Add Remote Recon Note",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
         "move_date",
         "Change Recon Remote Trade Date",
         NULL
@@ -215,6 +225,15 @@ values(
         "Column Link",
         "move_prev",
         "Move Remote Trade Prev Date",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "clear_processing",
+        "Clear Processing Recon Records for Date",
         NULL
 )
 
@@ -475,6 +494,16 @@ and
         trade_date < @end_date
 and
         value_date >= @bo_trade_date
+/* comment out below to include TY3 */
+and
+	(counterparty_id < 367
+or
+	counterparty_id > 378)
+and 
+	counterparty_id not in(380, 381, 382, 383) /* hack for OCAN TY3 */
+and 
+	counterparty_id not in(386)
+
 
 update
 	#trades
@@ -492,9 +521,9 @@ create table
 	id int identity,
         remote_trade_id int NULL,
         trade_id int NULL,
-        contract varchar(10),
+        contract varchar(50),
         contract_id int NULL,
-        ex_contract varchar(10) NULL,
+        ex_contract varchar(50) NULL,
         ex_contract_id int NULL,
         match_status varchar(30),
         match_strength float NULL,
@@ -881,6 +910,35 @@ and
 and
         e.product_id=g.product_id
 
+/* add in support for CFDs which are treated liked futures */
+update
+	#match_list
+set
+	std_contract = b.symbol,
+        traded_ccy = g.symbol,
+        counter_ccy = f.symbol,
+        calc_price = a.price
+from
+        #match_list a,
+	contracts b,
+        forwards e,
+        products f,
+        products g,
+	future_contracts h,
+	futures i
+where
+	a.contract_id = h.contract_id
+and
+	h.contract_id = b.contract_id
+and
+	h.future_id = i.future_id
+and
+        i.forward_id=e.contract_id
+and
+        e.currency_id=f.product_id
+and
+        e.product_id=g.product_id
+
 /* Contract display deserves a comment because we use it for price display and
  * there are formatting considerations. Im match_list we are storing several
  * contract fields, contract_id, contract, ex_contract_id, ex_contract, std_contract
@@ -970,7 +1028,7 @@ where
 create table
 	#report (
 		ordering int NULL,
-		symbol char(10) NULL,
+		symbol char(50) NULL,
 		status char(50) NULL,
 		internal_trades int NULL,
 		external_trades int NULL,
@@ -1168,8 +1226,8 @@ where
 and
 	committed > 0
 
-select
-	* 
+/* Adaptive Server has expanded all '*' elements in the following statement */ select
+	#meta.meta_type, #meta.name, #meta.action, #meta.value 
 from
 	#meta
 
@@ -1183,6 +1241,8 @@ select
         bo_trade_date = @bo_trade_date,
 	manage_settings = "Manage Settings",
 	run_aggressive_recon = "Run Aggressive Recon",
+        add_note = "Add Note",
+        clear_processing = "Clear Processing",
 	next_date = "Next Date  >>"
 
 if @contract != NULL
@@ -1219,6 +1279,7 @@ order by
     ordering,
     symbol
 
+
 if @@rowcount = 0
 begin
     if @contract = null
@@ -1229,6 +1290,22 @@ begin
             msg = "There are no mismatched, external-only nor internal-only trades for " + rtrim(@contract)
 end
 
+select
+    section = "Recon Notes",
+    trade_date = convert(char(10), @trade_date, 101),
+    note = a.note,
+    timestamp = a.timestamp,
+    added_by = b.login,
+    style = @style
+from
+    remote_recon_notes a,
+    tico_accounts b
+where
+    a.tico_account_id = b.account_id
+and
+    a.bo_trade_date = @bo_trade_date
+order by
+    timestamp
 
 if @granularity = "All" and @contract = NULL
 begin
@@ -1371,4 +1448,5 @@ begin
 		price,
 		match_status
 end
+
 go
