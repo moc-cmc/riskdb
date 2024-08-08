@@ -255,6 +255,72 @@ and
 select
 	@remote_count = @@rowcount
 
+/* Support CFD and Futures recon */
+insert into
+        #remote_trades(
+                remote_trade_symbol_id,
+                source_id,
+                trade_id,
+                recon_status_id,
+                internal_account_id,
+                external_account_id,
+                counterparty_id,
+                quantity,
+                price,
+                contract_id,
+                trade_date,
+                value_date,
+                fixing_date,
+                identifier,
+                recon_method_id,
+                product_id,
+                currency_id,
+                counter_quantity,
+                prev_date,
+                bo_trade_date)
+select
+        a.remote_trade_symbol_id,
+        a.source_id,
+        a.trade_id,
+        a.recon_status_id,
+        a.internal_account_id,
+        a.external_account_id,
+        a.counterparty_id,
+        a.quantity,
+        a.price,
+        a.contract_id,
+        a.trade_date,
+        a.value_date,
+        a.fixing_date,
+        a.identifier,
+        a.recon_method_id,
+        d.product_id,
+        d.currency_id,
+        convert(numeric(30, 8), (a.quantity * a.price * -1)),
+        "N",
+        a.bo_trade_date
+from
+        remote_trade_symbols a,
+        #statuses b,
+        forwards d,
+	future_contracts e,
+	futures f
+where
+        a.recon_status_id = b.status_id
+and
+        a.contract_id = e.contract_id
+and
+	e.future_id = f.future_id
+and
+	f.forward_id = d.contract_id
+and
+        b.match_candidate = "Y"
+and
+        a.source_id = @source_id
+and
+        a.bo_trade_date = @bo_trade_date
+
+
 if @conventional_dates = "N"
 begin
 	insert into
@@ -319,6 +385,72 @@ begin
         	a.bo_trade_date = @prev_bo_trade_date
 	and
 		a.trade_id = NULL
+
+	/* Support CFD and Futures recon */
+	insert into
+        	#remote_trades(
+                	remote_trade_symbol_id,
+                	source_id,
+                	trade_id,
+                	recon_status_id,
+                	internal_account_id,
+                	external_account_id,
+                	counterparty_id,
+                	quantity,
+                	price,
+                	contract_id,
+                	trade_date,
+                	value_date,
+                	fixing_date,
+                	identifier,
+                	recon_method_id,
+                	product_id,
+                	currency_id,
+                	counter_quantity,
+                	prev_date,
+                	bo_trade_date)
+	select
+        	a.remote_trade_symbol_id,
+        	a.source_id,
+        	a.trade_id,
+        	a.recon_status_id,
+        	a.internal_account_id,
+        	a.external_account_id,
+        	a.counterparty_id,
+        	a.quantity,
+        	a.price,
+        	a.contract_id,
+        	a.trade_date,
+        	a.value_date,
+        	a.fixing_date,
+        	a.identifier,
+        	a.recon_method_id,
+        	d.product_id,
+        	d.currency_id,
+        	convert(numeric(30, 8), (a.quantity * a.price * -1)),
+        	"N",
+        	a.bo_trade_date
+	from
+        	remote_trade_symbols a,
+        	#statuses b,
+        	forwards d,
+        	future_contracts e,
+        	futures f
+	where
+        	a.recon_status_id = b.status_id
+	and
+        	a.contract_id = e.contract_id
+	and
+        	e.future_id = f.future_id
+	and
+        	f.forward_id = d.contract_id
+	and
+        	b.match_candidate = "Y"
+	and
+        	a.source_id = @source_id
+	and
+        	a.bo_trade_date = @bo_trade_date
+
 end
 
 update
@@ -438,6 +570,58 @@ and
 	b.contract_id = c.contract_id
 select
 	@trade_count = @@rowcount
+
+/* Support CFD and Futures recon */
+insert into
+        #trades(
+                trade_id,
+                internal_account_id,
+                external_account_id,
+                counterparty_id,
+                quantity,
+                price,
+                contract_id,
+                value_date,
+                trade_date,
+                product_id,
+                currency_id,
+                counter_quantity,
+                post_eod,
+                identifier)
+select
+        a.trade_id,
+        a.internal_account_id,
+        a.external_account_id,
+        a.counterparty_id,
+        a.quantity,
+        a.price,
+        a.contract_id,
+        a.value_date,
+        a.trade_date,
+        c.product_id,
+        c.currency_id,
+        convert(numeric(30, 2), (a.quantity * convert(numeric(30, 10), a.price) * -1)),
+        post_eod = "N",
+        a.identifier
+from
+        trades a,
+        forwards c,
+	future_contracts d,
+	futures e
+where
+        a.trade_date >= @begin_date
+and
+        a.trade_date < @end_date
+and
+        a.value_date >= @bo_trade_date
+and
+        a.fixing_date = NULL
+and
+        a.contract_id = d.contract_id
+and
+	d.future_id = e.future_id
+and
+        e.forward_id = c.contract_id
 
 update
         #trades
@@ -604,7 +788,8 @@ and
 and
         a.quantity = c.quantity
 and
-        convert(int, a.counter_quantity) = convert(int, c.counter_quantity) /* relaxed counters vs price  + identifiers*/
+        /* convert(int, a.counter_quantity) = convert(int, c.counter_quantity) /* relaxed counters vs price  + identifiers*/ */
+	convert(bigint, a.counter_quantity) = convert(bigint, c.counter_quantity) /* relaxed counters vs price + identifiers*/
 and
 	a.identifier = c.identifier
 and
@@ -1375,5 +1560,5 @@ select
 	unmatched = @unmatched_count
 
 
-go 
 
+go

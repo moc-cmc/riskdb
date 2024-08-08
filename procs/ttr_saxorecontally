@@ -152,7 +152,8 @@ end
 
 select
 	@account_lookup = rtrim(@executingentityidentificationc),
-	@counterparty_lookup = rtrim(@executingentityidentificationc)
+	/* @counterparty_lookup = rtrim(@executingentityidentificationc) */
+	@counterparty_lookup = rtrim(@accountnumber)
 
 
 /* --------------------------------------------------------------------------
