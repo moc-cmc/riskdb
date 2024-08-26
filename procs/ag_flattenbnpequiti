@@ -366,6 +366,7 @@ create table
 		open_account varchar(50) NULL,
 		counterparty varchar(50) NULL,
 		style varchar(100)
+)
 
 insert into
 	#switches
@@ -385,9 +386,9 @@ select
 	deal_identifier = f.identifier,
 	a.close_trade,
 	/* Hardcoded open and close accounts. This dev was done without a workorder as a courtesy if it expands to other prime brokers we can issue a workorder */
-	close_account = case when close_trade = "Y" and d.name like "NatWest%" then "NWMI PRINCIPAL SWITCH" else NULL end,
-	open_account = case when close_trade = "Y" and d.name like "NatWest%" then "NWMI RISKLESS SWITCH" else NULL end,
-	counterparty = case when close_trade = "Y" and d.name like "NatWest%" then "EQUITI" else NULL end,
+	close_account = case when (close_trade = "Y" and d.name like "NatWest%") then "NWMI PRINCIPAL SWITCH" else NULL end,
+	open_account = case when (close_trade = "Y" and d.name like "NatWest%") then "NWMI RISKLESS SWITCH" else NULL end,
+	counterparty = case when (close_trade = "Y" and d.name like "NatWest%") then "EQUITI" else NULL end,
 	style = @style
 from
  	#trades a,
