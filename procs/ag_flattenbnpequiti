@@ -1,0 +1,480 @@
+create or replace procedure 
+	ag_flattenbnpequiti
+		@login varchar(50),
+		@value_date datetime = NULL
+
+as
+
+/* MODIFIED TO BE NWM INSTEAD OF BNP BUT KEEPING THE BNP NAME IN PROC*/
+
+declare @tico_account_id int
+declare @begin_date datetime
+declare @end_date datetime
+declare @error_style varchar(200)
+declare @total_style varchar(200)
+declare @style varchar(200)
+declare @selected_style varchar(200)
+declare @subtotal_style varchar(200)
+declare @client_style varchar(200)
+declare @min_deal_id int
+declare @debug char(1)
+
+select
+	@debug = "N"
+
+select
+    @tico_account_id = account_id
+from
+    tico_accounts
+where
+    login = @login
+if @tico_account_id = NULL
+begin
+    select
+           status="Error",
+           message="Problem finding account for login"
+    return
+end
+
+
+select
+    @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+    @subtotal_style = "background:#FAF7ED;border: 1px solid white;",
+    @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+    @style = "background:#FFFFFF;border: 1px solid white",
+    @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+    @client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+create table
+    #meta(
+        meta_type char(200),
+        name char(50) NULL,
+        action char(100) NULL,
+        value char(200) NULL)
+insert into
+    #meta
+values(
+    "Row Style",
+    "style",
+    NULL,
+    NULL)
+
+insert into
+    #meta
+values (
+    "Column Group",
+    "section",
+    NULL,
+    NULL)
+
+insert into
+    #meta
+values (
+    "Column Hidden",
+    "vd",
+    NULL,
+    NULL)
+
+insert into
+    #meta
+values (
+    "Column Link",
+    "inspect",
+    "Switch PR to RP",
+    NULL)
+
+insert into
+	#meta
+values(
+	"Column Link", 
+	"tally",
+	"Book Switch PR to RP",
+	NULL
+)
+
+
+
+if @value_date = NULL
+    select
+        @value_date = getdate()
+   
+
+create table
+	#switch_accounts(
+		prime_broker_id int,
+		external_account_id int
+)
+
+insert into
+	#switch_accounts(
+		prime_broker_id,
+		external_account_id)
+select
+	b.prime_broker_id,
+	b.external_account_id
+from
+	external_accounts a,
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.symbol like "%EQUITI RETAIL"
+
+select
+	@min_deal_id = min(deal_id)
+from
+	trades
+where
+	value_date >= @value_date
+
+create table
+	#deal_candidates(
+		deal_id int,
+		identifier varchar(100),
+		deal_qty numeric(30, 10) NULL,
+		still_viable char(1) NULL
+)
+
+/* CO: 2023-02-26
+ * Requiement from Benedict at Equiti who says deals with an 
+ * identifier that start with CLOB will be a candidate for a switch
+ *
+ * We identify as a candidate since some CLOB orders are entirely in the EQUITI RETAIL book. See below, where both external accounts are EEQUITI RETAIL
+ * This is not a cross PB booking with Equiti retail.
+ * 
+ * [28] SYB0401.risk_equiti.1> select deal_id, trade_id, external_account, quantity, contract, price, trade_date, identifier, broker from trade_details where deal_id = 1095622
+ * [28] SYB0401.risk_equiti.2> go
+ *  deal_id             trade_id            external_account quantity           contract   price                trade_date  identifier                broker    
+ * ------------------- ------------------- ---------------- ------------------ ---------- -------------------- ----------- ------------------------- ----------
+ *              1095622             2270369 BNPC EQUITI RET                  11 XAUUSD              1838.830000 02/21 09:45 050167693100566000000360- Lucera    
+ *              1095622             2270349 BNPC EQUITI RET                 -11 XAUUSD              1838.880000 02/21 09:45 050167693100566000000359- Lucera    
+ *
+ * 
+ * The following is an example of a trade that needs to be switched:
+ * 
+ * [29] SYB0401.risk_equiti.1> select deal_id, trade_id, external_account, quantity, contract, price, trade_date, identifier, broker from trade_details where deal_id = 1091298
+ * [29] SYB0401.risk_equiti.2> go
+ * deal_id             trade_id            external_account quantity           contract   price                trade_date  identifier                broker    
+ * ------------------- ------------------- ---------------- ------------------ ---------- -------------------- ----------- ------------------------- ----------
+ *             1091298             2260549 BNPC BRITANNIA                    7 XAUUSD              1832.900000 02/16 08:30 062167649906267000000039- Lucera    
+ *             1091298             2260561 BNPC EQUITI RET                  -7 XAUUSD              1832.950000 02/16 08:30 050167649900541000000210- Lucera    
+ *
+ * The above has BRITANNIA which is in a different sub account at BNP so that where the switch needs to be made
+ *
+ */ 
+insert into
+	#deal_candidates(
+		deal_id,
+		identifier)
+select
+	a.deal_id,
+	b.symbol
+from
+	deals a, 
+	deal_exec_symbols b
+where
+	a.deal_id = b.deal_id
+and
+	b.symbol like "CLOB%"
+and
+	a.deal_id >= @min_deal_id
+and
+	b.deal_id >= @min_deal_id
+	
+
+create table
+	#trades(
+		deal_id int,
+		trade_id int,
+		trade_date datetime,
+		contract_id int,
+		value_date datetime,
+		quantity numeric(30,10),
+		price float,
+		trader_id int,
+		broker_id int,
+		external_account_id int,
+		counterparty_id int,
+		sales_code_id int,
+		trade_type_id int,
+		identifier varchar(100),
+		status_id int,
+		pb_id int,
+		close_trade char(1),
+		valid_deal char(1)
+)
+
+insert into
+	#trades(
+                deal_id, 
+                trade_id, 
+                trade_date,
+                contract_id, 
+                value_date,
+                quantity,
+                price,
+                trader_id, 
+                broker_id, 
+                external_account_id, 
+                counterparty_id, 
+                sales_code_id, 
+                trade_type_id, 
+                identifier,
+                status_id,
+		pb_id,
+		close_trade,
+		valid_deal)
+select
+        a.deal_id, 
+        a.trade_id, 
+        a.trade_date,
+        a.contract_id, 
+        a.value_date,
+        a.quantity,
+        a.price,
+        a.trader_id, 
+        a.broker_id, 
+        a.external_account_id, 
+        a.counterparty_id, 
+        a.sales_code_id, 
+        a.trade_type_id, 
+        a.identifier,
+        a.status_id,
+	c.prime_broker_id,
+	"N",
+	"N"
+from
+	trades a,
+	#deal_candidates b,
+	external_account_prime_brokers c
+where
+	a.deal_id = b.deal_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.deal_id >= @min_deal_id
+and
+	a.value_date >= @value_date
+/*and
+	a.trade_date < @end_date*/
+
+update
+	#trades
+set
+	close_trade = "Y"
+from
+	#trades a,
+	#switch_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+create table
+	#deal_pb_sums(
+		deal_id int,
+		pb_id int,
+		deal_qty numeric(30, 10),
+		num_trades int NULL,
+		candidate char(1)
+)
+
+
+insert into
+	#deal_pb_sums
+select
+	a.deal_id,
+	a.pb_id,
+	sum(a.quantity),
+	count(*),
+	"Y"
+from
+	#trades a,
+	#deal_candidates b
+where
+	a.deal_id = b.deal_id
+group by
+	a.deal_id,
+	a.pb_id
+
+update
+	#deal_pb_sums
+set
+	candidate = "N"
+where
+	deal_qty = 0
+
+if @debug = "Y"
+	select
+		* 
+	from
+		#deal_pb_sums
+	order by 
+		deal_id
+
+update 
+	#trades
+set
+	valid_deal = "Y"
+from
+	#trades a,
+	#deal_pb_sums b
+where
+	a.deal_id = b.deal_id
+and
+	b.candidate = "Y"
+
+select
+	*
+from
+	#meta
+
+select
+	section = "Suspect Value Dates",
+	style = case when count(*) % 2 != 0 then @error_style else  @style end,
+	inspect = "VIEW",
+	value_date = convert(varchar(20), a.value_date, 107),
+	vd = a.value_date,
+	suspect_trade_count = count(*)
+from
+	#trades a,
+	#deal_candidates b
+where
+	a.deal_id = b.deal_id
+and
+	valid_deal = "Y"
+group by 
+	value_date
+order by
+	vd
+	
+create table 
+	#switches(
+		section varchar(50),
+		trade_id int,
+		deal_id int,
+		external_account varchar(50),
+		prime_broker varchar(30),
+		symbol varchar(30),
+		quantity numeric(30,4),
+		price float,
+		tally varchar(10) NULL,
+		trade_date datetime,
+		value_date datetime,
+		identifier varchar(100),
+		deal_identifier varchar(100) NULL,
+		close_trade varchar(10) NULL,
+		close_account varchar(50) NULL,
+		open_account varchar(50) NULL,
+		counterparty varchar(50) NULL,
+		style varchar(100)
+)
+
+insert into
+	#switches
+select 
+	section = "Internal Switch Candidates",
+	a.trade_id,
+	a.deal_id,
+	external_account = b.symbol,
+	prime_broker = d.name,
+	symbol = e.symbol,
+	a.quantity,
+	a.price,
+	tally = case when close_trade = "Y" then "Close Trade" else NULL end,
+	a.trade_date,
+	a.value_date,
+	a.identifier ,
+	deal_identifier = f.identifier,
+	a.close_trade,
+	/* Hardcoded open and close accounts. This dev was done without a workorder as a courtesy if it expands to other prime brokers we can issue a workorder */
+	close_account = case when (close_trade = "Y" and d.name like "NatWest%") then "NWMI PRINCIPAL SWITCH" else NULL end,
+	open_account = case when (close_trade = "Y" and d.name like "NatWest%") then "NWMI RISKLESS SWITCH" else NULL end,
+	counterparty = case when (close_trade = "Y" and d.name like "NatWest%") then "EQUITI" else NULL end,
+	style = @style
+from
+ 	#trades a,
+	external_accounts b,
+	external_account_prime_brokers c,
+	prime_brokers g,
+	sources d,
+	contracts e,
+	#deal_candidates f
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_id = c.external_account_id
+and
+	c.prime_broker_id = g.prime_broker_id
+and
+	g.source_id = d.source_id
+and
+	a.contract_id = e.contract_id
+and
+	a.deal_id = f.deal_id
+and
+	valid_deal = "Y"
+and
+	value_date = @value_date
+order by
+	deal_id,
+	b.symbol
+
+select 
+	*
+from
+	#switches
+
+exec
+	cbo_positionsandrollswrap
+		@login = @login,
+		@value_date = @value_date
+
+go
+
+
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
