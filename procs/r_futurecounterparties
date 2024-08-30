@@ -1,0 +1,15 @@
+
+create or replace procedure
+	r_futurecounterparties
+as
+
+select
+	symbol = name
+from
+	counterparties
+where
+	name in ("DIRECT-MAREX", "LDTF1_CLEARING_MAREX")
+order by
+	name
+go
+
