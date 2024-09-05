@@ -14,6 +14,7 @@ declare @begin_date datetime
 declare @end_date datetime
 declare @begin_date_eod datetime
 declare @end_date_eod datetime
+declare @total_count int
 
 exec
 	r_firstandlastdayofmonth
@@ -71,7 +72,7 @@ select
 
 
 select
-	@reg_count = count(*) - 60000
+	@total_count = count(*) 
 from
 	trades a
 where
@@ -79,6 +80,14 @@ where
 and
 	a.trade_date < @end_date_eod
 
+if @total_count = NULL
+begin
+	select
+		@total_count = 0
+end
+
+select
+	@reg_count = @total_count - 60000
 
 if @reg_count > 0
 begin
@@ -93,7 +102,7 @@ select
 	
 
 select
-	@message = "$0.025 per trades above 60k trades per month. 60000 - "+rtrim(convert(varchar(10), @reg_count))+ " trades  = total "+rtrim(convert(varchar(10), @billed_ticket))
+	@message = "$0.025 per trades above 60k trades per month. Total "+ rtrim(convert(varchar(10), @total_count)) +" - 60000  = "+rtrim(convert(varchar(10), @reg_count))+ " trades  = total "+rtrim(convert(varchar(10), @billed_ticket))
 
 select
 	client = "Equiti "+rtrim(@month)+" "+rtrim(@year),
