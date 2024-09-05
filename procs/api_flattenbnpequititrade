@@ -1,0 +1,152 @@
+create or replace procedure 
+	api_flattenbnpequititrade
+		@login varchar(50),
+		@trade_id int,
+		@deal_id int,
+		@external_account varchar(50),
+		@prime_broker varchar(50),
+		@symbol varchar(50),
+		@quantity numeric(30, 10),
+		@price float,
+		@trade_date datetime,
+		@value_date datetime,
+		@fixing_date datetime=NULL,
+		@identifier varchar(100),
+		@deal_identifier varchar(100),
+		@close_account varchar(50),
+		@open_account varchar(50)
+		
+as
+
+declare @close_trade_id int
+declare @open_trade_id int
+declare @close_quantity numeric(30, 10)
+declare @open_quantity numeric(30, 10)
+declare @close_identifier varchar(120)
+declare @open_identifier varchar(120)
+declare @processed_trade char(1)
+
+declare @message varchar(255)
+declare @tally_status varchar(50)
+
+
+select
+	@close_quantity = @quantity * -1,
+	@open_quantity = @quantity,
+	@close_identifier = rtrim(convert(varchar(20), @trade_id))+"_close",
+	@open_identifier = rtrim(convert(varchar(20), @trade_id))+"_open"
+
+exec
+        fxa_tallytrade
+                @login = @login,
+                @source = "Custom Switch PR to RP",
+                @trade_id = @close_trade_id output,
+                @deal_id = @deal_id output,
+                @tally_type = "Spot",
+                @deal_type = "Client Forward",
+                @trade_type= "Spot",
+                @external_account = @close_account,
+                @quantity = @close_quantity,
+                @symbol = @symbol,
+                @value_date = @value_date,
+                @price = @price,
+                @trade_date = @trade_date,
+                @trader = @close_account,
+                @fixing_date = @fixing_date,
+                @trade_date = @trade_date,
+		@identifier = @close_identifier
+
+
+exec
+        fxa_tallytrade
+                @login = @login,
+                @source = "Custom Switch PR to RP",
+                @trade_id = @open_trade_id output,
+                @deal_id = @deal_id output,
+                @tally_type = "Spot",
+                @deal_type = "Client Forward",
+                @trade_type= "Spot",
+                @external_account = @open_account,
+                @quantity = @open_quantity,
+                @symbol = @symbol,
+                @value_date = @value_date,
+                @price = @price,
+                @trade_date = @trade_date,
+                @trader = @open_account,
+                @fixing_date = @fixing_date,
+                @trade_date = @trade_date,
+                @identifier = @open_identifier
+
+if @close_trade_id != NULL and @open_trade_id != NULL
+begin	
+	select
+		@tally_status = "Success",
+		@message = "Processed closing and opening trade for trade_id"
+
+	select
+		@processed_trade = "Y"
+	from
+		equiti_internal_bookings
+	where
+		trade_id = @trade_id
+	if @processed_trade != "Y"
+	begin
+		insert into
+			equiti_internal_bookings(
+				trade_id,
+				timestamp)
+		values(
+			@trade_id,
+			getdate()
+		)
+	end
+	exec
+		r_inserttradenotification
+			@trade_id = @close_trade_id
+
+	exec
+		r_inserttradenotification
+			@trade_id = @open_trade_id
+
+end
+else
+begin
+	if @open_trade_id = NULL 
+	begin
+		select
+			@tally_status = "Partial",
+			@message = "Partial tally where only the close trade booked. Re-run command"
+	end
+	if @close_trade_id = NULL
+	begin
+		select
+			@tally_status = "Partial",
+			@message = "Partial tally where only the opening trade booked. Re-run command"
+	end
+	if @open_trade_id = NULL and @close_trade_id = NULL
+	begin
+		select
+			@tally_status = "Failed",
+			@message = "Problem booking both the open and close trades. Check the details of the record to ensure no missing data and escalate if necessary."
+	end
+end
+
+
+
+select
+	status = @tally_status,
+	message = @message,
+	trade_id = @trade_id,
+	close_trade_id = @close_trade_id,
+	open_trade_id = @open_trade_id,
+	quantity = abs(@quantity),
+	symbol = @symbol,
+	price = @price,
+	trade_date = @trade_date,
+	value_date = @value_date,
+	close_account = @close_account,
+	open_account = @open_account
+
+
+go
+	
