@@ -1,3 +1,4 @@
+
 create or replace procedure
 	tt_notifycmepart43
 		@source varchar(50),
@@ -167,6 +168,10 @@ create table
 		opt_def_exercise_style varchar(10) NULL,
 		opt_quantity float NULL,
 		opt_tick_size float NULL,
+		opt_call_qty float NULL, 
+		opt_put_qty float NULL, 
+		opt_call_ccy varchar(10) NULL, 
+		opt_put_ccy varchar(10) NULL,
 		/*- Exotic Info -*/
                 e_timing_id int NULL,
                 e_timing varchar(12) NULL,
@@ -210,7 +215,14 @@ create table
                 vo_rate float NULL,
                 capture_date datetime NULL,
 		cpty_lei varchar(50) NULL,
-		upi_code varchar(50) NULL
+		upi_code varchar(50) NULL,
+		cme_expiry_date varchar(15) NULL,
+		Leg2EffectiveNotionalAmount float NULL,
+ 		Leg2NotionalAmount varchar(30) NULL,
+                Leg2NotionalCurrency varchar(10) NULL,
+ 		Leg2NotionalQuantity float NULL,
+ 		Leg2TotalNotionalQuantity float NULL,
+ 		Leg2NotionalEffectiveDate varchar(15) NULL
 		)
 
 create table
@@ -2112,6 +2124,130 @@ where
 and
 	a.trade_type_id = b.trade_type_id
 
+update  
+        #trades
+set
+        upi_code = b.symbol
+from
+        #trades a,
+        option_upi_codes b
+where
+        a.opt_underlying_contract_id = b.contract_id
+and
+        a.trade_type_id = b.trade_type_id
+and
+	a.optcon_put_call = b.call_put
+
+/* Update for contract and product symbols. CME may need a different value provided */
+update
+        #trades
+set
+        product_id = b.product_id,
+        currency_id = b.currency_id
+from
+        #trades a,
+        forwards b
+where
+        a.contract_id = b.contract_id
+update
+        #trades
+set
+        std_contract = b.symbol
+from
+        #trades a,
+        contract_symbols b
+where
+        a.contract_id = b.contract_id
+and
+        b.source_id = @source_id
+
+update
+        #trades
+set
+        traded_ccy = b.symbol
+from
+        #trades a,
+        product_symbols b
+where
+        a.product_id = b.product_id
+and
+        b.source_id = @source_id
+
+update
+        #trades
+set
+        counter_ccy = b.symbol
+from
+        #trades a,
+        product_symbols b
+where
+        a.currency_id = b.product_id
+and
+        b.source_id = @source_id
+
+/* Update for NDF fields */
+update
+	#trades
+set
+	cme_expiry_date = fixing_date
+from
+	#trades
+where
+	fixing_date != NULL
+
+update
+        #trades
+set
+        cme_expiry_date = value_date
+from
+        #trades
+where
+        fixing_date = NULL
+
+/* Update for Options Call/Put fields */ 
+update
+		#trades
+set
+		opt_call_qty = abs(quantity),
+		opt_call_ccy = traded_ccy
+from 
+		#trades
+where 
+		trade_type in("Option") AND optcon_put_call = "C"
+
+update
+		#trades
+set
+		opt_put_qty = abs(quantity),
+		opt_put_ccy = traded_ccy
+from
+		#trades
+where
+		trade_type in("Option") AND optcon_put_call = "P"
+
+update 
+		#trades
+set
+		Leg2NotionalAmount = "99999999999999999999.99999",
+		Leg2NotionalCurrency = traded_ccy 
+from
+		#trades
+where
+		trade_type = "Forward"
+
+update
+		#trades
+set
+		Leg2EffectiveNotionalAmount = abs(quantity), 
+ 		Leg2NotionalAmount = convert(varchar(7),abs(quantity)),
+                Leg2NotionalCurrency = traded_ccy,
+ 		Leg2NotionalQuantity = abs(quantity), 
+ 		Leg2TotalNotionalQuantity = abs(quantity), 
+ 		Leg2NotionalEffectiveDate = rtrim(convert(varchar(10), trade_day, 112))
+from
+		#trades a
+where
+		a.trade_type in ("Swap Near", "Swap Far")
 
 select
 	trade_id,
@@ -2155,6 +2291,7 @@ select
 	trade_date_utc_iso = dbo.f_easterntoutc(trade_date),
 	value_date,
 	fixing_date,
+	cme_expiry_date,
 	db_price,
 	std_price,
 	markup_price,
@@ -2217,6 +2354,10 @@ select
         opt_def_exercise_style,
         opt_quantity,
         opt_tick_size,
+	opt_call_qty,
+	opt_put_qty,
+	opt_call_ccy,
+	opt_put_ccy,
 	far_price,
 	abs_far_quantity=case when far_quantity = NULL then 99999999999999999999.99999 else abs(far_quantity) end,
 	far_quantity,
@@ -2266,6 +2407,12 @@ select
 	cpty_lei = cpty_lei,
 	capture_date = dbo.f_easterntoutc(capture_date),
 	upi_code,
+	Leg2EffectiveNotionalAmount,
+ 	Leg2NotionalAmount,
+        Leg2NotionalCurrency,
+ 	Leg2NotionalQuantity,
+ 	Leg2TotalNotionalQuantity,
+	Leg2NotionalEffectiveDate,
         "_1" = "",
         "_2" = "",
         "_3" = "",
@@ -2472,4 +2619,4 @@ order by
 
 
 
-go 
+go
