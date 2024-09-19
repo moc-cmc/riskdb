@@ -3,7 +3,8 @@ create or replace procedure
 	tt_notifyaccounttransactions
 		@source varchar(50),
 		@queue_notifications char(1)=NULL,
-		@eod char(1)=NULL
+		@eod char(1)=NULL,
+		@origination_type varchar(10)=NULL
 as
 
 
@@ -11,6 +12,7 @@ as
 declare @source_id int
 declare @cancelled_count int
 declare @usi_lookup varchar(15)
+declare @origination_type_id int
 
 if @queue_notifications = "Y"
 begin
@@ -46,6 +48,24 @@ begin
 		error = "Source not found",
 		source = @source
 	return
+end
+
+if @origination_type != NULL
+begin
+	select
+		@origination_type_id = origination_type_id
+	from
+		origination_types
+	where
+		name = @origination_type
+	if @origination_type_id = NULL
+	begin
+		select	
+			status = "Error",
+			message = "Problem finding origination type",
+			origination_type = @origination_type
+		return
+	end
 end
 
 create table
@@ -331,6 +351,7 @@ select
 	ext_account_pb,
 	amount,
 	abs_amount,
+	reverse_amount = amount * -1,
 	debit_credit,
 	transaction_date,
 	entered_by,
