@@ -1,0 +1,386 @@
+drop procedure 
+    r_addfxsettlement
+go
+
+
+create procedure
+        r_addfxsettlement
+		@login varchar(50),
+		@account varchar(50),
+		@currency varchar(50),
+		@balance numeric(30,2),
+		@value_date datetime
+as
+
+
+declare @fund_id int
+declare @external_account_id int
+declare @tico_account_id int
+declare @transaction_type_id int
+declare @currency_id int
+declare @account_transaction_id int
+declare @deal_id int
+declare @contra_account_id int
+declare @contra_balance numeric(30, 2)
+declare @contra_transaction_id int
+declare @prime_broker varchar(50)
+
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"cash_settle_recon",
+	"Cash Settle Recon",
+	NULL) 
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "value_date",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Column Hidden",
+        "prime_broker",
+        NULL,
+        NULL)
+
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "FX Settlement"
+if @transaction_type_id = NULL
+begin
+	select
+		status = "Error",
+		message = "FX Settlement type not found"
+	return
+end
+
+select
+	@currency_id = product_id
+from
+	products
+where
+	symbol = @currency
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Currency not found",
+		currency = @currency
+	return
+end
+
+create table
+	#external_accounts(
+		external_account_id int,
+		symbol varchar(50))
+insert into
+	#external_accounts
+select
+	a.external_account_id,
+	a.symbol
+from
+	external_accounts a,
+	fund_external_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.fund_id = @fund_id
+
+select
+	@external_account_id = external_account_id
+from
+	#external_accounts
+where
+	symbol = @account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+select
+	@prime_broker = a.name
+from
+	sources a,
+	prime_brokers b,
+	external_account_prime_brokers c
+where
+	a.source_id = b.source_id
+and
+	b.prime_broker_id = c.prime_broker_id
+and
+	c.external_account_id = @external_account_id
+
+
+/* This makes no sense from an accounting perspective but client asking for it */
+declare @wo_account_symbol varchar(100)
+declare @wo_account_id int
+
+if @prime_broker = "Natwest Markets"
+begin
+	select
+		@wo_account_symbol = "NWM FXPB (Cash)"
+end
+if @prime_broker = "Standard Chartered"
+begin
+	select
+		@wo_account_symbol = "Standard Chartered Bank- House"
+
+end
+if @prime_broker = "CFH Direct"
+begin
+	select
+		@wo_account_symbol = "CFH Direct/ Finalto Financial Services Ltd (Cash)"
+end
+
+/* ADSS Customization */
+select
+	@contra_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = "FX PB Realized PNL"
+if @contra_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem adding settlement because contra account not defined"
+	return
+end
+
+select
+        @wo_account_id = external_account_id
+from
+        external_accounts
+where
+        symbol = @wo_account_symbol
+if @wo_account_id = NULL
+begin
+        select
+                status = "Error",
+                message = "Problem wire out account settlement because wire out account not defined"
+        return
+end
+
+declare @wire_out_transaction_id int
+declare @wire_out_id int
+
+select
+	@wire_out_id = transaction_type_id
+from
+	transaction_types
+where
+	name = "Wire Out"
+if @wire_out_id = NULL
+begin
+	select
+		status = "Error",
+		mesage = "Problem finding Wire Out transaction type"
+	return
+end
+
+select
+	@contra_balance = @balance * -1
+
+
+exec
+	j_nextkey
+		"account_transactions",
+		@account_transaction_id output
+
+exec
+        j_nextkey
+                "account_transactions",
+                @wire_out_transaction_id output
+
+exec
+	j_nextkey
+		"account_transactions",
+		@contra_transaction_id output
+
+exec
+	j_nextkey
+		"deals",
+		@deal_id output
+declare @note varchar(255)
+
+select @note = "PB Settlement run on "+ convert(varchar(20), getdate(), 112)
+begin tran
+
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			deal_id,
+			note,
+			timestamp)
+	values(
+		@account_transaction_id,
+		@tico_account_id,
+		@external_account_id,
+		@transaction_type_id,
+		@value_date,
+		@currency_id,
+		@balance,
+		@deal_id,
+		@note,
+		getdate())
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting fx settlement record"
+		rollback tran
+		return
+	end
+
+	insert into
+		account_transactions(
+			account_transaction_id,
+			entered_by,
+			external_account_id,
+			transaction_type_id,
+			transaction_date,
+			currency_id,
+			amount,
+			deal_id,
+			note,
+			timestamp)
+	values(
+		@wire_out_transaction_id,
+		@tico_account_id,
+		/*@external_account_id,*/
+		@wo_account_id,
+		@wire_out_id,
+		@value_date,
+		@currency_id,
+                @contra_balance,
+		@deal_id,
+		@note,
+		getdate())
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting fx settlement record"
+		rollback tran
+		return
+	end
+
+
+        insert into
+                account_transactions(
+                        account_transaction_id,
+                        entered_by,
+                        external_account_id,
+                        transaction_type_id,
+                        transaction_date,
+                        currency_id,
+                        amount,
+                        deal_id,
+			note,
+                        timestamp)
+        values(
+                @contra_transaction_id,
+                @tico_account_id,
+                @contra_account_id,
+                @transaction_type_id,
+                @value_date,
+                @currency_id,
+		@balance,
+                @deal_id,
+		@note,
+                getdate())
+        if @@rowcount != 1
+        begin
+                select
+                        status = "Error",
+                        message = "Problem inserting contra fx settlement record"
+                rollback tran
+                return
+        end
+
+commit tran
+
+	
+exec
+	r_insertaccounttransnotification
+		@account_transaction_id = @account_transaction_id
+exec
+	r_insertaccounttransnotification
+		@account_transaction_id = @wire_out_transaction_id
+exec
+	r_insertaccounttransnotification
+		@account_transaction_id = @contra_transaction_id
+
+
+select
+	style = "background:#FFFFFF;border: 1px solid white",
+	prime_broker = @prime_broker,
+	value_date = @value_date
+	
+
+exec
+	cbo_settlementrecon
+		@login,
+		@value_date,
+		@prime_broker
+
+
+go 
+
