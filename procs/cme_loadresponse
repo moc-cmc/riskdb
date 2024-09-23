@@ -1,0 +1,95 @@
+
+
+create or replace procedure
+	cme_loadresponse
+		@login varchar(25),
+		@file_csv_row_number varchar(50),
+		@uti_usi varchar(50),
+		@error_code_response_data varchar(250),
+		@sdr_receipt_timestamp varchar(50),
+		@record_ref_id varchar(50)	
+
+as
+
+declare @trade_id int
+declare @usi_lookup varchar(25)
+
+select
+	@usi_lookup = usi_prefix
+from
+	usi_lookup
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Could not located usi prefix",
+		lookup=@usi_lookup
+
+	return
+end
+
+select @trade_id = convert(int, str_replace(rtrim(@uti_usi),rtrim(@usi_lookup),""))
+
+if not exists (select trade_id from trades where trade_id=@trade_id)
+begin
+	select
+		status="Error",
+		message="Could not locate trade",
+		trade_id=@trade_id
+
+	return
+end
+
+if exists (select trade_id from cme_responses where trade_id=@trade_id)
+begin
+	update
+		cme_responses
+	set
+		response=@error_code_response_data
+	where
+		trade_id=@trade_id
+
+	if @@rowcount !=1
+	begin
+		select
+			status="Error",
+			message="Could not update response for trade",
+			trade_id=@trade_id
+		
+		return
+	end
+end
+else
+begin
+	insert into
+		cme_responses (
+		trade_id,
+		response
+		)
+	values(
+		@trade_id,
+		@error_code_response_data
+	      )
+
+	if @@rowcount !=1 
+	begin
+		select
+			status="Error",
+			message="Could not insert response for trade",
+			trade_id=@trade_id
+
+		return
+	end
+end
+
+select
+	status="Success",
+	message="Response inserted for trade",
+	trade_id=@trade_id
+
+return
+
+go
+
+
