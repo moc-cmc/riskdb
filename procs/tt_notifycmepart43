@@ -2239,7 +2239,7 @@ update
 		#trades
 set
 		Leg2EffectiveNotionalAmount = abs(quantity), 
- 		Leg2NotionalAmount = convert(varchar(7),abs(quantity)),
+ 		Leg2NotionalAmount = convert(varchar(30),convert(numeric(30,2),abs(quantity))),
                 Leg2NotionalCurrency = traded_ccy,
  		Leg2NotionalQuantity = abs(quantity), 
  		Leg2TotalNotionalQuantity = abs(quantity), 
