@@ -1,8 +1,4 @@
-drop procedure
-	ag_addtransfertransaction
-go
-
-create procedure
+create or replace procedure
 	ag_addtransfertransaction
 		@login varchar(50),
 		@debit_from varchar(50),
@@ -24,6 +20,13 @@ declare @debit_amount numeric(30,10)
 declare @credit_transaction_id int
 declare @debit_transaction_id int
 declare @timestamp datetime
+declare @deal_id int
+
+
+exec
+	j_nextkey
+		"deals",
+		@deal_id output
 
 
 select
@@ -136,7 +139,9 @@ begin tran
 			transaction_date,
 			currency_id,
 			amount,
-			note)
+			note,
+			deal_id,
+			timestamp)
 	values(
 		@debit_transaction_id,
 		@tico_account_id,
@@ -145,7 +150,9 @@ begin tran
 		@timestamp,
 		@product_id,
 		@debit_amount,
-		@note)
+		@note,
+		@deal_id,
+		getdate())
 	if @@rowcount != 1
 	begin 
 		select
@@ -167,7 +174,9 @@ begin tran
 			transaction_date,
 			currency_id,
 			amount,
-			note)
+			note,
+			deal_id,
+			timestamp)
 	values(
 		@credit_transaction_id,
 		@tico_account_id,
@@ -176,7 +185,9 @@ begin tran
 		@timestamp,
 		@product_id,
 		@credit_amount,
-		@note)
+		@note,
+		@deal_id,
+		getdate())
 	if @@rowcount != 1
 	begin 
 		select
@@ -190,6 +201,14 @@ begin tran
 	end
 
 commit tran
+
+exec
+	r_insertaccounttransnotification
+		@account_transaction_id = @debit_transaction_id
+exec
+	r_insertaccounttransnotification
+		@account_transaction_id = @credit_transaction_id
+
 
 select
 	a.account_transaction_id,
