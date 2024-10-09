@@ -1,7 +1,6 @@
 create or replace procedure
-	ag_cmereconreport
+	ag_cmereconreport2
 		@login varchar(50),
-		@source varchar(50),
 		@begin_date datetime = NULL,
 		@end_date datetime = NULL
 
@@ -69,7 +68,7 @@ insert into
 values(
 	"Column Link",
 	"id_recon",
-	"Run CME ID Recon",
+	"CME Intraday Recon",
 	NULL) 
 
 select
@@ -77,13 +76,13 @@ select
 from
 	sources
 where
-	name = @source
+	name = "CME Intraday SFTP" 
 if @source_id = NULL
 begin
 	select
 		status = "Error",
 		message = "Problem finding source",
-		source = @source
+		source = "CME Intraday SFTP" 
 	return
 end
 
@@ -128,6 +127,46 @@ select
 
 /* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
 
+create table
+	#trade_responses(
+		trade_id int,
+		response varchar(250) NULL)
+
+insert into
+	#trade_responses
+	(trade_id)
+select
+	a.trade_id
+from
+        trades a,
+        trade_aliases b,
+        fund_regulatory_info c,
+        external_accounts d,
+        external_account_types e
+where 
+        a.trade_id *= b.trade_id
+and
+        a.trade_date >= @begin_date
+and
+        a.trade_date < @end_date
+and
+        b.source_id = @source_id
+and
+        a.external_account_id = d.external_account_id
+and
+        d.external_account_type_id = e.external_account_type_id
+and
+        e.name="Client"		
+
+update
+	#trade_responses
+set
+	a.response=b.response
+from
+	#trade_responses a,
+	cme_responses b
+where
+	a.trade_id=b.trade_id
 
 select
 	id_recon = "Change Date"
@@ -138,13 +177,16 @@ select
 	etg_id= a.trade_id,
 	spectrum_id=case when b.alias != NULL then b.alias else "" end, 
 	cme_id = rtrim(lei_number)+convert(char(10),a.trade_id),
+	f.response,
 	style=@style
 from
 	trades a, 
 	trade_aliases b, 
 	fund_regulatory_info c,
 	external_accounts d,
-	external_account_types e
+	external_account_types e,
+	#trade_responses f,
+	trade_types g
 where 
 	a.trade_id *= b.trade_id 
 and
@@ -159,6 +201,12 @@ and
 	d.external_account_type_id = e.external_account_type_id 
 and
 	e.name="Client"
+and
+	a.trade_id=f.trade_id
+and
+	a.trade_type_id=g.trade_type_id
+and
+	g.name != "Spot"
 
 order by 
 	a.trade_date
