@@ -113,7 +113,9 @@ begin
 			@currency_product_type_id output
 
 	insert into
-		product_types
+		product_types(
+			product_type_id,
+			name)
 	values(
 		@currency_product_type_id,
 		"Currency")
@@ -138,7 +140,10 @@ begin
 	if @currency_id != NULL
 	begin
 		insert into
-			product_symbols
+			product_symbols(
+				product_id,
+				source_id,
+				symbol)
 		values(
 			@currency_id,
 			@source_id,
