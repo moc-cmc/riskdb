@@ -5,11 +5,12 @@ go
 create table 
 	cme_responses (
 		trade_id int,
+		source_run int NULL,
 		response varchar(250))
 
 go
 
-create unique index ut on cme_responses(trade_id)
+create unique index ut on cme_responses (trade_id, source_run)
 go
 
  

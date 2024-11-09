@@ -7,7 +7,8 @@ create or replace procedure
 		@uti_usi varchar(50),
 		@error_code_response_data varchar(250),
 		@sdr_receipt_timestamp varchar(50),
-		@record_ref_id varchar(50)	
+		@record_ref_id varchar(50),
+		@source_run int
 
 as
 
@@ -49,6 +50,8 @@ begin
 		response=@error_code_response_data
 	where
 		trade_id=@trade_id
+	and
+		source_run = @source_run
 
 	if @@rowcount !=1
 	begin
@@ -65,10 +68,12 @@ begin
 	insert into
 		cme_responses (
 		trade_id,
+		source_run,
 		response
 		)
 	values(
 		@trade_id,
+		@source_run,
 		@error_code_response_data
 	      )
 
