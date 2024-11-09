@@ -1,10 +1,17 @@
+drop table
+	trade_mtms
+go
+
+
 create table
         trade_mtms(
                 identifier varchar(100),
                 source_id int,
                 trade_date datetime,
                 trade_id int NULL,
-                mtm float)
+                trade_price float NULL,
+		reval_price float NULL,
+		mtm float)
 
 go
 

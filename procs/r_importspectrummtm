@@ -5,15 +5,19 @@ create or replace procedure
 		@date varchar(50),
 		@trade_number varchar(100),
 		@sub_number varchar(100),
+		@trade_price varchar(50),
+                @reval_price varchar(50),
 		@market_value varchar(50)
-as
 
+as
 
 declare @begin_date datetime
 declare @end_date datetime
 declare @source_id int
 declare @pdate datetime
 declare @identifier varchar(200)
+declare @price float
+declare @reval float
 declare @mtm float
 declare @start_time datetime
 declare @end_time datetime
@@ -23,7 +27,9 @@ select
 
 select
 	@pdate = convert(datetime, substring(@date, 7,4) + substring(@date, 4,2) + substring(@date, 1,2)),
-	@mtm = convert(float, @market_value),
+	@price = convert(float, @trade_price),
+        @reval = convert(float, @reval_price),
+        @mtm = convert(float, @market_value),
 	@identifier = rtrim(@trade_number)+"-"+rtrim(@sub_number)
 
 exec
@@ -46,24 +52,29 @@ begin
 	return
 end
 
-
 insert into
 	trade_mtms(
 		identifier,
 		source_id,
 		trade_date,
-		mtm)
+		trade_price,
+                reval_price,
+                mtm)
 values(
 	@identifier + ".c",
 	@source_id,
 	@end_date,
+	@price,
+        @reval,
 	@mtm)
 
 select
         identifier = @identifier,
         source_id = @source_id,
         trade_date = @end_date,
-        mtm = @mtm
+        price = @trade_price,
+	reval = @reval_price,
+	mtm = @mtm
 
 select
     @end_time = getdate()
