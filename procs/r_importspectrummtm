@@ -61,7 +61,7 @@ insert into
                 reval_price,
                 mtm)
 values(
-	@identifier + ".c",
+	@identifier,
 	@source_id,
 	@end_date,
 	@price,
