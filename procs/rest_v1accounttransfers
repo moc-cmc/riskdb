@@ -240,7 +240,7 @@ select
 
 exec
         sp_dogstatsdtimer
-                @metric_name="ase.proc.rest_v1transfers",
+                @metric_name="ase.proc.rest_v1accounttransfers",
                 @start_time=@start_time,
                 @end_time=@end_time,
                 @tags=NULL,

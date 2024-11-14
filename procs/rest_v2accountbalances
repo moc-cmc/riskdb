@@ -1,0 +1,176 @@
+create or replace procedure
+	rest_v2accountbalances(
+		@api_key varchar(100),
+		@account varchar(50))
+as
+
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+declare @days int
+declare @id int
+declare @settlement_product_id int
+declare @fund_id int
+declare @external_account_id int
+declare @balance_date datetime
+declare @login varchar(50)
+declare @trade_date datetime
+
+declare @tico_account_id int
+declare @legal_entity_id int
+declare @strategy_id int
+
+declare @start_time datetime
+declare @end_time datetime
+select
+	@start_time = getdate()
+
+select
+	@tico_account_id = a.user_id,
+	@login = b.login
+from
+	user_auths a,
+	tico_accounts b
+where
+	a.user_id = b.account_id
+and
+	a.pubkey = @api_key
+
+if @tico_account_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find user for API key",
+		api_key = @api_key
+	return
+end
+
+create table
+        #legal_entity_accounts(
+                external_account_id int,
+                legal_entity_id int)
+
+insert into
+        #legal_entity_accounts(
+                external_account_id,
+                legal_entity_id)
+select
+        a.external_account_id,
+        b.legal_entity_id
+from
+        fo_sub_accounts a,
+        bo_master_accounts b,
+	legal_entity_tico_accounts c
+where
+        a.bo_master_account_id = b.bo_master_account_id
+and
+	b.legal_entity_id = c.legal_entity_id
+and
+	c.tico_account_id = @tico_account_id
+
+
+insert into
+        #legal_entity_accounts(
+                external_account_id,
+                legal_entity_id)
+select
+        a.external_account_id,
+        a.legal_entity_id
+from
+        bo_master_accounts a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+        a.external_account_id not in ( select external_account_id from #legal_entity_accounts)
+
+select
+	@external_account_id = a.external_account_id
+from
+	external_accounts a,
+	#legal_entity_accounts b
+where
+	a.external_account_id = b.external_account_id
+and
+	a.symbol = @account
+
+if @external_account_id = NULL
+begin
+        select
+                error = "error",
+                msg = "Could not find account",
+                account = @account
+        return
+end
+
+/*
+select
+        external_account_id,
+        product_id,
+        payments,
+        payments_equiv,
+        settlements,
+        settlements_equiv,
+        forwards,
+        forwards_equiv,
+        futures,
+        futures_equiv,
+        total,
+        total_equiv
+into
+        #all
+from
+        x_all_entity_bals
+where
+        _login = @login
+and
+        _account = @account
+and
+        _trade_date = @trade_date
+*/
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select
+        x_balances.external_account_id, x_balances.product_id, x_balances.payments_bal, x_balances.settlements_bal, x_balances.trades_bal, x_balances.net_bal, x_balances._login, x_balances._legal_entity, x_balances._strategy, x_balances._account, x_balances._product, x_balances._trade_date, x_balances._exclude_sys
+into
+        #all
+from
+        x_balances
+where
+        _login = @login
+and
+        _account = @account
+and
+        _trade_date = @trade_date
+
+select
+	currency = b.symbol,
+	amount = convert(varchar(30), convert(numeric(30, 10), a.net_bal))
+from
+	#all a,
+	products b
+where
+	a.product_id = b.product_id
+and
+	b.name != 'MHSTL'
+
+select
+        @end_time = getdate()
+
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.rest_v2accountbalances",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags=NULL,
+                @sample_rate="1.0"
+
+
+
+
+go
