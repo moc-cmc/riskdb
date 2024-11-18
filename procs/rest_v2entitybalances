@@ -1,0 +1,184 @@
+create or replace procedure
+	rest_v2entitybalances(
+		@api_key varchar(100),
+		@legal_entity varchar(50),
+		@account_strategy varchar(50)=NULL)
+as
+
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+declare @days int
+declare @id int
+declare @settlement_product_id int
+declare @fund_id int
+declare @external_account_id int
+declare @balance_date datetime
+declare @login varchar(50)
+declare @trade_date datetime
+
+declare @tico_account_id int
+declare @legal_entity_id int
+declare @strategy_id int
+
+declare @start_time datetime
+declare @end_time datetime
+select
+	@start_time = getdate()
+
+select
+	@tico_account_id = a.user_id,
+	@login = b.login
+from
+	user_auths a,
+	tico_accounts b
+where
+	a.user_id = b.account_id
+and
+	a.pubkey = @api_key
+
+if @tico_account_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find user for API key",
+		api_key = @api_key
+	return
+end
+
+select
+	@legal_entity_id = a.legal_entity_id
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @legal_entity
+if @@rowcount = 0
+begin
+        select
+                error = "error",
+                msg = "Could not find legal entity",
+                legal_entity = @legal_entity
+        return
+end
+
+if @account_strategy != NULL
+begin
+	select
+		@strategy_id = strategy_id
+	from
+		strategies
+	where
+		name = @account_strategy
+
+	if @strategy_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find strategy",
+			strategy = @account_strategy
+		return
+	end
+end
+
+/*
+select
+        external_account_id,
+        product_id,
+        payments,
+        payments_equiv,
+        settlements,
+        settlements_equiv,
+        forwards,
+        forwards_equiv,
+        futures,
+        futures_equiv,
+        total,
+        total_equiv
+*/
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select
+	x_balances.external_account_id, x_balances.product_id, x_balances.payments_bal, x_balances.settlements_bal, x_balances.trades_bal, x_balances.net_bal, x_balances._login, x_balances._legal_entity, x_balances._strategy, x_balances._account, x_balances._product, x_balances._trade_date, x_balances._exclude_sys
+into
+        #all
+from
+        x_balances
+where
+        _login = @login
+and
+        _legal_entity = @legal_entity
+and
+        _trade_date = @trade_date
+
+if @strategy_id = NULL
+begin
+	select
+		"name" = c.symbol,
+        	currency = b.symbol,
+        	amount = convert(varchar(30), convert(numeric(30, 10), a.net_bal))
+	from
+        	#all a,
+        	products b,
+		external_accounts c
+	where
+        	a.product_id = b.product_id
+	and
+		a.external_account_id = c.external_account_id
+	and
+		b.name != "MHSTL"
+        order by
+                c.symbol,
+                b.symbol
+end
+
+if @strategy_id != NULL
+begin
+	select
+		"name" = d.symbol,
+		currency = b.symbol,
+		amount = convert(varchar(30), convert(numeric(30, 10), a.net_bal))
+	from
+		#all a,
+		products b,
+		account_strategies c,
+		external_accounts d
+	where
+		a.product_id = b.product_id
+	and
+		a.external_account_id = d.external_account_id
+	and
+		a.external_account_id = c.external_account_id
+	and
+		c.strategy_id = @strategy_id
+	and
+		b.name != "MHSTL"
+	order by
+		d.symbol,
+		b.symbol
+end
+
+select
+        @end_time = getdate()
+
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.rest_v2entitybalances",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags=NULL,
+                @sample_rate="1.0"
+
+
+
+
+go

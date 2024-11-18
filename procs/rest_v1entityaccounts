@@ -1,0 +1,169 @@
+create or replace procedure
+	rest_v1entityaccounts(
+		@api_key varchar(100),
+		@legal_entity varchar(50),
+		@account_strategy varchar(50)=NULL)
+as
+
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+declare @deficit_style varchar(250)
+declare @client_style varchar(250)
+declare @days int
+declare @id int
+declare @settlement_product_id int
+declare @fund_id int
+declare @external_account_id int
+declare @balance_date datetime
+declare @login varchar(50)
+declare @trade_date datetime
+
+declare @tico_account_id int
+declare @legal_entity_id int
+declare @strategy_id int
+
+declare @start_time datetime
+declare @end_time datetime
+select
+	@start_time = getdate()
+
+select
+	@tico_account_id = a.user_id,
+	@login = b.login
+from
+	user_auths a,
+	tico_accounts b
+where
+	a.user_id = b.account_id
+and
+	a.pubkey = @api_key
+
+if @tico_account_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find user for API key",
+		api_key = @api_key
+	return
+end
+
+select
+	@legal_entity_id = a.legal_entity_id
+from
+	legal_entities a,
+	legal_entity_tico_accounts b
+where
+	a.legal_entity_id = b.legal_entity_id
+and
+	b.tico_account_id = @tico_account_id
+and
+	a.name = @legal_entity
+if @@rowcount = 0
+begin
+        select
+                error = "error",
+                msg = "Could not find legal entity",
+                legal_entity = @legal_entity
+        return
+end
+
+if @account_strategy != NULL
+begin
+	select
+		@strategy_id = strategy_id
+	from
+		strategies
+	where
+		name = @account_strategy
+
+	if @strategy_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find strategy",
+			strategy = @account_strategy
+		return
+	end
+end
+
+create table
+        #legal_entity_accounts(
+                external_account_id int,
+                legal_entity_id int)
+
+insert into
+        #legal_entity_accounts(
+                external_account_id,
+                legal_entity_id)
+select
+        a.external_account_id,
+        b.legal_entity_id
+from
+        fo_sub_accounts a,
+        bo_master_accounts b
+where
+        a.bo_master_account_id = b.bo_master_account_id
+and
+	b.legal_entity_id = @legal_entity_id
+
+
+insert into
+        #legal_entity_accounts(
+                external_account_id,
+                legal_entity_id)
+select
+        a.external_account_id,
+        a.legal_entity_id
+from
+        bo_master_accounts a
+where
+	a.legal_entity_id = @legal_entity_id
+and
+        a.external_account_id not in ( select external_account_id from #legal_entity_accounts)
+
+if @strategy_id = NULL
+begin
+	select
+		"name" = a.symbol
+	from
+		external_accounts a,
+		#legal_entity_accounts b
+	where
+		a.external_account_id = b.external_account_id
+
+end
+
+if @strategy_id != NULL
+begin
+        select
+                "name" = a.symbol
+        from
+                external_accounts a,
+                #legal_entity_accounts b,
+		account_strategies c
+        where
+                a.external_account_id = b.external_account_id
+	and
+		a.external_account_id = c.external_account_id
+end
+
+select
+        @end_time = getdate()
+
+exec
+        sp_dogstatsdtimer
+                @metric_name="ase.proc.rest_v1entityaccounts",
+                @start_time=@start_time,
+                @end_time=@end_time,
+                @tags=NULL,
+                @sample_rate="1.0"
+
+
+
+
+go
