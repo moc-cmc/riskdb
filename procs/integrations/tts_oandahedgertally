@@ -152,7 +152,7 @@ begin
 	exec
 		r_nextbusinessday
 			@tally_trade_date,
-			@next_tally_trade_date output, 
+			@next_tally_trade_date output 
 		
 	select
 		@tally_trade_date = convert(date, @next_tally_trade_date)

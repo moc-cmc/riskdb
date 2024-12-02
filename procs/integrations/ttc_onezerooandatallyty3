@@ -128,7 +128,7 @@ begin
 	exec
 		r_nextbusinessday
 			@trade_date,
-			@next_trade_date output, 
+			@next_trade_date output
 		
 	select
 		@trade_date = convert(date, @next_trade_date)
