@@ -146,8 +146,8 @@ select
  * STEP: Roll NZD trades between 15:00 EST and 17:00 EST
  */
 if (@ccy1 = "NZD" or @ccy2 = "NZD") and
-@tally_trade_date < convert(char(8), @trade_date, 112) + ' 17:00' and
-@tally_trade_date > convert(char(8), @trade_date, 112) + ' 15:00'
+	@tally_trade_date < convert(char(8), @trade_date, 112) + ' 17:00' and
+	@tally_trade_date > convert(char(8), @trade_date, 112) + ' 15:00'
 begin
 	exec
 		r_nextbusinessday
