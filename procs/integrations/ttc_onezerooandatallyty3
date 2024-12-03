@@ -123,7 +123,7 @@ select
  */
 if @symbol like ("%NZD%") and
 	@trade_date < convert(char(8), @trade_date, 112) + ' 17:00' and
-	@trade_date > convert(char(8), @trade_date, 112) + ' 15:00'
+	@trade_date >= convert(char(8), @trade_date, 112) + ' 15:00'
 begin
 	exec
 		r_nextbusinessday
