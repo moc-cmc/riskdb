@@ -1,7 +1,7 @@
 
 create or replace procedure
 	tts_onezerotallyny4
-		@/* Provided by FIX server config.properties & spring.xml */
+		/* Provided by FIX server config.properties & spring.xml */
 		@source varchar(50),
 		@default_login varchar(50),
 		@broker varchar(50),
