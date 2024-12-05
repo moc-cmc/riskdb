@@ -1,0 +1,172 @@
+
+create or replace procedure
+	r_operations
+		@login varchar(50)
+as
+
+declare @fund_id int
+declare @fund_type varchar(50)
+declare @style varchar(250)
+select
+        @style = "background:#FFFFFF;border: 1px solid white"
+
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+select
+	@fund_type = a.name
+from
+	fund_types a,
+	funds b
+where
+	a.fund_type_id = b.fund_type_id
+and
+	b.fund_id = @fund_id
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+     NULL)
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"op_link",
+	"Operations Link",
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "op_link",
+        "Operations Link",
+        NULL)
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+create table
+	#output(
+		section varchar(50) NULL,
+		op_task varchar(255),
+		op_link varchar(100),
+		op_description varchar(255) NULL
+		)
+
+
+insert into
+	#output
+values(
+	"Operations",
+	"Assign Trades",
+	"Assign Trades",
+	"Group trades into deals or manage aggregation")
+
+insert into
+	#output
+values(
+	"Operations",
+	"Edit Current Prices",
+	"Current Prices",
+	"View current market prices in the system")
+
+insert into
+	#output
+values(
+	"Operations",
+	"Edit Settle Prices",
+	"Settles",
+	"View settle prices for previous trade dates")
+
+
+insert into
+        #output
+values(
+        "Operations",
+        "Link Unhedged Deals",
+        "Unhedged Deals",
+        "View and group potential unhedged legs")
+
+
+if exists(select name from enabled_product_features where name = "Options")
+begin
+	insert into
+		#output
+	values(
+		"Option Tools",
+		"View Option Model Parameters",
+		"Options",
+		"View and modify the greek values for option contracts that have not expired yet")
+/*
+	insert into
+		#output
+	values(
+		"Option Tools",
+		"Run Expiration Tool",
+		"Expirations",
+		"Exercise or expire option trades based on market price of underlying contract at time of expiration with a single click")
+*/
+
+	insert into
+		#output
+	values(
+		"Option Tools",
+		"Option Expiration Calendar",
+		"Option Expiration Calendar",
+		"See upcoming option expiration dates")
+
+end
+
+if exists(select name from enabled_product_features where name = "Recon Blotters")
+	insert into
+		#output
+	values(
+		"Recon",
+		"Recon Blotters",
+                "Recon Blotters",
+		"Trade blotters for reconciliation")
+
+if exists(select name from enabled_product_features where name = "UPI Management ")
+        insert into
+                #output
+        values(
+                "UPI Management",
+                "Manage UPI Codes",
+                "Manage UPI Codes",
+                "Set and modify UPI by contract and trade type")
+
+
+select
+	section,
+	style=@style,
+	op_task,
+	op_link,
+	op_description
+from
+	#output
+
+go
+
