@@ -99,6 +99,8 @@ declare @tally_status varchar(10)
 declare @tally_message varchar(25)
 declare @far_tally_status varchar(10)
 declare @far_tally_message varchar(25)
+declare @next_trade_date datetime
+
 
 declare @trigger_symbol varchar(50)
 
@@ -114,6 +116,23 @@ declare @trigger_symbol varchar(50)
 select
     @fund_agency_lookup = @client_id
 */
+
+/* --------------------------------------------------------------------------
+ * STEP: Roll NZD trades between 15:00 EST and 17:00 EST
+ * Trade date is passed into the stored procedure as EST
+ */
+if @symbol like ("%NZD%") and
+	@trade_date < convert(char(8), @trade_date, 112) + ' 17:00' and
+	@trade_date >= convert(char(8), @trade_date, 112) + ' 15:00'
+begin
+	exec
+		r_nextbusinessday
+			@trade_date,
+			@next_trade_date output
+		
+	select
+		@trade_date = convert(date, @next_trade_date)
+end
 
 /* --------------------------------------------------------------------------
  * STEP: Set broker_id and source_id
