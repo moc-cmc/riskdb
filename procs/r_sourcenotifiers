@@ -1,12 +1,9 @@
-drop procedure
-	r_sourcenotifiers
-go
 
-create procedure
+create or replace procedure
 	r_sourcenotifiers
 		@login varchar(50)
-
 as
+
 
 declare @run_id int
 declare @begin_day_string char(20)
@@ -27,7 +24,7 @@ insert into
 	#links
 values(
 	"Column Link",
-	"edit_notifier",
+	"edit_trade_notifier",
 	"Edit Trade Notifier",
 	NULL)
 
@@ -35,10 +32,27 @@ insert into
         #links
 values(
         "Column Link",
-        "delete_notifier",
+        "delete_trade_notifier",
         "Delete Trade Notifier",
         NULL)
 
+insert into 
+        #links
+values(
+        "Column Link",
+        "edit_ledger_notifier",
+        "Edit Ledger Notifier",
+        NULL
+)
+
+insert into 
+        #links
+values(
+        "Column Link",
+        "delete_ledger_notifier",
+        "Delete Ledger Notifier",
+        NULL
+)
 
 
 insert into
@@ -50,15 +64,32 @@ values(
         NULL
 )
 
+insert into
+    #links
+values (
+    "Column Group",
+    "section",
+    NULL,
+    NULL)
 
 
 insert into
 	#links
 values(
 	"Column Link",
-	"add_notifier",
+	"add_trade_notifier",
 	"Add Trade Notifier",
 	NULL)
+
+insert into
+        #links
+values(
+        "Column Link",
+        "add_ledger_notifier",
+        "Add Ledger Notifier",
+        NULL)
+
+
 
 /*
 insert into
@@ -111,7 +142,7 @@ values(
 	NULL,
         NULL)
 
-        
+
 insert into
         #links
 values(
@@ -127,7 +158,7 @@ values(
         "fsbrid",
         NULL,
         NULL)
-        
+
 insert into
         #links
 values(
@@ -136,7 +167,7 @@ values(
 	NULL,
         NULL)
 
-        
+
 insert into
         #links
 values(
@@ -154,7 +185,7 @@ values(
 	NULL,
         NULL)
 
-        
+
 insert into
         #links
 values(
@@ -163,7 +194,7 @@ values(
 	NULL,
         NULL)
 
-        	
+
 insert into
         #links
 values(
@@ -172,7 +203,7 @@ values(
 	NULL,
         NULL)
 
-        
+
 insert into
         #links
 values(
@@ -190,7 +221,7 @@ values(
         NULL)
 
 
-        
+
 insert into
         #links
 values(
@@ -205,7 +236,9 @@ select #links.meta_type, #links.name, #links.action, #links.value from #links
 
 
 select
-	add_notifier = "ADD NOTIFIER"
+	section = "Notifier Operations",
+	add_trade_notifier = "ADD TRADE NOTIFIER",
+	add_ledger_notifier = "ADD LEDGER NOTIFIER"
 
 create table
         #trade_notifiers(
@@ -227,8 +260,8 @@ create table
 		notifier_date datetime NULL,
 		notification_status_id int NULL,
 		notification_status varchar(50) NULL,
-		edit_notifier varchar(50) NULL,
-		delete_notifier varchar(50) NULL,
+		edit_trade_notifier varchar(50) NULL,
+		delete_trade_notifier varchar(50) NULL,
 		aggregation_style_id int NULL,
 		aggregation_style varchar(50) NULL
 	)
@@ -247,8 +280,8 @@ insert into
 		trade_type_id,
 		notification_status_id,
 		notifier_date,
-		edit_notifier,
-		delete_notifier
+		edit_trade_notifier,
+		delete_trade_notifier
        )
 select
 	trade_notifier_id,
@@ -261,8 +294,8 @@ select
 	trade_type_id,
         notification_status_id,
         notifier_date,
-        edit_notifier = "EDIT NOTIFIER",
-        delete_notifier = "DELETE NOTIFIER"
+        edit_trade_notifier = "EDIT NOTIFIER",
+        delete_trade_notifier = "DELETE NOTIFIER"
 
 from
 	trade_notifiers
@@ -341,9 +374,9 @@ from
         #trade_notifiers a,
         brokers b
 where
-        a.broker_id = b.broker_id 
+        a.broker_id = b.broker_id
 
-update 
+update
 	#trade_notifiers
 set
 	source = b.name
@@ -353,8 +386,168 @@ from
 where
 	a.source_id = b.source_id
 
+/* Ledger Notifiers */
 
-select 
+create table
+        #account_trans_notifiers(
+                ledger_notifier_id int NULL,
+                source_id int NULL,
+                source varchar(50) NULL,
+                external_account_id int NULL,
+                external_account varchar(50) NULL,
+                transaction_type_id int NULL,
+                transaction_type varchar(50) NULL,
+                notifier_date datetime NULL,
+                notification_status_id int NULL,
+                notification_status varchar(50) NULL,
+                edit_ledger_notifier varchar(50) NULL,
+                delete_ledger_notifier varchar(50) NULL,
+                aggregation_style_id int NULL,
+                aggregation_style varchar(50) NULL
+        )
+
+create table
+        #acct_trans_notifier_exclusions(
+                exclusion_notifier_id int NULL,
+                source_id int NULL,
+                source varchar(50) NULL,
+                external_account_id int NULL,
+                external_account varchar(50) NULL,
+                transaction_type_id int NULL,
+                transaction_type varchar(50) NULL,
+                notifier_exclusion_date datetime NULL,
+                edit_notifier varchar(50) NULL,
+                delete_notifier varchar(50) NULL,
+                aggregation_style_id int NULL,
+                aggregation_style varchar(50) NULL
+        )
+
+
+
+
+insert into
+       #account_trans_notifiers(
+                ledger_notifier_id,
+                source_id,
+                external_account_id,
+                transaction_type_id,
+                notification_status_id,
+                notifier_date,
+                edit_notifier,
+                delete_notifier
+       )
+select
+        account_trans_notifier_id,
+        source_id,
+        external_account_id,
+        transaction_type_id,
+        notification_status_id,
+        notifier_date,
+        edit_ledger_notifier = "EDIT NOTIFIER",
+        delete_ledger_notifier = "DELETE NOTIFIER"
+from
+        account_trans_notifiers
+
+update
+        #account_trans_notifiers
+set
+        external_account = b.symbol
+from
+        #account_trans_notifiers a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+
+
+update
+        #account_trans_notifiers
+set
+        transaction_type = b.name
+from
+        #account_trans_notifiers a,
+        transaction_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+
+update
+        #account_trans_notifiers
+set
+        notification_status = b.name
+from
+        #account_trans_notifiers a,
+        statuses b
+where
+        a.notification_status_id = b.status_id
+
+update
+        #account_trans_notifiers
+set
+        source = b.name
+from
+        #account_trans_notifiers a,
+        sources b
+where
+        a.source_id = b.source_id
+
+insert into
+       #acct_trans_notifier_exclusions(
+                exclusion_notifier_id,
+                source_id,
+                external_account_id,
+                transaction_type_id,
+                notifier_exclusion_date,
+                edit_notifier,
+                delete_notifier
+       )
+select
+        exclusion_id,
+        source_id,
+        external_account_id,
+        transaction_type_id,
+        notifier_exclusion_date,
+        edit_notifier = "EDIT NOTIFIER",
+        delete_notifier = "DELETE NOTIFIER"
+from
+        acct_trans_notifier_exclusions
+
+update
+        #acct_trans_notifier_exclusions
+set
+        external_account = b.symbol
+from
+        #acct_trans_notifier_exclusions a,
+        external_accounts b
+where
+        a.external_account_id = b.external_account_id
+
+
+update
+        #acct_trans_notifier_exclusions
+set
+        transaction_type = b.name
+from
+        #acct_trans_notifier_exclusions a,
+        transaction_types b
+where
+        a.transaction_type_id = b.transaction_type_id
+
+
+update
+        #acct_trans_notifier_exclusions
+set
+        source = b.name
+from
+        #acct_trans_notifier_exclusions a,
+        sources b
+where
+        a.source_id = b.source_id
+
+
+
+/* Output */
+
+select
+	section = "Trade Notifiers",
 	trade_notifier_id,
 	source,
 	external_account,
@@ -366,12 +559,44 @@ select
 	trade_type,
 	notification_status,
 	notifier_date,
-        edit_notifier,
-	delete_notifier
-from 
+        edit_trade_notifier,
+	delete_trade_notifier
+from
 	#trade_notifiers
 order by
 	external_account,
 	source
+
+select
+        section = "Ledger Notifiers",
+        ledger_notifier_id,
+        source,
+        external_account,
+        transaction_type,
+        notification_status,
+        notifier_date,
+        edit_ledger_notifier,
+        delete_ledger_notifier
+from
+        #account_trans_notifiers
+order by
+        external_account,
+        source
+
+select
+	section = "Ledger Notifier Exclusions",
+        exclusion_notifier_id,
+        source,
+        external_account,
+        transaction_type,
+        notifier_exclusion_date,
+        edit_ledger_notifier_exclusion = edit_notifier,
+        delete_ledger_notifier_exclusion = delete_notifier
+from
+        #acct_trans_notifier_exclusions
+order by
+        external_account,
+        source
+
 
 go
