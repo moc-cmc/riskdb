@@ -1,0 +1,49 @@
+
+create or replace procedure
+	r_deleteledgernotifier
+		@login varchar(50),
+		@account_trans_notifier_id int
+as
+
+
+declare @external_account_id int 
+declare @counterparty_id int 
+declare @trader_id int 
+declare @strategy_id int 
+declare @status_id int 
+declare @broker_id int 
+declare @notification_status_id int
+declare @source_id int
+
+begin tran
+
+    delete from
+        account_trans_notifiers
+    where
+        account_trans_notifier_id = @account_trans_notifier_id
+
+    if @@rowcount != 1
+        begin
+            select 
+                status = "Error",
+                msg = "Unable to delete ledger notifier",
+                account_trans_notifier_id = @account_trans_notifier_id
+
+            rollback tran
+            return
+        end
+
+    select 
+        status = "Success",
+        msg = "Successfully deleted ledger notifier",
+        account_trans_notifier_id = @account_trans_notifier_id
+
+commit tran
+
+
+exec
+        r_sourcenotifiers
+                @login
+	
+
+go 
