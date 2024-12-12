@@ -443,8 +443,8 @@ select
         transaction_type_id,
         notification_status_id,
         notifier_date,
-        edit_ledger_notifier = "EDIT NOTIFIER",
-        delete_ledger_notifier = "DELETE NOTIFIER"
+        "EDIT NOTIFIER",
+        "DELETE NOTIFIER"
 from
         account_trans_notifiers
 
