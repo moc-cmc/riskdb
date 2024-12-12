@@ -481,6 +481,14 @@ begin
 	return
 end
 
+if @counterparty_lookup = "OAU-B2C2-B2C2"
+begin
+        select
+                status = "Success",
+                message = "Suppresssed OAU-B2C2-B2C2"
+        return
+end
+
 if @deal_reference = "RESIDUAL"
 begin
 	select
