@@ -433,8 +433,8 @@ insert into
                 transaction_type_id,
                 notification_status_id,
                 notifier_date,
-                edit_notifier,
-                delete_notifier
+                edit_ledger_notifier,
+                delete_ledger_notifier
        )
 select
         account_trans_notifier_id,
