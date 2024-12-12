@@ -24,7 +24,7 @@ insert into
 	#links
 values(
 	"Column Link",
-	"edit_notifier",
+	"edit_trade_notifier",
 	"Edit Trade Notifier",
 	NULL)
 
@@ -32,10 +32,27 @@ insert into
         #links
 values(
         "Column Link",
-        "delete_notifier",
+        "delete_trade_notifier",
         "Delete Trade Notifier",
         NULL)
 
+insert into 
+        #links
+values(
+        "Column Link",
+        "edit_ledger_notifier",
+        "Edit Ledger Notifier",
+        NULL
+)
+
+insert into 
+        #links
+values(
+        "Column Link",
+        "delete_ledger_notifier",
+        "Delete Ledger Notifier",
+        NULL
+)
 
 
 insert into
@@ -243,8 +260,8 @@ create table
 		notifier_date datetime NULL,
 		notification_status_id int NULL,
 		notification_status varchar(50) NULL,
-		edit_notifier varchar(50) NULL,
-		delete_notifier varchar(50) NULL,
+		edit_trade_notifier varchar(50) NULL,
+		delete_trade_notifier varchar(50) NULL,
 		aggregation_style_id int NULL,
 		aggregation_style varchar(50) NULL
 	)
@@ -263,8 +280,8 @@ insert into
 		trade_type_id,
 		notification_status_id,
 		notifier_date,
-		edit_notifier,
-		delete_notifier
+		edit_trade_notifier,
+		delete_trade_notifier
        )
 select
 	trade_notifier_id,
@@ -277,8 +294,8 @@ select
 	trade_type_id,
         notification_status_id,
         notifier_date,
-        edit_notifier = "EDIT NOTIFIER",
-        delete_notifier = "DELETE NOTIFIER"
+        edit_trade_notifier = "EDIT NOTIFIER",
+        delete_trade_notifier = "DELETE NOTIFIER"
 
 from
 	trade_notifiers
@@ -383,8 +400,8 @@ create table
                 notifier_date datetime NULL,
                 notification_status_id int NULL,
                 notification_status varchar(50) NULL,
-                edit_notifier varchar(50) NULL,
-                delete_notifier varchar(50) NULL,
+                edit_ledger_notifier varchar(50) NULL,
+                delete_ledger_notifier varchar(50) NULL,
                 aggregation_style_id int NULL,
                 aggregation_style varchar(50) NULL
         )
@@ -426,8 +443,8 @@ select
         transaction_type_id,
         notification_status_id,
         notifier_date,
-        edit_notifier = "EDIT NOTIFIER",
-        delete_notifier = "DELETE NOTIFIER"
+        edit_ledger_notifier = "EDIT NOTIFIER",
+        delete_ledger_notifier = "DELETE NOTIFIER"
 from
         account_trans_notifiers
 
@@ -542,8 +559,8 @@ select
 	trade_type,
 	notification_status,
 	notifier_date,
-        edit_notifier,
-	delete_notifier
+        edit_trade_notifier,
+	delete_trade_notifier
 from
 	#trade_notifiers
 order by
@@ -558,8 +575,8 @@ select
         transaction_type,
         notification_status,
         notifier_date,
-        edit_ledger_notifier = edit_notifier,
-        delete_ledger_notifier = delete_notifier
+        edit_ledger_notifier,
+        delete_ledger_notifier
 from
         #account_trans_notifiers
 order by
