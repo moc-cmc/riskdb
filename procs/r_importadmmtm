@@ -1,0 +1,87 @@
+
+create or replace procedure
+	r_importadmmtm
+		@source varchar(50),
+		@etg_trade_id varchar(100),
+		@mark_to_market varchar(100),
+		@valuation_date varchar(50),
+		@trade_date varchar(50)
+
+as
+
+declare @begin_date datetime
+declare @end_date datetime
+declare @source_id int
+declare @pdate datetime
+declare @mtm float
+declare @start_time datetime
+declare @end_time datetime
+declare @trade_number int
+declare @vdate datetime
+declare  @tdate datetime
+
+select
+    @start_time = getdate()
+
+select
+        @mtm = convert(float, @mark_to_market),
+	@trade_number = convert(int, rtrim(@etg_trade_id)),
+	@vdate = convert(datetime, @valuation_date),
+	@tdate = convert(datetime, @trade_date)
+
+exec
+        r_daterangefordate
+                @tdate,
+                @begin_date output,
+                @end_date output
+
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+if @@rowcount != 1
+begin
+	select
+		error = "source not found",
+		source = @source 
+	return
+end
+
+insert into
+	trade_mtms(
+		identifier,
+		source_id,
+		trade_date,
+                trade_id,
+		mtm)
+values(
+	@etg_trade_id,
+	@source_id,
+	@end_date,
+        @trade_number,
+	@mtm)
+
+select
+        trade_id = @trade_number,
+	source_id = @source_id,
+        trade_date = @end_date,
+	mtm = @mtm
+
+select
+    @end_time = getdate()
+
+exec
+    sp_dogstatsdtimer
+        @metric_name="ase.proc.r_importspectrummtm",
+        @start_time=@start_time,
+        @end_time=@end_time,
+        @tags=NULL,
+        @sample_rate="1.0"
+
+
+
+go 
+
