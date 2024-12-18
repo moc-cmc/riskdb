@@ -2,7 +2,7 @@
 create or replace procedure
 	r_deleteledgernotifier
 		@login varchar(50),
-		@account_trans_notifier_id int
+		@ledger_notifier_id int
 as
 
 
@@ -20,14 +20,14 @@ begin tran
     delete from
         account_trans_notifiers
     where
-        account_trans_notifier_id = @account_trans_notifier_id
+        account_trans_notifier_id = @ledger_notifier_id
 
     if @@rowcount != 1
         begin
             select 
                 status = "Error",
                 msg = "Unable to delete ledger notifier",
-                account_trans_notifier_id = @account_trans_notifier_id
+                account_trans_notifier_id = @ledger_notifier_id
 
             rollback tran
             return
@@ -36,7 +36,7 @@ begin tran
     select 
         status = "Success",
         msg = "Successfully deleted ledger notifier",
-        account_trans_notifier_id = @account_trans_notifier_id
+        account_trans_notifier_id = @ledger_notifier_id
 
 commit tran
 
