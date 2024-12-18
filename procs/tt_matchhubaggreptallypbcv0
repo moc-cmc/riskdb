@@ -283,7 +283,12 @@ begin
 	select
 		@c_trader_lookup = rtrim(@trade_reporter)+"-CPTY"
 end
-	
+
+if @identifier like ('Wedbush Xenfin%')
+begin
+	select
+		@c_trader_lookup = rtrim(@trade_reporter) + "-XENFIN"
+end
 
 select
 	@trigger_symbol = @c_trader_lookup	
