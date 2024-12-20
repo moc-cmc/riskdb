@@ -121,6 +121,7 @@ declare @to_trade_id int
 declare @future_lookup varchar(100)
 declare	@provided_value_date datetime
 declare @next_tally_trade_date datetime
+declare @weekday int
 
 
 
@@ -145,9 +146,13 @@ select
 /* --------------------------------------------------------------------------
  * STEP: Roll NZD trades between 15:00 EST and 17:00 EST
  */
+select
+	@weekday = datepart(weekday, @tally_trade_date)
+
 if (@ccy1 = "NZD" or @ccy2 = "NZD") and
 	@tally_trade_date < convert(char(8), @tally_trade_date, 112) + ' 17:00' and
-	@tally_trade_date >= convert(char(8), @tally_trade_date, 112) + ' 13:00'
+	@tally_trade_date >= convert(char(8), @tally_trade_date, 112) + ' 13:00' and
+	@weekday != 6
 begin
 	exec
 		r_nextbusinessday
