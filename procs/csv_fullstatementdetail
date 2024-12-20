@@ -1,5 +1,5 @@
 drop procedure
-        csv_fullstatementdetail
+	csv_fullstatementdetail
 go
 
 
@@ -125,7 +125,7 @@ and
 			#external_accounts)
 
 
-	
+
 
 
 update
@@ -182,36 +182,36 @@ end
 
 
 select
-        @cfd_transaction_type_id = transaction_type_id
+	@cfd_transaction_type_id = transaction_type_id
 from
-        transaction_types
+	transaction_types
 where
-        name = "Variation Margin"
+	name = "Variation Margin"
 if @cfd_transaction_type_id = NULL
 begin
-        select
-                status = "Error",
-                message = "Variation Margint ransaction type not found"
-        return
+	select
+		status = "Error",
+		message = "Variation Margint ransaction type not found"
+	return
 end
 
 /* Exclude CFDs from some sections using this*/
 create table
-        #trade_types(
-                trade_type_id int,
-                name varchar(25)
+	#trade_types(
+		trade_type_id int,
+		name varchar(25)
 )
 
 insert into
-        #trade_types
+	#trade_types
 select
-        trade_type_id,
-        name
+	trade_type_id,
+	name
 from
-        trade_types
+	trade_types
 where
-        name not in("CFD", "CFD Roll")
-	
+	name not in("CFD", "CFD Roll")
+
 /* Fetch all the trades */
 
 create table
@@ -285,63 +285,63 @@ and
 	a.value_date >= @begin_date
 and
 	a.trade_date < @end_date
-/* The far leg of a CFD Roll will show up with tradedate today at 5:01 PM 
+/* The far leg of a CFD Roll will show up with tradedate today at 5:01 PM
    going to pull those in separately, because they dont meet the above end_date requirement*/
 
 insert into
-        #trades(
-                trade_id,
-                deal_id,
-                trade_type_id,
-                trade_date,
-                external_account_id,
-                prime_broker_id,
-                margin_multiplier,
-                quantity,
-                contract_id,
-                product_id,
-                currency_id,
-                price,
-                value_date,
-                counterparty_id,
-                margin,
-                evaluation_currency_id)
+	#trades(
+		trade_id,
+		deal_id,
+		trade_type_id,
+		trade_date,
+		external_account_id,
+		prime_broker_id,
+		margin_multiplier,
+		quantity,
+		contract_id,
+		product_id,
+		currency_id,
+		price,
+		value_date,
+		counterparty_id,
+		margin,
+		evaluation_currency_id)
 select
-        a.trade_id,
-        a.deal_id,
-        a.trade_type_id,
-        a.trade_date,
-        a.external_account_id,
-        b.prime_broker_id,
-        b.margin_multiplier,
-        a.quantity,
-        a.contract_id,
-        c.product_id,
-        c.currency_id,
-        a.price,
-        a.value_date,
-        a.counterparty_id,
-        margin = 0.0,
-        evaluation_currency_id = @evaluation_currency_id
+	a.trade_id,
+	a.deal_id,
+	a.trade_type_id,
+	a.trade_date,
+	a.external_account_id,
+	b.prime_broker_id,
+	b.margin_multiplier,
+	a.quantity,
+	a.contract_id,
+	c.product_id,
+	c.currency_id,
+	a.price,
+	a.value_date,
+	a.counterparty_id,
+	margin = 0.0,
+	evaluation_currency_id = @evaluation_currency_id
 from
-        trades a,
-        #external_accounts b,
-        forwards c,
+	trades a,
+	#external_accounts b,
+	forwards c,
 	trade_types d
 where
-        a.external_account_id = b.external_account_id
+	a.external_account_id = b.external_account_id
 and
-        a.contract_id = c.contract_id
+	a.contract_id = c.contract_id
 and
 	a.trade_type_id = d.trade_type_id
 and
 	d.name = "CFD Roll"
 and
-        a.value_date >= @end_date
+	a.value_date >= @end_date
 and
-        /*a.trade_date = convert(date, convert(varchar(8), @end_date, 112) + " 17:01")*/
-        /* These are the same since end date is correct when chopping of timestamp */
-        convert(date, a.trade_date) = convert(date, @end_date)
+	/*a.trade_date = convert(date, convert(varchar(8), @end_date, 112) + " 17:01")*/
+	/* These are the same since end date is correct when chopping of timestamp */
+	convert(date, a.trade_date) = convert(date, @end_date)
 
 
 update
@@ -357,7 +357,7 @@ where
 and
 	b.external_account_type_id = c.external_account_type_id
 and
-	c.name = "Client" 
+	c.name = "Client"
 
 update
 	#trades
@@ -415,7 +415,7 @@ from
 where
 	a.counterparty_id = b.counterparty_id
 and
-	b.source_id = @source_id 
+	b.source_id = @source_id
 
 
 /* Set the margin rates */
@@ -733,7 +733,7 @@ group by
 	external_account_id,
 	product_id
 
-	
+
 
 /* Find the Maturing Balances for FX	*/
 
@@ -747,7 +747,7 @@ insert into
 select
 	external_account_id,
 	product_id,
-	sum(product_qty) 
+	sum(product_qty)
 from
 	#trades a,
 	#trade_types b
@@ -777,32 +777,32 @@ group by
 	external_account_id,
 	currency_id
 
-/* Find the Maturing Balances for CFD    
+/* Find the Maturing Balances for CFD
    only use the currency, not the product, since the product is the CFD and that will be zero*/
 
 create table
-        #maturing_cfd_balances(
-                external_account_id int,
-                product_id int,
-                quantity float)
+	#maturing_cfd_balances(
+		external_account_id int,
+		product_id int,
+		quantity float)
 insert into
-        #maturing_cfd_balances
+	#maturing_cfd_balances
 select
-        external_account_id,
-        currency_id,
-        sum(currency_qty)
+	external_account_id,
+	currency_id,
+	sum(currency_qty)
 from
-        #trades a,
-        trade_types b
+	#trades a,
+	trade_types b
 where
-        convert(date, value_date) = convert(date, @end_date)
+	convert(date, value_date) = convert(date, @end_date)
 and
-        a.trade_type_id = b.trade_type_id
+	a.trade_type_id = b.trade_type_id
 and
 	b.name in("CFD", "CFD Roll")
 group by
-        external_account_id,
-        currency_id
+	external_account_id,
+	currency_id
 
 
 
@@ -824,21 +824,21 @@ group by
 	product_id
 
 create table
-        #maturing_cfd_totals(
-                external_account_id int,
-                product_id int,
-                quantity float)
+	#maturing_cfd_totals(
+		external_account_id int,
+		product_id int,
+		quantity float)
 insert into
-        #maturing_cfd_totals
+	#maturing_cfd_totals
 select
-        external_account_id,
-        product_id,
-        sum(quantity)
+	external_account_id,
+	product_id,
+	sum(quantity)
 from
-        #maturing_cfd_balances
+	#maturing_cfd_balances
 group by
-        external_account_id,
-        product_id
+	external_account_id,
+	product_id
 
 
 /* Get the opening and closing balances by currency */
@@ -910,29 +910,29 @@ group by
 	currency_id
 
 create table
-        #cfd_settlements(
-                external_account_id int,
-                product_id int,
-                quantity float,
-                equiv float)
+	#cfd_settlements(
+		external_account_id int,
+		product_id int,
+		quantity float,
+		equiv float)
 insert into
-        #cfd_settlements
+	#cfd_settlements
 select
-        external_account_id,
-        currency_id,
-        sum(amount),
-        sum(end_equiv)
+	external_account_id,
+	currency_id,
+	sum(amount),
+	sum(end_equiv)
 from
-        #account_transactions
+	#account_transactions
 where
-        transaction_type_id = @cfd_transaction_type_id
+	transaction_type_id = @cfd_transaction_type_id
 and
-        transaction_date >= @begin_date
+	transaction_date >= @begin_date
 and
-        transaction_date < @end_date
+	transaction_date < @end_date
 group by
-        external_account_id,
-        currency_id
+	external_account_id,
+	currency_id
 
 
 create table
@@ -1000,7 +1000,7 @@ create table
 		product_id int,
 		opening_balance float NULL,
 		maturing_fx float NULL,
-                cfd_realized_pl float NULL,
+		cfd_realized_pl float NULL,
 		cash float NULL,
 		fees float NULL,
 		settled_premium float NULL,
@@ -1059,16 +1059,16 @@ and
 	a.product_id = b.product_id
 
 update
-        #net_activity
+	#net_activity
 set
-        a.cfd_realized_pl = b.quantity
+	a.cfd_realized_pl = b.quantity
 from
-        #net_activity a,
-        #cfd_settlements b
+	#net_activity a,
+	#cfd_settlements b
 where
-        a.external_account_id = b.external_account_id
+	a.external_account_id = b.external_account_id
 and
-        a.product_id = b.product_id
+	a.product_id = b.product_id
 
 
 update
@@ -1082,7 +1082,7 @@ where
 	a.external_account_id = b.external_account_id
 and
 	a.product_id = b.product_id
-	
+
 update
 	#net_activity
 set
@@ -1128,9 +1128,9 @@ set
 delete
 
 from
-        #net_activity
+	#net_activity
 where
-        abs(opening_balance) + abs(maturing_fx) + abs(cfd_realized_pl) + abs(cash) + abs(fees) + abs(settled_premium) + abs(closing_balance) + abs(unsettled_prem) + abs(open_position) + abs(open_option_pos) + abs(total_equity) = 0.0
+	abs(opening_balance) + abs(maturing_fx) + abs(cfd_realized_pl) + abs(cash) + abs(fees) + abs(settled_premium) + abs(closing_balance) + abs(unsettled_prem) + abs(open_position) + abs(open_option_pos) + abs(total_equity) = 0.0
 
 
 /* Create the Equity Value Summary */
@@ -1641,7 +1641,7 @@ end
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "todays trades"             
+if @section = NULL or lower(@section) = "todays trades"
 begin
 	select
 		section = "Today's Trades",
@@ -1717,11 +1717,11 @@ begin
 		d.symbol,
 		a.trade_id
 end
-	
+
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "open trades"             
+if @section = NULL or lower(@section) = "open trades"
 begin
 	select
 		section = "Open Trades",
@@ -1737,7 +1737,7 @@ begin
 		trade_date
 	from
 		#open_trades
-	where 
+	where
 		row_kind = 0
 	order by
 		contract,
@@ -1748,40 +1748,40 @@ end
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "open trades cfd"             
+if @section = NULL or lower(@section) = "open trades cfd"
 begin
 	select
-        	section = "Open Trades CFD",
-        	trade_type = b.name,
-        	a.trade_id,
-        	a.counterparty,
-        	dealt_contract = e.symbol,
-        	open_amount = f.open_amount * -1,
-        	rate = f.price,
-        	currency = d.symbol
+		section = "Open Trades CFD",
+		trade_type = b.name,
+		a.trade_id,
+		a.counterparty,
+		dealt_contract = e.symbol,
+		open_amount = f.open_amount * -1,
+		rate = f.price,
+		currency = d.symbol
 	from
-	        #trades a,
-        	trade_types b,
-        	products c,
-        	products d,
+		#trades a,
+		trade_types b,
+		products c,
+		products d,
 		contracts e,
-		open_trades f
+		eod_open_trades f
 	where
-        	a.trade_type_id = b.trade_type_id
+		a.trade_type_id = b.trade_type_id
 	and
 		a.contract_id = e.contract_id
 	and
-        	a.product_id = c.product_id
+		a.product_id = c.product_id
 	and
-        	a.currency_id = d.product_id
+		a.currency_id = d.product_id
 	and
 		a.trade_id = f.trade_id
 	and
 		convert(date, f.trade_date) = convert(date, @end_date)
 	order by
-        	c.symbol,
-        	d.symbol,
-        	a.trade_id
+		c.symbol,
+		d.symbol,
+		a.trade_id
 end
 
 /************************************************************************/
@@ -1792,9 +1792,9 @@ create table
 		trade_date datetime NULL,
 		contract_id int NULL,
 		contract varchar(50) NULL,
-                expiry_type varchar(50) NULL,
-                instrument varchar(50) NULL,
-                exchange varchar(50) NULL,
+		expiry_type varchar(50) NULL,
+		instrument varchar(50) NULL,
+		exchange varchar(50) NULL,
 		external_account_id int NULL,
 		entry_trade_id int NULL,
 		entry_date datetime NULL,
@@ -1818,9 +1818,9 @@ insert into
 		trade_date,
 		contract_id,
 		contract,
-                expiry_type,
-                instrument,
-                exchange,
+		expiry_type,
+		instrument,
+		exchange,
 		external_account_id,
 		entry_trade_id,
 		entry_date,
@@ -1841,10 +1841,10 @@ select
 	contract_id = a.contract_id,
 	contract = c.symbol,
 	case when f.name like "%Weekly%" then "Weekly" else "Quarterly" end,
-        "Future",
-        h.name,
+	"Future",
+	h.name,
 	external_account_id = a.external_account_id,
-	entry_trade_id = a.entry_trade_id, 
+	entry_trade_id = a.entry_trade_id,
 	entry_date = a.entry_date,
 	entry_quantity = a.entry_quantity,
 	entry_price = a.entry_price,
@@ -1882,9 +1882,9 @@ and
 and
 	f.exchange_id = h.exchange_id
 and
-        a.trade_date > @begin_date
+	a.trade_date > @begin_date
 and
-        a.trade_date <= @end_date
+	a.trade_date <= @end_date
 order by
 	a.round_turn_id
 
@@ -1917,9 +1917,9 @@ create table
 		account varchar(50) NULL,
 		contract_id int NULL,
 		symbol varchar(50) NULL,
-                expiry_type varchar(50) NULL,
-                instrument varchar(50) NULL,
-                exchange varchar(50) NULL,
+		expiry_type varchar(50) NULL,
+		instrument varchar(50) NULL,
+		exchange varchar(50) NULL,
 		value_date datetime NULL,
 		original_qty float NULL,
 		open_amount float NULL,
@@ -1955,9 +1955,9 @@ select
 	b.symbol,
 	a.contract_id,
 	c.symbol,
-        case when f.name like "%Weekly%" then "Weekly" else "Quarterly" end,
-        "Future",
-        h.name,
+	case when f.name like "%Weekly%" then "Weekly" else "Quarterly" end,
+	"Future",
+	h.name,
 	a.value_date,
 	a.open_amount,
 	a.price,
@@ -1966,7 +1966,7 @@ select
 	d.symbol,
 	a.unrealized_pl
 from
-	open_trades a,
+	eod_open_trades a,
 	#external_accounts b,
 	contracts c,
 	products d,
@@ -2007,7 +2007,7 @@ from
 	trades b
 where
 	a.trade_id = b.trade_id
-	
+
 
 create table
 	#net_fut_unrealized(
@@ -2042,14 +2042,14 @@ and
 	a.external_account_id = b.external_account_id
 
 update
-        #net_activity
+	#net_activity
 set
-        total_equity = closing_balance + unsettled_prem + open_position + open_option_pos
+	total_equity = closing_balance + unsettled_prem + open_position + open_option_pos
 
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "open futures"             
+if @section = NULL or lower(@section) = "open futures"
 begin
 	select
 		section = "Open Futures",
@@ -2057,9 +2057,9 @@ begin
 		trade_date,
 		account,
 		symbol,
-        	expiry_type,
-        	instrument,
-        	exchange,
+		expiry_type,
+		instrument,
+		exchange,
 		value_date,
 		original_qty,
 		open_amount,
@@ -2072,20 +2072,20 @@ begin
 	order by
 		id
 end
-			
-		
+
+
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "closed futures"             
-begin	
+if @section = NULL or lower(@section) = "closed futures"
+begin
 	select
 		section = "Closed Trades Futures",
 		round_turn_id = a.round_turn_id,
 		symbol = a.contract,
-        	a.expiry_type,
-        	a.instrument,
-        	a.exchange,
+		a.expiry_type,
+		a.instrument,
+		a.exchange,
 		entry_trade_id = a.entry_trade_id,
 		entry_date = a.entry_date,
 		entry_quantity = a.entry_quantity,
@@ -2104,7 +2104,7 @@ begin
 		a.row_kind,
 		a.round_turn_id
 end
-	
+
 /************************************************************************/
 
 
@@ -2115,9 +2115,9 @@ create table
 		trade_date datetime NULL,
 		contract_id int NULL,
 		contract varchar(50) NULL,
-                expiry_type varchar(50) NULL,
-                instrument varchar(50) NULL,
-                exchange varchar(50) NULL,
+		expiry_type varchar(50) NULL,
+		instrument varchar(50) NULL,
+		exchange varchar(50) NULL,
 		external_account_id int NULL,
 		entry_trade_id int NULL,
 		entry_date datetime NULL,
@@ -2141,9 +2141,9 @@ insert into
 		trade_date,
 		contract_id,
 		contract,
-                expiry_type,
-                instrument,
-                exchange,
+		expiry_type,
+		instrument,
+		exchange,
 		external_account_id,
 		entry_trade_id,
 		entry_date,
@@ -2163,11 +2163,11 @@ select
 	trade_date = a.trade_date,
 	contract_id = a.contract_id,
 	contract = c.symbol,
-        "Perpetual",
-        "Future",
-        h.name,
+	"Perpetual",
+	"Future",
+	h.name,
 	external_account_id = a.external_account_id,
-	entry_trade_id = a.entry_trade_id, 
+	entry_trade_id = a.entry_trade_id,
 	entry_date = a.entry_date,
 	entry_quantity = a.entry_quantity,
 	entry_price = a.entry_price,
@@ -2201,13 +2201,13 @@ and
 and
 	a.external_account_id = d.external_account_id
 and
-	g.name = "Val Date"
+	g.name in("Val Date", "Perpetual")
 and
 	f.exchange_id = h.exchange_id
 and
-        a.trade_date > @begin_date
+	a.trade_date > @begin_date
 and
-        a.trade_date <= @end_date
+	a.trade_date <= @end_date
 order by
 	a.round_turn_id
 
@@ -2240,8 +2240,8 @@ create table
 		account varchar(50) NULL,
 		contract_id int NULL,
 		symbol varchar(50) NULL,
-                expiry_type varchar(50) NULL,
-                instrument varchar(50) NULL,
+		expiry_type varchar(50) NULL,
+		instrument varchar(50) NULL,
 		exchange varchar(50) NULL,
 		value_date datetime NULL,
 		original_qty float NULL,
@@ -2311,9 +2311,8 @@ and
 	f.future_type_id = g.future_type_id
 and
 	f.exchange_id = h.exchange_id
-
 and
-	g.name = "Val Date"
+	g.name in("Val Date", "Perpetual")
 and
 	a.trade_date >= @begin_date
 and
@@ -2333,7 +2332,7 @@ from
 	trades b
 where
 	a.trade_id = b.trade_id
-	
+
 
 create table
 	#net_perp_unrealized(
@@ -2368,9 +2367,9 @@ and
 	a.external_account_id = b.external_account_id
 
 update
-        #net_activity
+	#net_activity
 set
-        total_equity = closing_balance + unsettled_prem + open_position + open_option_pos
+	total_equity = closing_balance + unsettled_prem + open_position + open_option_pos
 
 update
 	#equity_value_summary
@@ -2394,7 +2393,7 @@ set
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "open perpetuals"             
+if @section = NULL or lower(@section) = "open perpetuals"
 begin
 	select
 		section = "Open Perpetuals",
@@ -2402,9 +2401,9 @@ begin
 		trade_date,
 		account,
 		symbol,
-        	expiry_type,
-        	instrument,
-        	exchange,
+		expiry_type,
+		instrument,
+		exchange,
 		value_date,
 		original_qty,
 		open_amount,
@@ -2417,20 +2416,20 @@ begin
 	order by
 		id
 end
-		
-	
+
+
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "closed perpetuals"             
+if @section = NULL or lower(@section) = "closed perpetuals"
 begin
 	select
 		section = "Closed Trades Perpetuals",
 		round_turn_id = a.round_turn_id,
 		symbol = a.contract,
-        	expiry_type,
-        	instrument,
-        	exchange,
+		expiry_type,
+		instrument,
+		exchange,
 		entry_trade_id = a.entry_trade_id,
 		entry_date = a.entry_date,
 		entry_quantity = a.entry_quantity,
@@ -2453,7 +2452,7 @@ end
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "maturing trades"             
+if @section = NULL or lower(@section) = "maturing trades"
 begin
 	/* Select out Maturing Trades */
 	select
@@ -2471,7 +2470,7 @@ begin
 		trade_date
 	from
 		#maturing_trades
-        where
+	where
 		row_kind = 0
 	order by
 		contract,
@@ -2482,7 +2481,7 @@ end
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "maturing totals"             
+if @section = NULL or lower(@section) = "maturing totals"
 begin
 	select
 		section = "Maturing Totals ",
@@ -2501,36 +2500,36 @@ begin
 		c.symbol,
 		a.symbol
 end
-	
-/*--------------------------------------------------------------------------
- * Output -
- *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "maturing totals cfds"             
-begin
-	select
-        	section = "Maturing Totals from CFDs",
-        	account = c.symbol,
-        	currency = a.symbol,
-        	amount = b.quantity
-	from
-        	products a,
-        	#maturing_cfd_totals b,
-        	external_accounts c
-	where
-        	a.product_id = b.product_id
-	and
-        	b.external_account_id = c.external_account_id
-	order by
-        	c.symbol,
-        	a.symbol
-end
-	
 
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "account activity"             
-begin	
+if @section = NULL or lower(@section) = "maturing totals cfds"
+begin
+	select
+		section = "Maturing Totals from CFDs",
+		account = c.symbol,
+		currency = a.symbol,
+		amount = b.quantity
+	from
+		products a,
+		#maturing_cfd_totals b,
+		external_accounts c
+	where
+		a.product_id = b.product_id
+	and
+		b.external_account_id = c.external_account_id
+	order by
+		c.symbol,
+		a.symbol
+end
+
+
+/*--------------------------------------------------------------------------
+ * Output -
+ *------------------------------------------------------------------------*/
+if @section = NULL or lower(@section) = "account activity"
+begin
 	select
 		section = "Account Activity",
 		account = b.symbol,
@@ -2560,7 +2559,7 @@ end
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "net equity activity"             
+if @section = NULL or lower(@section) = "net equity activity"
 begin
 	select
 		section = "Net Equity Activity",
@@ -2598,9 +2597,9 @@ create table
 	style varchar(50) NULL,
 	account varchar(50) NULL,
 	product varchar(50) NULL,
-        total_equity float NULL,
-        conversion_rate float NULL,
-        converted_value float NULL,
+	total_equity float NULL,
+	conversion_rate float NULL,
+	converted_value float NULL,
 	evaluation_ccy varchar(10) NULL
 )
 insert into
@@ -2640,15 +2639,15 @@ order by
 
 insert into
 	#equity_summary_output(
-                section,
-                style,
-                account,
-                converted_value,
-                evaluation_ccy
+		section,
+		style,
+		account,
+		converted_value,
+		evaluation_ccy
 )
 select
-        section = "Equity Value Summary",
-        style = "background:#FFFFFF;border: 1px solid white",
+	section = "Equity Value Summary",
+	style = "background:#FFFFFF;border: 1px solid white",
 	account = rtrim(account)+" Total",
 	converted_value = sum(converted_value),
 	evaluation_ccy
@@ -2663,7 +2662,7 @@ group by
 /*--------------------------------------------------------------------------
  * Output -
  *------------------------------------------------------------------------*/
-if @section = NULL or lower(@section) = "equity value summary"             
+if @section = NULL or lower(@section) = "equity value summary"
 begin
 	select
 		section,
@@ -2679,8 +2678,8 @@ begin
 		account,
 		product
 end
-	
 
-  
+
+
 go
 
