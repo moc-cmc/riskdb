@@ -15,6 +15,15 @@ as
 declare @trade_id int
 declare @usi_lookup varchar(25)
 
+if (@source_run = 0)
+begin
+	select
+		status="Success",
+		message="CME EOD Response Message Recieved",
+		response=@error_code_response_data
+	return
+end
+
 select
 	@usi_lookup = usi_prefix
 from
@@ -42,7 +51,7 @@ begin
 	return
 end
 
-if exists (select trade_id from cme_responses where trade_id=@trade_id)
+if exists (select trade_id from cme_responses where trade_id=@trade_id and source_run=@source_run)
 begin
 	update
 		cme_responses
@@ -51,14 +60,15 @@ begin
 	where
 		trade_id=@trade_id
 	and
-		source_run = @source_run
+		source_run=@source_run	
 
 	if @@rowcount !=1
 	begin
 		select
 			status="Error",
 			message="Could not update response for trade",
-			trade_id=@trade_id
+			trade_id=@trade_id,
+			source_run=@source_run
 		
 		return
 	end
@@ -69,12 +79,16 @@ begin
 		cme_responses (
 		trade_id,
 		source_run,
-		response
+		response,
+		sdr_receipt_timestamp,
+		timestamp
 		)
 	values(
 		@trade_id,
 		@source_run,
-		@error_code_response_data
+		@error_code_response_data,
+		@sdr_receipt_timestamp,
+		getdate()
 	      )
 
 	if @@rowcount !=1 
@@ -82,7 +96,8 @@ begin
 		select
 			status="Error",
 			message="Could not insert response for trade",
-			trade_id=@trade_id
+			trade_id=@trade_id,
+			source_run=@source_run
 
 		return
 	end
@@ -91,7 +106,8 @@ end
 select
 	status="Success",
 	message="Response inserted for trade",
-	trade_id=@trade_id
+	trade_id=@trade_id,
+	source_run=@source_run
 
 return
 
