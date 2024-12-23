@@ -2406,6 +2406,7 @@ select
 	lei = @usi_lookup,
 	cpty_lei = cpty_lei,
 	capture_date = dbo.f_easterntoutc(capture_date),
+        /* capture_date,*/
 	upi_code,
 	Leg2EffectiveNotionalAmount,
  	Leg2NotionalAmount,

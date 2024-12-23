@@ -1982,8 +1982,8 @@ set
 	account_party_region = b.party_region,
 	account_financial_juristiction = b.financial_juristiction,
 	account_lei_number = b.lei_number,
-	account_lei_type = b.lei_type,
-	mic = b.mic
+	account_lei_type = b.lei_type
+	/* mic = b.mic */
 from
 	#trades a,
 	account_regulatory_info b
@@ -2024,9 +2024,9 @@ set
 	underlying_isin = b.underlying_isin,
 	instrument_full_name = b.instrument_full_name,
 	underlying_instrument = b.underlying_instrument,
-	instrument_term = b.instrument_term,
-	instrument_id_code = b.instrument_id_code,
-	price_multiplier = b.price_multiplier
+	instrument_term = b.instrument_term
+	/* instrument_id_code = b.instrument_id_code,
+	price_multiplier = b.price_multiplier */
 from
         #trades a,
         cfd_attributes b

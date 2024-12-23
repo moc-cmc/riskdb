@@ -269,8 +269,9 @@ create table
 		cpty_lei varchar(50) NULL,
 		mtm float NULL,
 		mtm_identifier varchar(100) NULL,
-		upi_code varchar(50) NULL
-		)
+		upi_code varchar(50) NULL,
+		cme_expiry_date varchar(15) NULL
+                )
 
 create table
 	#trade_notifications(
@@ -1891,6 +1892,26 @@ where
 
 end /* end option lookups */
 
+/* Update for NDF fields */
+update
+        #trades
+set
+        cme_expiry_date = fixing_date
+from
+        #trades
+where
+        fixing_date
+ != NULL
+
+update
+        #trades
+set
+        cme_expiry_date = value_date
+from
+        #trades
+where
+        fixing_date = NULL
+
 if @query_options = "O"  /* O for ONLY, ONLY query options, remove all other trades */
 begin
 	delete from
@@ -2259,7 +2280,8 @@ select
 	trade_date_utc_iso = dbo.f_easterntoutc(trade_date),
 	value_date,
 	fixing_date,
-	db_price,
+	cme_expiry_date,
+        db_price,
 	std_price,
 	markup_price,
 	spot_reference,
