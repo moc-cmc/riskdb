@@ -19,6 +19,7 @@ declare @status_id int
 declare @broker_id int 
 declare @notification_status_id int
 declare @source_id int
+declare @transaction_type_id int
 
 select
         @external_account_id = external_account_id
