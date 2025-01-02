@@ -1,0 +1,126 @@
+
+create or replace procedure
+	r_editledgernotifier
+		@login varchar(50),
+		@ledger_notifier_id int,
+        @source varchar(50),
+        @external_account varchar(50)=NULL,
+        @transaction_type varchar(50)=NULL,
+        @notification_status varchar(50),
+        @notifier_date datetime=NULL
+as
+
+
+declare @external_account_id int 
+declare @counterparty_id int 
+declare @trader_id int 
+declare @strategy_id int 
+declare @status_id int 
+declare @broker_id int 
+declare @notification_status_id int
+declare @source_id int
+
+select
+        @external_account_id = external_account_id
+from
+        external_accounts
+where
+        symbol = @external_account
+if @@rowcount != 1
+begin
+        select
+                @external_account_id = NULL
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = @source
+if @@rowcount != 1
+begin
+        select
+                @source_id = NULL
+end
+
+select
+	@transaction_type_id = transaction_type_id
+from
+	transaction_types
+where
+	name = @transaction_type
+if @@rowcount != 1
+begin
+	select
+		@transaction_type_id = NULL
+end
+
+select
+	@notification_status_id = status_id
+from
+	statuses
+where
+	name = @notification_status
+if @@rowcount != 1
+begin
+    select
+        @notification_status_id = NULL
+end
+
+
+if @notifier_date = NULL
+begin
+	select
+		@notifier_date = getdate()
+end
+
+if @source_id != NULL and @notification_status != NULL and @notifier_date != NULL 
+begin
+
+    begin tran
+
+        update
+            account_trans_notifiers
+        set
+            source_id = @source_id, 
+            external_account_id = @external_account_id, 
+            transaction_type_id = @transaction_type_id, 
+            notification_status_id = @notification_status_id, 
+            notifier_date = @notifier_date
+        where
+            account_trans_notifier_id = @ledger_notifier_id
+
+        if @@rowcount != 1
+            begin
+                select 
+                    status = "Error",
+                    msg = "Unable to edit ledger notifier",
+                    account_trans_notifier_id = @ledger_notifier_id
+
+                rollback tran
+                return
+            end
+
+        select 
+            status = "Success",
+            msg = "Successfully edited ledger notifier",
+            account_trans_notifier_id = @ledger_notifier_id
+    commit tran
+end
+else
+begin
+	select
+		msg = "Source and Notification can not be NULL",
+		source = @source,
+		notification_status = @notification_status
+end
+
+
+
+exec
+        r_sourcenotifiers
+                @login
+	
+
+go 
