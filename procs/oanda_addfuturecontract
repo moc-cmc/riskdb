@@ -1,15 +1,15 @@
 
 create or replace procedure
-	oanda_addfuturecontract
+    oanda_addfuturecontract
         @login varchar(25),
         @source varchar(100),
-		@forward_symbol varchar(50),
-		@future_symbol varchar(50),
-		@future_name varchar(50)=NULL,
-		@product_symbol varchar(50),
+        @forward_symbol varchar(50),
+        @future_symbol varchar(50),
+        @future_name varchar(50)=NULL,
+        @product_symbol varchar(50),
         @product_type varchar(20),
-		@currency_symbol varchar(50), 
-		@product_decimal_precision int=NULL,
+        @currency_symbol varchar(50), 
+        @product_decimal_precision int=NULL,
         @product_origination_type varchar(50)=NULL,
         @exchange_name varchar(50),
         @future_quantity float,
@@ -55,8 +55,8 @@ end
 -- @future_name, @product_symbol, @product_name is varchar(25), varchar(20), varchar(100)
 if @future_name = NULL
 begin
-	select
-		@future_name = @future_symbol
+    select
+        @future_name = @future_symbol
 end
 
 if @future_root_symbol = NULL
