@@ -143,6 +143,15 @@ where
     name = @product_type
 
 /* Currency and CFDs are not future-based product types, only allow acceptable product types */
+if @product_type_id = NULL and @product_type in ("Equity", "Interest Rate", "Commodity")
+begin
+    select
+        status = "Error",
+        message = "Future-based product type not found in the database.",
+        product_type = @product_type
+    rollback tran
+    return
+
 if @product_type_id = NULL or @product_type not in ("Equity", "Interest Rate", "Commodity")
 begin
     select
