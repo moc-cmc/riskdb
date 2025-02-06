@@ -45,7 +45,7 @@ if @source_id = NULL
 begin
     select
         status = "Error",
-        message = "Source is NULL or does not exist",
+        message = "Source is NULL or does not exist.",
         source = @source
 
     rollback tran
@@ -418,7 +418,7 @@ commit tran
 
 select
     status = "Success",
-    message = "Future contract has been created",
+    message = "Future contract has been created.",
     future_contract_id = @future_contract_id,
     future_id = @future_id,
     future_expiration = @future_expiration
