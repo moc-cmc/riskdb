@@ -1,0 +1,174 @@
+drop procedure r_managertnsmappings
+go
+
+create procedure
+	r_managertnsmappings
+		@login varchar(50)
+
+as
+
+declare @fund_id int
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL
+)
+
+insert into
+	#meta
+values(
+	"Column Group",
+	"section",
+	NULL,
+	NULL
+)
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_info",
+        "Edit RTNS Info",
+        NULL
+)
+insert into
+        #meta
+values(
+        "Column Link",
+        "edit_lp_info",
+        "Edit LP RTNS Info",
+        NULL
+)
+
+
+
+
+select * from #meta
+
+create table
+	#external_accounts(
+		external_account_id int,
+		symbol varchar(50),
+		email varchar(100) NULL,
+		trader_name varchar(50) NULL,
+		trader_id varchar(25) NULL,
+		trader_tcid varchar(25) NULL,
+		style varchar(50) NULL
+)
+
+insert into
+	#external_accounts(
+		external_account_id,
+		symbol)
+select
+	external_account_id,
+	symbol
+from
+	external_accounts
+
+update
+	#external_accounts
+set
+	email = a.email,
+	trader_name = a.trader_name,
+	trader_id = a.trader_id,
+	trader_tcid = a.trader_tcid
+from
+	int_rtns_ea_map a,
+	#external_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+
+create table
+	#counterparties(
+		counterparty_id int,
+		symbol varchar(50),
+		email varchar(100) NULL,
+		trader_name varchar(50) NULL,
+		trader_id varchar(25) NULL,
+		trader_tcid varchar(25) NULL,
+		style varchar(50) NULL
+)
+
+insert into
+	#counterparties(
+		counterparty_id,
+		symbol)
+select
+	counterparty_id,
+	name
+from
+	counterparties
+
+update
+	#counterparties
+set
+        email = a.email,
+        trader_name = a.trader_name,
+        trader_id = a.trader_id,
+        trader_tcid = a.trader_tcid
+from
+	int_rtns_cp_map a,
+	#counterparties b
+where
+	a.counterparty_id = b.counterparty_id
+
+
+update
+	#external_accounts
+set
+	style = "background:#FFFFFF;border: 1px solid white"
+
+update
+	#counterparties
+set
+	style = "background:#FFFFFF;border: 1px solid white"
+
+
+/* OUTPUT */
+
+select
+	section = "Account RTNS Info",
+	style,
+	external_account = symbol,
+        email,
+        trader_name,
+        trader_id,
+        trader_tcid,
+	edit_info = "EDIT"
+from
+	#external_accounts
+order by
+	symbol
+
+
+select
+        section = "Counterparty RTNS Info",
+        style,
+        counterparty = symbol,
+        email,
+        trader_name,
+        trader_id,
+        trader_tcid,
+        edit_lp_info = "EDIT"
+from
+        #counterparties
+order by
+        symbol
+
+go
+	
+
+
+		

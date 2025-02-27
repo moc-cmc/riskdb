@@ -1,0 +1,132 @@
+drop procedure api_addrtnsmapping
+go
+
+create procedure 
+	api_addrtnsmapping
+		@login varchar(50),
+		@external_account varchar(50),
+		@email varchar(100)=NULL,
+		@trader_name varchar(50)=NULL,
+		@trader_id varchar(25)=NULL,
+		@trader_tcid varchar(25)=NULL
+
+
+
+as
+
+declare @int_rtns_ea_map_id int
+declare @external_account_id int
+declare @orig_email varchar(100)
+declare @orig_trader_name varchar(50)
+declare @orig_trader_id varchar(25)
+declare @orig_trader_tcid varchar(25)
+
+
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @external_account
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		msg = "Problem determining external_account",
+		external_account=@external_account
+	return
+end
+
+select
+	@int_rtns_ea_map_id = int_rtns_ea_map_id
+from
+	int_rtns_ea_map
+where
+	external_account_id = @external_account_id
+
+if @int_rtns_ea_map_id = NULL
+begin
+
+	/* Add new record */
+	exec
+		j_nextkey 
+			"int_rtns_ea_map",
+			@int_rtns_ea_map_id output
+
+	insert into
+		int_rtns_ea_map(
+			int_rtns_ea_map_id,
+			external_account_id,
+        		email,
+        		trader_name,
+        		trader_id,
+        		trader_tcid)
+
+	values(
+		@int_rtns_ea_map_id,
+		@external_account_id,
+		@email,
+		@trader_name,
+		@trader_id,
+		@trader_tcid
+	)
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			msg = "Problem adding rtns mapping for account"
+		return
+	end
+end
+else
+begin
+	select
+		@orig_email = email,
+		@orig_trader_name = trader_name,
+		@orig_trader_id = trader_id,
+		@orig_trader_tcid = trader_tcid
+	from
+		int_rtns_ea_map
+	where
+		int_rtns_ea_map_id = @int_rtns_ea_map_id
+
+	if @email = NULL
+		select
+			@email = @orig_email
+	if @trader_name = NULL
+		select
+			@trader_name = @orig_trader_name
+	if @trader_id = NULL
+		select
+			@trader_id = @orig_trader_id
+	if @trader_tcid = NULL
+		select
+			@trader_tcid = @orig_trader_tcid
+		
+		
+	/* Update info */
+	update
+		int_rtns_ea_map
+	set
+		email = @email,
+		trader_name = @trader_name,
+		trader_id = @trader_id,
+		trader_tcid = @trader_tcid
+	where
+		int_rtns_ea_map_id = @int_rtns_ea_map_id
+	if @@rowcount != 1
+	begin
+                select
+                        status = "Error",
+                        msg = "Problem updating rtns mapping for account"
+                return
+	end
+end
+
+exec
+	r_managertnsmappings
+		@login
+
+
+go
+
