@@ -1,0 +1,748 @@
+create or replace procedure
+	ag_ledgerdetails
+		@login varchar(50),
+		@account varchar(50),
+		@begin_date datetime=NULL,
+		@end_date datetime=NULL,
+		@product varchar(50)=NULL,
+		@evaluation_currency varchar(50)=NULL
+as
+
+
+declare @tico_account_id int
+declare @fund_id int
+declare @evaluation_currency_id int
+declare @begin_start datetime
+declare @begin_end datetime
+declare @end_start datetime
+declare @end_end datetime
+declare @equiv float
+declare @balance float
+declare @external_account_id int
+declare @begin_equiv float
+declare @begin_balance float
+declare @ttype varchar(50)
+declare @products int
+declare @title varchar(100)
+
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+
+declare @selected_style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"evaluation_currency",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"title",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"begin_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"end_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"clear_filters",
+	"Ledger Details",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_product",
+	"Configure Selected Product",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"remove_product",
+	"Configure Selected Product",
+	NULL) 
+
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"account",
+	"Ledger Details",
+	NULL) 
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"credit", 
+  	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"debit", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"amount", 
+        "Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ 
+
+select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta 
+
+
+select
+	@title = "Ledger Details"
+
+select
+	@error_style = "background:#FAE6E6;border: 1pxsolid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold"
+
+
+if @begin_date = NULL
+
+ begin
+	select
+		@begin_date = getdate()
+end
+if @end_date = NULL
+begin
+	select
+		@end_date = getdate()
+end
+/*
+exec
+	r_daterangefordate
+		@begin_date,
+		@begin_start output,
+		@begin_end output
+
+exec
+	r_daterangefordate
+		@end_date,
+		@end_start output,
+		@end_end output
+
+select
+	@begin_date = @begin_start,
+	@end_date = @end_end
+*/
+
+select
+        @begin_date = convert(date, dbo.f_easterntoutc(@begin_date)),
+        @end_date = convert(date, dbo.f_easterntoutc(@end_date))
+
+declare @display_end_date datetime
+ 
+select 
+	@display_end_date = @end_date
+select
+        @end_date = dateadd(dd, 1, @end_date)
+
+exec
+	r_defaultfundforlogin
+		@login,
+		@fund_id output
+
+
+select
+	@evaluation_currency_id = product_id
+from
+	products
+where
+	symbol = @evaluation_currency
+
+if  @evaluation_currency_id = NULL
+begin
+	select
+		@evaluation_currency_id = evaluation_currency_id
+	from
+		funds
+	where
+		fund_id = @fund_id
+	if @evaluation_currency_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Unable to determine evaluation currency"
+		return
+	end
+end
+
+select
+	@evaluation_currency = symbol
+from
+	products
+where
+	product_id = @evaluation_currency_id
+
+select
+		product_id,
+		rate
+into
+		#conversion_rates
+from
+		x_conversion_rates
+where
+		_login = @login
+and
+		_product = @evaluation_currency
+and
+		_as_of_date = @end_date
+
+select
+	product_id,
+	rate
+into
+	#begin_rates
+from
+	x_conversion_rates
+where
+	_login = @login
+and
+	_product = @evaluation_currency
+and
+	_as_of_date = @begin_date
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+/* STATEMENT HEADER */
+select
+	@external_account_id = external_account_id
+from
+	external_accounts
+where
+	symbol = @account
+ 
+if @external_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Account not found",
+		account = @account
+	return
+end
+
+create table
+	#report(
+		id int identity,
+		style varchar(250) NULL,
+		description varchar(50) NULL,
+		value float NULL,
+		evaluation_currency_id int NULL,
+		display_value float NULL,
+		display_currency_id int NULL)
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	name
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+
+insert into
+	#report(
+		style,
+		description)
+select
+	style = @style,
+	address_line1
+from
+	client_contacts
+where
+	external_account_id = @external_account_id
+
+insert into
+	#report(
+		style,
+		description)
+values(
+	@style,
+	"Account: " + @account)
+
+insert into
+	#report(
+		style,
+		description)
+values(
+	@style,
+	"Begin Date: " + convert(varchar(11), @begin_date))
+insert into
+	#report(
+		style,
+		description)
+values(
+	@style,
+	"End Date: " + convert(varchar(11), @display_end_date))
+insert into
+	#report(
+		style,
+		description)
+values(
+	@style,
+	"Report Currency: " + @product)
+insert into
+	#report(
+		style,
+		description)
+values(
+	@style,
+	"Equiv Currency: " + @evaluation_currency)
+select
+	section = rtrim(@account) + " - Statement",
+	style,
+	description,
+	value
+from
+	#report
+where
+	value = NULL
+order by
+	id
+
+/* STATEMENT HEADER */
+
+create table
+	#products(
+		product_id int,
+		symbol varchar(50))
+insert into
+	#products(
+		product_id,
+		symbol)
+select
+	product_id,
+	symbol
+from
+	products
+where
+	symbol = @product
+if @@rowcount = 0
+begin
+	/* this is the only change where if empty, insert all products */
+	/*
+	insert into
+		#products(
+			product_id,
+			symbol)
+	values(
+		@evaluation_currency_id,
+		@evaluation_currency)
+	*/
+	insert into
+		#products(
+			product_id,
+ 			symbol)
+	select
+		product_id,
+		symbol
+	from
+		products
+end
+
+
+create table
+	#external_accounts(
+		id int identity,
+		external_account_id int,
+		account varchar(50))
+insert into
+	#external_accounts(
+		external_account_id,
+		account)
+select
+	external_account_id,
+	symbol
+from
+	external_accounts
+where
+	symbol = @account
+
+declare @product_id int
+
+select
+	@product_id=product_id
+from
+	products
+where
+	symbol=@product
+
+create table
+	#begin_equivs(
+		external_account_id int,
+		amount float NULL,
+		equiv float NULL)
+insert into
+	#begin_equivs(
+		external_account_id,
+		amount,
+		equiv)
+select
+	a.external_account_id,
+	a.amount,
+	a.amount * b.rate
+from
+	account_transactions a,
+	#begin_rates b
+where
+	a.currency_id = b.product_id
+and
+	a.transaction_date < @begin_date
+and
+	a.external_account_id = @external_account_id
+and
+	b.product_id=@product_id
+
+if @@rowcount = 0
+	select
+		@begin_equiv = 0.0,
+		@begin_balance = 0.0
+else
+	select
+		@begin_balance = sum(amount),
+		@begin_equiv = sum(equiv)
+	from
+		#begin_equivs
+	where
+		external_account_id = @external_account_id
+	if @begin_equiv = NULL
+		select
+			@begin_equiv = 0.0,
+			@begin_balance = 0.0
+create table
+	#account_transactions(
+		id int identity,
+		style varchar(250) NULL,
+		account_transaction_id int NULL,
+		entered_by int NULL,
+		login varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		transaction_type_id int NULL,
+		transaction_type varchar(50) NULL,
+		transaction_date datetime NULL,
+		currency_id int NULL,
+		product varchar(50) NULL,
+		amount float NULL,
+		note char(255) null,
+		evaluation_currency varchar(50) NULL,
+		equiv float NULL,
+		debit float NULL,
+		credit float NULL,
+		rate float NULL,
+		timestamp datetime NULL
+	)
+
+insert into
+	#account_transactions(
+		style,
+		account,
+		transaction_type,
+		product,
+		amount,
+		equiv)
+values(
+	@style,
+	@account,
+	"Starting Balance",
+	@product,
+	@begin_balance,
+	@begin_equiv)
+
+insert into
+	#account_transactions(
+                style,
+		account_transaction_id,
+		entered_by,
+		login,
+		external_account_id,
+		account,
+		transaction_type_id,
+		transaction_type,
+		transaction_date,
+		currency_id,
+		product,
+		amount,
+		note,
+		evaluation_currency,
+		timestamp)
+select
+	style = @style,
+	a.account_transaction_id,
+	a.entered_by,
+	d.login,
+	a.external_account_id,
+	b.account,
+	a.transaction_type_id,
+	c.name,
+	a.transaction_date,
+	a.currency_id,
+	e.symbol,
+	a.amount,
+	a.note,
+	evaluation_currency = @evaluation_currency,
+	a.timestamp
+from
+        account_transactions a,
+	#external_accounts b,
+	transaction_types c,
+	tico_accounts d,
+	#products e
+where
+	a.external_account_id = b.external_account_id
+and
+	a.transaction_type_id = c.transaction_type_id
+and
+	a.entered_by = d.account_id
+and
+	a.currency_id = e.product_id
+and
+	dbo.f_easterntoutc(a.transaction_date) >= @begin_date
+and
+	dbo.f_easterntoutc(a.transaction_date) < @end_date
+order by
+	a.transaction_date,
+	a.account_transaction_id
+
+update
+	#account_transactions
+set
+	debit = amount
+where
+	amount < 0
+
+update
+	#account_transactions
+set
+	credit = amount
+where
+	amount > 0
+
+update
+	#account_transactions
+set
+	a.equiv = a.amount * b.rate,
+	a.rate = b.rate
+from
+	#account_transactions a,
+	#conversion_rates b
+where
+	a.currency_id = b.product_id
+
+select
+	@equiv = sum(equiv),
+	@balance = sum(amount)
+from
+	#account_transactions
+
+create table
+	#account_sum(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		begin_balance float NULL,
+		begin_equiv float NULL,
+		balance float NULL,
+		equiv float NULL)
+insert into
+	#account_sum(
+		account,
+		balance,
+		equiv)
+select
+	account,
+	sum(amount),
+	sum(equiv)
+from
+	#account_transactions
+group by
+	account
+
+update
+	#account_sum
+set
+	a.external_account_id = b.external_account_id
+from
+	#account_sum a,
+	external_accounts b
+where
+	a.account = b.symbol
+
+update
+	#account_sum
+set
+	style = @style,
+	begin_balance = @begin_balance,
+	begin_equiv = @begin_equiv
+	
+
+insert into
+	#account_transactions(
+		style,
+		transaction_type,
+		product,
+		amount,
+		equiv)
+values(
+	@total_style,
+	"Ending Balance",
+	@product,
+	@balance,
+	@equiv)
+
+insert into
+	#account_sum(
+		style,
+		equiv)
+values(
+	@total_style,
+	@equiv)
+
+
+/* 
+select
+	style = @style,
+	begin_date = @begin_date,
+	end_date = @end_date,
+	account = @account,
+	clear_filters = "Clear Filters" */
+
+update
+	#account_transactions
+set
+	amount = NULL
+where
+	account_transaction_id != NULL
+select
+	begin_date = @begin_date,
+	end_date = @end_date,
+	style,
+	entered_at = case when transaction_date = NULL then NULL else dbo.f_easterntoutc(a.timestamp) end,
+	transaction_date = case when transaction_date = NULL then NULL else dbo.f_easterntoutc(a.transaction_date) end,
+	/*transaction_date =  dbo.f_easterntoutc(convert(datetime, transaction_date)), UTC*/
+	a.note,
+	a.transaction_type,
+	a.account_transaction_id,
+	a.debit,
+	a.credit,
+	a.amount,
+	a.product,
+	a.equiv,
+	a.login
+from
+	#account_transactions a
+/*where
+	a.account_transaction_id = b.account_transaction_id*/
+order by
+	id
+	
+/* 
+select
+	begin_date = @begin_date,
+	end_date = @end_date,
+	style,
+	account,
+	starting_balance = begin_balance,
+	starting_equiv = begin_equiv,
+	balance = balance,
+	equiv
+from
+	#account_sum
+order by
+	id */
+
+go
+
+
