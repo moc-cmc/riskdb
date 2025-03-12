@@ -7,7 +7,7 @@ go
 create procedure
 	cm_deltrader
 		@login varchar(30),
-		@trader varchar(30)
+		@trader varchar(50)
 
 as
 
