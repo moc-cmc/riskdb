@@ -1,0 +1,209 @@
+
+create or replace procedure
+	ag_setmarginstate 
+		@margin_profile varchar(50), 
+		@margin_usage float,
+		@cash float,
+		@requirement float,
+		@excess_deficit varchar(10)
+
+as
+
+
+declare @margin_profile_id int
+declare @nop_limit float
+declare @nop_type_id int
+declare @dsl_type_id int
+declare @dsl_limit float
+declare @notice_level float
+declare @warning_level float 
+declare @blocked_level float
+declare @dsl_pct float
+declare @prev_nop_status varchar(50)
+declare @prev_dsl_status varchar(50)
+declare @nop_status varchar(50)
+declare @dsl_status varchar(50)
+declare @nop_status_id int
+declare @dsl_status_id int
+declare @subject varchar(250)
+declare @content varchar(250)
+declare @channel varchar(100)
+declare @message_type varchar(100)
+declare @priority varchar(50)
+declare @message_id int
+declare @login varchar(50)
+declare @ccy varchar(50)
+declare @nop_type varchar(50)
+declare @dsl_type varchar(50)
+declare @cash_str varchar(50)
+declare @requirement_str varchar(50)
+
+exec
+	r_formatfloatcommas
+		@cash,
+		@cash_str output
+
+exec
+        r_formatfloatcommas
+                @requirement,
+                @requirement_str output
+
+
+
+
+select
+	@login = rtrim(lower(fund_code)) + ".etg"
+from
+	funds
+
+
+
+select
+	@channel = "Margin Alerts",
+	@subject = rtrim(@margin_profile) + " ",
+	@priority = "High",
+	@message_type = "Normal"
+
+declare @client_channel varchar(50)
+
+select
+	@client_channel = channel
+from
+	channels
+where
+	a.name = "Acct "+rtrim(@margin_profile)
+if @client_channel = NULL
+begin
+	select
+		@client_channel = @channel
+end
+	
+select
+	@channel = "Margin Alerts",
+	@margin_profile_id = a.margin_profile_id,
+	@notice_level = a.notice_level,
+	@warning_level = a.warning_level,
+	@blocked_level = a.blocked_level,
+	@ccy = b.symbol
+from
+	margin_profiles a,
+	products b
+where
+	a.currency_id = b.product_id
+and
+	a.name = @margin_profile
+if @margin_profile_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Margin profile not found",
+		margin_profile = @margin_profile
+	return
+end
+
+if @nop_limit = 0.0
+	select
+		@nop_limit = 0.0000001
+
+if @dsl_limit = 0.0
+	select
+		@dsl_limit = 0.0000001 
+
+select
+	@prev_nop_status = a.name
+from
+	credit_statuses a,
+	margin_profile_states b
+where
+	a.credit_status_id = b.credit_status_id
+and
+	b.margin_profile_id = @margin_profile_id
+if @prev_nop_status = NULL
+begin
+	select
+		@prev_nop_status = "Unknown"
+end
+
+
+
+if @margin_usage < @notice_level
+	select
+		@nop_status = "Normal"
+
+if @margin_usage >= @notice_level and @margin_usage < @warning_level
+	select
+		@nop_status = "Notice"
+
+if @margin_usage >= @warning_level and @margin_usage < @blocked_level
+	select
+		@nop_status = "Warning"
+
+if @margin_usage >= @blocked_level
+	select
+		@nop_status = "Blocked"
+
+
+
+select
+	@nop_status_id = credit_status_id
+from
+	credit_statuses
+where
+	name = @nop_status
+if @nop_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "NOP Status not found",
+		nop_status = @nop_status
+	return
+end
+
+update
+	margin_profile_states
+set
+	margin_usage = @margin_usage,
+	credit_status_id = @nop_status_id,
+	timestamp = getdate()
+where
+	margin_profile_id = @margin_profile_id
+if @@rowcount = 0
+begin
+	insert into
+		margin_profile_states(
+			margin_profile_id,
+			margin_usage,
+			credit_status_id,
+			timestamp)
+	values(
+		@margin_profile_id,
+		@margin_usage,
+		@nop_status_id,
+		getdate())
+end
+
+if @prev_nop_status != @nop_status
+begin
+	select
+		@message_id = NULL
+	select 
+		@subject = "Margin Alert",
+		@content = rtrim(@nop_status)+":|| Equity (Cash): "+rtrim(dbo.f_striptrailingzeros(@cash_str))+" | Requirement:"+rtrim(dbo.f_striptrailingzeros(@requirement_str))+" | Excess/Deficit: "+rtrim(@excess_deficit)+" | Margin Use %: "+rtrim(convert(varchar, convert(numeric(30,2), (@margin_usage*100))))
+
+
+	exec
+		api_sendchannelmessage
+			@login = @login,
+			@channel = @client_channel,
+			@message_type = @message_type,
+			@subject = @subject,
+			@content = @content,
+			@priority = @priority,
+			@message_id = @message_id output
+
+end
+
+
+
+
+go

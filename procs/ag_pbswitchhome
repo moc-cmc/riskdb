@@ -1,0 +1,2424 @@
+
+create or replace procedure
+	ag_pbswitchhome
+		@login varchar(50),
+		@trade_date datetime=NULL
+as
+
+
+declare @fund_id int
+declare @error_style varchar(250)
+declare @total_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @style varchar(250)
+declare @selected_style varchar(250)
+declare @pb_style varchar(250)
+declare @client_style varchar(250)
+declare @alert_high_style varchar(250)
+declare @alert_med_style varchar(250)
+declare @alert_low_style varchar(250)
+declare @alert_none_style varchar(250)
+
+declare @evaluation_currency_id int
+declare @tico_account_id int
+declare @evaluation_currency varchar(50)
+declare @external_account_id int
+declare @id int
+declare @ids int
+declare @begin_date datetime
+declare @end_date datetime
+declare @account_id int
+declare @account varchar(50)
+declare @product_id int
+declare @symbol varchar(50)
+declare @before_usage float
+declare @before_balance float
+declare @before_nop float
+declare @after_usage float
+declare @after_balance float
+declare @after_nop float
+declare @fees float
+declare @from_account varchar(50)
+declare @to_account varchar(50)
+declare @hops int
+declare @fee float
+declare @date_validator varchar(50)
+declare @date_validation datetime
+declare @date_valid_style varchar(250)
+declare @validate varchar(50)
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"scratch_set",
+	NULL,
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"product",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"from_pb",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_date",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"prime_broker",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"acct",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"balance",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"haircuts",
+	"Haircuts Home",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pair_reduce",
+	"Pair Reduce Home",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"all_pair_offsets",
+	"Create All Pair Offsets",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"legal_entity_offsets",
+	"Find Legal Entity Offsets",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"entity_internal",
+	"All Entity Internal Reductions",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"validate",
+	"Spot Value Dates For Trade Date",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"legal_move",
+	"Transfer Legal Entity NOP",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"pb_move",
+	"Transfer PB NOP",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"legal_all",
+	"Add Legal Entity Reductions",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"auto_all",
+	"Create All PB Reductions",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"reduce_all",
+	"Create All Total Reductions",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"roll_switches",
+	"Roll Switches Home",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"clear_switches",
+	"Clear Switch Trades",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"ranked_data",
+	"NOP All Positions",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"legal_reduce",
+	"Add Legal Entity Reduction",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"models_home",
+	"Margin Models Home",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"scratch_deals",
+	"Switch Trades For Date",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_scratch_deals",
+	"Tally Scratch Deals",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"remove_switch",
+	"Delete Suggested Switch",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"tally_switch",
+	"Tally Manual Switch Trade",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"reduce_total",
+	"Create Total Reduction Switch",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"auto_reduce",
+	"Create PB Reduction Switch",
+	NULL) 
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"find_switches",
+	"Create PB Reduction Switch",
+	NULL) 
+
+insert into
+	 #meta
+values(
+	 "Column Format",
+	 "margin",
+	 "Number",
+	"#,##0.00%")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"price",
+	"Number",
+	"#,##0.000000")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"fee", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dsl_change", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"after_dsl", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"before_dsl", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"dsl_limit", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"nop_limit", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"counter_qty", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"quantity", 
+ 	"Number",
+	"#,##0.00;<span style=""color:red"">(#,##0.00)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"nop_change", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"usage_change", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"position", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"after_nop", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"before_nop", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"before_usage", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"after_usage", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"before_balance", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"after_balance", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"equiv", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+insert into
+	#meta
+values(
+	"Column Format",
+	"balance", 
+ 	"Number",
+	"#,##0;<span style=""color:red"">(#,##0)</span>")
+
+
+insert into
+	#meta
+values (
+	"Column Group",
+	"section",
+	NULL,
+	NULL)
+
+/* Adaptive Server has expanded all '*' elements in the following statement */ select #meta.meta_type, #meta.name, #meta.action, #meta.value from #meta
+
+
+
+select
+	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+	@total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+	@subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+	@style = "background:#FFFFFF;border: 1px solid white",
+	@selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+	@pb_style = "background:#F2F2E4;border: 1px solid white;font-weight:bold",
+	@client_style = "background:#E4E4F2;border: 1px solid white;font-weight:bold",
+	@alert_high_style = "color:#ffffff; background:#f03b20; border:1px solid #ff00ff; font-weight:bold",
+	@alert_med_style = "color:#000000; background:#feb24c; border:1px solid #ff00ff; font-weight:bold",
+	@alert_low_style = "color:#000000; background:#ffeda0; border:1px solid #ff00ff; font-weight:bold",
+	@alert_none_style = "color:#000000; background:#e5f5e0; border:1px solid #ff00ff; font-weight:bold"
+
+
+create table
+	#alerts(
+		alert_level int,
+		style varchar(250))
+insert into
+	#alerts(
+		alert_level,
+		style)
+values(
+	1,
+	@alert_none_style)
+insert into
+	#alerts(
+		alert_level,
+		style)
+values(
+	2,
+	@alert_low_style)
+insert into
+	#alerts(
+		alert_level,
+		style)
+values(
+	3,
+	@alert_med_style)
+insert into
+	#alerts(
+		alert_level,
+		style)
+values(
+	4,
+	@alert_high_style)
+
+
+
+
+
+
+if @trade_date = NULL
+	select
+		/* @trade_date = convert(datetime, convert(date, getdate())) */
+		@trade_date = getdate()
+
+
+exec
+	r_daterangefordate
+		@trade_date,
+		@begin_date output,
+		@end_date output
+
+select
+	@trade_date = convert(datetime, convert(date, @end_date))
+
+
+create table
+	#validation(
+		style varchar(250) NULL,
+		message varchar(100) NULL,
+		validate varchar(50) NULL)
+select
+	@date_validator = a.login,
+	@date_validation = b.timestamp
+from
+	tico_accounts a,
+	roll_trade_dates b
+where
+	a.account_id = b.validated_by
+and
+	convert(date, b.trade_date) = @trade_date
+if @date_validator = NULL
+begin
+	insert into
+		#validation(
+			style,
+			message,
+			validate)
+	values(
+		@error_style,
+		"Closing dates not confirmed for trade date",
+		"View and Confirm Dates")
+end
+
+select
+	section = "Date Validation Required",
+	style,
+	message,
+	validate,
+	trade_date = @trade_date
+from
+	#validation
+if @@rowcount != 0
+	return
+
+
+exec
+	r_defaultfundforlogin
+		@login = @login,
+		@fund_id = @fund_id output
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Unable to resolve login"
+	return
+end
+
+
+select
+	@evaluation_currency_id = evaluation_currency_id
+from
+	funds
+where
+	fund_id = @fund_id
+if @evaluation_currency_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Evaluation currency not found"
+	return
+end
+
+select
+	@evaluation_currency = symbol
+from
+	products
+where
+	product_id = @evaluation_currency_id
+
+select
+	product_id,
+	rate
+into
+	#conversion_rates
+from
+	x_conversion_rates
+where
+	_login = @login
+and
+	_product = @evaluation_currency
+and
+	_as_of_date = @trade_date
+
+
+select
+	external_account_id,
+	evaluation_currency_id,
+	value_date,
+	dsl
+into
+	#dsls 
+from
+	x_account_dsls
+where
+	_login = @login
+and
+	_as_of_date = @trade_date
+
+select
+	external_account_id,
+	evaluation_currency_id,
+	value_date,
+	dsl
+into
+	#dsls_after
+from
+	x_account_dsls
+where
+	_login = @login
+and
+	_as_of_date = @trade_date
+and
+	_scratch_set = "All"
+
+select 
+	external_account_id,
+	evaluation_currency_id,
+	product_id,
+	balance_bucket_id,
+	date_bucket,
+	nop_model_id,
+	balance,
+	equiv,
+	long_bal,
+	bucket_long_tot,
+	short_bal,
+	bucket_short_tot,
+	abs_bal,
+	nop,
+	nop_equiv,
+	margin,
+	usage
+into
+	#before_positions
+from
+	x_credit_balances
+where
+	_login = @login
+and
+	_trade_date = @trade_date
+
+select
+	external_account_id,
+	evaluation_currency_id,
+	product_id,
+	balance_bucket_id,
+	date_bucket,
+	nop_model_id,
+	balance,
+	equiv,
+	long_bal,
+	bucket_long_tot,
+	short_bal,
+	bucket_short_tot,
+	abs_bal,
+	nop,
+	nop_equiv,
+	margin,
+	usage
+into
+	#after_positions
+from
+	x_credit_balances
+where
+	_login = @login
+and
+	_trade_date = @trade_date
+and
+	_scratch_set = "All"
+
+
+delete
+	#before_positions
+from
+	#before_positions a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+and
+	c.name = "Client"
+
+delete
+	#after_positions
+from
+	#after_positions a,
+	external_accounts b,
+	external_account_types c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.external_account_type_id = c.external_account_type_id
+and
+	c.name = "Client"
+
+create table
+	#all_pos(
+		external_account_id int,
+		product_id int,
+		margin_bucket_id int,
+		date_bucket varchar(50),
+		margin float,
+		nop float)
+insert into
+	#all_pos(
+		external_account_id,
+		product_id,
+		margin_bucket_id,
+		date_bucket,
+		margin,
+		nop)
+select
+	external_account_id,
+	product_id,
+	balance_bucket_id,
+	date_bucket,
+	margin,
+	nop
+from
+	#before_positions
+
+insert into
+	#all_pos(
+		external_account_id,
+		product_id,
+		margin_bucket_id,
+		date_bucket,
+		margin,
+		nop)
+select
+	external_account_id,
+	product_id,
+	balance_bucket_id,
+	date_bucket,
+	margin,
+	nop
+from
+	#after_positions
+
+
+create table
+	#product_buckets(
+		external_account_id int,
+		product_id int,
+		margin_bucket_id int,
+		date_bucket varchar(50),
+		margin float,
+		num_nop float)
+insert into
+	#product_buckets(
+		external_account_id,
+		product_id,
+		margin_bucket_id,
+		date_bucket,
+		margin,
+		num_nop)
+select
+	external_account_id,
+	product_id,
+	margin_bucket_id,
+	date_bucket,
+	margin,
+	count(nop)
+from
+	#all_pos
+group by
+	external_account_id,
+	product_id,
+	margin_bucket_id,
+	date_bucket,
+	margin
+
+
+create table
+	#external_accounts(
+		id int identity,
+		style varchar(250) NULL,
+		alert_level int NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(50) NULL,
+		legal_entity_id int NULL,
+		external_account_id int NULL,
+		symbol varchar(50) NULL,
+		external_account_type_id int NULL,
+		external_account_type varchar(50) NULL,
+		nop_limit float NULL,
+		dsl_limit float NULL,
+		before_nop float NULL,
+		before_usage float NULL,
+		after_nop float NULL,
+		after_usage float NULL,
+		before_dsl float NULL,
+		after_dsl float NULL,
+		auto_reduce varchar(25) NULL,
+		auto_all varchar(25) NULL,
+		pb_move varchar(25) NULL)
+insert into
+	#external_accounts(
+		style,
+		external_account_id,
+		symbol,
+		external_account_type_id,
+		external_account_type,
+		before_nop,
+		before_usage,
+		after_nop,
+		after_usage)
+select
+	style = @style,
+	a.external_account_id,
+	a.symbol,
+	a.external_account_type_id,
+	b.name,
+	before_nop = 0.0,
+	before_usage = 0.0,
+	after_nop = 0.0,
+	after_usage = 0.0
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.name = "Counterparty"
+order by
+	a.symbol
+
+delete
+	#external_accounts
+from
+	#external_accounts a,
+	bo_master_accounts b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#external_accounts
+set
+	a.legal_entity_id = c.legal_entity_id
+from
+	#external_accounts a,
+	fo_sub_accounts b,
+	bo_master_accounts c
+where
+	a.external_account_id = b.external_account_id
+and
+	b.bo_master_account_id = c.bo_master_account_id
+
+
+create table
+	#accts(
+		id int identity,
+		style varchar(250) NULL,
+		external_account_id int NULL,
+		symbol varchar(50) NULL,
+		before_balance float NULL,
+		before_nop float NULL,
+		before_usage float NULL,
+		after_balance float NULL,
+		after_nop float NULL,
+		after_usage float NULL)
+insert into
+	#accts(
+		style,
+		external_account_id,
+		symbol)
+select
+	style = @style,
+	a.external_account_id,
+	a.symbol
+from
+	external_accounts a,
+	external_account_types b
+where
+	a.external_account_type_id = b.external_account_type_id
+and
+	b.name = "Counterparty"
+order by
+	a.symbol
+
+
+create table
+	#limits(
+		credit_profile_id int,
+		external_account_id int,
+		num_accounts int,
+		nop_limit float NULL,
+		dsl_limit float NULL)
+insert into
+	#limits(
+		credit_profile_id,
+		external_account_id,
+		num_accounts)
+select
+	a.credit_profile_id,
+	max(b.external_account_id),
+	count(b.external_account_id)
+from
+	credit_profiles a,
+	credit_profile_accounts b
+where
+	a.credit_profile_id = b.credit_profile_id
+group by
+	a.credit_profile_id
+	
+delete
+
+from
+	#limits
+where
+	num_accounts != 1
+
+update
+	#limits
+set
+	a.nop_limit = b.nop_limit,
+	a.dsl_limit = b.dsl_limit
+from
+	#limits a,
+	credit_profiles b
+where
+	a.credit_profile_id = b.credit_profile_id
+
+	
+update
+	#external_accounts
+set
+	a.nop_limit = b.nop_limit,
+	a.dsl_limit = b.dsl_limit
+from
+	#external_accounts a,
+	#limits b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#external_accounts
+set
+	a.prime_broker_id = b.prime_broker_id
+from
+	#external_accounts a,
+	external_account_prime_brokers b
+where
+	a.external_account_id = b.external_account_id
+
+
+create table
+	#before_products(
+		product_id int,
+		balance float,
+		nop float,
+		usage float)
+insert into
+	#before_products(
+		product_id,
+		balance,
+		nop,
+		usage)
+select
+	product_id,
+	sum(balance),
+	sum(nop_equiv),
+	sum(usage)
+from
+	#before_positions 
+group by
+	product_id
+
+create table
+	#after_products(
+		product_id int,
+		balance float,
+		nop float,
+		usage float)
+insert into
+	#after_products(
+		product_id,
+		balance,
+		nop,
+		usage)
+select
+	product_id,
+	sum(balance),
+	sum(nop_equiv),
+	sum(usage)
+from
+	#after_positions 
+group by
+	product_id
+
+update
+	#external_accounts
+set
+	a.prime_broker = c.name
+from
+	#external_accounts a,
+	prime_brokers b,
+	sources c
+where
+	a.prime_broker_id = b.prime_broker_id
+and
+	b.source_id = c.source_id
+
+create table
+	#before_usage(
+		external_account_id int,
+		nop float NULL,
+		usage float NULL)
+insert into
+	#before_usage(
+		external_account_id,
+		nop,
+		usage)
+select
+	external_account_id,
+	sum(abs(nop_equiv)),
+	sum(usage)
+from
+	#before_positions
+group by
+	external_account_id
+
+update
+	#external_accounts
+set
+	a.before_nop = abs(b.nop),
+	a.before_usage = b.usage
+from
+	#external_accounts a,
+	#before_usage b
+where
+	a.external_account_id = b.external_account_id
+
+
+create table
+	#after_usage(
+		external_account_id int,
+		nop float NULL,
+		usage float NULL)
+insert into
+	#after_usage(
+		external_account_id,
+		nop,
+		usage)
+select
+	external_account_id,
+	sum(abs(nop_equiv)),
+	sum(usage)
+from
+	#after_positions
+group by
+	external_account_id
+
+update
+	#external_accounts
+set
+	a.after_nop = abs(b.nop),
+	a.after_usage = b.usage
+from
+	#external_accounts a,
+	#after_usage b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#external_accounts
+set
+	a.before_dsl = b.dsl
+from
+	#external_accounts a,
+	#dsls b
+where
+	a.external_account_id = b.external_account_id 
+
+update
+	#external_accounts
+set
+	a.after_dsl = b.dsl
+from
+	#external_accounts a,
+	#dsls_after b
+where
+	a.external_account_id = b.external_account_id
+
+update
+	#external_accounts
+set
+	style = @alert_none_style
+
+update
+	#external_accounts
+set
+	style = @alert_low_style
+where
+	after_nop / nop_limit >= .5
+
+update
+	#external_accounts
+set
+	style = @alert_med_style
+where
+	after_nop / nop_limit >= .75
+
+update
+	#external_accounts
+set
+	style = @alert_high_style
+where
+	after_nop / nop_limit >= .95
+
+
+update
+	#external_accounts
+set
+	a.alert_level = b.alert_level
+from
+	#external_accounts a,
+	#alerts b
+where
+	a.style = b.style
+
+update
+	#external_accounts
+set
+	auto_reduce = "Find NOP Offset",
+	auto_all = "Find NOP Offsets",
+	pb_move = "Transfer NOP"
+where
+	after_nop > 0.0
+
+select
+	@before_nop = sum(before_nop),
+	@before_usage = sum(before_usage),
+	@after_nop = sum(after_nop),
+	@after_usage = sum(after_usage)
+from
+	#external_accounts
+
+insert into
+	#external_accounts(
+		style,
+		before_nop,
+		before_usage,
+		after_nop,
+		after_usage)
+values(
+	@subtotal_style,
+	@before_nop,
+	@before_usage,
+	@after_nop,
+	@after_usage)
+
+
+create table
+	#all_products(
+		product_id int)
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(product_id)
+from
+	#before_positions
+
+insert into
+	#all_products(
+		product_id)
+select
+	distinct(product_id)
+from
+	#after_positions
+where
+	product_id not in(
+		select
+			product_id
+		from
+			#all_products)
+
+create table
+	#products(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		symbol varchar(50) NULL,
+		before_balance float NULL,
+		before_nop float NULL,
+		before_usage float NULL,
+		after_balance float NULL,
+		after_nop float NULL,
+		after_usage float NULL)
+insert into
+	#products(
+		symbol)
+select
+	distinct(b.symbol)
+from
+	#all_products a,
+	products b
+where
+	a.product_id = b.product_id
+order by
+	b.symbol
+
+update
+	#products
+set
+	a.product_id = b.product_id
+from
+	#products a,
+	products b
+where
+	a.symbol = b.symbol
+
+update
+	#products
+set
+	style = @style,
+	before_balance = 0.0,
+	before_nop = 0.0,
+	after_balance = 0.0,
+	after_nop = 0.0
+
+update
+	#products
+set
+	a.before_balance = b.balance,
+	a.before_nop = b.nop,
+	a.before_usage = b.usage
+from
+	#products a,
+	#before_products b
+where
+	a.product_id = b.product_id
+
+
+update
+	#products
+set
+	a.after_balance = b.balance,
+	a.after_nop = b.nop,
+	a.after_usage = b.usage
+from
+	#products a,
+	#after_products b
+where
+	a.product_id = b.product_id
+
+
+create table
+	#product_detail(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		symbol varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(100) NULL,
+		margin_bucket_id int NULL,
+		margin_bucket varchar(50) NULL,
+		date_bucket varchar(50) NULL,
+		margin float NULL,
+		nop_model_id int NULL,
+		nop_model varchar(50) NULL,
+		before_balance float NULL,
+		before_nop float NULL,
+		before_usage float NULL,
+		after_balance float NULL,
+		after_nop float NULL,
+		after_usage float NULL,
+		tally_switch varchar(25) NULL,
+		product varchar(50) NULL)
+		
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#products
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#products
+	where
+		id > @id
+
+	select
+		@product_id = NULL,
+		@symbol = NULL,
+		@before_usage = NULL,
+		@before_nop = NULL,
+		@before_balance = NULL,
+		@after_usage = NULL,
+		@after_nop = NULL,
+		@after_balance = NULL
+
+	select
+		@product_id = product_id,
+		@symbol = symbol
+	from
+		#products
+	where
+		id = @id
+
+	insert into
+		#product_detail(
+			style,
+			symbol)
+	values(
+		@client_style,
+		@symbol)
+
+	insert into
+		#product_detail(
+			style,
+			product_id,
+			product,
+			external_account_id,
+			account,
+			margin_bucket_id,
+			margin_bucket,
+			date_bucket,
+			before_balance,
+			before_nop,
+			before_usage,
+			after_balance,
+			after_nop,
+			after_usage,
+			tally_switch)
+	select
+		style = @style,
+		a.product_id,
+		c.symbol,
+		a.external_account_id,
+		b.symbol,
+		a.margin_bucket_id,
+		d.name,
+		a.date_bucket,
+		before_balance = 0.0,
+		before_nop = 0.0,
+		before_usage = 0.0,
+		after_balance = 0.0,
+		after_nop = 0.0,
+		after_usage = 0.0,
+		tally_switch = "Tally Switch"
+	from
+		#product_buckets a,
+		external_accounts b,
+		products c,
+		margin_buckets d
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.product_id = c.product_id
+	and
+		a.margin_bucket_id = d.margin_bucket_id
+	and
+		a.product_id = @product_id
+	order by
+		b.symbol
+		
+	update
+		#product_detail
+	set
+		a.prime_broker_id = b.prime_broker_id
+	from
+		#product_detail a,
+		external_account_prime_brokers b
+	where
+		a.external_account_id = b.external_account_id
+	update
+		#product_detail
+	set
+		a.prime_broker = c.name
+	from
+		#product_detail a,
+		prime_brokers b,
+		sources c
+	where
+		a.prime_broker_id = b.prime_broker_id
+	and
+		b.source_id = c.source_id
+
+/* TNG */
+	update
+		#product_detail
+	set
+		a.before_balance = b.balance,
+		a.before_nop = b.nop_equiv,
+		a.before_usage = b.usage,
+		a.margin = b.margin,
+		a.nop_model = c.name
+	from
+		#product_detail a,
+		#before_positions b,
+		nop_models c
+	where
+		a.product_id = b.product_id
+	and
+		a.external_account_id = b.external_account_id
+	and
+		b.nop_model_id = c.nop_model_id
+	and
+		a.margin_bucket_id = b.balance_bucket_id
+	and
+		a.date_bucket = b.date_bucket
+
+	update
+		#product_detail
+	set
+		a.after_balance = b.balance,
+		a.after_nop = b.nop_equiv,
+		a.after_usage = b.usage,
+		a.margin = b.margin,
+		a.nop_model = c.name
+	from
+		#product_detail a,
+		#after_positions b,
+		nop_models c
+	where
+		a.product_id = b.product_id
+	and
+		a.external_account_id = b.external_account_id
+	and
+		b.nop_model_id = c.nop_model_id
+	and
+		a.margin_bucket_id = b.balance_bucket_id
+	and
+		a.date_bucket = b.date_bucket
+
+	delete
+
+	from
+		#product_detail
+	where
+		abs(before_balance) + abs(before_nop) + abs(before_usage) + abs(after_balance) + abs(after_nop) + abs(after_usage) = 0.0
+
+	select
+		@before_balance = sum(before_balance),
+		@before_nop = sum(before_nop),
+		@before_usage = sum(before_usage),
+		@after_balance = sum(after_balance),
+		@after_nop = sum(after_nop),
+		@after_usage = sum(after_usage)
+	from
+		#product_detail
+	where
+		product_id = @product_id
+
+
+	insert into
+		#product_detail(
+			style,
+			before_balance,
+			before_nop,
+			before_usage,
+			after_balance,
+			after_nop,
+			after_usage)
+	values(
+		@subtotal_style,
+		@before_balance,
+		@before_nop,
+		@before_usage,
+		@after_balance,
+		@after_nop,
+		@after_usage)
+
+		
+	select
+		@ids = count(*)
+	from
+		#products
+	where
+		id > @id
+end
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#external_accounts
+where
+	external_account_id != NULL
+and
+	id > @id
+
+/* ROLL
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#external_accounts
+	where
+		external_account_id != NULL
+	and
+		id > @id
+
+	select
+		@external_account_id = external_account_id
+	from
+		#external_accounts
+	where
+		external_account_id != NULL
+	and
+		id = @id
+
+	insert into
+		#roll_moves(
+			from_account_id,
+			to_account_id)
+	select
+		from_account_id = @external_account_id,
+		to_account = external_account_id
+	from
+		#external_accounts
+	where
+		external_account_id != @external_account_id
+	and
+		external_account_id != NULL
+
+	select
+		@ids = count(*)
+	from
+		#external_accounts
+	where
+		external_account_id != NULL
+	and
+		id > @id
+end
+
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#roll_moves
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#roll_moves
+	where
+		id > @id
+
+	select
+		@fee = NULL,
+		@hops = NULL
+
+	select
+		@from_account = a.symbol,
+		@to_account = b.symbol
+	from
+		external_accounts a,
+		external_accounts b,
+		#roll_moves c
+	where
+		a.external_account_id = c.from_account_id
+	and
+		b.external_account_id = c.to_account_id
+	and
+		c.id = @id
+
+	exec
+		api_switchpathfee
+			@login = @login,
+			@from_account = @from_account,
+			@to_account = @to_account,
+			@hops = @hops output,
+			@fee = @fee output
+
+	update
+		#roll_moves
+	set
+		hops = @hops,
+		fee = @fee
+	where
+		id = @id
+	select
+		@ids = count(*)
+	from
+		#roll_moves
+	where
+		id > @id
+end
+
+	
+select
+	/* style = @style, */
+	/* from_account = b.symbol, */
+	c.symbol,
+	e.symbol,
+	sum(a.hops),
+	/* a.fee, */
+	/* bal = d.balance,*/
+	sum((abs(d.equiv) / 1000000.0)  * a.fee)
+from
+	#roll_moves a,
+	external_accounts b,
+	external_accounts c,
+	#after_positions d,
+	products e
+where
+	a.from_account_id = b.external_account_id
+and
+	a.to_account_id = c.external_account_id
+and
+	a.from_account_id = d.external_account_id
+and
+	d.product_id = e.product_id
+group by
+	c.symbol,
+	e.symbol
+ROLL */
+
+select
+	@before_nop = sum(before_nop),
+	@before_usage = sum(before_usage),
+	@after_nop = sum(after_nop),
+	@after_usage = sum(after_usage)
+from
+	#products
+insert into
+	#products(
+		style,
+		before_nop,
+		before_usage,
+		after_nop,
+		after_usage)
+values(
+	@subtotal_style,
+	@before_nop,
+	@before_usage,
+	@after_nop,
+	@after_usage)
+		
+/*********************************************************************/
+
+
+create table
+	#account_detail(
+		id int identity,
+		style varchar(250) NULL,
+		product_id int NULL,
+		symbol varchar(50) NULL,
+		acct varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		prime_broker_id int NULL,
+		prime_broker varchar(100) NULL,
+		margin_bucket_id int NULL,
+		margin_bucket varchar(50) NULL,
+		date_bucket varchar(50) NULL,
+		margin float NULL,
+		nop_model_id int NULL,
+		nop_model varchar(50) NULL,
+		before_balance float NULL,
+		before_nop float NULL,
+		before_usage float NULL,
+		after_balance float NULL,
+		after_nop float NULL,
+		after_usage float NULL,
+		tally_switch varchar(25) NULL,
+		product varchar(50) NULL)
+		
+select
+	@id = 0
+select
+	@ids = count(*)
+from
+	#accts
+where
+	id > @id
+
+while @ids > 0
+begin
+	select
+		@id = min(id)
+	from
+		#accts
+	where
+		id > @id
+
+	select
+		@account_id = NULL,
+		@account = NULL,
+		@before_usage = NULL,
+		@before_nop = NULL,
+		@before_balance = NULL,
+		@after_usage = NULL,
+		@after_nop = NULL,
+		@after_balance = NULL
+
+	select
+		@account_id = external_account_id,
+		@account = symbol
+	from
+		#accts
+	where
+		id = @id
+
+	insert into
+		#account_detail(
+			style,
+			account)
+	values(
+		@client_style,
+		@account)
+
+	insert into
+		#account_detail(
+			style,
+			acct,
+			external_account_id,
+			symbol,
+			product_id,
+			product,
+			margin_bucket_id,
+			margin_bucket,
+			date_bucket,
+			before_balance,
+			before_nop,
+			before_usage,
+			after_balance,
+			after_nop,
+			after_usage,
+			tally_switch)
+	select
+		style = @style,
+		acct = b.symbol,
+		a.external_account_id,
+		c.symbol,
+		a.product_id,
+		c.symbol,
+		a.margin_bucket_id,
+		d.name,
+		a.date_bucket,
+		before_balance = 0.0,
+		before_nop = 0.0,
+		before_usage = 0.0,
+		after_balance = 0.0,
+		after_nop = 0.0,
+		after_usage = 0.0,
+		tally_switch = "Tally Switch"
+	from
+		#product_buckets a,
+		external_accounts b,
+		products c,
+		margin_buckets d
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.product_id = c.product_id
+	and
+		a.margin_bucket_id = d.margin_bucket_id
+	and
+		a.external_account_id = @account_id
+	order by
+		c.symbol
+		
+	update
+		#account_detail
+	set
+		a.prime_broker_id = c.prime_broker_id,
+		a.prime_broker = d.name
+	from
+		#account_detail a,
+		external_account_prime_brokers b,
+		prime_brokers c,
+		sources d
+	where
+		a.external_account_id = b.external_account_id
+	and
+		b.prime_broker_id = c.prime_broker_id
+	and
+		c.source_id = d.source_id
+
+	update
+		#account_detail
+	set
+		a.before_balance = b.balance,
+		a.before_nop = b.nop_equiv,
+		a.before_usage = b.usage,
+		a.margin = b.margin,
+		a.nop_model = c.name
+	from
+		#account_detail a,
+		#before_positions b,
+		nop_models c
+	where
+		a.product_id = b.product_id
+	and
+		a.external_account_id = b.external_account_id
+	and
+		b.nop_model_id = c.nop_model_id
+	and
+		a.margin_bucket_id = b.balance_bucket_id
+	and
+		a.date_bucket = b.date_bucket
+
+	update
+		#account_detail
+	set
+		a.after_balance = b.balance,
+		a.after_nop = b.nop_equiv,
+		a.after_usage = b.usage,
+		a.margin = b.margin,
+		a.nop_model = c.name
+	from
+		#account_detail a,
+		#after_positions b,
+		nop_models c
+	where
+		a.product_id = b.product_id
+	and
+		a.external_account_id = b.external_account_id
+	and
+		b.nop_model_id = c.nop_model_id
+	and
+		a.margin_bucket_id = b.balance_bucket_id
+	and
+		a.date_bucket = b.date_bucket
+
+	delete
+
+	from
+		#account_detail
+	where
+		abs(before_balance) + abs(before_nop) + abs(before_usage) + abs(after_balance) + abs(after_nop) + abs(after_usage) = 0.0
+
+	select
+		@before_nop = sum(before_nop),
+		@before_usage = sum(before_usage),
+		@after_nop = sum(after_nop),
+		@after_usage = sum(after_usage)
+	from
+		#account_detail
+	where
+		external_account_id = @account_id
+
+	insert into
+		#account_detail(
+			style,
+			before_nop,
+			before_usage,
+			after_nop,
+			after_usage)
+	values(
+		@subtotal_style,
+		@before_nop,
+		@before_usage,
+		@after_nop,
+		@after_usage)
+
+	select
+		@ids = count(*)
+	from
+		#accts
+	where
+		id > @id
+end
+
+select
+	@before_nop = sum(before_nop),
+	@before_usage = sum(before_usage),
+	@after_nop = sum(after_nop),
+	@after_usage = sum(after_usage)
+from
+	#accts
+insert into
+	#accts(
+		style,
+		before_nop,
+		before_usage,
+		after_nop,
+		after_usage)
+values(
+	@subtotal_style,
+	@before_nop,
+	@before_usage,
+	@after_nop,
+	@after_usage)
+
+create table
+	#legal_entities(
+		id int identity,
+		style varchar(250) NULL,
+		scratch_set varchar(50) NULL,
+		legal_reduce varchar(25) NULL,
+		legal_move varchar(25) NULL,
+		legal_all varchar(25) NULL,
+		entity_internal varchar(40) NULL,
+		alert_level int NULL,
+		legal_entity_id int NULL,
+		legal_entity varchar(100) NULL,
+		before_nop float NULL,
+		before_usage float NULL,
+		after_nop float NULL,
+		after_usage float NULL,
+		before_dsl float NULL,
+		after_dsl float NULL)
+insert into
+	#legal_entities(
+		legal_entity_id,
+		legal_entity)
+select
+	legal_entity_id,
+	name
+from
+	legal_entities
+order by
+	name
+
+create table
+	#legal_ent_stats(
+		legal_entity_id int,
+		alert_level int NULL,
+		before_nop float NULL,
+		before_usage float NULL,
+		after_nop float NULL,
+		after_usage float NULL,
+		before_dsl float NULL,
+		after_dsl float NULL)
+insert into
+	#legal_ent_stats(
+		legal_entity_id,
+		alert_level,
+		before_nop,
+		before_usage,
+		after_nop,
+		after_usage,
+		before_dsl,
+		after_dsl)
+select
+	legal_entity_id,
+	max(alert_level),
+	sum(before_nop),
+	sum(before_usage),
+	sum(after_nop),
+	sum(after_usage),
+	sum(before_dsl),
+	sum(after_dsl)
+from
+	#external_accounts
+where
+	external_account_id != NULL
+and
+	legal_entity_id != NULL
+group by
+	legal_entity_id
+
+update
+	#legal_entities
+set
+	a.alert_level = b.alert_level,
+	a.before_nop = b.before_nop,
+	a.before_usage = b.before_usage,
+	a.after_nop = b.after_nop,
+	a.after_usage = b.after_usage,
+	a.before_dsl = b.before_dsl,
+	a.after_dsl = b.after_dsl
+from
+	#legal_entities a,
+	#legal_ent_stats b
+where
+	a.legal_entity_id = b.legal_entity_id
+
+
+update
+	#legal_entities
+set
+	a.style = b.style,
+	scratch_set = "Reduce Legal Entity",
+	legal_reduce = "Find NOP Offset",
+	legal_move = "Transfer NOP",
+	legal_all = "Find NOP Offsets",
+	entity_internal = "Find Internal Offsets"
+from
+	#legal_entities a,
+	#alerts b
+where
+	a.alert_level = b.alert_level
+
+update
+	#legal_entities
+set
+	a.legal_entity = b.name
+from
+	#legal_entities a,
+	legal_entities b
+where
+	a.legal_entity_id = b.legal_entity_id
+
+select
+	@before_nop = sum(before_nop),
+	@before_usage = sum(before_usage),
+	@after_nop = sum(after_nop),
+	@after_usage = sum(after_usage)
+from
+	#legal_entities
+
+insert into
+	#legal_entities(
+		style,
+		before_nop,
+		before_usage,
+		after_nop,
+		after_usage)
+values(
+	@subtotal_style,
+	@before_nop,
+	@before_usage,
+	@after_nop,
+	@after_usage)
+
+
+create table
+	#switches(
+		sw_id int identity,
+		style varchar(250) NULL,
+		acct varchar(50) NULL,
+		trade_date datetime NULL,
+		id int NULL,
+		entered_by varchar(50) NULL,
+		external_account_id int NULL,
+		account varchar(50) NULL,
+		scratch_set_id int NULL,
+		scratch_set varchar(50) NULL,
+		contract_id int NULL,
+		product_id int NULL,
+		currency_id int NULL,
+		symbol varchar(50) NULL,
+		value_date datetime NULL,
+		quantity numeric(30,4) NULL,
+		price float NULL,
+		counter_qty numeric(30,4) NULL,
+		trade_id int NULL,
+		remove_switch varchar(25) NULL,
+		volume float NULL,
+		fee float NULL)
+insert into
+	#switches(
+		style,
+		acct,
+		trade_date,
+		id,
+		entered_by,
+		external_account_id,
+		account,
+		scratch_set_id,
+		scratch_set,
+		contract_id,
+		symbol,
+		value_date,
+		quantity,
+		price,
+		counter_qty,
+		trade_id)
+select
+	style = @style,
+	acct = c.symbol,
+	a.trade_date,
+	id = a.scratch_trade_id,
+	entered_by = b.login,
+	a.external_account_id,
+	account = c.symbol,
+	a.scratch_set_id,
+	scratch_set = f.name,
+	a.contract_id,
+	e.symbol,
+	a.value_date,
+	a.quantity,
+	a.price,
+	a.quantity * a.price * -1.0,
+	a.trade_id
+from
+	scratch_trades a,
+	tico_accounts b,
+	external_accounts c,
+	contracts e,
+	scratch_sets f
+where
+	a.tico_account_id = b.account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.contract_id = e.contract_id
+and
+	a.scratch_set_id = f.scratch_set_id
+and
+	convert(date, a.trade_date) = convert(date, @trade_date)
+and
+	a.trade_id = NULL
+order by
+	a.scratch_trade_id
+
+update
+	#switches
+set
+	a.product_id = b.product_id,
+	a.currency_id = b.currency_id
+from
+	#switches a,
+	forwards b
+where
+	a.contract_id = b.contract_id
+
+update
+	#switches
+set
+	volume = abs(quantity)
+where
+	product_id = @evaluation_currency_id
+
+update
+	#switches
+set
+	volume = abs(quantity * price)
+where
+	currency_id = @evaluation_currency_id
+
+update
+	#switches
+set
+	volume = abs(a.quantity) * b.rate
+from
+	#switches a,
+	#conversion_rates b
+where
+	a.product_id = b.product_id
+and
+	a.volume = NULL
+
+update
+	#switches
+set
+	a.fee = (a.volume / 1000000.0) * b.fee_price * -1.0
+from
+	#switches a,
+	fee_schedules b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.name like "%Switc%"
+
+select
+	@fees = sum(fee)
+from
+	#switches
+
+update
+	#switches
+set
+	remove_switch = "REMOVE"
+where
+	trade_id = NULL
+
+if @fees != NULL
+begin
+	insert into
+		#switches(
+			style,
+			fee)
+	values(
+		@subtotal_style,
+		@fees)
+end
+
+		
+
+/*********************************************************************/
+
+
+select
+	style = @style,
+	models_home = "Configure Margin Models",
+	tally_scratch_deals = "Tally Switch Trades",
+	scratch_deals = "View Tallied Switch Trades",
+	clear_switches = "Clear Switch Trades",
+	roll_switches = "Roll Switch Home",
+	pair_reduce = "Pair Reduce",
+	trade_date = @trade_date
+
+select
+	style = @style,
+	reduce_all = "Find All NOP Offsets",
+	legal_entity_offsets = "Find All Internal Legal Entity Offsets",
+	all_pair_offsets = "Find All Pair Offsets",
+	haircuts = "Haircuts",
+	scratch_set = "Reduce Total NOP",
+	trade_date = @trade_date
+
+select
+	section = "Product Summary",
+	style,
+	trade_date = @trade_date,
+	symbol,
+	before_balance,
+	after_balance,
+	before_nop,
+	after_nop,
+	nop_change = after_nop - before_nop,
+	before_usage,
+	after_usage,
+	usage_change = after_usage - before_usage
+from
+	#products
+order by
+	id,
+	symbol
+
+select
+	section = "PB Summary",
+	style,
+	trade_date = @trade_date,
+	prime_broker,
+	scratch_set = "Reduce PB NOP",
+	acct = symbol,
+	account = symbol,
+	auto_all,
+	pb_move,
+	nop_limit,
+	before_nop,
+	after_nop,
+	nop_change = after_nop - before_nop,
+	before_usage,
+	after_usage,
+	usage_change = after_usage - before_usage,
+	before_dsl,
+	after_dsl,
+	dsl_change = after_dsl - before_dsl,
+	dsl_limit
+from
+	#external_accounts
+order by
+	id
+
+select
+	section = "Legal Entity Summary",
+	style,
+	trade_date = @trade_date,
+	scratch_set,
+	legal_entity,
+	legal_all,
+	entity_internal,	
+	legal_move,
+	before_nop,
+	after_nop,
+	nop_change = after_nop - before_nop,
+	before_usage,
+	after_usage,
+	usage_change = after_usage - before_usage,
+	before_dsl,
+	after_dsl,
+	dsl_change = after_dsl - before_dsl
+from
+	#legal_entities
+order by
+	id
+
+select
+	section = "Suggested Switches",
+	style,
+	acct,
+	id,
+	entered_by,
+	trade_date,
+	account,
+	switch_type = scratch_set,
+	symbol,
+	value_date,
+	quantity,
+	price,
+	counter_qty,
+	trade_id,
+	fee,
+	remove_switch
+from
+	#switches
+order by
+	sw_id
+
+select
+	section = "Account Detail",
+	style,
+	account,
+	from_pb = prime_broker,
+	symbol,
+	margin,
+	nop_model,
+	margin_bucket,
+	date_bucket,
+	before_balance,
+	after_balance,
+	tally_switch,
+	before_nop,
+	after_nop,
+	nop_change = after_nop - before_nop,
+	before_usage,
+	after_usage,
+	usage_change = after_usage - before_usage,
+	/* sym = symbol, */
+	trade_date = @trade_date,
+	from_pb = prime_broker,
+	product,
+	balance = after_balance
+	/* balance = convert(numeric(30,0), after_balance) */
+from
+	#account_detail
+order by
+	id
+
+select
+	section = "Product Detail",
+	style,
+	symbol,
+	from_pb = prime_broker,
+	account,
+	margin,
+	nop_model,
+	margin_bucket,
+	date_bucket,
+	before_balance,
+	after_balance,
+	tally_switch,
+	before_nop,
+	after_nop,
+	nop_change = after_nop - before_nop,
+	before_usage,
+	after_usage,
+	usage_change = after_usage - before_usage,
+	trade_date = @trade_date,
+	from_pb = prime_broker,
+	product,
+	balance = after_balance
+	/* balance = convert(numeric(30,0), after_balance) */
+from
+	#product_detail
+order by
+	id
+
+
+go 
+
