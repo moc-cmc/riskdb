@@ -7,7 +7,7 @@ go
 create procedure
 	cm_delcounterparty
 		@login varchar(30),
-		@counterparty varchar(30)
+		@counterparty varchar(100)
 
 as
 
