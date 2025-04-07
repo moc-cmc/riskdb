@@ -127,7 +127,7 @@ select
 
 if @symbol like ("%NZD%") and
 	@trade_date < convert(char(8), @trade_date, 112) + ' 17:00' and
-	@trade_date >= convert(char(8), @trade_date, 112) + ' 13:00' and
+	@trade_date >= convert(char(8), @trade_date, 112) + ' 15:00' and
     @weekday != 6
 begin
 	exec
