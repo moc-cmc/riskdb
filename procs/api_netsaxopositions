@@ -1,0 +1,87 @@
+
+create or replace procedure
+	api_netsaxopositions
+		@trade_date datetime=NULL
+
+as
+
+declare @source_id int
+
+truncate table saxo_net_positions 
+
+if @trade_date = NULL
+begin
+	select 
+		@trade_date = getdate()
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where 
+	name="Recon Saxo PB"
+
+insert into
+	saxo_net_positions(
+		account_number,
+		counterparty_mapping,
+		contract_mapping,
+		quantity)
+select
+	external_account,/* this is cp in the saxo_pos_symbols table */
+	external_account,
+        contract,
+	sum(quantity)
+from
+	saxo_pos_symbols
+where
+	trade_date <= @trade_date
+group by
+	external_account,
+	contract
+
+update
+	saxo_net_positions
+set
+	counterparty = a.name,
+	counterparty_id = a.counterparty_id
+from	
+	counterparties a,
+	counterparty_symbols b,
+	saxo_net_positions c
+where
+	c.account_number = b.symbol
+and
+	b.source_id = @source_id
+and
+	b.counterparty_id=a.counterparty_id
+
+update
+	saxo_net_positions
+set
+	contract = a.symbol,
+	contract_id = a.contract_id
+from
+	contracts a,
+	contract_symbols b,
+	saxo_net_positions c
+where
+	c.contract_mapping = b.symbol
+and
+	b.source_id = @source_id
+and
+	b.contract_id=a.contract_id
+
+update
+	saxo_net_positions
+set 
+	external_account_id=a.external_account_id
+from
+	external_accounts a,
+	saxo_net_positions b
+where
+	a.symbol = "SAXO DIRECT" 
+ 
+go
+

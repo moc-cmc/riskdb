@@ -1,0 +1,119 @@
+
+create or replace procedure
+	r_editsaxoposnotes 
+		@login varchar(25),
+		@counterparty varchar(50),
+		@contract varchar(20),
+		@trade_date datetime,
+		@notes varchar(250)
+as
+
+declare @counterparty_id int
+declare @contract_id int
+
+select
+	@counterparty_id = counterparty_id,
+	@contract_id = contract_id
+from
+	saxo_net_positions	
+where
+	counterparty=@counterparty
+and
+	contract=@contract
+
+if @@rowcount != 1
+begin
+	select
+		status="Error",
+		message="Could not find counterparty, contract",
+		counterparty=@counterparty,
+		contract=@contract
+	return
+end
+
+if exists (select 
+		notes 
+	   from 
+	        saxo_pos_notes 
+	   where 
+		counterparty_id=@counterparty_id 
+  	   and 
+	        contract_id=@contract_id 
+           and 	
+	        convert(varchar(10), trade_date, 101) = convert(varchar(10),@trade_date, 101))
+begin
+	begin tran
+		update 
+			saxo_pos_notes
+		set 
+			notes=@notes
+		where
+			counterparty_id=@counterparty_id
+        	and
+                	contract_id=@contract_id
+        	and
+                	convert(varchar(10), trade_date, 101) = convert(varchar(10),@trade_date, 101)
+
+		if @@rowcount != 1
+		begin
+			select 
+				status="Error",
+				message="Could not update notes for counterparty, contract, date",
+				counterparty=@counterparty,
+				contract=@contract,
+				date=@trade_date
+
+			rollback tran
+			return
+		end
+
+		select
+			status="Success",
+			message="Notes updated for counterparty, contract, date",
+                        counterparty=@counterparty,
+                        contract=@contract,
+                        date=@trade_date
+
+	commit tran
+end
+else
+begin
+	insert into
+		saxo_pos_notes(
+			counterparty_id,
+			contract_id,
+			trade_date,
+			notes)
+		values(
+			@counterparty_id,
+			@contract_id,
+			@trade_date,
+			@notes)
+
+	if @@rowcount != 1
+	begin
+	        select 
+        		status="Error",
+                        message="Could not insert notes for counterparty, contract, date",
+                        counterparty=@counterparty,
+                        contract=@contract,
+                        date=@trade_date
+
+                        return
+         end
+
+	select
+		status="Success",
+		message="Notes inserted for counterparty, contract, date",
+		counterparty=@counterparty,
+		contract=@contract,
+		date=@trade_date
+
+end
+
+exec r_saxonetpositions @login, @trade_date
+
+return
+
+go
+

@@ -1,0 +1,9 @@
+
+create or replace procedure
+	r_saxosource
+as
+
+select source="Recon Saxo PB"
+
+go
+

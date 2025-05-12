@@ -1,0 +1,288 @@
+
+create or replace procedure
+        ttr_saxoreconpostally
+		@source varchar(50),
+		@default_login varchar(50),
+    		@reportingdate varchar(12),
+    	        @instrumenttype varchar(50)=NULL,	
+                @counterpartid varchar(50)=NULL,
+                @accountnumber varchar(50)=NULL,
+                @partneraccountkey varchar(50)=NULL,
+                @accountcurrency varchar(5)=NULL,
+                @instrumentcode varchar(50)=NULL,
+                @instrumentdescription varchar(100)=NULL, 
+                @instrumentcurrency varchar(5)=NULL,                
+                @isincode varchar(50)=NULL,
+                @exchangedescription varchar(50)=NULL,
+                @amount varchar(20)=NULL,
+                @figuresize varchar(10)=NULL,                
+                @tradenumber varchar(50)=NULL,
+                @ordernumber varchar(50)=NULL,
+                @tradetime varchar(30)=NULL, 
+                @tradedate varchar(12),
+                @valuedate varchar(12),
+                @buysell varchar(10)=NULL,
+                @price varchar(20),
+                @quotedvalue varchar(20)=NULL,
+                @eodrate varchar(20)=NULL,
+                @instrumenttoaccountrate varchar(20)=NULL,
+                @ispartial varchar(10)=NULL,
+                @unrealisedplinstrument varchar(20)=NULL,
+                @unrealisedplaccount varchar(50)=NULL,
+                @externalorderid varchar(20)=NULL,
+                @expirydate varchar(12)=NULL,
+                @exchangeisocode varchar(10)=NULL,
+                @isomic varchar(10)=NULL,
+                @instrumentuic varchar(50)=NULL,                
+                @countryofissue varchar(50)=NULL,
+                @quotedvaluebasecurrency varchar(20)=NULL,
+                @unrealisedplbasecurrency varchar(20)=NULL,
+                @operatingmic varchar(10)=NULL
+
+as
+
+declare @source_id int
+declare @symbol varchar(50)
+declare @contract_symbol varchar(50)
+declare @contract_mapping varchar(50)
+declare @ccy1 varchar(50)
+declare @ccy2 varchar(50)
+declare @tally_qty float
+declare @tally_price float
+declare @tally_trade_date datetime
+declare @tally_value_date datetime
+declare @tally_fixing_date datetime
+
+declare @quantity numeric(30, 2)
+
+declare @account_lookup varchar(50)
+declare @counterparty_lookup varchar(50)
+
+declare @internal_account varchar(50)
+declare @counterparty_id int
+declare @counterparty varchar(50)
+declare @external_account_id int
+declare @external_account varchar(50)
+
+declare @contract_id int
+declare @inverted varchar(50)
+declare @tally_status varchar(10)
+declare @tally_message varchar(25)
+
+declare @saxo_pos_symbol_id int
+declare @identifier varchar(100)
+declare @contract varchar(50)
+declare @side varchar(50)
+declare @action varchar(20)
+declare @reason varchar(50)
+
+declare @fixing_date datetime
+
+select
+        @source_id = source_id
+from
+        sources
+where
+        name = @source
+
+if @source_id = NULL
+begin
+	select
+		error = "error",
+		msg = "Could not find source",
+		source = @source
+	return
+end
+
+/* --------------------------------------------------------------------------
+ * STEP: Map params and convert
+ *
+ */
+
+
+select
+	@tally_qty = convert(numeric(30, 4), @amount),
+	@tally_price = convert(float, @price),
+	@tally_trade_date = convert(datetime, @tradedate),
+	@tally_value_date = convert(datetime, @valuedate),
+	@contract_mapping = @instrumentcode,
+	@identifier = rtrim(@tradenumber),
+	@internal_account = "OANDA ALL"
+
+if @fixing_date not in("", NULL, " ")
+begin
+	select
+		@tally_fixing_date = convert(datetime, @fixing_date)
+end
+else
+begin
+	select
+		@tally_fixing_date = NULL
+end
+
+
+select
+	@account_lookup = rtrim(@counterpartid),
+	/* @counterparty_lookup = rtrim(@executingentityidentificationc) */
+	@counterparty_lookup = rtrim(@accountnumber)
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Lookup trader and counterparty symbols
+ *
+ * ag_pendingmappingerrors determines if there is currently a mapping error for a
+ * trade. If there is, then @mapping_error_id wont be NULL. The tt_resolve* procs
+ * will onlu send a message about the failed mapping if there is not an existing
+ * mapping error.
+ 
+
+select
+	@external_account_id = a.external_account_id,
+	@external_account = a.symbol
+from
+	external_accounts a,
+	external_account_symbols b
+where
+	a.external_account_id = b.external_account_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @account_lookup
+if @external_account_id  = NULL
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "account mapping error trade not processed",
+		account_lookup = @account_lookup
+        return
+end
+
+select
+        @counterparty_id = a.counterparty_id,
+        @counterparty = a.name
+from
+        counterparties a,
+        counterparty_symbols b
+where
+        a.counterparty_id = b.counterparty_id
+and
+        b.source_id = @source_id
+and
+        b.symbol  = @counterparty_lookup
+if @counterparty_id = NULL
+begin
+        select
+                status = "Error",
+                error = "Error",
+                message = "counterparty mapping error trade not processed",
+		counterparty_lookup = @counterparty_lookup
+        return
+end
+*/
+
+/* --------------------------------------------------------------------------
+ * STEP: Determine the contract
+ *
+ */
+
+/*
+select
+	@contract_symbol = a.symbol
+from
+	contracts a,
+	contract_symbols b
+where
+	a.contract_id = b.contract_id
+and
+	b.source_id = @source_id
+and
+	b.symbol = @contract_mapping
+
+if @contract_symbol = NULL
+begin
+	select
+		error = "error",
+		msg = "Could not find contract",
+		mapping = @contract_mapping
+	return
+end
+*/
+
+/*
+exec
+        r_validateccypair
+                @login=@default_login,
+                @symbol=@symbol,
+                @contract_id = @contract_id output,
+                @contract = @contract output,
+                @inverted = @inverted output
+*/
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Adjust the perspective of the trade and set the quantity
+ *
+ * The direction of the trade can be affected by the side and the perspective
+ * of the message. Some platforms have different perspectives for client
+ * messages vs market messages. We tally trades in perspective of the fund
+ * or agency so set the direction accordingly
+ */
+
+select
+		@quantity = @tally_qty * 1
+
+
+/* --------------------------------------------------------------------------
+ * STEP: Tally the trade
+ *
+ */
+
+exec
+        api_addsaxoposition 
+                @login=@default_login,
+                @source=@source,
+                @internal_account=@internal_account,
+                @external_account=@accountnumber,
+                @counterparty=@counterpartid,
+                @quantity=@quantity,
+                @price=@tally_price,
+                @contract=@instrumentcode,
+                @trade_date=@tally_trade_date,
+                @value_date=@tally_value_date,
+                @fixing_date=@tally_fixing_date,
+                @identifier=@identifier,
+                @saxo_pos_symbol_id=@saxo_pos_symbol_id output
+
+
+if @saxo_pos_symbol_id = NULL
+begin
+        select
+                @tally_status = "Error",
+                @tally_message = "Problem tallying saxo position"
+end
+else
+begin
+        select
+                @tally_status = "Success",
+                @tally_message = "Tallied saxo position"
+end
+
+select
+        status = @tally_status,
+        message = @tally_message,
+        saxo_pos_symbol_id = @saxo_pos_symbol_id,
+        login = @default_login,
+        source = @source,
+        external_account = @external_account,
+        counterparty = @counterpartid,
+        quantity = @quantity,
+        symbol = @symbol,
+        value_date = @tally_value_date,
+        fixing_date = @tally_fixing_date,
+        price = @tally_price,
+        trade_date = @tally_trade_date,
+        identifier = @identifier
+
+
+go
