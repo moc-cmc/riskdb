@@ -19,6 +19,11 @@ declare @boa_pb_id int
 declare @manual_tally_broker_id int
 declare @usi_lookup varchar(15)
 declare @min_trade_id int
+declare @external_account_id int
+declare @contract_id int
+declare @position_id int
+declare @pos_id varchar(15)
+declare @buysell char(1)
 
 declare @ruble_conversion varchar(10)
 declare @update_ruble_trades varchar(10)
@@ -1929,7 +1934,7 @@ begin
 		#trades a,
 		#conversion_contracts b
 	where
-		a.product_id = b.product_id
+		a.currency_id = b.product_id
 	
 	update
         	#trades
@@ -1940,6 +1945,9 @@ begin
         	#conversion_contracts b
 	where
         	a.currency_id = b.product_id
+
+	 select "PRICES"
+        select pd1_eq, pd2_eq, quantity, db_price from #trades 
 	
 	update
 		#trades
@@ -2058,8 +2066,8 @@ create table
 	#pls(
 		contract_id int,
 		fund_agency_buy_sell varchar(8),
-		pd1_eq float,
-		pd2_eq float)
+		pd1_eq float NULL,
+		pd2_eq float NULL)
 
 insert into
 	#pls(
@@ -2082,6 +2090,7 @@ group by
 create table
 	#positions(
 		trade_notification_id int NULL,
+		position_id varchar(50) NULL,
 		external_account_id int,
 		external_account varchar(100) NULL,
 		open_time datetime NULL,
@@ -2092,8 +2101,9 @@ create table
 		open_price float NULL,
 		close_price float NULL,
 		lei varchar(100) NULL,
-		pl float NULL,
+		lei_country varchar(100) NULL,
 		min_trade_id int NULL,
+		pl float NULL,
 		pd1_eq float NULL,
 		pd2_eq float NULL)
 
@@ -2149,8 +2159,6 @@ set
 			b.contract_id = #positions.contract_id
 		and
 		 	b.fund_agency_buy_sell = #positions.fund_agency_buy_sell)
-
-
 update
 	#positions
 set
@@ -2185,7 +2193,6 @@ where
 and
 	a.fund_agency_buy_sell = b.fund_agency_buy_sell
 
-
 update
         #positions
 set
@@ -2204,8 +2211,132 @@ from
 where
 	fund_agency_buy_sell = "SELL"
 
+update
+	#positions
+set
+        lei=a.lei_number,
+	lei_country=a.country
+from
+        account_regulatory_info a,
+        #positions b
+where
+        b.external_account_id = a.external_account_id
+
+update
+        #positions
+set
+        position_id=a.position_id
+from
+        position_ids a,
+        #positions b
+where
+        a.external_account_id=b.external_account_id
+and
+        a.contract_id=b.contract_id
+and
+        a.buysell="B"
+and
+	b.fund_agency_buy_sell="BUY"
+
+update
+        #positions
+set
+        position_id=a.position_id
+from
+        position_ids a,
+        #positions b
+where
+        a.external_account_id=b.external_account_id
+and
+        a.contract_id=b.contract_id
+and
+        a.buysell="S"
+and
+        b.fund_agency_buy_sell="SELL"
+
+/* create position id for new external_account, contract combinations */
+
+declare missing_pos_ids cursor for
+
+select
+        distinct(external_account_id)
+from
+        #positions
+where
+        position_id=NULL
+order by
+        external_account_id
+
+open missing_pos_ids
+
+fetch missing_pos_ids into @external_account_id
+
+while @@sqlstatus = 0
+begin
+
+        declare con_cursor cursor for
+
+        select
+                distinct(contract_id)
+        from
+                #positions
+        where
+                external_account_id=@external_account_id
+        and    
+                position_id = NULL
+        order by
+                contract_id
+
+        open con_cursor
+
+        fetch con_cursor into @contract_id
+
+        while @@sqlstatus = 0
+        begin
+
+                exec j_nextkey "position_ids", @position_id out
+
+                select @buysell = "B"
+                select @pos_id = rtrim(convert(varchar(5), @position_id)) + @buysell
+
+                insert into
+                        position_ids(
+                                position_id,
+                                external_account_id,
+                                contract_id,
+                                buysell)
+                        values(
+                                @pos_id,
+                                @external_account_id,
+                                @contract_id,
+                                @buysell)
+                
+                select @buysell = "S"
+                select @pos_id = rtrim(convert(varchar(5), @position_id)) + @buysell
+
+                insert into
+                        position_ids(
+                                position_id,
+                                external_account_id,
+                                contract_id,
+                                buysell)
+                        values(
+                                @pos_id,
+                                @external_account_id,
+                                @contract_id,
+                                @buysell)
+
+                fetch con_cursor into @contract_id
+        end
+        close con_cursor
+        deallocate con_cursor
+
+        fetch ext_cursor into @external_account_id
+end
+
 select
 	trade_notification_id,
+	position_id,
 	external_account_id,
 	external_account,
 	open_time = rtrim(convert(varchar(10), open_time, 112))+" "+rtrim(convert(varchar(10), open_time, 108)),
@@ -2216,12 +2347,16 @@ select
 	open_price, 
 	close_price,
 	lei,
+	lei_country,
 	pl,
 	min_trade_id,
 	pd1_eq,
 	pd2_eq
 from
 	#positions
+order by
+	position_id
+
 
 /*	
 select
