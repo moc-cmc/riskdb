@@ -999,7 +999,7 @@ end
 /* --------------------------------------------------------------------------
  * STEP: Book internal tickets if needed using @trigger_symbol
  *
- */
+ 
 if @trade_id != NULL
 begin
         exec
@@ -1022,11 +1022,12 @@ begin
                         @trade_identifier = @platform_identifier,
                         @spot_reference = @last_spot_rate
 end
+*/
 
 /* --------------------------------------------------------------------------
  * STEP: Send trade notifications 
  *
- */
+
 exec
 	r_inserttradenotification
 		@trade_id = @trade_id
@@ -1035,7 +1036,28 @@ if @far_trade_id != NULL
 	exec
 		r_inserttradenotification
 			@trade_id = @far_trade_id
+*/
 
+if @c_trade_id != NULL
+begin
+    exec
+        r_inserttradenotification
+            @trade_id = @c_trade_id
+end
+
+if @m_trade_id != NULL
+begin
+    exec
+        r_inserttradenotification
+            @trade_id = @m_trade_id
+end
+
+if @far_trade_id != NULL
+begin
+        exec
+                r_inserttradenotification
+                        @trade_id = @far_trade_id
+end
 
 /* --------------------------------------------------------------------------
  * STEP: Send an acknowledgement that this trade processed through
