@@ -1,0 +1,100 @@
+
+create or replace procedure
+	tt_ubsoccollateral
+		@login varchar(25),
+		@source varchar(25),
+		@collateral_date varchar(10),
+		@excess_deficit_collateral varchar(15),
+		@credit_utilization varchar(15),
+		@collateral_posted varchar(15),
+		@collateral_pending varchar(15),
+		@nop_limit varchar(15),
+		@netIM varchar(15),
+		@mtm varchar(15),
+		@credit_excess varchar(15),
+		@collateral_required varchar(15),
+		@customer_name varchar(25),
+		@utilized_line varchar(15)
+
+as
+
+declare @excess_def_collateral float
+declare @credit_utlized float
+declare @credit_post float
+declare @col_pending float
+declare @np_limit float
+declare @nim float
+declare @mark_to_market float
+declare @credit_xcess float
+declare @col_req float
+declare @util_line float
+
+
+select 
+	@excess_def_collateral = convert(float, @excess_deficit_collateral),
+	@credit_utlized = convert(float, @credit_utilization),
+	@credit_post = convert(float, @collateral_posted),
+	@col_pending = convert(float, @collateral_pending),
+	@np_limit = convert(float, @nop_limit),
+	@nim = convert(float, @netIM),
+	@mark_to_market = convert(float, @mtm),
+	@credit_xcess = convert(float, @credit_excess),
+	@col_req = convert(float, @collateral_required),
+        @util_line = convert(float, @utilized_line)
+
+insert into
+	ubs_oc_collateral (
+	collateral_date,
+	customer_name,
+	excess_deficit_collateral,
+	credit_utilization,
+	collateral_posted,
+	collateral_pending,
+	nop_limit,
+	netIM,
+	mtm,
+	credit_excess,
+	collateral_required,
+	utilized_line,
+	source)
+values (
+	@collateral_date,
+	@customer_name,
+	@excess_def_collateral,
+	@credit_utlized,
+	@credit_post,
+	@col_pending,
+	@np_limit,
+	@nim,
+	@mark_to_market,
+	@credit_xcess,
+	@col_req,
+	@util_line,
+	@source
+	)
+
+if @@rowcount = 1
+begin
+	select
+		status="Success",
+		message="Collateral Record Inserted",
+		source=@source
+
+	return
+end
+else
+begin
+	select
+		status="Error",
+		message="Could not insert Collateral Record for source",
+		source=@source
+	return
+end
+
+return
+
+go
+
+
+	
+		
