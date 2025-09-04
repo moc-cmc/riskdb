@@ -103,7 +103,7 @@ begin
 	commit tran
 
 	exec
-		r_inserttradenotification
+		r_insertswitchnotification
 			@trade_id
 
 	select
