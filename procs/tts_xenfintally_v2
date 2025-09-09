@@ -38,6 +38,7 @@ create or replace procedure
 as
 
 
+
 declare @client_or_market char(1)
 declare @platform_identifier varchar(100)
 declare @far_platform_identifier varchar(100)
@@ -218,12 +219,8 @@ begin
                 @deal_exec_symbol = rtrim(@order_id)
 
         select
-                @prime_broker_lookup = rtrim(@clearing_firm)+"-"
-                /*@prime_broker_lookup = ""*/
-
-        select
                 @counterparty_lookup = @target_comp,
-                @trader_lookup = @clearing_firm + "-" + @client_id
+                @trader_lookup = @client_id
 
         select
                 @suppression_lookup = @trader_lookup,
@@ -236,11 +233,7 @@ begin
                 @deal_exec_symbol = rtrim(@secondary_exec_id)
 
         select
-                @prime_broker_lookup = rtrim(@clearing_firm)+"-"
-                /*@prime_broker_lookup = ""*/
-
-        select
-                @counterparty_lookup = rtrim(@prime_broker_lookup)+@contra_firm,
+                @counterparty_lookup = @contra_firm,
                 @trader_lookup = @target_comp
 
         select
@@ -767,6 +760,7 @@ begin
             exec_type = @exec_type
 	return
 end
+
 
 
 
