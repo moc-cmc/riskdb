@@ -531,7 +531,8 @@ exec
  * messages vs market messages. We tally trades in perspective of the fund
  * or agency so set the direction accordingly
  * 
- * andres: Adjusted perspective since Xenfin is sending trades in Centile's perspective
+ * andres: Adjusted perspective since Xenfin is sending trades in Centile's
+ * perspective
  */
 
 if @client_or_market = "C"
