@@ -148,14 +148,6 @@ begin
                 @client_or_market = "C"
 end
 
-if @client_id != NULL and @contra_firm != NULL  /* Custom Oscar Gruss flow */
-begin
-        select
-                @client_or_market = "M",
-		@contra_firm = @exec_firm,
-		@secondary_exec_id = @order_id
-end
-
 if @client_id = NULL
 begin
         select
