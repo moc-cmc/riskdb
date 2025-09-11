@@ -100,6 +100,9 @@ declare @trigger_symbol varchar(50)
 select
 	@ack_required = "Y"
 
+select
+	@trade_date = dbo.f_utctoeastern(@trade_date)
+
 /* --------------------------------------------------------------------------
  * STEP: Initial MAP proc parameters to common tally params
  * It may be that additional parameters are mapped further down in the
