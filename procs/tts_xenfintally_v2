@@ -536,10 +536,10 @@ if @client_or_market = "C"
 begin
 	if @side = "BUY"
 		select
-			@quantity = @qty * -1
+			@quantity = @qty
 	if @side = "SELL"
 		select
-			@quantity = @qty
+			@quantity = @qty * -1
 end
 else /* if @client_or_market = "M" */
 begin
