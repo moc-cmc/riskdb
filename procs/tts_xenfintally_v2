@@ -13,6 +13,7 @@ create or replace procedure
 		@trade_report_id varchar(50),
 		@order_id varchar(50),
 		@cl_order_id varchar(50)=NULL,
+		@trade_link_id varchar(50)=NULL,
 		@secondary_exec_id varchar(50)=NULL, /*financials*/
 		@symbol varchar(50)=NULL,
 		@security_type varchar(50),
@@ -208,7 +209,7 @@ if @client_or_market = "C"
 begin
 	select
                 @platform_identifier = rtrim(@trade_report_id)+".c",
-                @deal_exec_symbol = rtrim(@order_id)
+                @deal_exec_symbol = rtrim(@trade_link_id)
 
         select
                 @counterparty_lookup = @target_comp,
@@ -222,7 +223,7 @@ else /* @client_or_market = "M" */
 begin
         select
                 @platform_identifier = rtrim(@trade_report_id),
-                @deal_exec_symbol = rtrim(@secondary_exec_id)
+                @deal_exec_symbol = rtrim(@trade_link_id)
 
         select
                 @counterparty_lookup = @contra_firm,
