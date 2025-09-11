@@ -530,6 +530,8 @@ exec
  * of the FIX message. Some platforms have different perspectives for client
  * messages vs market messages. We tally trades in perspective of the fund
  * or agency so set the direction accordingly
+ * 
+ * andres: Adjusted perspective since Xenfin is sending trades in Centile's perspective
  */
 
 if @client_or_market = "C"
@@ -545,10 +547,10 @@ else /* if @client_or_market = "M" */
 begin
 	if @side = "SELL"
 		select
-			@quantity = @qty
+			@quantity = @qty * -1
 	if @side = "BUY"
                 select
-                        @quantity = @qty * -1
+                        @quantity = @qty
 
 end
 
