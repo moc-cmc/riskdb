@@ -29,7 +29,10 @@ create or replace procedure
 		@fixing_date datetime=NULL, /*swaps*/
 		@far_price float=NULL,
 		@far_value_date datetime=NULL,
-		@far_fixing_date datetime=NULL, /*parties*/
+		@far_fixing_date datetime=NULL, 
+		@far_qty float = NULL,
+		@near_price float = NULL, 
+		@near_qty float = NULL,/*parties*/
 		@executing_trader varchar(50)=NULL,
 		@exec_firm varchar(50)=NULL,
 		@executing_system varchar(50)=NULL,
@@ -465,6 +468,8 @@ begin
                 @far_trade_type = "Swap Far",
                 @tally_type = "Swap",
                 @far_platform_identifier=@platform_identifier + ".f"
+				@quantity = @near_qty, 
+				@price = @near_price
 end
 
 /*
@@ -646,7 +651,7 @@ begin
 			@symbol = @contract,
 			@value_date = @far_value_date,
 			@fixing_date = @far_fixing_date,
-			@price = @price,
+			@price = @far_price,
 			@trade_date = @trade_date,
 			@trader = @trader,
 			@broker = @broker,
@@ -682,7 +687,7 @@ begin
 		symbol = @contract,
 		value_date = @value_date,
 		fixing_date = @far_fixing_date,
-		price = @price,
+		price = @far_price,
 		trade_date = @trade_date,
 		trader = @trader,
 		broker = @broker,
