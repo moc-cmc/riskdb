@@ -467,7 +467,7 @@ begin
                 @trade_type = "Swap Near",
                 @far_trade_type = "Swap Far",
                 @tally_type = "Swap",
-                @far_platform_identifier=@platform_identifier + ".f"
+                @far_platform_identifier=@platform_identifier + ".f",
 				@quantity = @near_qty, 
 				@price = @near_price
 end
