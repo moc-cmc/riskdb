@@ -31,6 +31,7 @@ create or replace procedure
 		@far_value_date datetime=NULL,
 		@far_fixing_date datetime=NULL, 
 		@far_qty float=NULL,
+		@far_side varchar(10)=NULL, 
 		@near_price float=NULL, 
 		@near_qty float=NULL,
 		@near_fixing_date datetime=NULL,/*parties*/
@@ -489,24 +490,24 @@ begin
 		begin
 				if @client_or_market = "C"
 				begin
-						if @side = "BUY"
+						if @far_side = "BUY"
 						begin
 								select @far_quantity = @far_qty
 						end
 
-						if @side = "SELL"
+						if @far_side = "SELL"
 						begin
 								select @far_quantity = @far_qty * -1
 						end
 				end
 				else /* if @client_or_market = "M" */
 				begin
-						if @side = "BUY"
+						if @far_side = "BUY"
 						begin
 								select @far_quantity = @far_qty
 						end
 
-						if @side = "SELL"
+						if @far_side = "SELL"
 						begin
 								select @far_quantity = @far_qty * -1
 						end
