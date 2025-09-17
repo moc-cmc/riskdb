@@ -26,13 +26,14 @@ create or replace procedure
 		@trade_date datetime,
 		@trade_day datetime,
 		@value_date datetime,
-		@fixing_date datetime=NULL, /*swaps*/
+		@fwd_fixing_date datetime=NULL, /*swaps*/
 		@far_price float=NULL,
 		@far_value_date datetime=NULL,
 		@far_fixing_date datetime=NULL, 
-		@far_qty float = NULL,
-		@near_price float = NULL, 
-		@near_qty float = NULL,/*parties*/
+		@far_qty float=NULL,
+		@near_price float=NULL, 
+		@near_qty float=NULL,
+		@near_fixing_date datetime=NULL,/*parties*/
 		@executing_trader varchar(50)=NULL,
 		@exec_firm varchar(50)=NULL,
 		@executing_system varchar(50)=NULL,
@@ -97,6 +98,7 @@ declare @tally_status varchar(10)
 declare @tally_message varchar(25)
 declare @far_tally_status varchar(10)
 declare @far_tally_message varchar(25)
+declare @fixing_date datetime
 
 declare @trigger_symbol varchar(50)
 
@@ -458,6 +460,12 @@ begin
         select
                 @trade_type = "Forward",
                 @tally_type = "Forward"
+
+		if @fwd_fixing_date != NULL
+		begin
+				select
+						@fixing_date = @fwd_fixing_date
+		end
 end
 
 if @security_type = "FX_SWAP"
@@ -470,6 +478,40 @@ begin
                 @far_platform_identifier=@platform_identifier + ".f",
 				@quantity = @near_qty, 
 				@price = @near_price
+
+		if @near_fixing_date != NULL
+		begin
+				select
+						@fixing_date = @near_fixing_date
+		end
+
+		if @far_qty != NULL
+		begin
+				if @client_or_market = "C"
+				begin
+						if @side = "BUY"
+						begin
+								select @far_quantity = @far_qty
+						end
+
+						if @side = "SELL"
+						begin
+								select @far_quantity = @far_qty * -1
+						end
+				end
+				else /* if @client_or_market = "M" */
+				begin
+						if @side = "BUY"
+						begin
+								select @far_quantity = @far_qty
+						end
+
+						if @side = "SELL"
+						begin
+								select @far_quantity = @far_qty * -1
+						end
+				end
+		end
 end
 
 /*
@@ -633,8 +675,6 @@ end
 
 if @far_price != NULL
 begin
-	select
-		@far_quantity = @quantity * -1.0
 
 	exec
 		fxa_tallytrade
