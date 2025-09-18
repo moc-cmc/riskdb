@@ -726,7 +726,7 @@ begin
 		counterparty = @counterparty,
 		quantity = @far_quantity,
 		symbol = @contract,
-		value_date = @value_date,
+		value_date = @far_value_date,
 		fixing_date = @far_fixing_date,
 		price = @far_price,
 		trade_date = @trade_date,
