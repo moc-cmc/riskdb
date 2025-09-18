@@ -721,7 +721,7 @@ begin
 		deal_id = @deal_id,
 		tally_type = @tally_type,
 		deal_type = @deal_type,
-		trade_type = @trade_type,
+		trade_type = @far_trade_type,
 		external_account = @external_account,
 		counterparty = @counterparty,
 		quantity = @far_quantity,
