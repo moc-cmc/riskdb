@@ -1,0 +1,135 @@
+
+create or replace procedure
+	oapbh_executesuggestedswitch
+		@login varchar(50),
+		@id int
+as
+
+
+declare @deal_id int
+declare @trade_id int
+declare @trades int
+declare @switch_queue_strategy_id int
+declare @switch_strategy_id int
+
+select
+	@switch_queue_strategy_id = strategy_id
+from
+	strategies
+where
+	name = "Switch Queue"
+if @switch_queue_strategy_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Switch Queue strategy not found"
+	return
+end
+
+select
+	@switch_strategy_id = strategy_id
+from
+	strategies
+where
+	name = "Switch"
+if @switch_strategy_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Switch strategy not found"
+	return
+end
+
+
+exec
+	api_tallyscratchswithdeal
+		@login = @login,
+		@scratch_deal_id = @id
+
+
+create table
+	#trades(
+		trade_id int)
+insert into
+	#trades(
+		trade_id)
+select
+	a.trade_id
+from
+	trades a,
+	scratch_trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.scratch_deal_id = @id
+and
+	a.strategy_id = @switch_queue_strategy_id
+
+select
+	@trade_id = 0
+select
+	@trades = count(*)
+from
+	#trades
+where
+	trade_id > @trade_id
+while @trades > 0
+begin
+	select
+		@trade_id = min(trade_id)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+
+	begin tran
+		update
+			trades
+		set
+			strategy_id = @switch_strategy_id
+		where
+			trade_id = @trade_id
+		and
+			strategy_id = @switch_queue_strategy_id
+		if @@rowcount != 1
+		begin
+			select
+				status = "Error",
+				message = "Problem setting strategy for trade",
+				trade_id = @trade_id
+			rollback tran
+			return
+		end
+	commit tran
+
+	exec
+		r_insertswitchnotification
+			@trade_id
+
+	select
+		@trades = count(*)
+	from
+		#trades
+	where
+		trade_id > @trade_id
+end
+
+select
+	@deal_id = a.deal_id
+from
+	trades a,
+	scratch_trades b
+where
+	a.trade_id = b.trade_id
+and
+	b.scratch_deal_id = @id
+
+select
+	status = "Success",
+	message = "Switch trade executed",
+	id =  @id,
+	deal_id = @deal_id
+
+
+
+go
