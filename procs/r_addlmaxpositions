@@ -1,0 +1,82 @@
+
+create or replace procedure
+	r_addlmaxpositions 
+		@login varchar(25),
+                @source varchar(25),
+		@account_id varchar(12),
+                @timestamp varchar(25),
+                @instrument_id varchar(15),
+                @open_quantity varchar(12),
+                @open_cost varchar(12),
+                @unfilled_buy_quantity varchar(12),
+                @unfilled_buy_cost varchar(12),
+                @unfilled_sell_quantity varchar(12),
+                @unfilled_sell_cost varchar(12),
+                @currency varchar(5),
+                @side varchar(12)
+as
+
+declare @a_id int
+/* declare @ts datetime */
+declare @open_q float
+declare @open_c float
+declare @unfilled_bq float
+declare @unfilled_bc float
+declare @unfilled_sq float
+declare @unfilled_sc float
+
+/* select @ts = convert(datetime, @timestamp) */
+
+select @a_id    = convert(int, @account_id)
+select @open_q  = convert(float, @open_quantity)
+select @open_c  = convert(float, @open_cost)
+select @unfilled_bq = convert(float, @unfilled_buy_quantity)
+select @unfilled_bc = convert(float, @unfilled_buy_cost)
+select @unfilled_sq = convert(float, @unfilled_sell_quantity)
+select @unfilled_sc = convert(float, @unfilled_sc)
+
+insert into
+	lmax_positions (
+                account_id,
+                timestamp,
+                instrument_id,
+                open_quantity,
+                open_cost,
+                unfilled_buy_quantity,
+                unfilled_buy_cost,
+                unfilled_sell_quantity,
+                unfilled_sell_cost,
+                currency,
+                side)
+	values(
+		@a_id,
+                @timestamp,
+                @instrument_id,
+                @open_q,
+                @open_c,
+                @unfilled_bq,
+                @unfilled_bc,
+                @unfilled_sq,
+                @unfilled_sc,
+                @currency,
+                @side)
+
+if (@@rowcount != 1)
+begin
+        select
+                status="Error",
+                message="Could not insert lmax position record",
+               	account=@account_id 
+
+        return
+end
+
+select
+        status="Success",
+        message="Lmax Position record inserted",
+        account=@account_id 
+
+return
+
+go
+

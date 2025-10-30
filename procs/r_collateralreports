@@ -1,0 +1,72 @@
+
+create or replace procedure
+	r_collateralreports
+
+as
+
+create table
+        #meta(
+              meta_type char(200),
+              name char(50) NULL,
+              action char(100) NULL,
+              value char(200) NULL)
+
+insert into
+	#meta
+values
+	(
+	"Column Link",
+        "Source",
+        "Collateral Report",
+        NULL)
+
+select * from #meta
+
+create table #col_reports(
+	Report varchar(25),
+	Source varchar(25))
+
+insert into 
+	#col_reports
+values(
+	"US UBS Collateral",
+	"Collateral UBS OC PB")
+
+insert into
+	#col_reports
+values(
+	"CANADA UBS Collateral",
+	"Collateral UBS OCAN PB")
+
+insert into
+	#col_reports
+values(
+	"B2C2 Margins",
+	"B2C2 Margins")
+
+insert into
+	#col_reports
+values(
+	"LMAX Positions",
+	"LMAX Positions")
+
+insert into
+	#col_reports
+values(
+	"ALL",
+	"All Reports")
+
+select
+	Report,
+	Source
+from
+	#col_reports
+order by
+	Report
+
+go
+
+
+	
+
+
