@@ -1,0 +1,218 @@
+
+create or replace procedure
+	sp_getubscollateral
+		@login varchar(25),
+		@source varchar(25),
+		@collateral_date datetime=NULL
+as
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+select 
+	*
+from
+	#meta
+
+if (@source = "LMAX Positions")
+begin
+
+	select
+		section="LMAX"
+
+	select
+		*
+	from
+		lmax_positions
+	order by
+		account_id
+return
+
+end
+
+if (@source = "B2C2 Margins")
+begin
+
+	select 
+		section="B2C2"
+
+	if (@collateral_date != NULL)
+	begin
+
+		select
+        		*
+		from
+        		b2c2_margin_requirements
+		where
+			convert(varchar(12), margin_date, 110) >= convert(varchar(12), @collateral_date, 110)
+		order by
+        		margin_date
+		desc
+	end
+	else
+	begin
+		select
+			*
+		from
+			b2c2_margin_requirements
+		order by
+			margin_date
+	end
+
+return
+
+end
+
+if (@source like "Collateral UBS%")
+begin
+
+	select 
+		section=@source
+
+	if (@collateral_date != NULL)
+	begin
+		select
+			*
+		from
+			ubs_oc_collateral
+		where
+			source=@source 
+		and
+			convert(varchar(12), collateral_date, 110) >= convert(varchar(12), @collateral_date, 110)
+		order by
+			collateral_date
+	end
+	else
+	begin
+		select
+			*
+		from
+			ubs_oc_collateral
+		where
+			source=@source
+		order by
+			collateral_date
+	end
+return
+
+end
+
+if (@source = "All Reports")
+begin
+	
+	select
+		section="LMAX"
+
+	select
+		*
+	from
+		lmax_positions
+	order by
+		account_id
+
+	select
+		section="B2C2"
+
+	if (@collateral_date != NULL)
+	begin
+
+		select
+        		*
+		from
+        		b2c2_margin_requirements
+		where
+			convert(varchar(12), margin_date, 110) >= convert(varchar(12), @collateral_date, 110)
+		order by
+        		margin_date
+		desc
+	end
+	else
+	begin
+		select
+			*
+		from
+			b2c2_margin_requirements
+		order by
+			margin_date
+	end
+
+	select
+		section="Collateral UBS OCAN PB"
+
+	if (@collateral_date != NULL)
+	begin
+		select
+			*
+		from
+			ubs_oc_collateral
+		where
+			source="Collateral UBS OCAN PB" 
+		and
+			convert(varchar(12), collateral_date, 110) >= convert(varchar(12), @collateral_date, 110)
+		order by
+			collateral_date
+	end
+	else
+	begin
+		select
+			*
+		from
+			ubs_oc_collateral
+		where
+			source="Collateral UBS OCAN PB"
+		order by
+			collateral_date
+	end
+
+	select
+		section="Collateral UBS OC PB"
+
+	if (@collateral_date != NULL)
+	begin
+		select
+			*
+		from
+			ubs_oc_collateral
+                where
+                        source="Collateral UBS OC PB"
+                and
+                        convert(varchar(12), collateral_date, 110) >= convert(varchar(12), @collateral_date, 110)
+                order by
+                        collateral_date
+	end
+	else
+	begin
+		select
+                        *
+                from
+                        ubs_oc_collateral
+                where
+                        source="Collateral UBS OC PB"
+                order by
+                        collateral_date
+        end
+end
+
+go
+
+

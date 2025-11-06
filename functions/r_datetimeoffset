@@ -1,0 +1,47 @@
+
+create or replace function
+    r_datetimeoffset
+        @date datetime
+returns
+    int
+as
+begin
+
+declare @offset int
+declare @year int
+declare @reference_year int
+declare @dst_start datetime
+declare @dst_end datetime
+declare @std_offset int
+declare @dst_offset int
+
+select
+    @year = year(@date)
+
+select top 1
+    @reference_year = reference_year,
+    @dst_start = dst_start,
+    @dst_end = dst_end,
+    @std_offset = std_offset,
+    @dst_offset = dst_offset
+from
+    local_dst_rules
+where
+    effective_date <= @date
+order by
+    effective_date desc
+
+-- Adjust DST dates for the input year
+set @dst_start = dateadd(year, @year - @reference_year, @dst_start)
+set @dst_end = dateadd(year, @year - @reference_year, @dst_end)
+
+-- Determine if the date is in DST or standard time
+if @date >= @dst_start and @date < @dst_end
+    set @offset = @dst_offset
+else
+    set @offset = @std_offset
+
+return @offset
+
+end
+go

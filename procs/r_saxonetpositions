@@ -1,0 +1,317 @@
+
+create or replace procedure
+	r_saxonetpositions
+		@login varchar(25),
+		@trade_date datetime=NULL
+
+as
+
+declare @source_id int
+declare @external_account_id int
+declare @counterparty_id int
+declare @contract_id int
+declare @oanda_quantity numeric(30,4)
+declare @saxo_external_account_id int
+
+declare @total_style varchar(250)
+declare @style varchar(250)
+declare @error_style varchar(250)
+declare @subtotal_style varchar(250)
+declare @selected_style varchar(250)
+declare @selected_trade_style varchar(250)
+
+if @trade_date = NULL
+begin
+	select
+		@trade_date = getdate()
+end
+
+select TRADEDATE = @trade_date
+
+exec api_netsaxopositions @trade_date
+
+select
+	@source_id = source_id
+from
+	sources
+where
+	name = "Recon Saxo PB"
+
+select
+	@saxo_external_account_id = external_account_id
+from
+	external_accounts
+where
+	name="SAXO DIRECT"
+
+select
+        @error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
+        @total_style = "background:#F5F3CE;border: 1px solid white;font-weight:bold",
+        @subtotal_style = "background:#FAF7ED;border: 1px solid white;font-weight:bold",
+        @style = "background:#FFFFFF;border: 1px solid white",
+        @selected_style = "background:#FFF942;border: 1px solid white;font-weight:bold",
+        @selected_trade_style = "background:#F7F4C1;border: 1px solid white"
+
+create table
+        #meta(
+                meta_type char(200),
+                name char(50) NULL,
+                action char(100) NULL,
+                value char(200) NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"edit_notes",
+	"Edit Recon Notes",
+	NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "map_account",
+        "Map Account",
+        NULL
+)
+
+insert into
+        #meta
+values(
+        "Column Link",
+        "map_contract",
+        "Map Contract",
+        NULL
+)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+        #meta
+values(
+        "Row Style",
+        "style",
+        NULL,
+        NULL)
+
+select * from #meta
+
+create table
+	#netpos (
+                recon_status varchar(20) NULL,
+		external_account_id int NULL,
+		account_number varchar(50) NULL,
+		counterparty_mapping varchar(30) NULL,
+		counterparty_id int NULL,
+		counterparty varchar(50) NULL,
+		contract_mapping varchar(20),
+		contract_id int NULL,
+		contract varchar(50) NULL,
+		trade_date datetime NULL,
+		saxo_quantity numeric(30,4),
+                oanda_quantity numeric(30,4) NULL,
+		difference numeric(30,4) NULL,
+                recon_method varchar(20) NULL,
+		map_account varchar(15) NULL,
+		map_contract varchar(15) NULL,
+		notes varchar(250) NULL,
+                edit_notes varchar(12))
+insert into
+	#netpos(
+		recon_status,
+		external_account_id,
+		counterparty_mapping,
+		counterparty_id,
+		counterparty,
+		contract_mapping,
+		contract,
+                trade_date,
+		saxo_quantity,
+		recon_method,
+		edit_notes)
+select
+	"None",
+	@saxo_external_account_id,
+	counterparty_mapping,
+	counterparty_id,
+	counterparty,
+	contract_mapping,
+	contract,
+	trade_date,
+        quantity,
+	"Visual",
+	"Edit Notes"
+from
+	saxo_net_positions
+
+update
+	#netpos
+set
+	map_account="Map Account"
+where
+	counterparty=NULL
+
+update
+	#netpos
+set
+	map_contract="Map Contract"
+where
+	contract=NULL
+
+update
+	#netpos
+set
+	contract_id = a.contract_id
+from
+	contract_symbols a,
+	#netpos b
+where
+        b.contract_mapping = a.symbol	
+and
+	b.contract != NULL
+and
+	a.source_id = @source_id
+
+declare acct_cursor cursor for
+
+	select
+                counterparty_id,
+		contract_id
+	from
+		#netpos
+	order by
+		counterparty_id,
+		contract_id
+
+open acct_cursor
+
+fetch acct_cursor into @counterparty_id, @contract_id
+
+while @@sqlstatus = 0
+begin	
+	
+	select 
+		@oanda_quantity = sum(quantity)
+	from
+		trades 
+	where
+		counterparty_id=@counterparty_id
+	and
+		contract_id=@contract_id
+	and
+		external_account_id=@saxo_external_account_id
+       	and
+               	trade_date <= @trade_date
+
+	update
+		#netpos
+	set
+		oanda_quantity=@oanda_quantity
+	where
+		external_account_id=@saxo_external_account_id
+	and
+		counterparty_id=@counterparty_id
+	and
+		contract_id=@contract_id
+
+	fetch acct_cursor into @counterparty_id, @contract_id
+
+end
+
+close acct_cursor
+deallocate acct_cursor
+
+update
+	#netpos
+set
+	notes=a.notes
+from
+	saxo_pos_notes a,
+	#netpos b
+where
+	a.counterparty_id=b.counterparty_id
+and
+	a.contract_id=b.contract_id
+and
+	convert(varchar(10), a.trade_date,101) = convert(varchar(10), @trade_date, 101)
+
+update
+	#netpos
+set
+	recon_status="Matched"
+where
+	saxo_quantity - oanda_quantity = 0
+
+update
+        #netpos
+set
+        recon_status="discrepancy"
+where
+        saxo_quantity - oanda_quantity !=  0
+or
+	oanda_quantity = NULL
+
+select 
+	section="Saxo Positions Vs Oanda Positions", 
+        style=@style,
+        recon_status,
+	counterparty_mapping,
+	counterparty,
+	contract_mapping,
+        contract,
+	/* trade_date, */
+	saxo_quantity,
+        oanda_quantity,
+	difference=saxo_quantity - oanda_quantity,
+        recon_method,
+	notes,
+	edit_notes
+from
+	#netpos
+where
+	counterparty_id != NULL
+and
+	contract_id != NULL
+order by 
+	counterparty
+desc
+
+select
+	section="UnMapped Counterparties or Contracts",
+	style=@error_style,
+	recon_status,
+        counterparty_mapping,
+	counterparty,
+        contract_mapping,
+        contract,
+        saxo_quantity,
+        oanda_quantity,
+        difference=saxo_quantity - oanda_quantity,
+        recon_method,
+        map_account=map_account,
+        map_contract=map_contract,
+	notes,
+	edit_notes
+from
+        #netpos
+where
+	counterparty_id = NULL
+or
+	contract_id = NULL
+order by
+	account_number,
+	recon_status
+
+go
+
+	
+
+

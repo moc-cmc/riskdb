@@ -24,6 +24,11 @@ declare @ruble_conversion varchar(10)
 declare @update_ruble_trades varchar(10)
 declare @price_date datetime
 declare @source varchar(50)
+declare @external_account_id int
+declare @contract_id int
+declare @position_id int
+declare @pos_id varchar(15)
+declare @buysell char(1)
 
 if @trade_date = NULL
 begin
@@ -206,7 +211,9 @@ create table
 		/* Traction fields */
 		close_date varchar(15) NULL,
 		close_price float NULL,
-		pl float NULL
+		pl float NULL,
+		lei varchar(50) NULL,
+		position_id varchar(7) NULL
 		)
 
 /*
@@ -953,10 +960,6 @@ begin
                 	quantity > 0
 	end
 end
-
-
-
-
 
 /*
 | Query brokers
@@ -2019,6 +2022,126 @@ where
 and
         quantity < 0
 
+update
+	#trades
+set
+	lei=a.lei_number
+from
+	account_regulatory_info a,
+	#trades b
+where
+	b.external_account_id = a.external_account_id
+
+update
+	#trades
+set
+	position_id=a.position_id
+from
+	position_ids a,
+	#trades b
+where
+	a.external_account_id=b.external_account_id
+and
+	a.contract_id=b.contract_id
+and
+	a.buysell="B"
+and
+	b.quantity > 0
+
+update
+        #trades
+set
+        position_id=a.position_id
+from
+        position_ids a,
+        #trades b
+where
+        a.external_account_id=b.external_account_id
+and
+        a.contract_id=b.contract_id
+and
+        a.buysell="S"
+and
+        b.quantity < 0
+
+declare missing_pos_ids cursor for
+
+select
+	distinct(external_account_id)
+from
+	#trades 
+where
+	position_id=NULL
+order by
+	external_account_id
+
+open missing_pos_ids
+
+fetch missing_pos_ids into @external_account_id
+
+while @@sqlstatus = 0
+begin
+
+	declare con_cursor cursor for
+        
+        select
+                distinct(contract_id)
+        from
+                #trades
+        where
+                external_account_id=@external_account_id
+	and	
+		position_id = NULL
+        order by
+                contract_id
+
+        open con_cursor
+
+        fetch con_cursor into @contract_id
+
+	while @@sqlstatus = 0
+        begin
+        
+                exec j_nextkey "position_ids", @position_id out
+
+                select @buysell = "B"
+                select @pos_id = rtrim(convert(varchar(5), @position_id)) + @buysell    
+        
+                insert into
+                        position_ids(
+                                position_id,
+                                external_account_id,
+                                contract_id,
+                                buysell)
+                        values(
+                                @pos_id,
+                                @external_account_id,
+                                @contract_id,
+                                @buysell)
+
+                select @buysell = "S"
+                select @pos_id = rtrim(convert(varchar(5), @position_id)) + @buysell
+
+                insert into
+                        position_ids(
+                                position_id,
+                                external_account_id,
+                                contract_id,
+                                buysell)
+                        values(
+                                @pos_id,
+                                @external_account_id,
+                                @contract_id,
+                                @buysell)
+                
+                fetch con_cursor into @contract_id
+        end
+        close con_cursor
+        deallocate con_cursor
+
+        fetch ext_cursor into @external_account_id
+end
+
 /*
 update
 	#trades
@@ -2196,7 +2319,10 @@ select
 	close_price,
 	pd1_eq,
 	pd2_eq,
-	pl
+	pl,
+	lei,
+        position_id,
+	"uti"="254900YWS54NMACGDK07" + rtrim(convert(varchar(10), deal_id))
 from
         #trades
 order by

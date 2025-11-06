@@ -1,0 +1,36 @@
+
+create or replace function
+    dbo.r_parseutcdatetime
+        @utc_string varchar(50)
+returns
+    datetime
+as
+begin
+
+declare @offset int
+declare @utc_datetime datetime
+declare @local_date datetime
+declare @parse_string varchar(30)
+
+-- Return NULL if input is NULL or 'null'
+if @utc_string is NULL or lower(@utc_string) = 'null'
+    return NULL
+
+-- Remove quotes and Z suffix if present
+set @parse_string = str_replace(str_replace(@utc_string, 'Z', ''), 'UTC', '')
+
+-- Convert T separator to space if needed
+set @parse_string = str_replace(@parse_string, 'T', ' ')
+
+-- Parse the UTC datetime
+set @utc_datetime = convert(datetime, rtrim(@parse_string))
+
+-- Get the UTC offset for this timestamp
+select @offset = dbo.r_datetimeoffset(@utc_datetime)
+
+-- Apply offset to convert from UTC to local time
+set @local_date = dateadd(minute, @offset, @utc_datetime)
+
+return @local_date
+end
+go

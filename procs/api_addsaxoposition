@@ -1,0 +1,196 @@
+create or replace procedure
+	api_addsaxoposition
+		@login varchar(100),
+		@source varchar(100),
+		@internal_account varchar(50),
+		@external_account varchar(50),
+		@counterparty varchar(50),
+		@quantity numeric(30, 8),
+		@price float,
+		@contract varchar(50),
+		@trade_date datetime,
+		@value_date datetime,
+		@fixing_date datetime=NULL,
+		@identifier varchar(100),
+		@saxo_pos_symbol_id int=NULL output
+
+as
+
+declare @tico_account_id int
+declare @trade_id int
+declare @source_id int
+declare @internal_account_id int
+declare @external_account_id int
+declare @counterparty_id int
+declare @contract_id int
+declare @new_status_id int
+declare @begin_date datetime
+declare @end_date datetime
+
+exec     
+        r_daterangefordate
+                @trade_date, 
+                @begin_date output,
+                @end_date output
+             
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status="Error",
+		message="Problem finding account for login"
+	return
+end
+
+if @saxo_pos_symbol_id != NULL
+begin
+	select
+		status = "Error",
+		message = "Must not provide saxo_trade_symbol_id on insert"
+	return
+end
+
+select
+	@source_id = source_id
+from
+	sources
+where 
+	name = @source
+if @source_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding source",
+		source = @source
+	return
+end
+
+select
+	@internal_account_id = internal_account_id
+from
+	internal_accounts	
+where
+	symbol = @internal_account
+if @internal_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining internal account",
+		internal_account = @internal_account
+	return
+end
+
+select
+	@saxo_pos_symbol_id = saxo_pos_symbol_id	
+from
+	saxo_pos_symbols
+where
+	source_id = @source_id
+and
+	identifier = @identifier
+
+if @saxo_pos_symbol_id != NULL
+begin
+	select
+		message = "Identifier exists for source, updating record",
+		source = @source,
+		identifier = @identifier,
+		saxo_pos_symbol_id = @saxo_pos_symbol_id		
+
+	begin tran
+
+		update
+			saxo_pos_symbols
+		set
+			quantity=@quantity,
+			price=@price
+		where
+			identifier=@identifier
+
+		if @@rowcount != 1
+		begin
+			select 
+				status="Error",
+				message="Problems updating record for identifier",
+				identifier=@identifier
+
+			rollback tran
+		end
+
+		select
+			status="Success",
+			message="Record updated for identifier",
+			identifier=@identifier
+
+	commit tran
+
+
+	return
+end
+		
+select	
+	@new_status_id = status_id	
+from
+	statuses
+where
+	name = "New"
+if @new_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding 'New' status for recon"
+	return
+end
+	
+exec
+	j_nextkey
+		"saxo_pos_symbols",
+		@saxo_pos_symbol_id output
+
+insert into
+	saxo_pos_symbols (
+		saxo_pos_symbol_id,
+		source_id,
+		recon_status_id,
+		internal_account,
+		external_account,
+		counterparty,
+		quantity,
+		price,
+		contract,
+		trade_date,
+		value_date,
+		fixing_date,
+		identifier)
+		
+values(
+	@saxo_pos_symbol_id,
+	@source_id,
+	@new_status_id,
+	@internal_account,
+	@external_account,
+	@counterparty,
+	@quantity,
+	@price,
+	@contract,
+	@trade_date,
+	@value_date,
+	@fixing_date,
+	@identifier)
+if @@rowcount != 1
+begin
+	select
+		status = "Error",
+		message = "Problem inserting saxo position",
+		saxo_trade_symbol_id = @saxo_pos_symbol_id,
+		identifier = @identifier,
+		source = @source
+	return
+end
+
+go	

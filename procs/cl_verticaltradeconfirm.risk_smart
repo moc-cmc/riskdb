@@ -1880,7 +1880,7 @@ if @trade_id != NULL and @trade_type = "Option" and @exotic_instrument = NULL
 begin
 
 	insert into #output select "trade date", convert(varchar(11), trade_date) from #trades
-        insert into #output select "counterparty", "Makor" from #trades
+        insert into #output select "counterparty", "SmartMoney" from #trades
         insert into #output select "counterparty PB", prime_broker from #trades
         insert into #output select "client", agency_vs_counterparty from #trades
         insert into #output select "client buy/sell", client_buy_sell from #trades
@@ -1971,17 +1971,18 @@ begin
                         @current_rate,
                         @display_rate output
 
-        insert into #output select "price", @display_rate
+    insert into #output select "price", @display_rate
 	insert into #output select "trade date", convert(varchar(11), trade_date) from #trades
-        insert into #output select "counterparty", "Makor" from #trades
-        insert into #output select "counterparty PB", prime_broker from #trades
-	insert into #output select "client", agency_vs_counterparty from #trades
-	insert into #output select "client buy/sell", client_buy_sell + " " + traded_ccy from #trades
-        insert into #output select "currency pair", rtrim(convert(char(3), traded_ccy))+"/"+rtrim(convert(char(3), counter_ccy))  from #trades
-        insert into #output select "quantity", convert(varchar, cast(abs(quantity) AS money), 1) from #trades
+    insert into #output select "traded with", prime_broker from #trades
+	insert into #output select "counterparty", agency_vs_counterparty from #trades
+	insert into #output select "side", client_buy_sell + " " + traded_ccy from #trades
+    insert into #output select "currency pair", rtrim(convert(char(3), traded_ccy))+"/"+rtrim(convert(char(3), counter_ccy))  from #trades
+    insert into #output select "amount", convert(varchar, cast(abs(quantity) AS money), 1) from #trades
+	insert into #output select "contra amount", convert(varchar, cast(abs_counter_qty AS money), 1) from #trades
 	insert into #output select "price", @display_rate
-        insert into #output select "value date", convert(varchar(11), cast(value_date as datetime)) from #trades
+    insert into #output select "value date", convert(varchar(11), cast(value_date as datetime)) from #trades
 	insert into #output select "trade id", convert(varchar(50), trade_id) from #trades
+	insert into #output select "agent", "SmartMoney" from #trades
 
 	/*   Going to leave this entire section for now, i think what is in their REQ is wrong and we will come back to this 
 

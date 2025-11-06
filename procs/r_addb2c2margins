@@ -1,0 +1,65 @@
+
+create or replace procedure
+	r_addb2c2margins
+		@login varchar(25),
+		@source varchar(25),
+		@margin_date varchar(10),
+		@equity varchar(20),
+		@free_equity varchar(20),
+		@margin_requirement varchar(20),
+		@margin_usage varchar(20),
+		@currency varchar(5)
+
+as
+
+declare @mdate datetime
+
+declare @eq float
+declare @free_eq float
+declare @mr float
+declare @mu float
+
+select @mdate = convert(datetime, @margin_date)
+
+select @eq      = convert(float, @equity)
+select @free_eq = convert(float, @free_equity)
+select @mr      = convert(float, @margin_requirement)
+select @mu      = convert(float, @margin_usage)
+
+insert into
+	b2c2_margin_requirements(
+		margin_date,
+		equity,
+		free_equity,
+		margin_requirement,
+		margin_usage,
+		currency)
+	values(
+		@mdate,
+		@eq,
+		@free_eq,
+		@mr,
+		@mu,
+		@currency)
+
+if (@@rowcount != 1)
+begin
+	select
+		status="Error",
+		message="Could not insert margin record",
+		margin_date=@mdate
+
+	return
+end
+
+select
+	status="Success",
+	message="Margin record inserted",
+	margin_date=@mdate
+
+return
+
+go
+
+
+

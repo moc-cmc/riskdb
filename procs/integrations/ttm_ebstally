@@ -241,6 +241,9 @@ from
 where
 	name = @source
 
+/*
+select @trade_date = dbo.f_utctoeastern(@trade_date)
+*/
 
 /* --------------------------------------------------------------------------
  * STEP: Eval client or market
@@ -276,7 +279,7 @@ select
     @m_platform_identifier = rtrim(@trade_report_id)+".m"
 
 select
-    @c_trader_lookup = rtrim(@executing_firm),
+    @c_trader_lookup = rtrim(@executing_trader),
     @c_counterparty_lookup = rtrim(@sender_comp)
 
 select
