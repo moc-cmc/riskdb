@@ -4,51 +4,74 @@ go
 
 create procedure
 	tt_rtnsaffirmation
-		@source varchar(50),
+		@login varchar(100),
 		@trade_id int,
-		@status varchar(50)
+		@maker_status varchar(50),
+		@taker_status varchar(50)
 
 as
 
 
 declare @source_id int
-declare @status_id int
+declare @deal_id int
+declare @trade_status_id int
+declare @deal_status_id int
 declare @source_trade_status_id int
 declare @already_processed varchar(1)
+declare @deal_status varchar(50)
+declare @trade_status varchar(50)
+declare @status varchar(50)
 
-/* we currently dont support status_symbols with a source. hardcoding for now. converted to our status name */
 
-if @status = "PENDING"
-	select
-		@status = "Pending"
-if @status = "REJECTED"
-	select
-		@status = "Rejected"
-if @status = "CONFIRMED"
-	select
-		@status = "Confirmed"
-
-select
-	@source_id = source_id
-from
-	sources
-where
-	name = @source
-if @@rowcount != 1
+if @taker_status = "UNKNOWN" and @maker_status = "UNKNOWN"
 begin
 	select
-		error = "error",
-		msg = "source not found",
-		source = @source
+		status = "Error",
+		message = "Taker and Maker statuses are both uknown",
+		taker_status = @taker_status,
+		maker_status = @maker_status
 	return
 end
 
+if @taker_status != "UNKNOWN" and @maker_status != "UNKNOWN"
+begin
+	select
+		status = "Error",
+		message = "Either Taker or Maker status should be  uknown",
+		taker_status = @taker_status,
+		maker_status = @maker_status
+	return
+end
+
+if @taker_status = "UNKNOWN" and @maker_status != "UNKNOWN"
+begin
+	select
+		@status = @maker_status
+end
+
+if @taker_status != "UNKNOWN" and @maker_status = "UNKNOWN"
+begin
+	select
+		@status = @taker_status
+end
+
+
+if @status = "PENDING"
+	select
+		@trade_status = "Pending"
+if @status = "REJECTED"
+	select
+		@trade_status = "Rejected"
+if @status = "CONFIRMED"
+	select
+		@trade_status = "Confirmed"
+
 select
-	@status_id = status_id
+	@trade_status_id = status_id
 from
 	statuses
 where
-	name = @status
+	name = @trade_status
 if @@rowcount != 1
 begin
 	select
@@ -59,51 +82,149 @@ begin
 end
 
 
+
 select
-	@already_processed = "Y"
+	@deal_id = deal_id
 from
-	source_trade_statuses
+	trades
 where
-	source_id = @source_id
-and
 	trade_id = @trade_id
-
-if @already_processed != "Y"
+if @deal_id = NULL
 begin
-	insert into
-		source_trade_statuses(
-			source_id,
-			trade_id,
-			status_id
-		)
-	values(
-		@source_id,
-		@trade_id,
-		@status_id
-	)
-
 	select
-		msg = "trade status inserted",
-		source = @source,
-		trade = @trade_id,
-		status = @status
+		status = "Error",
+		message = "Problem finding deal for trade",
+		trade_id = @trade_id,
+		deal_id = @deal_id
+	return
+end
+
+begin tran
+        update
+                trades
+        set
+                status_id = @trade_status_id
+        where
+                trade_id = @trade_id
+        if @@rowcount != 1
+        begin
+                select
+                        status = "Error",
+                        message = "Problem updating trade status for trade",
+                        trade_id = @trade_id,
+                        trade_status_id = @trade_status_id
+                rollback tran
+                return
+        end
+commit tran
+
+
+create table
+	#deal_trades(
+		deal_id int,
+		deal_status_id int,
+		trade_id int,
+		trade_status_id int
+)
+insert into
+	#deal_trades
+select
+	a.deal_id,
+	a.status_id,
+	b.trade_id,
+	b.status_id
+from
+	deals a,
+	trades b
+where
+	a.deal_id = b.deal_id
+and
+	b.deal_id = @deal_id
+
+
+create table
+	#deal_status_count(
+		status_id int,
+		records int
+)
+insert into
+	#deal_status_count
+select
+	trade_status_id,
+	count(*)
+from
+	#deal_trades
+group by
+	trade_status_id
+if @@rowcount > 1
+begin
+	select
+		@deal_status_id = status_id
+	from
+		statuses
+	where
+		name = "Multiple"
+	if @deal_status_id = NULL
+	begin
+		exec
+			api_addstatus
+				"Multiple",
+				@deal_status_id output
+	end
 end
 else
 begin
-	update
-		source_trade_statuses
-	set
-		status_id = @status_id
-	where
-		source_id = @source_id
-	and
-		trade_id = @trade_id
-
 	select
-		msg = "trade status updated",
-		source = @source,
-                trade = @trade_id,
-                status = @status
+		@deal_status_id = status_id
+	from
+		#deal_status_count
 end
+
+select
+	@deal_status = name
+from
+	statuses
+where
+	status_id = @deal_status_id
+if @deal_status = NULL
+begin
+	select
+		status = "Error",
+		message = "Could not find deal status",
+		deal_status_id = @deal_status_id,
+		deal_status = @deal_status
+	return
+end
+
+
+begin tran
+	update
+		deals
+	set
+		status_id = @deal_status_id
+	where
+		deal_id = @deal_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem updating deal status for deak",
+			deal_id = @deal_id,
+			deal_status_id = @deal_status_id,
+			trade_id = @trade_id,
+			trade_status_id = @trade_status_id
+		rollback tran
+		return
+	end
+commit tran	
+	
+
+select
+	status = "Success",
+	message = "Updated trade and deal status",
+	deal_id = @deal_id,
+	trade_id = @trade_id,
+	deal_status = @deal_status,
+	trade_status_id = @trade_status
 
 go
