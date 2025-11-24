@@ -2139,8 +2139,10 @@ begin
         close con_cursor
         deallocate con_cursor
 
-        fetch ext_cursor into @external_account_id
+        fetch missing_pos_ids into @external_account_id
 end
+close missing_pos_ids
+deallocate missing_pos_ids
 
 /*
 update
@@ -2322,9 +2324,14 @@ select
 	pl,
 	lei,
         position_id,
-	"uti"="254900YWS54NMACGDK07" + rtrim(convert(varchar(10), deal_id))
+	"uti"=lei + rtrim(convert(varchar(10), trade_id)) + rtrim(convert(varchar(10), position_id))
 from
         #trades
+where
+	lei != "nr"
+and 
+	trade_type_id != 38
+
 order by
         trade_id
 
