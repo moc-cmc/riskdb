@@ -814,7 +814,7 @@ begin
                 	symbol = @contract,
                 	value_date = @value_date,
                 	fixing_date = @fixing_date,
-                	price = @price,
+                	price = @last_spot_rate,
                 	trade_date = @trade_date,
                 	trader = @c_trader,
                 	broker = @broker,
