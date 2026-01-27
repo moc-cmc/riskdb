@@ -1,51 +1,43 @@
-drop procedure
-	ttm_celertechpbcusttally_wb
-go
 
-create procedure
+create or replace procedure
 	ttm_celertechpbcusttally_wb
-                /* Provided by FIX server config.properties & spring.xml */
-                @source varchar(50),
-                @default_login varchar(50),
-                @broker varchar(50),
-                @granularity varchar(15)=NULL,
-                /* Parsed from FIX message and provided by mapping.xml */
-                /* session variables */
-                @sender_comp varchar(50),
-                @target_comp varchar(50),
-                /* identifiers */
-                @execution_id varchar(100)=NULL,
-                @trade_report_id varchar(50),
-                @order_id varchar(50),
-                @cl_order_id varchar(50)=NULL,
-                /*financials*/
-                @symbol varchar(50)=NULL,
-                @ccy1 varchar(50)=NULL,
-                @ccy2 varchar(50)=NULL,
-                @qty float,
+		/* Provided by FIX server config.properties & spring.xml */
+		@source varchar(50),
+		@default_login varchar(50),
+		@broker varchar(50),
+		@granularity varchar(15)=NULL, /* Parsed from FIX message and provided by mapping.xml */ /* session variables */
+		@sender_comp varchar(50),
+		@target_comp varchar(50), /* identifiers */
+		@execution_id varchar(100)=NULL,
+		@trade_report_id varchar(50),
+		@order_id varchar(50),
+		@cl_order_id varchar(50)=NULL, /*financials*/
+		@trd_type varchar(50)=NULL,
+		@symbol varchar(50)=NULL,
+		@ccy1 varchar(50)=NULL,
+		@ccy2 varchar(50)=NULL,
+		@qty float,
 		@counter_qty float=NULL,
-                @price float,
-                @vt_price float=NULL,
+		@price float,
+		@vt_price float=NULL,
 		@side varchar(10),
-                @trade_date datetime,
-                @trade_day datetime,
-                @value_date datetime,
+		@trade_date datetime,
+		@trade_day datetime,
+		@value_date datetime,
 		@fixing_date datetime=NULL,
-                @last_spot_rate float=NULL,
-                /*swaps*/
-                @far_price float=NULL,
+		@last_spot_rate float=NULL, /*swaps*/
+		@far_price float=NULL,
 		@far_value_date datetime=NULL,
 		@far_fixing_date datetime=NULL,
-                @far_qty float,
-		/*parties*/
-                @executing_trader varchar(50)=NULL,
-                @executing_firm varchar(50)=NULL,
-                @executing_system varchar(50)=NULL,
-                @contra_firm varchar(50)=NULL,
-                @clearing_firm varchar(50)=NULL,
-                @sponsoring_firm varchar(50)=NULL
-
+		@far_qty float, /*parties*/
+		@executing_trader varchar(50)=NULL,
+		@executing_firm varchar(50)=NULL,
+		@executing_system varchar(50)=NULL,
+		@contra_firm varchar(50)=NULL,
+		@clearing_firm varchar(50)=NULL,
+		@sponsoring_firm varchar(50)=NULL
 as
+
 
 declare @client_or_market char(1)
 declare @platform_identifier varchar(100)
@@ -216,14 +208,14 @@ declare @vt_check int
 select
 	@ack_required = "Y"
 
-/* PB customer tallies are different than standard FIX connection for Agency Flow 
+/* PB customer tallies are different than standard FIX connection for Agency Flow
 * this fix connection is NOT AN ELYSIUM CUSTOMER'S FIX CONNECTION, this is the FIX connection of our
 * client's client. Therefore, we book two trades for every ONE message we recieve. One trade
 * to represent our customer vs their customer and one trade to represent our customer vs their customers' lp */
- 
+
 /* --------------------------------------------------------------------------
  * STEP: Initial MAP proc parameters to common tally params
- * It may be that additional parameters are mapped further down in the 
+ * It may be that additional parameters are mapped further down in the
  * stored procedure based on the result of @client_or_market */
 
 select
@@ -254,13 +246,13 @@ where
 /* --------------------------------------------------------------------------
  * STEP: Eval client or market
  * Determine if the trade is a client trade or if the trade is a market trade
- * some platforms provide an explicit tag. evaluate that tag here and set 
+ * some platforms provide an explicit tag. evaluate that tag here and set
  * @client_or_market to either "C" or "M". Raise an error message if you can't
  * determine. If no tag (or combination of tags) are provided, then set the
- * the @client_or_market_lookup and check to see if it maps to a fund agency 
- * counterparty by calling tt_isfundagency. 
+ * the @client_or_market_lookup and check to see if it maps to a fund agency
+ * counterparty by calling tt_isfundagency.
  * This logic usually differs platform by platform
- * 
+ *
  */
 
 exec
@@ -296,16 +288,16 @@ else
         begin
             select
                 @c_trader_lookup = rtrim(@executing_firm),
-                @c_counterparty_lookup = rtrim(@contra_firm),
-		@m_trader_lookup = rtrim(@target_comp)+"-"+rtrim(@executing_firm),
-                @m_counterparty_lookup =  rtrim(@target_comp)+"-"+rtrim(@contra_firm)
-end
+                @c_counterparty_lookup = @target_comp,
+		@m_trader_lookup = @target_comp,
+                @m_counterparty_lookup = rtrim(@contra_firm)
+         end
 
 select
         @m_suppression_lookup = @m_counterparty_lookup,
 	@c_suppression_lookup = @c_trader_lookup
 
-/* Not using trigger symbols, ticket creation values not currently supported 
+/* Not using trigger symbols, ticket creation values not currently supported
 select
         @trigger_symbol = @m_trader_lookup,
 	@trigger_symbol = @c_counterparty_lookup,
@@ -331,8 +323,8 @@ select
 
 
 /* --------------------------------------------------------------------------
- * STEP: Dupe check on the identifiers 
- * 
+ * STEP: Dupe check on the identifiers
+ *
  *
  */
 
@@ -358,7 +350,7 @@ begin
                 	symbol="NA"
         	return
 	end
-	
+
 	/* tt_isdupe would throw error message, just return */
 	return
 end
@@ -371,7 +363,7 @@ end
  * ag_pendingmappingerrors determines if there is currently a mapping error for a
  * trade. If there is, then @mapping_error_id wont be NULL. The tt_resolve* procs
  * will onlu send a message about the failed mapping if there is not an existing
- * mapping error. 
+ * mapping error.
  */
 
 /* Checking on client side */
@@ -412,7 +404,7 @@ exec
 
 if @c_trader_id = NULL
 begin
-	select 
+	select
 		status = "Error",
    		error = "Error",
    		message = "trader mapping error trade not processed for client side"
@@ -421,7 +413,7 @@ end
 
 if @c_counterparty_id = NULL
 begin
-	select 
+	select
 		status = "Error",
 		error = "Error",
 		message = "counterparty mapping error trade not processed for client side"
@@ -483,7 +475,7 @@ begin
 end
 
 /* --------------------------------------------------------------------------
- * STEP: Lookup external account from the trader or counterparty, 
+ * STEP: Lookup external account from the trader or counterparty,
  *
  * On a client trade, the external account is determined by the trader
  * On a market trade, the external account is determined by the counterparty
@@ -494,8 +486,8 @@ select
 	@m_external_account_id = @m_cpty_external_account_id
 
 /* --------------------------------------------------------------------------
- * STEP: Lookup external account from mapped symbol 
- * 
+ * STEP: Lookup external account from mapped symbol
+ *
  * If a symbol exists, then overwrite whatever was determined by the counterparty or trader.
  * Since a mapping is not required, send @mapping_error_id = 0 so that we do not send a message
  */
@@ -556,7 +548,7 @@ and
 
 
 /* --------------------------------------------------------------------------
- * STEP: Check for suppression 
+ * STEP: Check for suppression
  *
  */
 select
@@ -604,17 +596,32 @@ end
  *
  */
 
-select
-	@deal_type = "B2B Forward",
-	@trade_type = "Spot",
-	@tally_type = "Spot"
-
-if @fixing_date != NULL
+if(@trd_type="SPOT")
+begin
 	select
+		@deal_type = "B2B Forward",
+		@trade_type = "Spot",
+		@tally_type = "Spot"
+end
+
+
+if(@trd_type="FORWARD")
+begin
+	select
+		@deal_type = "B2B Forward",
+                @trade_type = "Forward",
+		@tally_type = "Forward"
+end
+
+if(@trd_type="NDF")
+begin
+	select
+		@deal_type = "B2B Forward",
 		@trade_type = "Forward",
 		@tally_type = "Forward"
+end
 
-if @far_price != NULL
+if(@trd_type="SWAP")
 begin
         select
                 @deal_type = "B2B Swap",
@@ -628,7 +635,7 @@ end
 
 /* --------------------------------------------------------------------------
  * STEP: Create the deal or get the deal_id for grouping
- * 
+ *
  * Default all trades right now to assume a 'B2B *' deal type
  */
 
@@ -673,7 +680,7 @@ exec
  *
  * The direction of the trade can be affected by the side and the perspective
  * of the FIX message. Some platforms have different perspectives for client
- * messages vs market messages. We tally trades in perspective of the fund 
+ * messages vs market messages. We tally trades in perspective of the fund
  * or agency so set the direction accordingly
  */
 
@@ -702,7 +709,7 @@ begin
 end
 
 if (@deal_type = "B2B Forward")
-begin 
+begin
 	/* --------------------------------------------------------------------------
  	* STEP: Tally the trade client trade
  	*
@@ -853,7 +860,7 @@ begin
                		broker = @broker,
                		identifier = @m_platform_identifier,
                		spot_reference = @last_spot_rate
-       
+
       		if @tally_status = "Error"
        		begin
                 	return
@@ -863,14 +870,14 @@ begin
 
 end
 
-if @deal_type = "B2B Swap" 
+if @deal_type = "B2B Swap"
 begin
 
 	declare @c_near_trade_id int
-	declare @c_far_qty numeric(30,2) 
+	declare @c_far_qty numeric(30,2)
 
 	declare @m_near_trade_id int
-	declare @m_far_qty numeric(30,2) 
+	declare @m_far_qty numeric(30,2)
 
 	select
 		@c_quantity = @c_quantity * -1
@@ -889,7 +896,7 @@ begin
                         @cprice=@price
 
 	end
-	
+
 	if (@c_quantity > 0)
 	begin
 		select
@@ -900,14 +907,14 @@ begin
 		select
 			@c_far_qty = @far_qty
 	end
-	
+
 	select
 		@tally_type = "Swap",
 		@trade_type = "Swap Near"
 
 	if @c_suppress_trade != "Y"
 	begin
-	
+
 		exec
         		fxa_tallytrade
                 		@login = @c_trader_login,
@@ -928,7 +935,7 @@ begin
                 		@trader = @c_trader,
                 		@broker = @broker,
                 		@identifier = @c_platform_identifier
-	
+
 			if @c_near_trade_id = NULL
 			begin
 				select
@@ -941,10 +948,10 @@ begin
                                 	client_near_tally_status = "Success",
                                 	client_near_tally_message = "Tallied Client near trade"
                 	end
-	
+
 		select
 			@trade_type = "Swap Far"
-	
+
 		exec
 			fxa_tallytrade
                         	@login = @c_trader_login,
@@ -965,7 +972,7 @@ begin
                         	@trader = @c_trader,
                         	@broker = @broker,
                         	@identifier = @c_far_platform_identifier
-	
+
                 	if @c_far_trade_id = NULL
                 	begin
                 		select
@@ -977,7 +984,7 @@ begin
                                 	client_far_tally_status = "Success",
                                 	client_far_tally_message = "Tallied Client far trade"
                 	end
-	
+
 		exec
                 	tt_resolveswapsymbol
                         	@deal_id=@deal_id,
@@ -990,24 +997,24 @@ begin
         if @m_suppress_trade != "Y"
         begin
 
-       	
+
 		select
 			@trade_type = "Swap Near"
 
 		select
 			@m_quantity = @m_quantity * -1
-	
+
 		if (@m_quantity > 0)
         	begin
-                	select 
+                	select
 				@m_far_qty = @far_qty * -1
         	end
         	else
-        	begin           
+        	begin
                 	select
                         	@m_far_qty = @far_qty
         	end
-	
+
 		exec
                 	fxa_tallytrade
                         	@login = @m_trader_login,
@@ -1028,13 +1035,13 @@ begin
                         	@trader = @m_trader,
                         	@broker = @broker,
                         	@identifier = @m_platform_identifier
-	
+
                 	if @m_near_trade_id = NULL
                 	begin
                			select
                                 	market_near_tally_status = "Error",
-                                	market_near_tally_message = "Problem tallying Market near trade" 
-	
+                                	market_near_tally_message = "Problem tallying Market near trade"
+
 			end
 			else
 			begin
@@ -1042,10 +1049,10 @@ begin
                                 	market_near_tally_status = "Success",
                                 	market_near_tally_message = "Tallied Market near trade"
                 	end
-			
+
 			select
 				@trade_type = "Swap Far"
-	
+
         	exec
                 	fxa_tallytrade
                         	@login = @m_trader_login,
@@ -1066,13 +1073,13 @@ begin
                         	@trader = @m_trader,
                         	@broker = @broker,
                         	@identifier = @m_far_platform_identifier
-	
+
                 	if @m_far_trade_id = NULL
                 	begin
                 		select
                                 	market_far_tally_status = "Error",
                                 	market_far_tally_message = "Problem tallying Market far trade"
-	
+
 			end
 			else
 			begin
@@ -1080,14 +1087,14 @@ begin
 					market_far_tally_status = "Success",
 					market_far_tally_message = "Tallied Market far trade"
 			end
-	
+
 		exec
 			tt_resolveswapsymbol
 				@deal_id=@deal_id,
 				@near_trade_id=@m_near_trade_id,
 				@far_trade_id=@m_far_trade_id,
 				@client_or_market="M"
-	end	
+	end
 end
 
 /* --------------------------------------------------------------------------
@@ -1109,27 +1116,87 @@ begin
 end
 
 /* --------------------------------------------------------------------------
- * STEP: Send trade notifications 
+ * STEP: Send trade notifications
  *
  */
 
-if @c_trade_id != NULL
+if (@trd_type != "SWAP")
 begin
-        exec
-                 r_inserttradenotification
-                             @trade_id = @c_trade_id
+	if @c_trade_id != NULL
+	begin
+		exec
+			r_inserttradenotification
+				@trade_id = @c_trade_id
+	end
+
+	if @m_trade_id != NULL
+	begin
+		exec
+			r_inserttradenotification
+				@trade_id = @m_trade_id
+	end
 end
 
-if @m_trade_id != NULL
+if (@trd_type = "SWAP")
 begin
-        exec
-                 r_inserttradenotification
-                             @trade_id = @m_trade_id
+        /* --------------------------------------------------------------------------
+         * STEP: Add client and market trade_ids to trade_bookings
+         *
+         */
+        if @c_near_trade_id != NULL and @m_near_trade_id != NULL
+        begin
+              exec
+                tt_addtradebookings
+                        @c_trade_id = @c_near_trade_id,
+                        @m_trade_id = @m_near_trade_id
+        end
+
+        if @c_far_trade_id != NULL and @m_far_trade_id != NULL
+        begin
+              exec
+                tt_addtradebookings
+                        @c_trade_id = @c_far_trade_id,
+                        @m_trade_id = @m_far_trade_id
+        end
+
+
+	/* --------------------------------------------------------------------------
+	 * STEP: Send trade notifications
+	 *
+	 */
+	if @c_near_trade_id != NULL
+	begin
+		exec
+			r_inserttradenotification
+				@trade_id = @c_near_trade_id
+	end
+
+	if @m_near_trade_id != NULL
+	begin
+		exec
+			r_inserttradenotification
+				@trade_id = @m_near_trade_id
+	end
+
+	if @c_far_trade_id != NULL
+	begin
+		exec
+			r_inserttradenotification
+				@trade_id = @c_far_trade_id
+	end
+
+	if @m_far_trade_id != NULL
+	begin
+		exec
+			r_inserttradenotification
+				@trade_id = @m_far_trade_id
+	end
 end
+
 
 /* --------------------------------------------------------------------------
  * STEP: Send an acknowledgement that this trade processed through
- * 
+ *
  * The data required to send an ack must also be defined in the mapping.xml
  * and may differ platform to platform. If you change the below code, remember
  * to change the code above by the suppressed trade section
@@ -1144,4 +1211,6 @@ begin
 end
 
 
+
 go
+
