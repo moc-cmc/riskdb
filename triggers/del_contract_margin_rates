@@ -1,0 +1,26 @@
+if object_id("del_contract_margin_rates") != NULL
+    drop trigger
+        del_contract_margin_rates
+go
+
+create trigger
+    del_contract_margin_rates
+on
+    contract_margin_rates
+for
+    delete
+as
+
+declare @result int
+
+select
+    @result = syb_sendmsg("localhost", 9999,
+        "Notify /topic/Store.Notify." + @@servername + "." + db_name() + ".contract_margin_rates: delete "
+        + convert(varchar(10), a.prime_broker_id) + " "
+        + convert(varchar(50), a.contract_id) + " "
+        + convert(varchar(10), a.margin)
+    )
+from
+    deleted a
+
+go
