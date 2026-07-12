@@ -26,7 +26,8 @@ create or replace procedure
 		@executing_firm varchar(50)=NULL,
 		@executing_system varchar(50)=NULL,
 		@contra_firm varchar(50)=NULL,
-		@clearing_firm varchar(50)=NULL
+		@clearing_firm varchar(50)=NULL,
+		@symbol_sfx varchar(50)=NULL
 as
 
 
@@ -89,6 +90,8 @@ declare @ccy2 varchar(3)
 
 declare @original_deal_id int
 declare @auto_b2b_deal_id int
+
+declare @cfd_symbol varchar(50)
 
 
 select
@@ -435,15 +438,26 @@ end
  *
  */
 
-select
-	@deal_type = "B2B Forward",
-	@trade_type = "Spot",
-	@tally_type = "Spot"
-
-if @fixing_date != NULL
+if @symbol_sfx = "CFD"
+begin
 	select
-		@trade_type = "Forward",
-		@tally_type = "Forward"
+		@deal_type = "B2B Forward",
+		@trade_type = "Rolling CFD",
+		@tally_type = "Rolling CFD"
+
+end
+else
+begin
+	select
+		@deal_type = "B2B Forward",
+		@trade_type = "Spot",
+		@tally_type = "Spot"
+
+	if @fixing_date != NULL
+		select
+			@trade_type = "Forward",
+			@tally_type = "Forward"
+end
 
 if @far_price != NULL
 begin
@@ -504,15 +518,58 @@ end
  *
  */
 
-exec
-	r_validateccypair
-		@login=@default_login,
-		@symbol=@symbol,
-		@ccy1=@ccy1,
-		@ccy2=@ccy2,
-		@contract_id = @contract_id output,
-		@contract = @contract output,
-		@inverted = @inverted output
+if @symbol_sfx != "CFD"
+begin
+	exec
+		r_validateccypair
+			@login=@default_login,
+			@symbol=@symbol,
+			@ccy1=@ccy1,
+			@ccy2=@ccy2,
+			@contract_id = @contract_id output,
+			@contract = @contract output,
+			@inverted = @inverted output
+end
+else
+begin
+	select
+		@cfd_symbol = "."+@symbol
+
+	select
+		@contract_id = a.contract_id,
+		@contract = a.symbol,
+		@ccy1 = c.symbol,
+		@ccy2 = d.symbol
+	from
+		contracts a,
+		forwards b,
+		products c,
+		products d
+	where
+		a.contract_id = b.contract_id
+	and
+		b.product_id = c.product_id
+	and
+		b.currency_id = d.product_id
+	and
+		a.symbol = @cfd_symbol
+	if @contract_id = NULL
+	begin
+		select
+			status = "Error",
+			message = "Problem determining contract for CFD",
+			contract = @contract
+		return
+	end
+
+	/* set the current price based on the trade price */
+
+	exec
+		u_setcurrentprice
+			@symbol = @contract,
+			@price = @price
+
+end
 
 
 
