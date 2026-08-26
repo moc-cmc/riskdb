@@ -1,0 +1,436 @@
+
+create or replace procedure
+    oanda_addfuturecontract
+        @login varchar(25),
+        @source varchar(100),
+        @forward_symbol varchar(50),
+        @future_symbol varchar(50),
+        @future_name varchar(50)=NULL,
+        @product_symbol varchar(50),
+        @product_type varchar(20),
+        @currency_symbol varchar(50),
+        @product_decimal_precision int=NULL,
+        @product_origination_type varchar(50)=NULL,
+        @exchange_name varchar(50),
+        @future_quantity float,
+        @future_tick_size float,
+        @future_type varchar(50)=NULL,
+        @future_expiration datetime=NULL,
+        @future_root_symbol varchar(50)=NULL
+as
+
+declare @source_id int
+declare @product_id int
+declare @currency_id int
+declare @contract_id int
+declare @future_id int
+declare @future_contract_id int
+declare @product_type_id int
+declare @product_origination_type_id int
+declare @exchange_id int
+declare @future_type_id int
+declare @forward_instrument_id int
+declare @future_instrument_id int
+
+
+begin tran
+
+select
+    @source_id = source_id
+from
+    sources
+where
+    name = @source
+if @source_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Source is NULL or does not exist.",
+        source = @source
+
+    rollback tran
+    return
+end
+
+-- @future_name, @product_symbol, @product_name is varchar(25), varchar(20), varchar(100)
+if @future_name = NULL
+begin
+    select
+        @future_name = @future_symbol
+end
+
+if @future_root_symbol = NULL
+begin
+    select
+        @future_root_symbol = @product_symbol
+end
+
+if @future_type = NULL
+begin
+    select
+        @future_type = "Regular"
+end
+
+select
+    @forward_instrument_id = instrument_id
+from
+    instruments
+where
+    name = "Forward"
+if @@rowcount != 1
+begin
+    exec
+        j_nextkey
+            "instruments",
+            @forward_instrument_id output
+
+    insert into
+        instruments
+    values(
+        @forward_instrument_id,
+        "Forward")
+end
+
+select
+    @contract_id = contract_id
+from
+    contracts
+where
+    symbol = @forward_symbol
+if @contract_id = NULL
+begin
+    exec
+        j_nextkey
+            "contracts",
+            @contract_id output
+
+    insert into
+        contracts(
+            contract_id,
+            symbol,
+            instrument_id)
+    values(
+        @contract_id,
+        @forward_symbol,
+        @forward_instrument_id)
+end
+
+/*
+if @contract_id != NULL
+begin
+    select
+        status = "Error",
+        message = "Forward symbol already created.",
+        forward_symbol = @forward_symbol
+    rollback tran
+    return
+end
+*/
+
+
+select
+    @product_id = product_id
+from
+    products
+where
+    symbol = @product_symbol
+
+select
+    @product_type_id = product_type_id
+from
+    product_types
+where
+    name = @product_type
+
+/* Currency and CFDs are not future-based product types, only allow acceptable product types */
+if @product_type_id = NULL and @product_type in ("Equity", "Interest Rate", "Commodity")
+begin
+    select
+        status = "Error",
+        message = "Future-based product type not found in the database.",
+        product_type = @product_type
+    rollback tran
+    return
+
+if @product_type_id = NULL or @product_type not in ("Equity", "Interest Rate", "Commodity")
+begin
+    select
+        status = "Error",
+        message = "Product type is NULL or is not a future-based product type.",
+        product_type = @product_type
+    rollback tran
+    return
+end
+
+/* @product_origination_type_id may be NULL */
+select
+    @product_origination_type_id = origination_type_id
+from
+    origination_types
+where
+    name = @product_origination_type
+
+if @product_id = NULL
+begin
+    exec
+        j_nextkey
+            "products",
+            @product_id output
+
+    insert into
+        products(
+            product_id,
+            product_type_id,
+            symbol,
+            name,
+            decimal_precision,
+            origination_type_id)
+        values(
+            @product_id,
+            @product_type_id,
+            @product_symbol,
+            @product_symbol,
+            @product_decimal_precision,
+            @product_origination_type_id)
+end
+
+
+/* We need a currency_id to exist */
+select
+    @currency_id = product_id
+from
+    products
+where
+    symbol = @currency_symbol
+if @currency_id = NULL
+begin
+    select
+        status = "Error",
+        message = "Currency does not exist.",
+        currency_symbol = @currency_symbol
+    rollback tran
+    return
+end
+
+select
+    @exchange_id = exchange_id
+from
+    exchanges
+where
+    name = @exchange_name
+if @@rowcount != 1
+begin
+    exec
+        j_nextkey
+            "exchanges",
+            @exchange_id output
+    insert into
+        exchanges
+    values(
+        @exchange_id,
+        @exchange_name)
+end
+
+if not exists (select contract_id from forwards where contract_id = @contract_id)
+begin
+    insert into
+        forwards(
+            contract_id,
+            currency_id,
+            product_id,
+            quantity,
+            exchange_id)
+        values(
+            @contract_id,
+            @currency_id,
+            @product_id,
+            1,
+            @exchange_id)
+end
+
+/*
+select
+    @future_contract_id = contract_id
+from
+    contracts
+where
+    symbol = @future_symbol
+if @future_contract_id != NULL
+begin
+    select
+        message = "Future contract already created.",
+        future_symbol = @future_symbol
+    rollback tran
+    return
+end
+*/
+
+/* May already be checked below
+select
+    @future_id = future_id
+from
+    futures
+where
+    name = @future_name
+if @future_id != NULL
+begin
+    select
+        message = "Future already created.",
+        future_name = @future_name
+    rollback tran
+    return
+end
+*/
+
+select
+    @future_type_id = future_type_id
+from
+    future_types
+where
+    name = @future_type
+if @@rowcount != 1
+begin
+    exec
+        j_nextkey
+            "future_types",
+            @future_type_id output
+    insert into
+        future_types
+    values(
+        @future_type_id,
+        @future_type)
+end
+
+/* Not sure if all of these need to be checked */
+select
+    @future_id = future_id
+from
+    futures
+where
+    forward_id = @contract_id
+and
+    name = @future_name
+and
+    root_symbol = @future_root_symbol
+and
+    exchange_id = @exchange_id
+and
+    quantity = @future_quantity
+and
+    tick_size = @future_tick_size
+and
+    future_type_id = @future_type_id
+
+if @future_id = NULL
+begin
+    exec
+        j_nextkey
+            "futures",
+            @future_id output
+
+    insert into
+        futures(
+            future_id,
+            forward_id,
+            name,
+            root_symbol,
+            exchange_id,
+            quantity,
+            tick_size,
+            future_type_id)
+        values(
+            @future_id,
+            @contract_id,
+            @future_name,
+            @future_root_symbol,
+            @exchange_id,
+            @future_quantity,
+            @future_tick_size,
+            @future_type_id)
+end
+
+
+if not exists (select future_id from future_symbols where source_id = @source_id and symbol = @future_symbol)
+begin
+    insert into
+        future_symbols(
+            future_id,
+            source_id,
+            symbol)
+        values(
+            @future_id,
+            @source_id,
+            @future_symbol)
+end
+
+
+select
+    @future_instrument_id = instrument_id
+from
+    instruments
+where
+    name = "Future"
+if @@rowcount != 1
+begin
+    exec
+        j_nextkey
+            "instruments",
+            @future_instrument_id output
+
+    insert into
+        instruments
+    values(
+        @future_instrument_id,
+        "Future")
+end
+
+/* May not be needed? */
+select
+    @future_contract_id = contract_id
+from
+    contracts
+where
+    symbol = @future_symbol
+if @future_contract_id = NULL
+begin
+    exec
+        j_nextkey
+            "contracts",
+            @future_contract_id output
+
+
+    insert into
+        contracts(
+            contract_id,
+            symbol,
+            instrument_id)
+        values(
+            @future_contract_id,
+            @future_symbol,
+            @future_instrument_id)
+end
+
+if not exists (select contract_id from future_contracts where contract_id = @future_contract_id)
+begin
+    insert into
+        future_contracts(
+            contract_id,
+            future_id,
+            expiration)
+        values(
+            @future_contract_id,
+            @future_id,
+            @future_expiration)
+end
+
+commit tran
+
+select
+    status = "Success",
+    message = "Future contract has been created.",
+    future_contract_id = @future_contract_id,
+    future_id = @future_id,
+    future_expiration = @future_expiration
+
+
+go
