@@ -1,0 +1,109 @@
+create or replace procedure
+	api_addtorecongroupstaging
+		@login varchar(50),
+		@trade_id int,
+		@remote_trade_symbol_id int
+
+as
+
+declare @tico_account_id int
+declare @existing_remote_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding account for login"
+	return
+end
+
+if exists(
+	select
+		1
+	from
+		remote_trade_symbols
+	where
+		trade_id = @trade_id)
+or exists(
+	select
+		1
+	from
+		recon_match_group_members
+	where
+		trade_id = @trade_id)
+begin
+	select
+		status = "Error",
+		message = "Trade is already matched"
+	return
+end
+
+select
+	@existing_remote_id = remote_trade_symbol_id
+from
+	recon_group_staging
+where
+	trade_id = @trade_id
+if @@rowcount > 0
+begin
+	if @existing_remote_id = @remote_trade_symbol_id
+	begin
+		select
+			status = "OK",
+			message = "Trade is already staged for this group"
+		exec
+			r_remotereconcandidates
+				@login = @login,
+				@remote_trade_symbol_id = @remote_trade_symbol_id
+		return
+	end
+	else
+	begin
+		select
+			status = "Error",
+			message = "Trade is already staged against a different remote trade symbol",
+			staged_against_remote_trade_symbol_id = @existing_remote_id
+		return
+	end
+end
+
+begin tran
+	insert into
+		recon_group_staging(
+			remote_trade_symbol_id,
+			trade_id,
+			tico_account_id,
+			staged_date)
+	values(
+		@remote_trade_symbol_id,
+		@trade_id,
+		@tico_account_id,
+		getdate())
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem staging trade"
+		rollback tran
+		return
+	end
+commit tran
+
+select
+	status = "Success",
+	message = "Trade added to group"
+
+exec
+	r_remotereconcandidates
+		@login = @login,
+		@remote_trade_symbol_id = @remote_trade_symbol_id
+
+go
+
+
