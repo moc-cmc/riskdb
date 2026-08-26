@@ -7,6 +7,7 @@ create or replace procedure
 as
 
 
+
 declare @tico_account_id int
 declare @source_id int
 declare @begin_date datetime
@@ -252,6 +253,11 @@ and
 	a.source_id = @source_id
 and
 	a.bo_trade_date = @bo_trade_date
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.remote_trade_symbol_id = a.remote_trade_symbol_id)
 select
 	@remote_count = @@rowcount
 
@@ -319,7 +325,11 @@ and
         a.source_id = @source_id
 and
         a.bo_trade_date = @bo_trade_date
-
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.remote_trade_symbol_id = a.remote_trade_symbol_id)
 
 if @conventional_dates = "N"
 begin
@@ -385,6 +395,11 @@ begin
         	a.bo_trade_date = @prev_bo_trade_date
 	and
 		a.trade_id = NULL
+	and
+		not exists(
+			select 1
+			from recon_group_staging s
+			where s.remote_trade_symbol_id = a.remote_trade_symbol_id)
 
 	/* Support CFD and Futures recon */
 	insert into
@@ -450,7 +465,11 @@ begin
         	a.source_id = @source_id
 	and
         	a.bo_trade_date = @bo_trade_date
-
+	and
+		not exists(
+			select 1
+			from recon_group_staging s
+			where s.remote_trade_symbol_id = a.remote_trade_symbol_id)
 end
 
 update
@@ -568,6 +587,16 @@ and
 	a.contract_id = b.contract_id
 and
 	b.contract_id = c.contract_id
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.trade_id = a.trade_id)
+and
+	not exists(
+		select 1
+		from recon_match_group_members m
+		where m.trade_id = a.trade_id)
 select
 	@trade_count = @@rowcount
 
@@ -622,6 +651,16 @@ and
 	d.future_id = e.future_id
 and
         e.forward_id = c.contract_id
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.trade_id = a.trade_id)
+and
+	not exists(
+		select 1
+		from recon_match_group_members m
+		where m.trade_id = a.trade_id)
 
 update
         #trades
@@ -1561,4 +1600,6 @@ select
 
 
 
-go
+
+go 
+
