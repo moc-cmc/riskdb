@@ -1,0 +1,389 @@
+create or replace procedure
+	r_remotereconcandidates
+		@login varchar(50),
+		@remote_trade_symbol_id int
+
+as
+
+declare @tico_account_id int
+declare @unmatched_status_id int
+declare @processing_status_id int
+declare @target_status_id int
+declare @target_price float
+declare @target_internal_account_id int
+declare @target_counterparty_id int
+declare @target_contract_id int
+declare @target_value_date datetime
+declare @target_quantity numeric(30, 8)
+declare @target_external_account_id int
+declare @target_identifier varchar(100)
+
+declare @target_bo_trade_date datetime
+declare @begin_date datetime
+declare @end_date datetime
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding account for login"
+	return
+end
+
+select
+	@unmatched_status_id = status_id
+from
+	statuses
+where
+	name = "Unmatched"
+if @unmatched_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Unmatched' status"
+	return
+end
+
+select
+	@processing_status_id = status_id
+from
+	statuses
+where
+	name = "Processing"
+if @processing_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Processing' status"
+	return
+end
+
+select
+	@target_status_id = recon_status_id,
+	@target_price = price,
+	@target_internal_account_id = internal_account_id,
+	@target_counterparty_id = counterparty_id,
+	@target_contract_id = contract_id,
+	@target_value_date = value_date,
+	@target_quantity = quantity,
+	@target_external_account_id = external_account_id,
+	@target_identifier = identifier,
+	@target_bo_trade_date = bo_trade_date
+from
+	remote_trade_symbols
+where
+	remote_trade_symbol_id = @remote_trade_symbol_id
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Problem finding remote trade symbol",
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	return
+end
+
+if @target_status_id = @processing_status_id
+begin
+	select
+		status = "Error",
+		message = "A recon run is currently in progress for this record"
+	return
+end
+
+if @target_status_id != @unmatched_status_id
+begin
+	select
+		status = "Error",
+		message = "Recon has not resolved this record yet. Run Recon before attempting to group it"
+	return
+end
+
+exec
+	r_daterangefordate
+		@target_bo_trade_date,
+		@begin_date output,
+		@end_date output
+
+
+create table
+	#meta(
+		meta_type char(200),
+		name char(50) NULL,
+		action char(100) NULL,
+		value char(200) NULL)
+
+insert into
+        #meta
+values (
+        "Column Group",
+        "section",
+        NULL,
+        NULL)
+
+insert into
+	#meta
+values(
+	"Row Style",
+	"style",
+	NULL,
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_trade",
+	"Add to Recon Group Staging",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"remove_trade",
+	"Remove from Recon Group Staging",
+	NULL)
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"accept_group_match",
+	"Accept Recon Group Match",
+	"remote_trade_symbol_id=" + convert(varchar(20), @remote_trade_symbol_id))
+
+insert into
+	#meta
+values(
+	"Column Hidden",
+	"trade_id",
+	NULL,
+	NULL)
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "quantity",
+        "Number",
+        "#,##0.00")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "target_quantity",
+        "Number",
+        "#,##0.00")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "staged_quantity",
+        "Number",
+        "#,##0.00")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "remaining",
+        "Number",
+        "#,##0.00")
+
+insert into
+        #meta
+values(
+        "Column Format",
+        "price",
+        "Number",
+        "#,##0.000000####")
+
+create table
+	#candidates(
+		trade_id int,
+		internal_account varchar(50),
+		external_account varchar(50),
+		counterparty varchar(50),
+		contract varchar(50),
+		quantity numeric(30, 8),
+		price float,
+		value_date datetime,
+		identifier varchar(100),
+		is_staged char(1),
+		staged_by_login varchar(50) NULL,
+		staged_date datetime NULL,
+		staged_elsewhere_id int NULL
+)
+
+insert into
+	#candidates(
+		trade_id,
+		internal_account,
+		external_account,
+		counterparty,
+		contract,
+		quantity,
+		price,
+		value_date,
+		identifier,
+		is_staged)
+select
+	a.trade_id,
+	b.symbol,
+	c.symbol,
+	d.name,
+	e.symbol,
+	a.quantity,
+	a.price,
+	a.value_date,
+	a.identifier,
+	"N"
+from
+	trades a,
+	internal_accounts b,
+	external_accounts c,
+	counterparties d,
+	contracts e
+where
+	a.internal_account_id = b.internal_account_id
+and
+	a.external_account_id = c.external_account_id
+and
+	a.counterparty_id = d.counterparty_id
+and
+	a.contract_id = e.contract_id
+and
+	a.price = @target_price
+and
+	a.internal_account_id = @target_internal_account_id
+and
+	a.counterparty_id = @target_counterparty_id
+and
+	a.contract_id = @target_contract_id
+and
+	a.value_date = @target_value_date
+and
+	a.trade_id not in(
+		select
+			trade_id
+		from
+			remote_trade_symbols
+		where
+			trade_id != NULL)
+and
+	a.trade_id not in(
+		select
+			trade_id
+		from
+			recon_match_group_members)
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+
+update
+	#candidates
+set
+	is_staged = "Y",
+	staged_by_login = b.login,
+	staged_date = a.staged_date
+from
+	#candidates c,
+	recon_group_staging a,
+	tico_accounts b
+where
+	c.trade_id = a.trade_id
+and
+	a.tico_account_id = b.account_id
+and
+	a.remote_trade_symbol_id = @remote_trade_symbol_id
+
+update
+	#candidates
+set
+	staged_elsewhere_id = a.remote_trade_symbol_id
+from
+	#candidates c,
+	recon_group_staging a
+where
+	c.trade_id = a.trade_id
+and
+	a.remote_trade_symbol_id != @remote_trade_symbol_id
+
+select
+	#meta.meta_type, #meta.name, #meta.action, #meta.value
+from
+	#meta
+
+
+select
+	section = "Target",
+	remote_trade_symbol_id = @remote_trade_symbol_id,
+	external_account = f.symbol,
+	contract = g.symbol,
+	quantity = @target_quantity,
+	price = @target_price,
+	value_date = convert(char(12), @target_value_date, 101),
+	identifier = @target_identifier
+from
+	external_accounts f,
+	contracts g
+where
+	f.external_account_id = @target_external_account_id
+and
+	g.contract_id = @target_contract_id
+
+select
+	section = "Candidates",
+	remote_trade_symbol_id=@remote_trade_symbol_id,
+	trade_id,
+	internal_account,
+	external_account,
+	counterparty,
+	contract,
+	quantity,
+	price,
+	value_date = convert(char(12), value_date, 101),
+	identifier,
+	is_staged,
+	staged_by_login,
+	staged_elsewhere_id,
+	add_trade = case
+		when staged_elsewhere_id != NULL then NULL
+		when is_staged = "Y" then NULL
+		else "Add"
+	end,
+	remove_trade = case
+		when staged_elsewhere_id != NULL then NULL
+		when is_staged = "Y" then "Remove"
+		else NULL
+	end
+from
+	#candidates
+order by
+	staged_elsewhere_id,
+	trade_id
+
+select
+	section = "Summary",
+	remote_trade_symbol_id=@remote_trade_symbol_id,
+	target_quantity = @target_quantity,
+	staged_quantity = isnull(sum(quantity), 0),
+	staged_count = count(*),
+	remaining = @target_quantity - isnull(sum(quantity), 0),
+	accept_group_match = "Accept Group Match"
+from
+	#candidates
+where
+	is_staged = "Y"
+
+go
+
