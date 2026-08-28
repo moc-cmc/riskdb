@@ -1,0 +1,307 @@
+create or replace procedure
+	api_acceptrecongroupmatch
+		@login varchar(50),
+		@remote_trade_symbol_id int
+
+as
+
+declare @tico_account_id int
+declare @unmatched_status_id int
+declare @processing_status_id int
+declare @matched_status_id int
+declare @group_method_id int
+
+declare @target_status_id int
+declare @target_price float
+declare @target_internal_account_id int
+declare @target_counterparty_id int
+declare @target_contract_id int
+declare @target_value_date datetime
+declare @target_quantity numeric(30, 8)
+declare @target_bo_trade_date datetime
+
+declare @staged_count int
+declare @staged_quantity numeric(30, 8)
+declare @invalid_count int
+
+declare @new_match_group_id int
+declare @members_inserted int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding account for login"
+	return
+end
+
+select
+	@unmatched_status_id = status_id
+from
+	statuses
+where
+	name = "Unmatched"
+if @unmatched_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Unmatched' status"
+	return
+end
+
+select
+	@processing_status_id = status_id
+from
+	statuses
+where
+	name = "Processing"
+if @processing_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Processing' status"
+	return
+end
+
+select
+	@matched_status_id = status_id
+from
+	statuses
+where
+	name = "Matched"
+if @matched_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Matched' status"
+	return
+end
+
+select
+	@group_method_id = recon_method_id
+from
+	recon_methods
+where
+	name = "Manual Group Match"
+if @group_method_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Manual Group Match' recon method"
+	return
+end
+
+select
+	@target_status_id = recon_status_id,
+	@target_price = price,
+	@target_internal_account_id = internal_account_id,
+	@target_counterparty_id = counterparty_id,
+	@target_contract_id = contract_id,
+	@target_value_date = value_date,
+	@target_quantity = quantity,
+	@target_bo_trade_date = bo_trade_date
+from
+	remote_trade_symbols
+where
+	remote_trade_symbol_id = @remote_trade_symbol_id
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Problem finding remote trade symbol",
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	return
+end
+
+if @target_status_id = @processing_status_id
+begin
+	select
+		status = "Error",
+		message = "A recon run is currently in progress for this record"
+	return
+end
+
+if @target_status_id != @unmatched_status_id
+begin
+	select
+		status = "Error",
+		message = "This record is no longer available to be manually matched"
+	return
+end
+
+select
+	@staged_count = count(*),
+	@staged_quantity = isnull(sum(a.quantity), 0)
+from
+	recon_group_staging s,
+	trades a
+where
+	s.trade_id = a.trade_id
+and
+	s.remote_trade_symbol_id = @remote_trade_symbol_id
+
+if @staged_count = 0
+begin
+	select
+		status = "Error",
+		message = "No trades are staged for this group"
+	return
+end
+
+select
+	@invalid_count = count(*)
+from
+	recon_group_staging s,
+	trades a
+where
+	s.trade_id = a.trade_id
+and
+	s.remote_trade_symbol_id = @remote_trade_symbol_id
+and
+	(
+		a.price != @target_price
+	or
+		a.internal_account_id != @target_internal_account_id
+	or
+		a.counterparty_id != @target_counterparty_id
+	or
+		a.contract_id != @target_contract_id
+	or
+		a.value_date != @target_value_date
+	or
+		exists(select 1 from remote_trade_symbols r where r.trade_id = a.trade_id)
+	or
+		exists(select 1 from recon_match_group_members m where m.trade_id = a.trade_id)
+	)
+
+if @invalid_count > 0
+begin
+	select
+		status = "Error",
+		message = "One or more staged trades no longer meet the matching criteria or are already matched elsewhere"
+	return
+end
+
+if @staged_quantity != @target_quantity
+begin
+	select
+		status = "Error",
+		message = case
+			when @staged_quantity > @target_quantity then "Staged quantity exceeds the target quantity"
+			else "Staged quantity is less than the target quantity"
+		end,
+		staged_quantity = @staged_quantity,
+		target_quantity = @target_quantity
+	return
+end
+
+begin tran
+	insert into
+		recon_match_groups(
+			remote_trade_symbol_id,
+			tico_account_id,
+			created_date)
+	values(
+		@remote_trade_symbol_id,
+		@tico_account_id,
+		getdate())
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem creating match group"
+		rollback tran
+		return
+	end
+
+	/* Assumes at most one recon_match_groups row per remote_trade_symbol_id.*/
+	select
+		@new_match_group_id = match_group_id
+	from
+		recon_match_groups
+	where
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem retrieving newly created match group"
+		rollback tran
+		return
+	end
+
+	insert into
+		recon_match_group_members(
+			match_group_id,
+			trade_id,
+			quantity,
+			added_date)
+	select
+		@new_match_group_id,
+		a.trade_id,
+		a.quantity,
+		getdate()
+	from
+		recon_group_staging s,
+		trades a
+	where
+		s.trade_id = a.trade_id
+	and
+		s.remote_trade_symbol_id = @remote_trade_symbol_id
+
+	select
+		@members_inserted = @@rowcount
+
+	if @members_inserted != @staged_count
+	begin
+		select
+			status = "Error",
+			message = "Problem inserting group members"
+		rollback tran
+		return
+	end
+
+	update
+		remote_trade_symbols
+	set
+		recon_status_id = @matched_status_id,
+		recon_method_id = @group_method_id
+	where
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	if @@rowcount != 1
+	begin
+		select
+			status = "Error",
+			message = "Problem updating remote trade symbol"
+		rollback tran
+		return
+	end
+
+	delete from
+		recon_group_staging
+	where
+		remote_trade_symbol_id = @remote_trade_symbol_id
+commit tran
+
+select
+	status = "Success",
+	message = "Group match accepted",
+	match_group_id = @new_match_group_id,
+	member_count = @members_inserted,
+	matched_quantity = @staged_quantity
+
+exec
+	r_remotetraderecon
+		@login = @login,
+		@trade_date = @target_bo_trade_date,
+		@granularity = "Breaks"
+
+go
+
+

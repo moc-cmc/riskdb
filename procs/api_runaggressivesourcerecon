@@ -4,8 +4,8 @@ create or replace procedure
 		@login varchar(50),
 		@source varchar(50),
 		@trade_date datetime=NULL
-
 as
+
 
 /*
  *  The primary differences between an aggressive recon and regular recon is that
@@ -275,6 +275,11 @@ and
 	a.source_id = @source_id
 and
 	a.bo_trade_date = @bo_trade_date
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.remote_trade_symbol_id = a.remote_trade_symbol_id)
 select
 	@remote_count = @@rowcount
 
@@ -338,6 +343,12 @@ and
         a.source_id = @source_id
 and
         a.bo_trade_date = @bo_trade_date
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.remote_trade_symbol_id = a.remote_trade_symbol_id)
+
 
 /* We do not want to handle previous date checks with aggressive matching
 if @conventional_dates = "N"
@@ -451,6 +462,16 @@ and
 	a.contract_id = b.contract_id
 and
 	b.contract_id = c.contract_id
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.trade_id = a.trade_id)
+and
+	not exists(
+		select 1
+		from recon_match_group_members m
+		where m.trade_id = a.trade_id)
 select
 	@trade_count = @@rowcount
 
@@ -501,6 +522,16 @@ and
         d.future_id = e.future_id
 and
         e.forward_id = c.contract_id
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.trade_id = a.trade_id)
+and
+	not exists(
+		select 1
+		from recon_match_group_members m
+		where m.trade_id = a.trade_id)
 
 update
         #trades
@@ -1351,4 +1382,6 @@ select
 	
 
 
-go
+
+go 
+

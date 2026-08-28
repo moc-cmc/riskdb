@@ -5,9 +5,12 @@ create or replace procedure
 		@trade_date datetime = NULL,
 		@source varchar(50) = NULL,
 		@contract varchar(50) = NULL,
-		@granularity varchar(50) = NULL
-
+		@granularity varchar(50) = NULL,
+		@prime_broker varchar(50) = NULL,
+		@asset_class varchar(50) = NULL
 as
+
+
 
 
 declare @tico_account_id int
@@ -38,6 +41,11 @@ declare @alert_med_style varchar(200)
 declare @alert_low_style varchar(200)
 declare @alert_none_style varchar(200)
 
+declare @prime_broker_id int
+
+declare @group_style varchar(200)
+declare @staging_style varchar(200)
+
 select
 	@error_style = "background:#FAE6E6;border: 1px solid white;font-weight:bold",
 	@subtotal_style = "background:#FAF7ED;border: 1px solid white;",
@@ -65,7 +73,9 @@ select
 	@external_style = @alert_none_style,
 	@internal_style = @alert_low_style
 
-
+select
+	@group_style = "background:#d4f0d4;border: 1px solid white;font-weight:bold",
+	@staging_style = "background:#fff3b0;border: 1px solid white"
 
 create table
 	#meta(
@@ -237,6 +247,14 @@ values(
         NULL
 )
 
+insert into
+	#meta
+values(
+	"Column Link",
+	"create_recon_group",
+	"Create Recon Group",
+	NULL
+)
 
 select
         @tico_account_id = account_id
@@ -362,7 +380,127 @@ values(
         NULL
 )
 
+create table
+	#external_account_prime_brokers(
+		prime_broker_id int,
+		external_account_id int)
 
+/* Prime Broker Filter */
+if @prime_broker != NULL
+begin
+	insert into
+		#external_account_prime_brokers(
+			prime_broker_id,
+			external_account_id)
+	select
+		b.prime_broker_id,
+		b.external_account_id
+	from
+		prime_brokers a,
+		external_account_prime_brokers b,
+		sources c
+	where
+		a.prime_broker_id = b.prime_broker_id
+	and
+		a.source_id = c.source_id
+	and
+		c.name = @prime_broker		
+end
+else
+begin
+        insert into
+                #external_account_prime_brokers(
+                        prime_broker_id,
+                        external_account_id)
+        select
+                prime_broker_id,
+                external_account_id
+        from
+                external_account_prime_brokers 
+end
+
+/* FX, Futures, CFD */
+
+create table
+	#contracts(
+		contract_id int)
+
+create nonclustered index
+        tmp_cid
+on
+        #contracts(contract_id)
+
+if @asset_class = "FX"
+begin
+	insert into
+		#contracts(
+			contract_id)
+	select
+		a.contract_id
+	from
+		contracts a,
+		instruments b
+	where
+		a.instrument_id = b.instrument_id
+	and
+		b.name = "Forward"
+end
+
+if @asset_class = "Future"
+begin
+        insert into 
+                #contracts(
+                        contract_id)
+        select
+                a.contract_id
+        from
+                contracts a,
+		future_contracts b,
+		futures c,
+		future_types d
+        where
+                a.contract_id = b.contract_id
+	and
+		b.future_id = c.future_id
+	and
+		c.future_type_id = d.future_type_id
+	and
+		d.name in("Regular", "Val Date")
+end
+
+if @asset_class = "CFD"
+begin
+        insert into
+                #contracts(
+                        contract_id)
+        select
+                a.contract_id
+        from
+                contracts a,
+                future_contracts b,
+                futures c,
+                future_types d
+        where
+                a.contract_id = b.contract_id
+        and
+                b.future_id = c.future_id
+        and
+                c.future_type_id = d.future_type_id
+        and
+                d.name in("Perpetual")
+end
+
+if @asset_class = NULL
+begin
+        insert into
+                #contracts(
+                        contract_id)
+	select
+		contract_id
+	from
+		contracts
+end
+				
 
 create table
         #statuses(
@@ -421,25 +559,32 @@ insert into
                 identifier,
 		recon_method_id)
 select
-        remote_trade_symbol_id,
-        source_id,
-        trade_id,
-        recon_status_id,
-        internal_account_id,
-        external_account_id,
-        counterparty_id,
-        quantity,
-        price,
-        contract_id,
-        trade_date,
-        value_date,
-        fixing_date,
-        identifier,
-	recon_method_id
+        a.remote_trade_symbol_id,
+        a.source_id,
+        a.trade_id,
+        a.recon_status_id,
+        a.internal_account_id,
+        a.external_account_id,
+        a.counterparty_id,
+        a.quantity,
+        a.price,
+        a.contract_id,
+        a.trade_date,
+        a.value_date,
+        a.fixing_date,
+        a.identifier,
+	a.recon_method_id
 from
-        remote_trade_symbols a
+        remote_trade_symbols a,
+	#external_account_prime_brokers b,
+	#contracts c
 where
-	bo_trade_date = @bo_trade_date
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = c.contract_id
+and
+	a.bo_trade_date = @bo_trade_date
+
 
 
 create table
@@ -474,21 +619,27 @@ insert into
 		broker_id,
 		identifier)
 select
-        trade_id,
-        internal_account_id,
-        external_account_id,
-        counterparty_id,
-        quantity,
-        price,
-        contract_id,
-	trade_date,
-        value_date,
-        fixing_date,
-	broker_id,
-	identifier
+        a.trade_id,
+        a.internal_account_id,
+        a.external_account_id,
+        a.counterparty_id,
+        a.quantity,
+        a.price,
+        a.contract_id,
+	a.trade_date,
+        a.value_date,
+        a.fixing_date,
+	a.broker_id,
+	a.identifier
 from
-        trades
+        trades a,
+	#external_account_prime_brokers b,
+	#contracts c
 where
+	a.external_account_id = b.external_account_id
+and
+	a.contract_id = c.contract_id
+and
         trade_date >= @begin_date
 and
         trade_date < @end_date
@@ -501,8 +652,12 @@ or
 	counterparty_id > 378)
 and 
 	counterparty_id not in(380, 381, 382, 383) /* hack for OCAN TY3 */
+and
+	counterparty_id not in (435) /* Exclude: OAU-JUMP-JUMP */
+/*
 and 
 	counterparty_id not in(386)
+*/
 
 
 update
@@ -556,7 +711,10 @@ create table
 	calc_price numeric(30, 10) NULL,
 	ex_calc_price numeric(30, 10) NULL,
 	recon_method_id int NULL,
-	recon_method varchar(50) NULL
+	recon_method varchar(50) NULL,
+	match_group_id int NULL,
+	staged_qty numeric(30, 8) NULL,
+	staged_count int NULL
 )
 
 insert into
@@ -823,6 +981,8 @@ and
         a.counterparty_id = g.counterparty_id
 and
 	a.trade_id = NULL
+and
+	not exists(select 1 from recon_match_groups h where h.remote_trade_symbol_id=a.remote_trade_symbol_id)
 
 insert into
         #match_list(
@@ -886,7 +1046,105 @@ and
 and
 	a.broker_id = h.broker_id
 and
-	a.remote_trade_id = NULL	
+	a.remote_trade_id = NULL
+and
+	not exists(select 1 from recon_match_group_members i where i.trade_id=a.trade_id)	
+
+insert into
+	#match_list(
+		remote_trade_id,
+		trade_id,
+		contract,
+		contract_id,
+		ex_contract,
+		ex_contract_id,
+		match_status,
+		match_strength,
+		trade_date,
+		value_date,
+		in_value_date,
+		ex_value_date,
+		fixing_date,
+		in_fixing_date,
+		ex_fixing_date,
+		quantity,
+		in_quantity,
+		ex_quantity,
+		price,
+		in_price,
+		ex_price,
+		ex_calc_price,
+		internal_account,
+		external_account,
+		counterparty,
+		broker,
+		in_identifier,
+		ex_identifier,
+		recon_method_id,
+		match_group_id,
+		style
+)
+select
+	a.remote_trade_symbol_id,
+	d.trade_id,
+	b.symbol,
+	d.contract_id,
+	i.symbol,
+	a.contract_id,
+	"Matched",
+	1.00,
+	d.trade_date,
+	d.value_date,
+	d.value_date,
+	a.value_date,
+	d.fixing_date,
+	d.fixing_date,
+	a.fixing_date,
+	d.quantity,
+	d.quantity,
+	a.quantity,
+	d.price,
+	d.price,
+	a.price,
+	a.price,
+	e.symbol,
+	f.symbol,
+	g.name,
+	h.symbol,
+	d.identifier,
+	a.identifier,
+	a.recon_method_id,
+	c.match_group_id,
+	@matched_style
+from
+	#remote_trades a,
+	recon_match_groups c,
+	recon_match_group_members m,
+	contracts b,
+	#trades d,
+	internal_accounts e,
+	external_accounts f,
+	counterparties g,
+	brokers h,
+	contracts i
+where
+	c.remote_trade_symbol_id = a.remote_trade_symbol_id
+and
+	m.match_group_id = c.match_group_id
+and
+	m.trade_id = d.trade_id
+and
+	d.contract_id = b.contract_id
+and
+	d.internal_account_id = e.internal_account_id
+and
+	d.external_account_id = f.external_account_id
+and
+	d.counterparty_id = g.counterparty_id
+and
+	d.broker_id = h.broker_id
+and
+	a.contract_id = i.contract_id
 
 update
 	#match_list
@@ -1025,6 +1283,56 @@ from
 where
 	a.recon_method_id = b.recon_method_id
 
+update
+	#match_list
+set
+	style = @staging_style
+from
+	#match_list a,
+	recon_group_staging b
+where
+	a.trade_id = b.trade_id
+and
+	a.match_status = "Unmatched"
+
+
+create table
+	#staging_totals(
+		remote_trade_symbol_id int,
+		total_qty numeric(30, 8),
+		no_staged int
+)
+
+insert into
+	#staging_totals(
+		remote_trade_symbol_id,
+		total_qty,
+		no_staged)
+select
+	stg.remote_trade_symbol_id,
+	sum(trd.quantity),
+	count(*)
+from
+	recon_group_staging stg,
+	trades trd
+where
+	stg.trade_id = trd.trade_id
+group by
+	stg.remote_trade_symbol_id
+
+update
+	#match_list
+set
+	staged_qty = g.total_qty,
+	staged_count = g.no_staged
+from
+	#match_list a,
+	#staging_totals g
+where
+	a.remote_trade_id = g.remote_trade_symbol_id
+and
+	a.trade_id = NULL
+
 create table
 	#report (
 		ordering int NULL,
@@ -1082,7 +1390,7 @@ update
 set
     external_trades = (
         select
-            count(*)
+            count(distinct remote_trade_id)
         from
             #match_list
         where
@@ -1330,12 +1638,16 @@ begin
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
+		create_recon_group = case when match_status = "Unmatched" and trade_id = NULL then "Create Recon Group" else NULL end,
 		remote_id = remote_trade_id,
-		style = case when recon_method like "Aggressive%" then @aggressive_style else style end
+		/*style = case when recon_method like "Aggressive%" then @aggressive_style else style end,*/
+		style = case when recon_method like "Aggressive%" then @aggressive_style when match_group_id != NULL then @group_style else style end,
+		staging_info = case when staged_count != NULL then "Staging: " + rtrim(convert(varchar(10), staged_count)) + " trades, " + rtrim(convert(varchar(30), convert(numeric(30,2), staged_qty))) else NULL end
 	from
 		#match_list
 	order by 
 		external_account,
+		match_group_id,
 		std_contract,
 		price,
 		match_status
@@ -1364,14 +1676,17 @@ begin
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
+		create_recon_group = case when match_status = "Unmatched" and trade_id = NULL then "Create Recon Group" else NULL end,
 		remote_id = remote_trade_id,
-		style = case when recon_method like "Aggressive%" then @aggressive_style else style end
+		style = case when recon_method like "Aggressive%" then @aggressive_style when match_group_id != NULL then @group_style else style end,
+		staging_info = case when staged_count != NULL then "Staging: " + rtrim(convert(varchar(10), staged_count)) + " trades, " + rtrim(convert(varchar(30), convert(numeric(30,2), staged_qty))) else NULL end
 	from
 		#match_list
 	where
 		std_contract = @contract
 	order by 
 		external_account,
+		match_group_id,
 		std_contract,
 		price,
 		match_status
@@ -1399,14 +1714,17 @@ begin
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
+		create_recon_group = case when match_status = "Unmatched" and trade_id = NULL then "Create Recon Group" else NULL end,
 		remote_id = remote_trade_id,
-		style = case when recon_method like "Aggressive%" then @aggressive_style else style end
+		style = case when recon_method like "Aggressive%" then @aggressive_style when match_group_id != NULL then @group_style else style end,
+		staging_info = case when staged_count != NULL then "Staging: " + rtrim(convert(varchar(10), staged_count)) + " trades, " + rtrim(convert(varchar(30), convert(numeric(30,2), staged_qty))) else NULL end
 	from
 		#match_list
 	where
 		match_status not in("Matched", "Committed")
 	order by 
 		external_account,
+		match_group_id,
 		std_contract,
 		price,
 		match_status
@@ -1434,8 +1752,10 @@ begin
 		identifier = "IN "+rtrim(convert(varchar(100), in_identifier)) + " <br/>EX " + rtrim(convert(varchar(100), ex_identifier)),
 		move_date = case when trade_id = NULL then "Move" else NULL end,
 		accept = case when match_status = "Mismatched" then "Accept" else NULL end,
+		create_recon_group = case when match_status = "Unmatched" and trade_id = NULL then "Create Recon Group" else NULL end,
 		remote_id = remote_trade_id,
-		style = case when recon_method like "Aggressive%" then @aggressive_style else style end
+		style = case when recon_method like "Aggressive%" then @aggressive_style when match_group_id != NULL then @group_style else style end,
+		staging_info = case when staged_count != NULL then "Staging: " + rtrim(convert(varchar(10), staged_count)) + " trades, " + rtrim(convert(varchar(30), convert(numeric(30,2), staged_qty))) else NULL end
 	from
 		#match_list
 	where
@@ -1444,9 +1764,14 @@ begin
 		std_contract = @contract
 	order by 
 		external_account,
+		match_group_id,
 		std_contract,
 		price,
 		match_status
 end
 
-go
+
+
+
+go 
+

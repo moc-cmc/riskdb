@@ -1,0 +1,54 @@
+create or replace procedure
+	api_removefromrecongrpstaging
+		@login varchar(50),
+		@trade_id int,
+		@remote_trade_symbol_id int
+
+as
+
+declare @tico_account_id int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding account for login"
+	return
+end
+
+begin tran
+	delete from
+		recon_group_staging
+	where
+		trade_id = @trade_id
+	and
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	if @@rowcount > 1
+	begin
+		select
+			status = "Error",
+			message = "Unexpected duplicate staging rows for this trade/group"
+		rollback tran
+		return
+	end
+commit tran
+
+select
+	status = "Success",
+	message = "Trade removed from group"
+
+exec
+	r_remotereconcandidates
+		@login = @login,
+		@remote_trade_symbol_id = @remote_trade_symbol_id
+
+
+go
+
+
