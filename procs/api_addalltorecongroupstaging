@@ -1,0 +1,200 @@
+create or replace procedure
+	api_addalltorecongroupstaging
+		@login varchar(50),
+		@remote_trade_symbol_id int
+
+as
+
+declare @tico_account_id int
+declare @unmatched_status_id int
+declare @processing_status_id int
+declare @target_status_id int
+declare @target_price float
+declare @target_internal_account_id int
+declare @target_counterparty_id int
+declare @target_contract_id int
+declare @target_value_date datetime
+declare @target_bo_trade_date datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @expected_count int
+
+select
+	@tico_account_id = account_id
+from
+	tico_accounts
+where
+	login = @login
+if @tico_account_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem finding account for login"
+	return
+end
+
+select
+	@unmatched_status_id = status_id
+from
+	statuses
+where
+	name = "Unmatched"
+if @unmatched_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Unmatched' status"
+	return
+end
+
+select
+	@processing_status_id = status_id
+from
+	statuses
+where
+	name = "Processing"
+if @processing_status_id = NULL
+begin
+	select
+		status = "Error",
+		message = "Problem determining 'Processing' status"
+	return
+end
+
+select
+	@target_status_id = recon_status_id,
+	@target_price = price,
+	@target_internal_account_id = internal_account_id,
+	@target_counterparty_id = counterparty_id,
+	@target_contract_id = contract_id,
+	@target_value_date = value_date,
+	@target_bo_trade_date = bo_trade_date
+from
+	remote_trade_symbols
+where
+	remote_trade_symbol_id = @remote_trade_symbol_id
+if @@rowcount = 0
+begin
+	select
+		status = "Error",
+		message = "Problem finding remote trade symbol",
+		remote_trade_symbol_id = @remote_trade_symbol_id
+	return
+end
+
+if @target_status_id = @processing_status_id
+begin
+	select
+		status = "Error",
+		message = "A recon run is currently in progress for this record"
+	return
+end
+
+if @target_status_id != @unmatched_status_id
+begin
+	select
+		status = "Error",
+		message = "This record is no longer available to be manually matched"
+	return
+end
+
+exec
+	r_daterangefordate
+		@target_bo_trade_date,
+		@begin_date output,
+		@end_date output
+
+create table
+	#to_stage(
+		trade_id int
+)
+
+/* Same criteria as r_remotereconcandidates, plus the not-already-staged check */
+insert into
+	#to_stage(
+		trade_id)
+select
+	a.trade_id
+from
+	trades a
+where
+	a.price = @target_price
+and
+	a.internal_account_id = @target_internal_account_id
+and
+	a.counterparty_id = @target_counterparty_id
+and
+	a.contract_id = @target_contract_id
+and
+	a.value_date = @target_value_date
+and
+	a.trade_date >= @begin_date
+and
+	a.trade_date < @end_date
+and
+	not exists(
+		select 1
+		from remote_trade_symbols r
+		where r.trade_id = a.trade_id)
+and
+	not exists(
+		select 1
+		from recon_match_group_members m
+		where m.trade_id = a.trade_id)
+and
+	not exists(
+		select 1
+		from recon_group_staging s
+		where s.trade_id = a.trade_id)
+
+select
+	@expected_count = @@rowcount
+
+if @expected_count = 0
+begin
+	select
+		status = "OK",
+		message = "No candidates available to add"
+	exec
+		r_remotereconcandidates
+			@login = @login,
+			@remote_trade_symbol_id = @remote_trade_symbol_id
+	return
+end
+
+begin tran
+	insert into
+		recon_group_staging(
+			remote_trade_symbol_id,
+			trade_id,
+			tico_account_id,
+			staged_date)
+	select
+		@remote_trade_symbol_id,
+		trade_id,
+		@tico_account_id,
+		getdate()
+	from
+		#to_stage
+	if @@rowcount != @expected_count
+	begin
+		select
+			status = "Error",
+			message = "Problem staging candidates"
+		rollback tran
+		return
+	end
+commit tran
+
+select
+	status = "Success",
+	message = "Added " + convert(varchar(10), @expected_count) + " candidate(s) to group",
+	added_count = @expected_count
+
+exec
+	r_remotereconcandidates
+		@login = @login,
+		@remote_trade_symbol_id = @remote_trade_symbol_id
+
+go
+
