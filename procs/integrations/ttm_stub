@@ -1,0 +1,13 @@
+
+create or replace
+	procedure ttm_stub 
+as
+
+select "stub proc called"
+
+return
+
+go
+
+
+
