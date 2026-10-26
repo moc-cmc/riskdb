@@ -22,6 +22,8 @@ declare @target_bo_trade_date datetime
 declare @begin_date datetime
 declare @end_date datetime
 
+declare @addable_count int
+
 select
 	@tico_account_id = account_id
 from
@@ -156,6 +158,14 @@ values(
 	"Column Link",
 	"accept_group_match",
 	"Accept Recon Group Match",
+	"remote_trade_symbol_id=" + convert(varchar(20), @remote_trade_symbol_id))
+
+insert into
+	#meta
+values(
+	"Column Link",
+	"add_all_candidates",
+	"Add all to Recon Group Staging",
 	"remote_trade_symbol_id=" + convert(varchar(20), @remote_trade_symbol_id))
 
 insert into
@@ -325,6 +335,15 @@ from
 
 
 select
+	@addable_count = count(*)
+from
+	#candidates
+where
+	is_staged = "N"
+and
+	staged_elsewhere_id = NULL
+
+select
 	section = "Target",
 	remote_trade_symbol_id = @remote_trade_symbol_id,
 	external_account = f.symbol,
@@ -379,6 +398,7 @@ select
 	staged_quantity = isnull(sum(quantity), 0),
 	staged_count = count(*),
 	remaining = @target_quantity - isnull(sum(quantity), 0),
+	add_all_candidates = case when @addable_count > 0 then "Add All Candidates" else NULL end,
 	accept_group_match = "Accept Group Match"
 from
 	#candidates
