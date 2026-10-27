@@ -1,0 +1,192 @@
+create or replace procedure
+	rkv2_runfilters
+		@api_key varchar(150),
+		@run_filter varchar(200) = NULL
+as
+
+/*
+rkapi v2 (SHARED - same proc for client and standard groups):
+GET /api/prime/v2/client/static/run_filters
+
+Run Filters granted to the calling key's user, one row per filter value:
+
+	run_name | filter | value
+
+filter is one of account / internal_account / counterparty / trader /
+strategy / broker; value is that dimension's symbol/name. A granted run
+with NO configured filter rows is NOT emitted at all - runs are an
+overloaded concept used by unrelated processes, and a run with no
+filters is not a client trade filter. The API layer aggregates rows into
+{run_name, accounts: [], internal_accounts: [], counterparties: [],
+traders: [], strategies: [], brokers: []}.
+
+Unlike the trades fence (run management pattern in docs/rkapi-procs.md,
+which materializes unconstrained dimensions as ALL rows), this proc
+emits only the CONFIGURED filter rows - an empty list in the response
+means the dimension is unconstrained.
+
+@run_filter NULL lists every granted run; non-NULL returns only that
+run's rows. Unknown or ungranted @run_filter returns an empty result
+set, not an error (unentitled == nonexistent).
+*/
+
+declare @tico_account_id int
+declare @start_time datetime
+declare @end_time datetime
+
+select
+	@start_time = getdate()
+
+exec
+	rkv2_authuser
+		@api_key = @api_key,
+		@tico_account_id = @tico_account_id output
+if @tico_account_id = NULL
+	return
+
+/* stage the granted runs once; every emit below joins #runs.
+   Temp table pattern: fill unconditionally, then delete to narrow */
+create table
+	#runs(
+		run_id int,
+		run_name varchar(200))
+
+insert into
+	#runs
+select
+	a.run_id,
+	a.name
+from
+	runs a,
+	user_runs b
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = @tico_account_id
+
+if @run_filter != NULL
+begin
+	delete from
+		#runs
+	where
+		run_name != @run_filter
+end
+
+create table
+	#filters(
+		run_name varchar(200),
+		filter varchar(20) null,
+		value varchar(150) null)
+
+insert into
+	#filters
+select
+	a.run_name,
+	"account",
+	c.symbol
+from
+	#runs a,
+	run_external_accounts b,
+	external_accounts c
+where
+	b.run_id = a.run_id
+and
+	b.external_account_id = c.external_account_id
+
+insert into
+	#filters
+select
+	a.run_name,
+	"internal_account",
+	rtrim(c.symbol)
+from
+	#runs a,
+	run_internal_accounts b,
+	internal_accounts c
+where
+	b.run_id = a.run_id
+and
+	b.internal_account_id = c.internal_account_id
+
+insert into
+	#filters
+select
+	a.run_name,
+	"counterparty",
+	rtrim(c.name)
+from
+	#runs a,
+	run_counterparties b,
+	counterparties c
+where
+	b.run_id = a.run_id
+and
+	b.counterparty_id = c.counterparty_id
+
+insert into
+	#filters
+select
+	a.run_name,
+	"trader",
+	c.symbol
+from
+	#runs a,
+	run_traders b,
+	traders c
+where
+	b.run_id = a.run_id
+and
+	b.trader_id = c.trader_id
+
+insert into
+	#filters
+select
+	a.run_name,
+	"strategy",
+	rtrim(c.name)
+from
+	#runs a,
+	run_strategies b,
+	strategies c
+where
+	b.run_id = a.run_id
+and
+	b.strategy_id = c.strategy_id
+
+insert into
+	#filters
+select
+	a.run_name,
+	"broker",
+	rtrim(c.symbol)
+from
+	#runs a,
+	run_brokers b,
+	brokers c
+where
+	b.run_id = a.run_id
+and
+	b.broker_id = c.broker_id
+
+select
+	run_name = rtrim(run_name),
+	filter,
+	value
+from
+	#filters
+order by
+	run_name asc,
+	filter asc,
+	value asc
+
+select
+	@end_time = getdate()
+
+exec
+	sp_dogstatsdtimer
+		@metric_name="ase.proc.rkv2_runfilters",
+		@start_time=@start_time,
+		@end_time=@end_time,
+		@tags=NULL,
+		@sample_rate="1.0"
+go

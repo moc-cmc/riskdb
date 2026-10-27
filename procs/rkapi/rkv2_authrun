@@ -1,0 +1,65 @@
+create or replace procedure
+	rkv2_authrun
+		@login varchar(100),
+		@run_filter varchar(200),
+		@run_id int = NULL output
+as
+
+/*
+rkapi v2 shared preamble: verify the named run is granted to the
+(already authenticated) user - nothing else. rkv2_authuser runs first
+in every proc and supplies @login; this proc looks the user up again
+from that login (tico_accounts) rather than trusting a passed-in
+account id. Callers take @run_id and fill their own dimension temp
+tables per the run management pattern (docs/rkapi-procs.md).
+
+Caller contract:
+
+	exec
+		rkv2_authuser
+			@api_key = @api_key,
+			@tico_account_id = @tico_account_id output,
+			@login = @login output
+	if @tico_account_id = NULL
+		return
+
+	exec
+		rkv2_authrun
+			@login = @login,
+			@run_filter = @run_filter,
+			@run_id = @run_id output
+	if @run_id = NULL
+		return
+
+No return status codes (house rule: all returns register as clean;
+callers inspect output). @run_id is the success signal: NULL on failure,
+after this proc emits its own error row - the caller just returns
+without emitting another result set. Unentitled == nonexistent: unknown
+and ungranted runs both read as not found.
+*/
+
+select
+	@run_id = a.run_id
+from
+	runs a,
+	user_runs b,
+	tico_accounts c
+where
+	a.run_id = b.run_id
+and
+	b.tico_account_id = c.account_id
+and
+	c.login = @login
+and
+	a.name = @run_filter
+
+if @run_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find run"
+	return
+end
+
+return
+go

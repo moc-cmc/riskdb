@@ -1,0 +1,490 @@
+create or replace procedure
+	rkv2c_tradesfordate
+		@api_key varchar(150),
+		@run_filter varchar(200),
+		@date varchar(10) = NULL,
+		@account varchar(50) = NULL,
+		@after_id int = NULL,
+		@limit int = NULL
+as
+
+/*
+rkapi v2 client: GET /api/prime/v2/client/records/trades/date
+
+Trades for a single trading day (17:00 New York boundaries via
+r_gettradingday), scoped to the named run per the run management pattern
+(docs/rkapi-procs.md): every dimension temp table is populated - the
+run's rows, or all rows when unconstrained - and carries the display
+properties, so the page query joins only temp tables plus the true
+lookups (statuses/contracts/trade_types). @date NULL = current trading
+day. Emits the meta result set first (section = "meta"), then the data
+rows.
+
+Paging: @after_id exclusive cursor (NULL = 0), @limit 1..1000 (NULL =
+200; the API layer validates, this proc re-clamps). Fetches limit + 1
+rows to learn has_more, then trims.
+
+Date->id narrowing is REQUIRED: trades has no index on trade_date (only
+u_t(trade_id)); the id bounds drive the index, and the date predicate
+stays in the page query for correctness (backfilled ids inside
+[min, max] can carry trade_dates outside the window).
+*/
+
+declare @tico_account_id int
+declare @login varchar(100)
+declare @run_id int
+declare @account_id int
+declare @min_trade_id int
+declare @max_trade_id int
+declare @fetch int
+declare @rows int
+declare @has_more int
+declare @page_min_id int
+declare @page_max_id int
+declare @date_dt datetime
+declare @trading_day datetime
+declare @begin_date datetime
+declare @end_date datetime
+declare @start_time datetime
+declare @end_time datetime
+
+select
+	@start_time = getdate()
+
+exec
+	rkv2_authuser
+		@api_key = @api_key,
+		@tico_account_id = @tico_account_id output,
+		@login = @login output
+if @tico_account_id = NULL
+	return
+
+select @after_id = isnull(@after_id, 0)
+select @limit = isnull(@limit, 200)
+if @limit > 1000
+	select @limit = 1000
+if @limit < 1
+	select @limit = 200
+select @fetch = @limit + 1
+
+create table
+	#external_accounts(
+		external_account_id int,
+		symbol varchar(50))
+
+create table
+	#internal_accounts(
+		internal_account_id int)
+
+create table
+	#traders(
+		trader_id int,
+		symbol varchar(50))
+
+create table
+	#strategies(
+		strategy_id int,
+		name varchar(100))
+
+create table
+	#brokers(
+		broker_id int,
+		symbol varchar(25))
+
+create table
+	#counterparties(
+		counterparty_id int)
+
+exec
+	rkv2_authrun
+		@login = @login,
+		@run_filter = @run_filter,
+		@run_id = @run_id output
+if @run_id = NULL
+	return
+
+/* run management pattern: fill each dimension from run_<dimension>,
+   else from the base table (unconstrained = all). Display properties
+   ride the temp tables so the page query never joins back.
+   EXCEPTION - external_accounts: a client run MUST constrain accounts;
+   a run with none is not a client trade filter (it will not appear in
+   run_filters either), so it reads as not found. */
+insert into
+	#external_accounts
+select
+	a.external_account_id,
+	b.symbol
+from
+	run_external_accounts a,
+	external_accounts b
+where
+	a.run_id = @run_id
+and
+	a.external_account_id = b.external_account_id
+if @@rowcount = 0
+begin
+	select
+		error = "Error",
+		msg = "Could not find run"
+	return
+end
+
+insert into
+	#internal_accounts
+select
+	internal_account_id
+from
+	run_internal_accounts
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#internal_accounts
+	select
+		internal_account_id
+	from
+		internal_accounts
+end
+
+insert into
+	#traders
+select
+	a.trader_id,
+	b.symbol
+from
+	run_traders a,
+	traders b
+where
+	a.run_id = @run_id
+and
+	a.trader_id = b.trader_id
+if @@rowcount = 0
+begin
+	insert into
+		#traders
+	select
+		trader_id,
+		symbol
+	from
+		traders
+end
+
+insert into
+	#strategies
+select
+	a.strategy_id,
+	rtrim(b.name)
+from
+	run_strategies a,
+	strategies b
+where
+	a.run_id = @run_id
+and
+	a.strategy_id = b.strategy_id
+if @@rowcount = 0
+begin
+	insert into
+		#strategies
+	select
+		strategy_id,
+		rtrim(name)
+	from
+		strategies
+end
+
+insert into
+	#brokers
+select
+	a.broker_id,
+	rtrim(b.symbol)
+from
+	run_brokers a,
+	brokers b
+where
+	a.run_id = @run_id
+and
+	a.broker_id = b.broker_id
+if @@rowcount = 0
+begin
+	insert into
+		#brokers
+	select
+		broker_id,
+		rtrim(symbol)
+	from
+		brokers
+end
+
+insert into
+	#counterparties
+select
+	counterparty_id
+from
+	run_counterparties
+where
+	run_id = @run_id
+if @@rowcount = 0
+begin
+	insert into
+		#counterparties
+	select
+		counterparty_id
+	from
+		counterparties
+end
+
+if @account != NULL
+begin
+	select
+		@account_id = external_account_id
+	from
+		#external_accounts
+	where
+		symbol = @account
+
+	if @account_id = NULL
+	begin
+		select
+			error = "Error",
+			msg = "Could not find account"
+		return
+	end
+
+	/* narrow the account dimension to the single requested account */
+	delete from
+		#external_accounts
+	where
+		external_account_id != @account_id
+end
+
+/* date params are varchar (YYYY-MM-DD): sybrouter mishandles
+   date-typed values when building the exec, so procs take strings and
+   convert internally. A date-only string converts to midnight, which
+   also avoids the helper's hour >= 17 rollforward hazard */
+if @date != NULL
+	select @date_dt = convert(datetime, @date)
+
+exec
+	r_gettradingday
+		@date = @date_dt,
+		@trading_day = @trading_day output,
+		@begin_date = @begin_date output,
+		@end_date = @end_date output
+
+select
+	@min_trade_id = min(trade_id),
+	@max_trade_id = max(trade_id)
+from
+	trades
+where
+	trade_date >= @begin_date
+and
+	trade_date < @end_date
+
+if @min_trade_id = NULL
+begin
+	select
+		section = "meta",
+		trading_day = @trading_day,
+		window_begin = @begin_date,
+		window_end = @end_date,
+		"rowcount" = 0,
+		min_trade_id = convert(int, NULL),
+		max_trade_id = convert(int, NULL),
+		has_more = 0
+end
+else
+begin
+	create table
+		#page(
+			trade_id int,
+			deal_id int,
+			trade_date datetime,
+			account varchar(50),
+			status varchar(100),
+			trade_type varchar(100),
+			contract varchar(100),
+			traded_ccy varchar(100) null,
+			counter_ccy varchar(100) null,
+			trader varchar(50),
+			side varchar(4) null,
+			quantity varchar(30),
+			price float,
+			value_date datetime,
+			identifier varchar(100),
+			broker varchar(25),
+			strategy varchar(100),
+			contract_id int)
+
+	set rowcount @fetch
+
+	insert into
+		#page(
+			trade_id,
+			deal_id,
+			trade_date,
+			account,
+			status,
+			trade_type,
+			contract,
+			traded_ccy,
+			counter_ccy,
+			trader,
+			side,
+			quantity,
+			price,
+			value_date,
+			identifier,
+			broker,
+			strategy,
+			contract_id)
+	select
+		a.trade_id,
+		a.deal_id,
+		a.trade_date,
+		b.symbol,
+		rtrim(h.name),
+		rtrim(j.name),
+		i.symbol,
+		NULL,
+		NULL,
+		d.symbol,
+		case
+			when a.quantity > 0 then "Buy"
+			when a.quantity < 0 then "Sell"
+		end,
+		convert(varchar(30), convert(numeric(30, 10), a.quantity)),
+		a.price,
+		a.value_date,
+		a.identifier,
+		f.symbol,
+		e.name,
+		a.contract_id
+	from
+		trades a,
+		#external_accounts b,
+		#internal_accounts c,
+		#traders d,
+		#strategies e,
+		#brokers f,
+		#counterparties g,
+		statuses h,
+		contracts i,
+		trade_types j
+	where
+		a.external_account_id = b.external_account_id
+	and
+		a.internal_account_id = c.internal_account_id
+	and
+		a.trader_id = d.trader_id
+	and
+		a.strategy_id = e.strategy_id
+	and
+		a.broker_id = f.broker_id
+	and
+		a.counterparty_id = g.counterparty_id
+	and
+		a.status_id = h.status_id
+	and
+		a.contract_id = i.contract_id
+	and
+		a.trade_type_id = j.trade_type_id
+	and
+		a.trade_id >= @min_trade_id
+	and
+		a.trade_id <= @max_trade_id
+	and
+		a.trade_id > @after_id
+	and
+		a.trade_date >= @begin_date
+	and
+		a.trade_date < @end_date
+	order by
+		a.trade_id asc
+
+	set rowcount 0
+
+	/* non-forward products keep NULL ccys (temp-table update, no outer joins) */
+	update
+		#page
+	set
+		traded_ccy = c.symbol,
+		counter_ccy = d.symbol
+	from
+		#page a,
+		forwards b,
+		products c,
+		products d
+	where
+		a.contract_id = b.contract_id
+	and
+		b.product_id = c.product_id
+	and
+		b.currency_id = d.product_id
+
+	select @rows = count(*) from #page
+
+	if @rows > @limit
+	begin
+		select @has_more = 1
+		delete from
+			#page
+		where
+			trade_id = (select max(trade_id) from #page)
+		select @rows = @rows - 1
+	end
+	else
+		select @has_more = 0
+
+	select
+		@page_min_id = min(trade_id),
+		@page_max_id = max(trade_id)
+	from
+		#page
+
+	select
+		section = "meta",
+		trading_day = @trading_day,
+		window_begin = @begin_date,
+		window_end = @end_date,
+		"rowcount" = @rows,
+		min_trade_id = @page_min_id,
+		max_trade_id = @page_max_id,
+		has_more = @has_more
+
+	select
+		trade_id,
+		deal_id,
+		trade_date,
+		account,
+		status,
+		trade_type,
+		contract,
+		traded_ccy,
+		counter_ccy,
+		trader,
+		side,
+		quantity,
+		price,
+		value_date,
+		identifier,
+		broker,
+		strategy
+	from
+		#page
+	order by
+		trade_id asc
+end
+
+select
+	@end_time = getdate()
+
+exec
+	sp_dogstatsdtimer
+		@metric_name="ase.proc.rkv2c_tradesfordate",
+		@start_time=@start_time,
+		@end_time=@end_time,
+		@tags=NULL,
+		@sample_rate="1.0"
+go

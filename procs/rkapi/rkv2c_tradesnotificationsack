@@ -1,0 +1,191 @@
+create or replace procedure
+	rkv2c_tradesnotificationsack
+		@api_key varchar(150),
+		@run_filter varchar(200),
+		@trade_id int,
+		@action varchar(10) = NULL
+as
+
+/*
+rkapi v2 client: POST /api/prime/v2/client/records/trades/notifications:ack
+
+Marks ONE trade notification delivered; rkapi calls this once per id in
+the request body (all with the request's action) and aggregates the
+per-trade rows, the trade-entry pattern. Acks are keyed by trade id:
+the pipeline keeps one trade_notifications row per (source, trade), so
+once the source is resolved from the run the trade id identifies the
+row.
+
+@action is the action the client received on its read - New | Modify |
+Cancel = row status Active | Edit | Cancelled. NULL means New, matching
+the API default: a client that ignores the action column can still ack
+new trades, but must pass Modify/Cancel to ack those - so a trade that
+changed between the client's read and its ack (read Modify, a Cancel
+landed before the ack) is never marked Sent by mistake. Such a row is
+left pending so the new action redelivers, and the proc answers Skipped
+with the action the row carries now. A row already Sent answers Success
+(idempotent retries).
+
+Same auth chain as the read side (rkv2_authuser -> rkv2_authrun ->
+rkv2_authsource). No notification row for the trade and the run's
+source -> "Could not find notification for trade <id>" (unentitled ==
+nonexistent). The status flip itself is delegated to
+r_didsendtradenotification, the normal pipeline proc (status Sent,
+notify_date stamped); an error row from it (only a concurrent delete
+gets past the lookup) precedes this proc's row and rkapi reports it for
+that trade.
+
+Answers exactly one row:
+	status = "Success", message, trade_id            acknowledged
+	status = "Skipped", message, trade_id, action    left to redeliver
+	error = "Error", msg                             not acked
+*/
+
+declare @tico_account_id int
+declare @login varchar(100)
+declare @run_id int
+declare @source_id int
+declare @active_status_id int
+declare @edit_status_id int
+declare @cancelled_status_id int
+declare @sent_status_id int
+declare @expected_status_id int
+declare @notification_id int
+declare @row_status_id int
+declare @start_time datetime
+declare @end_time datetime
+
+select
+	@start_time = getdate()
+
+exec
+	rkv2_authuser
+		@api_key = @api_key,
+		@tico_account_id = @tico_account_id output,
+		@login = @login output
+if @tico_account_id = NULL
+	return
+
+exec
+	rkv2_authrun
+		@login = @login,
+		@run_filter = @run_filter,
+		@run_id = @run_id output
+if @run_id = NULL
+	return
+
+exec
+	rkv2_authsource
+		@login = @login,
+		@run_filter = @run_filter,
+		@source_id = @source_id output
+if @source_id = NULL
+	return
+
+select
+	@active_status_id = status_id
+from
+	statuses
+where
+	name = "Active"
+select
+	@edit_status_id = status_id
+from
+	statuses
+where
+	name = "Edit"
+select
+	@cancelled_status_id = status_id
+from
+	statuses
+where
+	name = "Cancelled"
+select
+	@sent_status_id = status_id
+from
+	statuses
+where
+	name = "Sent"
+
+select @action = isnull(@action, "New")
+
+if @action = "New"
+	select @expected_status_id = @active_status_id
+else if @action = "Modify"
+	select @expected_status_id = @edit_status_id
+else if @action = "Cancel"
+	select @expected_status_id = @cancelled_status_id
+else
+begin
+	select
+		error = "Error",
+		msg = "action must be one of New, Modify, Cancel"
+	return
+end
+
+select
+	@notification_id = trade_notification_id,
+	@row_status_id = status_id
+from
+	trade_notifications
+where
+	trade_id = @trade_id
+and
+	source_id = @source_id
+
+if @notification_id = NULL
+begin
+	select
+		error = "Error",
+		msg = "Could not find notification for trade " + convert(varchar(12), @trade_id)
+	return
+end
+
+if @row_status_id = @sent_status_id
+begin
+	/* already delivered: an idempotent retry */
+	select
+		status = "Success",
+		message = "Already acknowledged",
+		trade_id = @trade_id
+end
+else if @row_status_id = @expected_status_id
+begin
+	exec
+		r_didsendtradenotification
+			@trade_notification_id = @notification_id,
+			@status = "Sent",
+			@error = NULL
+
+	select
+		status = "Success",
+		message = "Acknowledged",
+		trade_id = @trade_id
+end
+else
+begin
+	/* the row does not carry the action the client is acking (it
+	   changed since the read, or the client did not pass Modify/Cancel):
+	   leave it pending so it redelivers, and say which action it has */
+	select
+		status = "Skipped",
+		message = "Notification is not " + @action + "; it will be delivered again",
+		trade_id = @trade_id,
+		action = case @row_status_id
+			when @active_status_id then "New"
+			when @edit_status_id then "Modify"
+			when @cancelled_status_id then "Cancel"
+		end
+end
+
+select
+	@end_time = getdate()
+
+exec
+	sp_dogstatsdtimer
+		@metric_name="ase.proc.rkv2c_tradesnotificationsack",
+		@start_time=@start_time,
+		@end_time=@end_time,
+		@tags=NULL,
+		@sample_rate="1.0"
+go

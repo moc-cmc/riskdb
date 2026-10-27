@@ -1,0 +1,96 @@
+create or replace procedure
+	rkv2_authuser
+		@api_key varchar(150),
+		@tico_account_id int = NULL output,
+		@login varchar(100) = NULL output
+as
+
+/*
+rkapi v2 shared preamble: authenticate the API key. Resolves the key to
+its user (user_auths rows of type "API Key" only) and verifies the key
+is Active and unexpired. Runs FIRST in every rkv2_/rkv2c_ proc.
+
+Outputs the user's tico_account_id and login. The login is the identity
+the downstream helpers work from: rkv2_authrun and rkv2_authsource each
+take @login and look the user up again themselves, so no caller passes
+a bare account id around as proof of anything.
+
+Caller contract:
+
+	exec
+		rkv2_authuser
+			@api_key = @api_key,
+			@tico_account_id = @tico_account_id output,
+			@login = @login output
+	if @tico_account_id = NULL
+		return
+
+No return status codes (house rule: all returns register as clean;
+callers inspect output). @tico_account_id is the success signal: this
+proc guarantees it (and @login) is NULL on EVERY failure path, after
+emitting its own error row - the caller just returns without emitting
+another result set. No secret material in error rows. Status/expiry are
+enforced here at the database so key disablement takes effect
+immediately, regardless of any secret caching upstream.
+*/
+
+declare @expires_at datetime
+declare @activity_status_id int
+declare @activity_status varchar(50)
+
+select
+	@tico_account_id = a.user_id,
+	@login = b.login,
+	@activity_status_id = a.activity_status_id,
+	@expires_at = a.expires_at
+from
+	user_auths a,
+	tico_accounts b,
+	user_auth_types c
+where
+	a.user_id = b.account_id
+and
+	a.user_auth_type_id = c.user_auth_type_id
+and
+	a.pubkey = @api_key
+and
+	c.name = "API Key"
+
+if @tico_account_id = NULL
+begin
+	select @login = NULL
+	select
+		error = "Error",
+		msg = "Could not find user for API key"
+	return
+end
+
+select
+	@activity_status = name
+from
+	activity_statuses
+where
+	activity_status_id = @activity_status_id
+
+if @activity_status != "Active"
+begin
+	select @tico_account_id = NULL
+	select @login = NULL
+	select
+		error = "Error",
+		msg = "API key is " + isnull(rtrim(@activity_status), "in an unknown state")
+	return
+end
+
+if @expires_at != NULL and @expires_at < getdate()
+begin
+	select @tico_account_id = NULL
+	select @login = NULL
+	select
+		error = "Error",
+		msg = "API key expired at " + convert(varchar(30), @expires_at)
+	return
+end
+
+return
+go
